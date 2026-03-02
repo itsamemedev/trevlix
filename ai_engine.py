@@ -37,7 +37,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Tuple, Any
 
 try:
-    from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
+    from sklearn.ensemble import RandomForestClassifier
     from sklearn.preprocessing import StandardScaler
     from sklearn.model_selection import cross_val_score
     from sklearn.calibration import CalibratedClassifierCV
@@ -349,7 +349,7 @@ class AIEngine:
                 self.strategy_weights[name] = float(np.clip(norm[i], 0.2, 3.0))
 
             top = sorted(self.strategy_weights.items(), key=lambda x: x[1], reverse=True)
-            log.info(f"🎛️  Strategie-Gewichte: " +
+            log.info("🎛️  Strategie-Gewichte: " +
                      " | ".join(f"{n}={w:.2f}" for n, w in top[:3]))
         except Exception as e:
             log.debug(f"Gewicht-Update Fehler: {e}")

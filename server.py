@@ -59,7 +59,7 @@ import requests
 import ccxt
 from dotenv import load_dotenv
 from flask import (Flask, send_file, jsonify, request, Response, session, redirect)
-from flask_socketio import SocketIO, emit, disconnect
+from flask_socketio import SocketIO, emit
 from flask_cors import CORS
 
 # ── ML ──────────────────────────────────────────────────────────────────────
@@ -103,25 +103,14 @@ except ImportError:
 
 # [6] Scipy for Fourier + Wavelet features
 try:
-    from scipy import signal as scipy_signal
-    from scipy.fft import rfft, rfftfreq
     import pywt  # PyWavelets
     WAVELET_AVAILABLE = True
 except ImportError:
-    try:
-        from scipy import signal as scipy_signal
-        from scipy.fft import rfft, rfftfreq
-        WAVELET_AVAILABLE = False
-    except ImportError:
-        WAVELET_AVAILABLE = False
+    WAVELET_AVAILABLE = False
 
 # [8] Advanced sklearn
 try:
-    from sklearn.feature_selection import SelectFromModel, mutual_info_classif
-    from sklearn.decomposition import PCA
     from sklearn.linear_model import LogisticRegression
-    from sklearn.model_selection import StratifiedKFold
-    from sklearn.preprocessing import QuantileTransformer
     SKLEARN_ADV_AVAILABLE = True
 except ImportError:
     SKLEARN_ADV_AVAILABLE = False
@@ -135,8 +124,8 @@ except ImportError:
 
 try:
     import tensorflow as tf
-    from tensorflow.keras.models import Sequential, Model
-    from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, LayerNormalization
+    from tensorflow.keras.models import Sequential
+    from tensorflow.keras.layers import LSTM, Dense, Dropout, Input
     from tensorflow.keras.callbacks import EarlyStopping
     tf.get_logger().setLevel("ERROR")
     TF_AVAILABLE = True
@@ -586,7 +575,7 @@ class MySQLManager:
                 row = c.fetchone()
             conn.close()
             return dict(row) if row else None
-        except Exception as e:
+        except Exception:
             return None
 
     def get_user_by_id(self, uid: int) -> Optional[dict]:
@@ -597,7 +586,7 @@ class MySQLManager:
                 row = c.fetchone()
             conn.close()
             return dict(row) if row else None
-        except Exception as e:
+        except Exception:
             return None
 
     def get_all_users(self) -> List[dict]:
@@ -614,7 +603,7 @@ class MySQLManager:
                     if k in d and hasattr(d.get(k),"isoformat"): d[k]=d[k].isoformat() if d[k] else None
                 result.append(d)
             return result
-        except Exception as e:
+        except Exception:
             return []
 
     def create_user(self, username: str, password: str, role: str = "user", balance: float = 10000.0) -> bool:
@@ -1301,7 +1290,7 @@ class AnomalyDetector:
                 self.is_anomaly = False
                 log.info("✅ Anomalie aufgelöst")
             return is_anom, score
-        except Exception as e:
+        except Exception:
             return False, 0.0
 
     def to_dict(self) -> dict:
@@ -1791,7 +1780,6 @@ class AIEngine:
                     cv=3, n_jobs=-1, passthrough=False)
                 stk.fit(X_train, y_train)
                 # [15] Isotonic Calibration für bessere Wahrscheinlichkeiten
-                from sklearn.calibration import CalibratedClassifierCV
                 cal = CalibratedClassifierCV(stk, cv="prefit", method="isotonic")
                 cal.fit(X_s, y)
                 log.info(f"✅ Stacking-Ensemble ({len(estimators)} Basis-Modelle + LogReg Meta)")
@@ -1847,7 +1835,6 @@ class AIEngine:
         """
         if not self.is_trained or self.global_model is None: return
         try:
-            X_s = self.scaler.transform(features.reshape(1, -1))
             # Warm-Start für RF (füge Bäume hinzu)
             model = self.global_model
             if hasattr(model, "estimators_") and ML_AVAILABLE:
@@ -2635,8 +2622,6 @@ class SentimentFetcher:
                 "?localization=false&tickers=false&market_data=false&community_data=true",
                 timeout=8)
             cd = r.json().get("community_data",{})
-            reddit_active = cd.get("reddit_active_accounts",0) or 0
-            twitter = cd.get("twitter_followers",0) or 0
             sentiment_up = cd.get("sentiment_votes_up_percentage",50) or 50
             score = float(np.clip(sentiment_up/100, 0, 1))
             db.save_sentiment(symbol, score, "coingecko")
@@ -3131,7 +3116,7 @@ def scan_symbol(ex, symbol) -> Optional[dict]:
         price = float(row["close"])
         # [24+27] Multi-Regime classification
         ph = list(df["close"].values[-50:])
-        scan_regime = adv_risk.classify_regime(ph) if ph else "TREND_UP"
+        adv_risk.classify_regime(ph) if ph else None
         risk.update_prices(symbol, price)
         state.prices[symbol] = price
 
@@ -4004,8 +3989,8 @@ def on_run_backtest(data):
 @socketio.on("add_price_alert")
 def on_add_alert(data):
     uid = session.get("user_id",1)
-    aid = db.add_alert(data.get("symbol",""), float(data.get("target",0)),
-                       data.get("direction","above"), uid)
+    db.add_alert(data.get("symbol",""), float(data.get("target",0)),
+                 data.get("direction","above"), uid)
     emit("status",{"msg":f"🔔 Alert gesetzt für {data.get('symbol')}","type":"success"})
     emit("update",state.snapshot(),broadcast=True)
 
@@ -4072,7 +4057,7 @@ def safety_scan():
             if sym not in state.positions:
                 suspicious.append(f"{coin}: {float(details or 0):.4f}")
         if suspicious:
-            msg = f"⚠️ Unbekannte Positionen:\n" + "\n".join(suspicious)
+            msg = "⚠️ Unbekannte Positionen:\n" + "\n".join(suspicious)
             discord.error(msg); log.warning(msg)
     except Exception as e:
         log.debug(f"Safety-Scan: {e}")
@@ -4104,7 +4089,6 @@ def db_audit(user_id: int, action: str, detail: str = "", ip: str = ""):
 def api_audit_log():
     """Gibt die letzten 200 Audit-Log-Einträge zurück."""
     try:
-        page = int(request.args.get("page", 1))
         action_filter = request.args.get("action", "")
         conn = db._conn()
         with conn.cursor() as c:
@@ -4173,7 +4157,6 @@ class GridTradingEngine:
         if not grid or not grid["active"]: return []
         actions = []
         levels = grid["grid_levels"]
-        step   = grid["step"]
         invest = grid["invest_per_level"]
 
         for i, lvl in enumerate(levels[:-1]):
@@ -4263,7 +4246,7 @@ def api_grid_delete(symbol):
 def ws_create_grid(data):
     if session.get("user_role","user") != "admin":
         emit("status",{"msg":"Nur Admin","type":"error"}); return
-    r = grid_engine.create_grid(
+    grid_engine.create_grid(
         data.get("symbol",""), float(data.get("lower",0)),
         float(data.get("upper",0)), int(data.get("levels",10)),
         float(data.get("invest_per_level",100)))
@@ -4833,7 +4816,7 @@ if __name__ == "__main__":
     threading.Thread(target=fg_idx.update,     daemon=True).start()
     threading.Thread(target=dominance.update,  daemon=True).start()
     threading.Thread(target=safety_scan,       daemon=True).start()
-    log.info(f"🌐 Dashboard: http://0.0.0.0:5000")
-    log.info(f"📡 REST-API:  http://0.0.0.0:5000/api/v1/")
-    log.info(f"📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
+    log.info("🌐 Dashboard: http://0.0.0.0:5000")
+    log.info("📡 REST-API:  http://0.0.0.0:5000/api/v1/")
+    log.info("📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
     socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
