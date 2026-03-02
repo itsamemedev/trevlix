@@ -21,39 +21,40 @@
 
 ## 🚀 Features
 
-- **Multi-Exchange Support** — Crypto.com, Binance, Bybit, OKX, KuCoin gleichzeitig
-- **14+ KI-Module** — XGBoost, LightGBM, CatBoost, LSTM, Transformer, Random Forest
-- **Grid-Trading** — Automatisierte Grid-Strategien mit konfigurierbaren Levels
-- **Monte-Carlo Risikoanalyse** — Portfoliosimulationen mit VaR-Berechnung
-- **Telegram-Benachrichtigungen** — Echtzeit-Alerts für alle Trades
-- **Audit-Log** — Lückenlose Protokollierung aller Aktionen
-- **Break-Even Stop-Loss** — Automatische SL-Anpassung nach Gewinn
-- **Symbol-Cooldown** — Sperrt Symbole nach Verlust
-- **IP-Whitelist** — Zugangskontrolle per IP
-- **News-Sentiment-Filter** — Blockiert Trades bei negativen Nachrichten
-- **Funding-Rate-Filter** — Vermeidet teure Short-Positionen
-- **Paper-Trading** — Risikofrei testen ohne echtes Kapital
-- **Copy-Trading** — Follower empfangen alle Signale in Echtzeit
-- **2FA** — Zwei-Faktor-Authentifizierung (TOTP)
+- **Multi-Exchange Support** — Crypto.com, Binance, Bybit, OKX, KuCoin simultaneously
+- **14+ AI Modules** — XGBoost, LightGBM, CatBoost, LSTM, Transformer, Random Forest
+- **Grid Trading** — Automated grid strategies with configurable levels
+- **Monte-Carlo Risk Analysis** — Portfolio simulations with VaR calculation
+- **Telegram Notifications** — Real-time alerts for all trades
+- **Audit Log** — Full action history with timestamps
+- **Break-Even Stop-Loss** — Automatic SL adjustment after profit
+- **Symbol Cooldown** — Locks symbols after a loss
+- **IP Whitelist** — Access control by IP address
+- **News Sentiment Filter** — Blocks trades on negative news
+- **Funding Rate Filter** — Avoids expensive short positions
+- **Paper Trading** — Risk-free testing without real capital
+- **Copy Trading** — Followers receive all signals in real time
+- **2FA** — Two-factor authentication (TOTP)
+- **Multi-User System** — Multiple portfolios on a single instance, each with their own API keys
 
 ---
 
-## ⚡ Schnellinstallation
+## ⚡ Quick Installation
 
 ```bash
-# Einzeiler-Installation (Ubuntu/Debian)
-curl -O https://raw.githubusercontent.com/DEIN_USER/trevlix/main/install.sh
+# One-liner install (Ubuntu/Debian)
+curl -O https://raw.githubusercontent.com/itsamemedev/Trevlix/main/install.sh
 sudo bash install.sh
 ```
 
-Oder manuell:
+Or manually:
 
 ```bash
-git clone https://github.com/DEIN_USER/trevlix.git
-cd trevlix
+git clone https://github.com/itsamemedev/Trevlix.git
+cd Trevlix
 pip install -r requirements.txt
 cp .env.example .env
-nano .env          # API-Keys eintragen
+nano .env          # Enter API keys
 python server.py
 ```
 
@@ -71,64 +72,70 @@ docker-compose up -d
 
 ---
 
-## ⚙️ Konfiguration
+## ⚙️ Configuration
 
-Alle Einstellungen in `.env`:
+All settings in `.env`:
 
 ```env
 # Exchange
 EXCHANGE=cryptocom
-API_KEY=dein_api_key
-API_SECRET=dein_secret
+API_KEY=your_api_key
+API_SECRET=your_secret
 
 # Multi-Exchange (optional)
 BINANCE_ENABLED=true
 BINANCE_API_KEY=...
 BINANCE_SECRET=...
 
-# Sicherheit
-ADMIN_PASSWORD=sicheres_passwort
-JWT_SECRET=zufälliger_string
+# Security
+ADMIN_PASSWORD=secure_password
+JWT_SECRET=random_string
 
 # Trading
-PAPER_TRADING=true   # Erst im Paper-Modus starten!
+PAPER_TRADING=true   # Always start in paper mode first!
 ```
 
-Vollständige Anleitung: [INSTALLATION.html](INSTALLATION.html)
+Full guide: [INSTALLATION.html](INSTALLATION.html)
 
 ---
 
-## 📁 Projektstruktur
+## 📁 Project Structure
 
 ```
 trevlix/
 ├── server.py                  # Flask + WebSocket Backend
 ├── dashboard.html             # Trading Dashboard UI
 ├── index.html                 # Landing Page
-├── ai_engine.py               # KI-Engine (XGBoost, LSTM, ...)
-├── trevlix_i18n.py            # Internationalisierung (Python)
-├── trevlix_translations.js    # Internationalisierung (JS)
-├── requirements.txt           # Python-Abhängigkeiten
-├── install.sh                 # Ein-Klick Installer
-├── .env.example               # Konfigurationsvorlage
-├── Dockerfile                 # Docker-Image
-├── docker-compose.yml         # Docker-Compose Setup
-├── INSTALLATION.html          # Installationsanleitung
+├── ai_engine.py               # AI Engine (XGBoost, LSTM, ...)
+├── trevlix_i18n.py            # Internationalization (Python)
+├── trevlix_translations.js    # Internationalization (JS)
+├── requirements.txt           # Python dependencies
+├── install.sh                 # One-click installer
+├── .env.example               # Configuration template
+├── Dockerfile                 # Docker image
+├── docker-compose.yml         # Docker Compose setup
+├── INSTALLATION.html          # Installation guide
 └── docker/
-    ├── nginx.conf             # Nginx Reverse-Proxy
-    └── mysql-init.sql         # Datenbank-Schema
+    ├── nginx.conf             # Nginx reverse proxy
+    └── mysql-init.sql         # Database schema
 ```
+
+---
+
+## 👤 Multi-User & API Keys
+
+Each registered user stores their own exchange API keys in the database. The bot runs trades for each user using their personal credentials — no shared keys, full separation. An admin can manage users and global bot configuration via the admin panel.
 
 ---
 
 ## ⚠️ Disclaimer
 
-> **Starte immer mit `PAPER_TRADING=true`!**  
-> Der Bot handelt mit echtem Geld. Kryptowährungshandel birgt erhebliche Risiken.  
-> Vergangene Performance garantiert keine zukünftigen Ergebnisse.
+> **Always start with `PAPER_TRADING=true`!**
+> The bot trades with real money. Cryptocurrency trading carries substantial risk.
+> Past performance does not guarantee future results.
 
 ---
 
-## 📄 Lizenz
+## 📄 License
 
-MIT License — siehe [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)
