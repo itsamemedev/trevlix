@@ -8,7 +8,7 @@
 ║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
 ║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
 ║                                                                              ║
-║    Neural Exchange Unified System  ·  v1.0.0                                ║
+║    Neural Exchange Unified System  ·  v1.0.1                                ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -18,7 +18,7 @@
 ║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
 ║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
 ║                                                                              ║
-║  NEU IN v1.0.0                                                               ║
+║  NEU IN v1.0.1                                                               ║
 ║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
@@ -157,7 +157,7 @@ except ImportError:
 load_dotenv()
 
 BOT_NAME    = "NEXUS"
-BOT_VERSION = "1.0.0"
+BOT_VERSION = "1.0.1"
 BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3563,7 +3563,7 @@ button:hover{transform:translateY(-1px)}
   <div class="logo">
     <div class="logo-icon">⚡</div>
     <div class="logo-name">QUAN<span>TRA</span></div>
-    <div class="logo-sub">Quantum Trading AI · v1.0.0</div>
+    <div class="logo-sub">Quantum Trading AI · v1.0.1</div>
   </div>
   <form method="POST" action="/login">
     <div id="err" class="err">Falsches Passwort</div>
