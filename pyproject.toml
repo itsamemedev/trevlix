@@ -1,0 +1,57 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX – pyproject.toml                                    ║
+# ║  Projektmetadaten & Tool-Konfiguration                       ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+[tool.pytest.ini_options]
+testpaths     = ["tests"]
+python_files  = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts       = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning:lightgbm",
+]
+
+[tool.coverage.run]
+source  = ["."]
+omit    = [
+    "venv/*",
+    ".venv/*",
+    "tests/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+show_missing   = true
+skip_covered   = false
+exclude_lines  = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass$",
+]
+
+[tool.ruff]
+line-length    = 100
+target-version = "py311"
+exclude        = ["venv", ".venv", "__pycache__", "*.pyc"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "B",   # flake8-bugbear
+    "UP",  # pyupgrade
+]
+ignore = [
+    "E501",  # Zeilenlänge (durch line-length gesetzt)
+    "B008",  # function-call-in-default-argument (Flask-Dependency-Injection)
+    "B904",  # raise-without-from (häufig in except-Blöcken)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["services", "routes"]

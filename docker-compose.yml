@@ -1,9 +1,10 @@
 version: "3.9"
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.2 – Docker Compose                            ║
-# ║  Start: docker compose up -d                                 ║
-# ║  Logs:  docker compose logs -f trevlix                       ║
+# ║  TREVLIX v1.0.4 – Docker Compose                            ║
+# ║  Start:       docker compose up -d                           ║
+# ║  Prod (HTTPS): docker compose --profile production up -d     ║
+# ║  Logs:        docker compose logs -f trevlix                 ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 services:
@@ -22,7 +23,7 @@ services:
       - EXCHANGE=${EXCHANGE:-cryptocom}
       - API_KEY=${API_KEY}
       - API_SECRET=${API_SECRET}
-      # MySQL (uses service name as host)
+      # MySQL (Service-Name als Host)
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=trevlix
@@ -30,12 +31,17 @@ services:
       - MYSQL_DB=trevlix
       # Security
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD muss in .env gesetzt sein}
-      - DASHBOARD_SECRET=${DASHBOARD_SECRET}
-      - JWT_SECRET=${JWT_SECRET}
+      - DASHBOARD_SECRET=${DASHBOARD_SECRET:?DASHBOARD_SECRET muss in .env gesetzt sein}
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET muss in .env gesetzt sein}
+      - SECRET_KEY=${SECRET_KEY:?SECRET_KEY muss in .env gesetzt sein}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY muss in .env gesetzt sein}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5000}
+      - SESSION_TIMEOUT_MIN=${SESSION_TIMEOUT_MIN:-30}
       # Features
       - PAPER_TRADING=${PAPER_TRADING:-true}
       - DISCORD_WEBHOOK=${DISCORD_WEBHOOK:-}
+      - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - CRYPTOPANIC_TOKEN=${CRYPTOPANIC_TOKEN:-}
       - BLOCKNATIVE_KEY=${BLOCKNATIVE_KEY:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
@@ -50,11 +56,17 @@ services:
     networks:
       - trevlix_net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/update/status"]
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/v1/status"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 20s
+    # Log-Rotation (Verbesserung #19)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   # ── MySQL 8 ───────────────────────────────────────────────────
   mysql:
@@ -78,9 +90,14 @@ services:
       retries: 5
       start_period: 30s
     ports:
-      - "127.0.0.1:3306:3306"   # Only accessible locally
+      - "127.0.0.1:3306:3306"   # Nur lokal erreichbar
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
 
-  # ── Nginx Reverse Proxy (optional – für HTTPS) ─────────────────
+  # ── Nginx Reverse Proxy (optional – nur mit --profile production) ──
   nginx:
     image: nginx:alpine
     container_name: trevlix_nginx
@@ -90,13 +107,19 @@ services:
       - "443:443"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./docker/ssl:/etc/nginx/ssl:ro        # Mount your SSL certs here
+      - ./docker/ssl:/etc/nginx/ssl:ro        # SSL-Zertifikate hier ablegen
     depends_on:
-      - trevlix
+      trevlix:
+        condition: service_healthy
     networks:
       - trevlix_net
     profiles:
-      - production                             # Only starts with: docker compose --profile production up
+      - production                             # Nur mit: docker compose --profile production up
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
 
 volumes:
   mysql_data:

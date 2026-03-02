@@ -1,0 +1,57 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX – .editorconfig                                     ║
+# ║  Einheitlicher Code-Stil für alle Editoren                   ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+root = true
+
+[*]
+charset             = utf-8
+end_of_line         = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Python
+[*.py]
+indent_style = space
+indent_size  = 4
+max_line_length = 100
+
+# JavaScript / JSON
+[*.{js,json}]
+indent_style = space
+indent_size  = 2
+
+# HTML
+[*.html]
+indent_style = space
+indent_size  = 2
+
+# YAML / Docker Compose
+[*.{yml,yaml}]
+indent_style = space
+indent_size  = 2
+
+# Shell scripts
+[*.sh]
+indent_style = space
+indent_size  = 4
+
+# Makefile (MUSS Tabs verwenden!)
+[Makefile]
+indent_style = tab
+indent_size  = 4
+
+# TOML
+[*.toml]
+indent_style = space
+indent_size  = 4
+
+# SQL
+[*.sql]
+indent_style = space
+indent_size  = 2
+
+# Markdown
+[*.md]
+trim_trailing_whitespace = false

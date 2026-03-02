@@ -1,29 +1,42 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.2 – Dockerfile                                ║
+# ║  TREVLIX v1.0.4 – Dockerfile                                ║
 # ║  Build:  docker build -t trevlix .                           ║
 # ║  Run:    docker run -p 5000:5000 --env-file .env trevlix     ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-FROM python:3.11-slim
+FROM python:3.11-slim AS builder
 
-# System dependencies
-RUN apt-get update && apt-get install -y \
-    gcc g++ curl \
+# System-Abhängigkeiten für den Build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc g++ \
     default-libmysqlclient-dev \
     pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
-# App directory
+WORKDIR /build
+
+# Dependencies zuerst (Layer-Caching optimiert)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+
+# ── Runtime Image ──────────────────────────────────────────────
+FROM python:3.11-slim
+
+# Nur Runtime-Abhängigkeiten (kein gcc etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    default-libmysqlclient-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Non-root User für Sicherheit (Verbesserung #16)
+RUN groupadd -r trevlix && useradd -r -g trevlix -d /app -s /sbin/nologin trevlix
+
 WORKDIR /app
 
-# Install Python dependencies first (layer caching)
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Installierte Pakete aus Builder-Stage übernehmen
+COPY --from=builder /install /usr/local
 
-# Optional: TensorFlow (uncomment to enable LSTM + Transformer)
-# RUN pip install --no-cache-dir tensorflow
-
-# Copy application files
+# Anwendungsdateien kopieren
 COPY server.py .
 COPY ai_engine.py .
 COPY trevlix_i18n.py .
@@ -31,16 +44,22 @@ COPY trevlix_translations.js .
 COPY dashboard.html .
 COPY index.html .
 COPY INSTALLATION.html .
+COPY services/ ./services/
+COPY routes/ ./routes/
 
-# Create required directories
-RUN mkdir -p /app/backups /app/logs
+# Verzeichnisse anlegen und Berechtigungen setzen
+RUN mkdir -p /app/backups /app/logs \
+    && chown -R trevlix:trevlix /app
 
-# Expose dashboard port
+# Als non-root User ausführen
+USER trevlix
+
+# Port exponieren
 EXPOSE 5000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:5000/api/v1/update/status || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD curl -f http://localhost:5000/api/v1/status || exit 1
 
-# Start bot
+# Bot starten
 CMD ["python", "server.py"]
