@@ -53,6 +53,11 @@ from typing import Dict, List, Optional, Tuple, Any
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import wraps
 
+# ── Service-Module ───────────────────────────────────────────────────────────
+from services.encryption import encrypt_value, decrypt_value, is_encrypted
+from services.indicator_cache import get_cached as _ind_get, set_cached as _ind_set
+from services.db_pool import ConnectionPool
+
 import numpy as np
 import pandas as pd
 import requests
@@ -61,6 +66,12 @@ from dotenv import load_dotenv
 from flask import (Flask, send_file, jsonify, request, Response, session, redirect)
 from flask_socketio import SocketIO, emit
 from flask_cors import CORS
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    LIMITER_AVAILABLE = True
+except ImportError:
+    LIMITER_AVAILABLE = False
 
 # ── ML ──────────────────────────────────────────────────────────────────────
 try:
@@ -165,9 +176,30 @@ BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
 # ═══════════════════════════════════════════════════════════════════════════════
 app = Flask(__name__)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
-CORS(app)
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
+
+# ── CORS: Nur erlaubte Origins ────────────────────────────────────────────────
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5000")
+_allowed_origins: List[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+CORS(app, origins=_allowed_origins, supports_credentials=True)
+socketio = SocketIO(app, cors_allowed_origins=_allowed_origins, async_mode="threading",
                     logger=False, engineio_logger=False)
+
+# ── Rate Limiter ─────────────────────────────────────────────────────────────
+if LIMITER_AVAILABLE:
+    limiter = Limiter(
+        key_func=get_remote_address,
+        app=app,
+        default_limits=["200 per minute"],
+        storage_uri="memory://",
+    )
+else:
+    # Dummy-Limiter wenn flask-limiter nicht installiert
+    class _DummyLimiter:
+        def limit(self, *a, **kw):
+            return lambda f: f
+        def shared_limit(self, *a, **kw):
+            return lambda f: f
+    limiter = _DummyLimiter()
 
 _log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(_log_dir, exist_ok=True)
@@ -338,9 +370,32 @@ STRATEGY_NAMES = ["EMA-Trend","RSI-Stochastic","MACD-Kreuzung","Bollinger",
 class MySQLManager:
     def __init__(self):
         self._lock = threading.Lock()
+        self._pool: Optional[ConnectionPool] = None
         self._init_db()
 
-    def _conn(self) -> pymysql.Connection:
+    def _build_pool(self) -> Optional[ConnectionPool]:
+        """Erstellt den Connection-Pool nach der DB-Initialisierung."""
+        if not MYSQL_AVAILABLE:
+            return None
+        try:
+            return ConnectionPool(
+                host=CONFIG["mysql_host"], port=CONFIG["mysql_port"],
+                user=CONFIG["mysql_user"], password=CONFIG["mysql_pass"],
+                database=CONFIG["mysql_db"], pool_size=5, timeout=10,
+            )
+        except Exception as e:
+            log.warning(f"Connection-Pool: {e} – Fallback auf direkte Verbindung")
+            return None
+
+    def _conn(self):
+        """
+        Gibt eine Verbindung zurück – aus dem Pool (bevorzugt) oder neu erstellt.
+        Pool-Verbindungen sind in _PooledConnection eingewickelt:
+        conn.close() gibt sie automatisch zurück in den Pool.
+        Alle bestehenden conn.close()-Aufrufe funktionieren korrekt ohne Änderung.
+        """
+        if self._pool is not None:
+            return self._pool.acquire()
         return pymysql.connect(
             host=CONFIG["mysql_host"], port=CONFIG["mysql_port"],
             user=CONFIG["mysql_user"], password=CONFIG["mysql_pass"],
@@ -348,6 +403,17 @@ class MySQLManager:
             cursorclass=pymysql.cursors.DictCursor,
             autocommit=True, connect_timeout=10,
         )
+
+    # ── Encryption Helpers ───────────────────────────────────────────────────
+    @staticmethod
+    def _enc(value: str) -> str:
+        """Verschlüsselt einen API-Key/Secret vor dem Speichern."""
+        return encrypt_value(value) if value else value
+
+    @staticmethod
+    def _dec(value: str) -> str:
+        """Entschlüsselt einen API-Key/Secret nach dem Laden."""
+        return decrypt_value(value) if value else value
 
     def _init_db(self):
         if not MYSQL_AVAILABLE:
@@ -496,6 +562,8 @@ class MySQLManager:
                     c.execute("INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES('admin',%s,'admin',10000,10000)", (h,))
             conn.close()
             log.info(f"✅ MySQL: {CONFIG['mysql_host']}/{CONFIG['mysql_db']}")
+            # Pool NACH erfolgreicher Init erstellen
+            self._pool = self._build_pool()
         except Exception as e:
             log.error(f"MySQL Init: {e}")
 
@@ -570,6 +638,16 @@ class MySQLManager:
             log.error(f"load_ai_samples: {e}"); return [], [], []
 
     # ── Users ───────────────────────────────────────────────────────────────
+    def _decrypt_user_keys(self, user: Optional[dict]) -> Optional[dict]:
+        """Entschlüsselt API-Key/Secret eines User-Dicts nach dem Laden aus der DB."""
+        if not user:
+            return user
+        if user.get("api_key"):
+            user["api_key"] = self._dec(user["api_key"])
+        if user.get("api_secret"):
+            user["api_secret"] = self._dec(user["api_secret"])
+        return user
+
     def get_user(self, username: str) -> Optional[dict]:
         try:
             conn = self._conn()
@@ -577,7 +655,7 @@ class MySQLManager:
                 c.execute("SELECT * FROM users WHERE username=%s", (username,))
                 row = c.fetchone()
             conn.close()
-            return dict(row) if row else None
+            return self._decrypt_user_keys(dict(row)) if row else None
         except Exception:
             return None
 
@@ -588,7 +666,7 @@ class MySQLManager:
                 c.execute("SELECT * FROM users WHERE id=%s", (uid,))
                 row = c.fetchone()
             conn.close()
-            return dict(row) if row else None
+            return self._decrypt_user_keys(dict(row)) if row else None
         except Exception:
             return None
 
@@ -1676,6 +1754,8 @@ class AIEngine:
 
     def _load_from_db(self):
         try:
+            # Zuerst persistierte Modelle laden (kein Cold-Start nach Neustart)
+            models_loaded = self._load_models()
             X,y,regimes=self.db.load_ai_samples()
             for xi,yi,ri in zip(X,y,regimes):
                 self.X_raw.append(xi); self.y_raw.append(yi); self.regimes_raw.append(ri)
@@ -1683,8 +1763,12 @@ class AIEngine:
                 else:          self.X_bear.append(xi); self.y_bear.append(yi)
             n=len(self.X_raw)
             self.progress_pct=min(100,int(n/CONFIG["ai_min_samples"]*100))
-            if n>=CONFIG["ai_min_samples"]:
+            if n>=CONFIG["ai_min_samples"] and not models_loaded:
+                # Nur neu trainieren wenn kein gespeichertes Modell vorhanden
                 threading.Thread(target=self._train,daemon=True).start()
+            elif n>=CONFIG["ai_min_samples"] and models_loaded:
+                # Modell geladen, aber nach N neuen Samples auch neu trainieren
+                log.info("🧠 Persistiertes Modell geladen – kein Cold-Start")
             self.status_msg=f"✅ {n} Samples geladen" if n>0 else "⏳ Brauche min. "+str(CONFIG["ai_min_samples"])+" Trades"
             log.info(f"🧠 KI: {n} Samples (Bull:{len(self.X_bull)} Bear:{len(self.X_bear)})")
         except Exception as e:
@@ -2051,9 +2135,67 @@ class AIEngine:
             self.status_msg=(f"✅ v{self.training_ver} WF:{wf_acc*100:.1f}%{xgb_n}{lstm_n} "
                              f"Bull:{bull_acc*100:.0f}% Bear:{bear_acc*100:.0f}%")
             log.info(f"✅ KI v{self.training_ver} | {self.status_msg}")
+            # Modelle auf Disk persistieren (Neustart = kein Cold-Start)
+            self._save_models()
             emit_event("ai_update",self.to_dict())
         except Exception as e:
             self.status_msg=f"❌ {e}"; log.error(f"KI Training: {e}",exc_info=True)
+
+    # ── Model Persistence ────────────────────────────────────────────────────
+    _MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
+
+    def _save_models(self) -> None:
+        """Speichert trainierte Modelle auf Disk mit joblib."""
+        try:
+            import joblib
+            os.makedirs(self._MODEL_DIR, exist_ok=True)
+            payload = {
+                "global_model":      self.global_model,
+                "bull_model":        self.bull_model,
+                "bear_model":        self.bear_model,
+                "scaler":            self.scaler,
+                "bull_scaler":       self.bull_scaler,
+                "bear_scaler":       self.bear_scaler,
+                "weights":           self.weights,
+                "strat_wr":          self.strat_wr,
+                "training_ver":      self.training_ver,
+                "accuracy":          self.accuracy,
+                "optimal_threshold": self.optimal_threshold,
+                "saved_at":          datetime.now().isoformat(),
+            }
+            path = os.path.join(self._MODEL_DIR, "ai_models.pkl")
+            joblib.dump(payload, path, compress=3)
+            log.info(f"💾 KI-Modelle gespeichert: {path}")
+        except Exception as e:
+            log.warning(f"Model-Speicherung: {e}")
+
+    def _load_models(self) -> bool:
+        """Lädt persistierte Modelle beim Start – verhindert Cold-Start."""
+        try:
+            import joblib
+            path = os.path.join(self._MODEL_DIR, "ai_models.pkl")
+            if not os.path.exists(path):
+                return False
+            payload = joblib.load(path)
+            with self._lock:
+                self.global_model      = payload.get("global_model")
+                self.bull_model        = payload.get("bull_model")
+                self.bear_model        = payload.get("bear_model")
+                self.scaler            = payload.get("scaler", self.scaler)
+                self.bull_scaler       = payload.get("bull_scaler", self.bull_scaler)
+                self.bear_scaler       = payload.get("bear_scaler", self.bear_scaler)
+                self.weights           = payload.get("weights", self.weights)
+                self.strat_wr          = payload.get("strat_wr", self.strat_wr)
+                self.training_ver      = payload.get("training_ver", 0)
+                self.accuracy          = payload.get("accuracy", 0.0)
+                self.optimal_threshold = payload.get("optimal_threshold", 0.5)
+                self.is_trained        = self.global_model is not None
+            saved_at = payload.get("saved_at", "unbekannt")
+            log.info(f"✅ KI-Modelle geladen (v{self.training_ver}, gespeichert: {saved_at})")
+            return True
+        except Exception as e:
+            log.warning(f"Model-Laden: {e}")
+            return False
 
     def _optimize(self):
         try:
@@ -3081,7 +3223,10 @@ def emit_event(event, data):
 def create_exchange():
     name = CONFIG.get("exchange","cryptocom")
     ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name,name))
-    return ex_cls({"apiKey":CONFIG["api_key"],"secret":CONFIG["secret"],
+    # API-Keys entschlüsseln falls sie verschlüsselt gespeichert wurden
+    api_key = decrypt_value(CONFIG["api_key"]) if CONFIG.get("api_key") else ""
+    api_secret = decrypt_value(CONFIG["secret"]) if CONFIG.get("secret") else ""
+    return ex_cls({"apiKey": api_key, "secret": api_secret,
                    "enableRateLimit":True,"options":{"defaultType":"spot"}})
 
 
@@ -3113,7 +3258,15 @@ def scan_symbol(ex, symbol) -> Optional[dict]:
         df = pd.DataFrame(ohlcv,columns=["timestamp","open","high","low","close","volume"])
         df["timestamp"] = pd.to_datetime(df["timestamp"],unit="ms")
         df.set_index("timestamp",inplace=True)
-        df = compute_indicators(df)
+        # Indikator-Cache: Nur neu berechnen wenn sich der letzte Timestamp geändert hat
+        _last_ts = df.index[-1]
+        df_cached = _ind_get(symbol, _last_ts)
+        if df_cached is not None:
+            df = df_cached
+        else:
+            df = compute_indicators(df)
+            if df is None: return None
+            _ind_set(symbol, _last_ts, df)
         if df is None: return None
         row = df.iloc[-1]; prev = df.iloc[-2]
         price = float(row["close"])
@@ -3482,16 +3635,27 @@ def bot_loop():
             state.portfolio_history.append({"time":datetime.now().strftime("%H:%M"),"value":round(pv,2)})
             state.portfolio_history = state.portfolio_history[-500:]
 
-            # Short-Signale
+            # Short-Signale – parallelisiert mit ThreadPoolExecutor
             if not regime.is_bull and CONFIG.get("use_shorts"):
-                for sym in state.markets[:20]:
-                    if sym not in state.short_positions and sym not in state.positions:
-                        if funding_tracker.is_short_too_expensive(sym):
-                            continue
-                        scan = scan_symbol(ex, sym)
-                        if scan and scan["signal"] == -1 and scan.get("confidence",0) >= CONFIG["min_vote_score"]:
-                            invest = state.balance * CONFIG["risk_per_trade"]
-                            short_engine.open_short(sym, invest, scan["price"])
+                short_candidates = [
+                    sym for sym in state.markets[:20]
+                    if sym not in state.short_positions
+                    and sym not in state.positions
+                    and not funding_tracker.is_short_too_expensive(sym)
+                ]
+                if short_candidates:
+                    with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as short_pool:
+                        short_futures = {short_pool.submit(scan_symbol, ex, sym): sym
+                                         for sym in short_candidates}
+                        for fut in as_completed(short_futures):
+                            try:
+                                scan = fut.result()
+                                if (scan and scan["signal"] == -1
+                                        and scan.get("confidence", 0) >= CONFIG["min_vote_score"]):
+                                    invest = state.balance * CONFIG["risk_per_trade"]
+                                    short_engine.open_short(scan["symbol"], invest, scan["price"])
+                            except Exception as se:
+                                log.debug(f"Short-Scan: {se}")
 
             # Long-Signale
             if len(state.positions) < CONFIG["max_open_trades"] and \
@@ -3536,6 +3700,7 @@ def index():
     return send_file(os.path.join(_APP_DIR, "dashboard.html"))
 
 @app.route("/login", methods=["GET","POST"])
+@limiter.limit("10 per minute")
 def login():
     if request.method == "GET":
         return """<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -3659,6 +3824,7 @@ def api_create_token():
 
 @app.route("/api/v1/signal", methods=["POST"])
 @api_auth_required
+@limiter.limit("60 per minute")
 def api_signal():
     """TradingView Webhook → sofortiger Scan."""
     data = request.json or {}
@@ -3937,8 +4103,11 @@ def on_update_config(data):
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
-    CONFIG["api_key"] = data.get("api_key","")
-    CONFIG["secret"]  = data.get("secret","")
+    # API-Keys werden verschlüsselt im CONFIG gespeichert
+    raw_key    = data.get("api_key", "")
+    raw_secret = data.get("secret", "")
+    CONFIG["api_key"] = encrypt_value(raw_key)    if raw_key    else ""
+    CONFIG["secret"]  = encrypt_value(raw_secret) if raw_secret else ""
     if data.get("exchange"): CONFIG["exchange"] = data["exchange"]
     emit("status",{"msg":f"🔑 Keys gespeichert ({CONFIG['exchange']})","type":"success"})
 

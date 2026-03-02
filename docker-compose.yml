@@ -26,10 +26,10 @@ services:
       - MYSQL_HOST=mysql
       - MYSQL_PORT=3306
       - MYSQL_USER=trevlix
-      - MYSQL_PASS=${MYSQL_PASS:-trevlix_pass}
+      - MYSQL_PASS=${MYSQL_PASS:?MYSQL_PASS muss in .env gesetzt sein}
       - MYSQL_DB=trevlix
       # Security
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?ADMIN_PASSWORD muss in .env gesetzt sein}
       - DASHBOARD_SECRET=${DASHBOARD_SECRET}
       - JWT_SECRET=${JWT_SECRET}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5000}
@@ -62,17 +62,17 @@ services:
     container_name: trevlix_mysql
     restart: unless-stopped
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASS:-root_secret}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASS:?MYSQL_ROOT_PASS muss in .env gesetzt sein}
       MYSQL_DATABASE: trevlix
       MYSQL_USER: trevlix
-      MYSQL_PASSWORD: ${MYSQL_PASS:-trevlix_pass}
+      MYSQL_PASSWORD: ${MYSQL_PASS:?MYSQL_PASS muss in .env gesetzt sein}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     networks:
       - trevlix_net
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "trevlix", "--password=${MYSQL_PASS:-trevlix_pass}"]
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u trevlix -p$$MYSQL_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 5
