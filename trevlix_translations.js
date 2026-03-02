@@ -310,11 +310,10 @@ const QT = {
   web_cta_sub:         {de:'Starte mit Paper-Trading — kein echtes Geld, kein Risiko.',en:'Start with Paper Trading — no real money, no risk.',es:'Comienza con Trading Simulado — sin dinero real, sin riesgo.',ru:'Начните с бумажной торговли — без реальных денег, без риска.',pt:'Comece com Paper Trading — sem dinheiro real, sem risco.'},
   web_btn_dl:          {de:'⬇ server.py (181KB)',en:'⬇ server.py (181KB)',es:'⬇ server.py (181KB)',ru:'⬇ server.py (181KB)',pt:'⬇ server.py (181KB)'},
   web_btn_install:     {de:'📖 Installations-Guide',en:'📖 Installation Guide',es:'📖 Guía de Instalación',ru:'📖 Руководство',pt:'📖 Guia de Instalação'},
-};
 
-/* ════════════════════════════════════════════════════════════
-   TREVLIX i18n Engine
-   ════════════════════════════════════════════════════════════ */
+  /* ── AUTH BUTTONS (Landing Page) ── */
+  web_nav_login:       {de:'Anmelden',en:'Login',es:'Iniciar sesión',ru:'Войти',pt:'Entrar'},
+  web_nav_register:    {de:'Registrieren',en:'Register',es:'Registrarse',ru:'Регистрация',pt:'Registrar'},
 
   /* ── REGISTRATION ── */
   reg_title:        {de:'Account erstellen',en:'Create Account',es:'Crear cuenta',ru:'Создать аккаунт',pt:'Criar conta'},
@@ -413,7 +412,11 @@ const QT = {
   auto_retrain_label: {de:'Auto-Retrain aktiv',en:'Auto-retrain active',es:'Auto-reentrenamiento activo',ru:'Авто-переобучение активно',pt:'Auto-retraining ativo'},
   monte_var:          {de:'Value at Risk (95%)',en:'Value at Risk (95%)',es:'Valor en riesgo (95%)',ru:'VaR (95%)',pt:'Valor em risco (95%)'},
   monte_prob_profit:  {de:'Profit-Wahrscheinlichkeit',en:'Profit Probability',es:'Probabilidad de ganancia',ru:'Вероятность прибыли',pt:'Probabilidade de lucro'},
+};
 
+/* ════════════════════════════════════════════════════════════
+   TREVLIX i18n Engine
+   ════════════════════════════════════════════════════════════ */
 const QI18n = {
   lang: localStorage.getItem('trevlix_lang') || 'de',
 
