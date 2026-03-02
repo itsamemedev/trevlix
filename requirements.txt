@@ -4,42 +4,43 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 # ── Core Web Framework ─────────────────────────────────────────
-flask>=3.0.0
-flask-socketio>=5.3.6
-flask-cors>=4.0.0
-flask-limiter>=3.5.0   # Rate Limiting (Verbesserung #3)
-eventlet>=0.35.0
+flask>=3.0.0,<4.0.0
+flask-socketio>=5.3.6,<6.0.0
+flask-cors>=4.0.0,<5.0.0
+flask-limiter>=3.5.0,<4.0.0
+eventlet>=0.35.0,<1.0.0
 
 # ── Exchange Connectivity ──────────────────────────────────────
-ccxt>=4.2.0
+ccxt>=4.2.0,<5.0.0
 
 # ── Database ───────────────────────────────────────────────────
-PyMySQL>=1.1.0
-cryptography>=41.0.0   # Fernet API-Key-Verschlüsselung (Verbesserung #1)
+PyMySQL>=1.1.0,<2.0.0
+cryptography>=41.0.0,<44.0.0   # Fernet API-Key-Verschlüsselung
 
 # ── Data Processing ────────────────────────────────────────────
-pandas>=2.1.0
-numpy>=1.26.0
-requests>=2.31.0
+pandas>=2.1.0,<3.0.0
+numpy>=1.26.0,<2.0.0
+requests>=2.31.0,<3.0.0
+httpx>=0.26.0,<1.0.0           # Moderner async HTTP-Client (Verbesserung #14)
 
 # ── Machine Learning ───────────────────────────────────────────
-scikit-learn>=1.3.0
-xgboost>=2.0.0
-lightgbm>=4.0.0        # Gradient Boosting (schneller als XGBoost)
-catboost>=1.2.0        # Gradient Boosting mit Kategorie-Support
-joblib>=1.3.0          # Model-Persistenz (Verbesserung #7)
+scikit-learn>=1.3.0,<2.0.0
+xgboost>=2.0.0,<3.0.0
+lightgbm>=4.0.0,<5.0.0        # Schnelles Gradient Boosting
+catboost>=1.2.0,<2.0.0        # Gradient Boosting mit Kategorie-Support
+joblib>=1.3.0,<2.0.0          # Model-Persistenz & paralleles Rechnen
+optuna>=3.5.0,<5.0.0          # Bayesian Hyperparameter-Optimierung (Verbesserung #15)
 
 # ── Auth & Security ────────────────────────────────────────────
-PyJWT>=2.8.0
-bcrypt>=4.1.0
-python-dotenv>=1.0.0
+PyJWT>=2.8.0,<3.0.0
+bcrypt>=4.1.0,<5.0.0
+pyotp>=2.9.0,<3.0.0           # 2FA TOTP
+python-dotenv>=1.0.0,<2.0.0
 
 # ── Deep Learning (optional – LSTM + Transformer) ─────────────
-# tensorflow>=2.15.0   ← Auskommentiert: nur installieren wenn gewünscht
 # Installieren mit: pip install tensorflow
+# tensorflow>=2.15.0
 
 # ── Dev / Testing ─────────────────────────────────────────────
-pytest>=7.4.0          # Unit-Tests (Verbesserung #6)
-pytest-cov>=4.1.0      # Test-Coverage
-
-pyotp>=2.9.0           # 2FA TOTP
+pytest>=7.4.0,<9.0.0          # Unit-Tests
+pytest-cov>=4.1.0,<6.0.0      # Test-Coverage

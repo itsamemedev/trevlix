@@ -1,0 +1,66 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX – .dockerignore                                     ║
+# ║  Verhindert unnötige Dateien im Docker-Build-Kontext         ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# Secrets & Konfiguration (NIEMALS in Image!)
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.pdb
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+.venv/
+env/
+
+# Logs & Backups (werden via Volume gemountet)
+logs/
+backups/
+*.log
+
+# ML-Modelle (zu groß für Image, werden zur Laufzeit generiert)
+models/
+*.pkl
+*.joblib
+*.h5
+*.keras
+*.pt
+*.onnx
+
+# Datenbank-Dateien
+*.db
+*.sqlite
+*.sqlite3
+
+# Entwicklungs-Dateien
+tests/
+*.md
+!README.md
+Makefile
+.editorconfig
+pyproject.toml
+docker/ssl/
+
+# IDE & OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~

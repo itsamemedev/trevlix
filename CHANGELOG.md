@@ -7,6 +7,52 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.0.4] – 2026-03-02
+
+### 25 Improvements – Installation, Infrastructure & Repository Cleanup
+
+#### Installation (`install.sh`)
+1. **Version bump** — Banner updated from `v1.0.0` to `v1.0.4`
+2. **`ENCRYPTION_KEY` auto-generation** — Fernet key is now automatically generated and written to `.env` during installation (was missing before, causing unencrypted API key storage)
+3. **`MYSQL_ROOT_PASS` auto-generation** — Root password is now generated and added to `.env` (required by `docker-compose.yml` but previously missing)
+4. **Pre-flight disk check** — Installation warns if less than 2 GB free disk space is available
+5. **Pre-flight RAM check** — Installation warns if less than 512 MB RAM is available
+6. **`--help` / `-h` flag** — New `--help` flag documents all available options
+7. **`--no-tf`, `--no-shap`, `--yes` flags** — Non-interactive mode for CI/CD pipelines; optional packages can be skipped without prompts
+8. **Failure cleanup trap** — `trap cleanup_on_error ERR` automatically rolls back the systemd service on installation failure, preventing broken partial installs
+
+#### Dependencies (`requirements.txt`)
+9. **`optuna>=3.5.0` added** — Was used in `ai_engine.py` for Bayesian hyperparameter optimization but missing from `requirements.txt`, causing `ImportError` on fresh installs
+10. **`httpx>=0.26.0` added** — Modern async-capable HTTP client as complement to `requests`
+11. **Upper version bounds** — All packages now have upper bounds (e.g., `flask>=3.0.0,<4.0.0`) to prevent breaking changes from major upgrades
+
+#### Docker / Infrastructure
+12. **Multi-stage Dockerfile** — Separate `builder` and runtime stages; final image contains no build tools (`gcc`, etc.), reducing attack surface and image size
+13. **Non-root user in Docker** — Container now runs as `trevlix` user (not `root`), following security best practices
+14. **`.dockerignore` created** — Excludes `.env`, `venv/`, `logs/`, `backups/`, `models/`, IDE files, and OS artifacts from the build context
+15. **`SECRET_KEY` & `ENCRYPTION_KEY` in `docker-compose.yml`** — Both were missing from the environment block, causing runtime errors
+16. **`SESSION_TIMEOUT_MIN` & `TELEGRAM_*` vars** — Added missing environment variables to `docker-compose.yml`
+17. **Log rotation** — All three Docker services now have `json-file` logging with `max-size: 10m / max-file: 5` to prevent disk exhaustion
+18. **Nginx waits for healthy Trevlix** — Changed `depends_on: trevlix` to use `condition: service_healthy`
+
+#### `.env.example`
+19. **`DASHBOARD_SECRET` added** — Was required by `docker-compose.yml` but missing from the template
+20. **`MYSQL_ROOT_PASS` added** — Required by `docker-compose.yml` but missing from the template
+21. **`SESSION_TIMEOUT_MIN`, `TELEGRAM_*` vars added** — Complete documentation of all supported variables
+
+#### Repository Cleanup
+22. **`.gitignore` expanded** — Now covers `venv/`, `models/`, `backups/`, `*.pkl`, `*.db`, `.DS_Store`, IDE files, `optuna.db`, and more
+23. **`Makefile` created** — Convenience targets: `make install`, `make dev`, `make docker-up`, `make test`, `make test-cov`, `make lint`, `make format`, `make keys`, `make backup`, `make clean`
+24. **`pyproject.toml` created** — Project metadata, `pytest`, `coverage`, and `ruff` configuration in a single file; replaces ad-hoc tool configs
+25. **`.editorconfig` created** — Enforces consistent indentation and line endings across Python, JS, HTML, YAML, SQL, and Makefile
+
+### Also Added
+- **`services/__init__.py`** — Proper package exports for `ConnectionPool`, `encrypt_value`, `decrypt_value`, `is_encrypted`, `get_cached`, `set_cached`, `invalidate`, `cache_stats`
+- **`routes/__init__.py`** — Blueprint structure documentation for future route extraction
+- **`tests/conftest.py`** — Shared pytest fixtures: `sample_ohlcv`, `small_ohlcv`, `sample_trade`, `sample_trades`, `encryption_key`, `set_test_env`
+
+---
+
 ## [1.0.3] – 2026-03-02
 
 ### Added
