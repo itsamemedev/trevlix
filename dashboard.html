@@ -52,6 +52,9 @@ body::before{content:'';position:fixed;inset:0;background:
   /* Settings wider */
   #sec-settings{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
   #sec-settings .save-btn-wrap{grid-column:1/-1}
+  /* Profile wider */
+  #sec-profile{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
+  #sec-profile .card:first-child{grid-column:1/-1}
   
   /* Wider stat grid */
   .sg{grid-template-columns:repeat(6,1fr)!important}
@@ -915,17 +918,85 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
   </div>
 </div>
 
-<!-- ══ SETTINGS ══ -->
-<div class="sec" id="sec-settings">
+<!-- ══ MEIN PROFIL ══ -->
+<div class="sec" id="sec-profile">
   <div class="card"><div class="card-body">
-    <div class="s-section"><div class="s-section-title">🎯 Portfolio-Ziel</div>
+    <div class="card-hd" style="padding:0 0 14px"><div class="card-title">👤 Mein Profil</div></div>
+    <div id="profileInfo" style="background:var(--bg2);border-radius:10px;padding:14px;margin-bottom:16px;display:flex;gap:14px;align-items:center">
+      <div style="width:44px;height:44px;border-radius:50%;background:linear-gradient(135deg,#00d4ff,#0090b0);display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0">👤</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:15px;font-weight:700" id="profileUsername">—</div>
+        <div style="font-size:11px;color:var(--sub);margin-top:2px">
+          <span id="profileRoleBadge" class="role-badge">—</span>
+          &nbsp;·&nbsp;Konto seit <span id="profileSince">—</span>
+        </div>
+        <div style="font-size:11px;color:var(--dim);margin-top:4px">Letzter Login: <span id="profileLastLogin">—</span></div>
+      </div>
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:11px;color:var(--sub)">Guthaben</div>
+        <div style="font-size:18px;font-weight:700;color:var(--jade)" id="profileBalance">—</div>
+        <div style="font-size:10px;color:var(--sub)">USDT</div>
+      </div>
+    </div>
+
+    <div class="s-section"><div class="s-section-title">🌐 Meine Exchange & API-Keys</div>
+      <div style="background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.1);border-radius:8px;padding:10px 12px;margin-bottom:12px;font-size:11px;color:var(--dim)">
+        ℹ️ Deine persönlichen API-Keys werden verschlüsselt gespeichert und nur für deinen Account verwendet.
+        <span id="profileKeyStatus" style="display:block;margin-top:4px;font-weight:700;color:var(--jade)"></span>
+      </div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Exchange</div></div>
+        <select class="s-select" id="profExchange">
+          <option value="cryptocom">Crypto.com</option><option value="binance">Binance</option>
+          <option value="bybit">Bybit</option><option value="okx">OKX</option><option value="kucoin">KuCoin</option>
+        </select>
+      </div>
+      <div class="s-row"><div class="s-label"><div class="s-name">API Key</div></div>
+        <input type="password" id="profApiKey" placeholder="Neuen Key eingeben (leer = unverändert)" class="s-input" style="width:180px;text-align:left" autocomplete="new-password">
+      </div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Secret Key</div></div>
+        <input type="password" id="profApiSecret" placeholder="Neues Secret (leer = unverändert)" class="s-input" style="width:180px;text-align:left" autocomplete="new-password">
+      </div>
+      <button class="save-btn" onclick="saveUserProfile()" style="background:linear-gradient(135deg,#00d4ff,#0090b0);margin-top:8px;margin-bottom:0">🔑 API-Keys & Exchange speichern</button>
+    </div>
+
+    <div class="s-section"><div class="s-section-title">🎯 Mein Portfolio-Ziel</div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Zielwert (USDT)</div><div class="s-help">ETA + Fortschrittsbalken auf Startseite</div></div>
+        <input type="number" class="s-input" id="profGoal" value="0" step="500">
+      </div>
+    </div>
+
+    <div class="s-section"><div class="s-section-title">🔑 REST-API Token</div>
+      <div class="alert-bar info" style="margin-bottom:10px"><span>ℹ️</span><span>Für externe Zugriffe auf <strong>/api/v1/</strong> — z.B. TradingView Webhooks</span></div>
+      <button class="btn btn-info" style="padding:10px;font-size:12px;width:100%;margin-bottom:8px" onclick="createToken()">🔑 Neuen API-Token erstellen</button>
+      <div id="apiTokenBoxProfile" style="display:none;background:var(--bg3);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11px;word-break:break-all;color:var(--green);margin-top:4px">—</div>
+    </div>
+
+    <div class="s-section"><div class="s-section-title">🌐 Sprache / Language</div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Sprache</div></div>
+        <select class="s-select" id="profLang" onchange="changeLang(this.value)">
+          <option value="de">🇩🇪 Deutsch</option><option value="en">🇺🇸 English</option>
+          <option value="es">🇪🇸 Español</option><option value="ru">🇷🇺 Русский</option>
+          <option value="pt">🇧🇷 Português</option>
+        </select>
+      </div>
+    </div>
+
+    <button class="save-btn" onclick="saveUserProfile()">💾 Profil speichern</button>
+  </div></div>
+</div>
+
+<!-- ══ SETTINGS (Admin-System-Einstellungen) ══ -->
+<div class="sec admin-only" id="sec-settings">
+  <div class="card"><div class="card-body">
+    <div class="alert-bar info" style="margin-bottom:14px"><span>🛡️</span><span><strong>Admin-Einstellungen</strong> — Änderungen gelten für alle Nutzer des Systems</span></div>
+    <div class="s-section"><div class="s-section-title">🎯 Portfolio-Ziel (Global)</div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="portfolio_goal">Zielwert (USDT)</span></div><div class="s-help">ETA + Fortschrittsbalken auf Startseite</div></div><input type="number" class="s-input" id="sGoal" value="0" step="500"></div>
     </div>
-    <div class="s-section"><div class="s-section-title"><span data-i18n="sec_exchange">🌐 Exchange & Keys</span></div>
+    <div class="s-section"><div class="s-section-title"><span data-i18n="sec_exchange">🌐 Globale Exchange & Keys (Bot)</span></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="sec_exchange">Exchange</span></div></div><select class="s-select" id="sExchange"><option value="cryptocom">Crypto.com</option><option value="binance">Binance</option><option value="bybit">Bybit</option><option value="okx">OKX</option><option value="kucoin">KuCoin</option></select></div>
       <div class="s-row"><div class="s-label"><div class="s-name">API Key</div></div><input type="password" id="cfgKey" placeholder="API Key" class="s-input" style="width:140px;text-align:left"></div>
       <div class="s-row"><div class="s-label"><div class="s-name">Secret Key</div></div><input type="password" id="cfgSecret" placeholder="Secret" class="s-input" style="width:140px;text-align:left"></div>
-      <button class="save-btn" onclick="saveKeys()" style="background:linear-gradient(135deg,var(--purple),#7b1fa2);margin-top:8px;margin-bottom:0"><span data-i18n="btn_save_keys">🔑 Keys speichern</span></button>
+      <button class="save-btn" onclick="saveKeys()" style="background:linear-gradient(135deg,var(--purple),#7b1fa2);margin-top:8px;margin-bottom:0"><span data-i18n="btn_save_keys">🔑 Globale Keys speichern</span></button>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_presets">🎛️ Risiko-Presets</span></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
@@ -1336,7 +1407,9 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
   <div class="nb"        id="nb-log"      onclick="nav('log',this)"><span class="nb-icon">📋</span><span data-i18n="nav_log">Log</span></div>
   <div class="nb" id="nb-risk" onclick="nav('risk',this)"><span class="nb-icon">⚠️</span><span>Risiko</span></div>
   <div class="nb admin-only" id="nb-ex" onclick="nav('exchanges',this)"><span class="nb-icon">🔀</span><span>Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div></div>
-  <div class="nb"        id="nb-settings" onclick="nav('settings',this)"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span></div>
+  <div class="nb" id="nb-profile" onclick="nav('profile',this);loadUserProfile()"><span class="nb-icon">👤</span><span>Profil</span></div>
+  <div class="nb admin-only" id="nb-settings" onclick="nav('settings',this)"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span></div>
+  <div class="nb admin-only" id="nb-admin" onclick="nav('admin',this);loadAuditLog();loadUsers()"><span class="nb-icon">🛡️</span><span>Admin</span></div>
 </nav>
 
 <script>
@@ -2018,8 +2091,12 @@ async function createToken(){
   try{
     const res=await fetch('/api/v1/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:'dashboard'})});
     const data=await res.json();
-    const box=document.getElementById('apiTokenBox');
-    box.style.display='block'; box.textContent=data.token||'—';
+    const token = data.token || '—';
+    // Show in whichever box is visible
+    ['apiTokenBox','apiTokenBoxProfile'].forEach(id=>{
+      const box=document.getElementById(id);
+      if(box){ box.style.display='block'; box.textContent=token; }
+    });
     toast('🔑 Token erstellt ('+data.expires_hours+'h gültig)','success');
   }catch(e){toast('Fehler: '+e,'error');}
 }
@@ -2217,13 +2294,73 @@ function applyRoleUI(role) {
     if (badge) { badge.textContent = 'user'; badge.className = 'role-badge user'; }
   }
 
-  // Show admin nav item
-  const adminNav = document.querySelector('[onclick*="sec-admin"], [onclick*="admin"]');
-
-  // Update nav visibility
+  // Update nav visibility for admin-only items
   document.querySelectorAll('.nb.admin-only').forEach(el => {
     el.style.display = role === 'admin' ? '' : 'none';
   });
+
+  // Non-admins land on profile section by default when opening Settings equivalent
+  if (role !== 'admin') {
+    const settingsNav = document.getElementById('nb-settings');
+    if (settingsNav) settingsNav.style.display = 'none';
+  }
+}
+
+// ── User Profile ───────────────────────────────────────────────────────────────
+async function loadUserProfile() {
+  try {
+    const r = await fetch('/api/v1/profile', {
+      headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}
+    });
+    if (!r.ok) return;
+    const d = await r.json();
+
+    const set = (id, val) => { const el = document.getElementById(id); if(el) el.textContent = val || '—'; };
+    set('profileUsername', d.username);
+    set('profileBalance', d.balance ? Number(d.balance).toFixed(2) : '—');
+    set('profileSince', d.created_at ? d.created_at.slice(0,10) : '—');
+    set('profileLastLogin', d.last_login ? d.last_login.slice(0,16).replace('T',' ') : '—');
+
+    const rb = document.getElementById('profileRoleBadge');
+    if (rb) { rb.textContent = d.role || 'user'; rb.className = 'role-badge ' + (d.role || 'user'); }
+
+    const ks = document.getElementById('profileKeyStatus');
+    if (ks) {
+      if (d.has_api_key && d.has_api_secret)
+        ks.textContent = '✅ API-Keys hinterlegt';
+      else
+        ks.textContent = '⚠️ Noch keine API-Keys gespeichert';
+    }
+
+    const ex = document.getElementById('profExchange');
+    if (ex && d.exchange) ex.value = d.exchange;
+
+    const gl = document.getElementById('profGoal');
+    if (gl && d.settings?.portfolio_goal) gl.value = d.settings.portfolio_goal;
+  } catch(e) { /* silently ignore */ }
+}
+
+function saveUserProfile() {
+  const api_key    = document.getElementById('profApiKey')?.value || '';
+  const api_secret = document.getElementById('profApiSecret')?.value || '';
+  const exchange   = document.getElementById('profExchange')?.value || '';
+  const goal       = parseFloat(document.getElementById('profGoal')?.value) || 0;
+
+  // Save API keys to user profile
+  socket.emit('save_user_profile', {
+    api_key:    api_key   || undefined,
+    api_secret: api_secret || undefined,
+    exchange:   exchange  || undefined,
+  });
+
+  // Save portfolio goal to global config (admin updates globally, user only sees effect)
+  if (goal >= 0) socket.emit('update_config', {portfolio_goal: goal});
+
+  // Clear sensitive fields after save
+  const kf = document.getElementById('profApiKey');    if(kf) kf.value = '';
+  const sf = document.getElementById('profApiSecret'); if(sf) sf.value = '';
+  toast('✅ Profil gespeichert', 'success');
+  setTimeout(loadUserProfile, 600);
 }
 
 function applyStateToRole(data) {
@@ -2690,6 +2827,9 @@ function nav(id, el) {
   }
   if (id === 'settings') {
     loadNewsFilter();
+  }
+  if (id === 'profile') {
+    loadUserProfile();
   }
 }
 // Initial data load

@@ -157,7 +157,7 @@ except ImportError:
 load_dotenv()
 
 BOT_NAME    = "NEXUS"
-BOT_VERSION = "1.0.2"
+BOT_VERSION = "1.0.3"
 BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -642,7 +642,65 @@ class MySQLManager:
             conn.close()
         except Exception: pass
 
-    def update_user_balance(self, user_id: int, balance: float):
+    def update_user_profile(self, user_id: int, api_key: str = None, api_secret: str = None,
+                            exchange: str = None, settings_json: dict = None) -> bool:
+        """Speichert benutzerspezifische API-Keys und Einstellungen."""
+        try:
+            fields, vals = [], []
+            if api_key    is not None: fields.append("api_key=%s");      vals.append(api_key[:200])
+            if api_secret is not None: fields.append("api_secret=%s");   vals.append(api_secret[:200])
+            if exchange   is not None: fields.append("exchange=%s");     vals.append(exchange[:20])
+            if settings_json is not None:
+                fields.append("settings_json=%s")
+                vals.append(json.dumps(settings_json))
+            if not fields: return False
+            vals.append(user_id)
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute(f"UPDATE users SET {','.join(fields)} WHERE id=%s", vals)
+            conn.close()
+            return True
+        except Exception as e:
+            log.error(f"update_user_profile: {e}"); return False
+
+    def get_user_profile(self, user_id: int) -> dict:
+        """Gibt öffentliches Profil des Users zurück (keine Passwort-Hashes)."""
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT id,username,role,balance,initial_balance,exchange,"
+                          "api_key,api_secret,created_at,last_login,settings_json FROM users WHERE id=%s",
+                          (user_id,))
+                row = c.fetchone()
+            conn.close()
+            if not row: return {}
+            d = dict(row)
+            for k in ("created_at","last_login"):
+                if d.get(k) and hasattr(d[k],"isoformat"): d[k] = d[k].isoformat()
+            # API-Keys maskieren (nur anzeigen ob gesetzt)
+            d["has_api_key"]    = bool(d.pop("api_key",""))
+            d["has_api_secret"] = bool(d.pop("api_secret",""))
+            if d.get("settings_json"):
+                try: d["settings"] = json.loads(d["settings_json"])
+                except Exception: d["settings"] = {}
+            d.pop("settings_json", None)
+            return d
+        except Exception:
+            return {}
+
+    def register_user(self, username: str, password: str) -> tuple:
+        """Selbstregistrierung – gibt (ok, error_msg) zurück."""
+        username = username.strip()
+        if len(username) < 3:
+            return False, "Benutzername muss mindestens 3 Zeichen lang sein"
+        if len(password) < 6:
+            return False, "Passwort muss mindestens 6 Zeichen lang sein"
+        if self.get_user(username):
+            return False, "Benutzername bereits vergeben"
+        ok = self.create_user(username, password, role="user")
+        return ok, ("" if ok else "Registrierung fehlgeschlagen")
+
+
         try:
             conn = self._conn()
             with conn.cursor() as c:
@@ -3535,18 +3593,12 @@ def index():
         return redirect("/login")
     return send_file(os.path.join(_APP_DIR, "dashboard.html"))
 
-@app.route("/login", methods=["GET","POST"])
-def login():
-    if request.method == "GET":
-        return """<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QUANTRA Login</title>
-<style>
+_AUTH_CSS = """
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;background:#060912;color:#ccd6f6;
   min-height:100vh;display:flex;align-items:center;justify-content:center}
 .box{background:#0a0f1e;border:1px solid rgba(255,255,255,.07);border-radius:20px;
-  padding:40px 36px;width:100%;max-width:380px}
+  padding:40px 36px;width:100%;max-width:400px}
 .logo{text-align:center;margin-bottom:28px}
 .logo-icon{font-size:44px;margin-bottom:8px}
 .logo-name{font-size:26px;font-weight:900;letter-spacing:-1px}
@@ -3558,30 +3610,50 @@ input{width:100%;background:#0f1628;border:1px solid rgba(255,255,255,.08);
   border-radius:10px;padding:13px 14px;color:#ccd6f6;font-size:14px;outline:none;
   margin-bottom:14px;transition:.2s}
 input:focus{border-color:rgba(0,212,255,.4)}
-.err{color:#ff3d71;font-size:12px;margin-bottom:12px;display:none}
-button{width:100%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
+.err{background:rgba(255,61,113,.08);border:1px solid rgba(255,61,113,.25);
+  color:#ff3d71;font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:14px}
+.ok{background:rgba(0,255,136,.07);border:1px solid rgba(0,255,136,.2);
+  color:#00ff88;font-size:12px;padding:10px 12px;border-radius:8px;margin-bottom:14px}
+.btn{width:100%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
   color:#000;font-size:15px;font-weight:800;border:none;cursor:pointer;transition:.15s}
-button:hover{transform:translateY(-1px)}
+.btn:hover{transform:translateY(-1px)}
+.btn-sec{background:var(--bg3,#0a0f1e);border:1px solid rgba(255,255,255,.12);
+  color:#ccd6f6;margin-top:10px}
+.divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:#2a3a50;font-size:11px}
+.divider::before,.divider::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.06)}
 .ver{text-align:center;margin-top:20px;font-size:10px;color:#3a4a6a}
-</style></head><body>
+"""
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "GET":
+        err = request.args.get("err","")
+        err_html = ""
+        if err == "1": err_html = '<div class="err">❌ Falscher Benutzername oder Passwort</div>'
+        reg_link = '<a href="/register" style="color:#00d4ff;text-decoration:none;font-size:12px">Noch kein Konto? Jetzt registrieren →</a>' if CONFIG.get("multi_user") else ""
+        return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TREVLIX – Anmelden</title>
+<style>{_AUTH_CSS}</style></head><body>
 <div class="box">
   <div class="logo">
     <div class="logo-icon">⚡</div>
-    <div class="logo-name">QUAN<span>TRA</span></div>
-    <div class="logo-sub">Quantum Trading AI · v1.0.2</div>
+    <div class="logo-name">TREV<span>LIX</span></div>
+    <div class="logo-sub">Quantum Trading AI · v{BOT_VERSION}</div>
   </div>
   <form method="POST" action="/login">
-    <div id="err" class="err">Falsches Passwort</div>
+    {err_html}
     <label>Benutzername</label>
-    <input type="text" name="username" value="admin" required>
+    <input type="text" name="username" autocomplete="username" required autofocus>
     <label>Passwort</label>
-    <input type="password" name="password" required autofocus>
-    <button type="submit">Anmelden →</button>
+    <input type="password" name="password" autocomplete="current-password" required>
+    <button class="btn" type="submit">Anmelden →</button>
   </form>
-  <div class="ver">quantra.com · Neural Exchange Unified System</div>
+  {'<div class="divider">oder</div>' + reg_link if reg_link else ''}
+  <div class="ver">trevlix.app · Neural Exchange Unified System</div>
 </div>
 </body></html>"""
-    username = request.form.get("username","admin")
+    username = request.form.get("username","").strip()
     password = request.form.get("password","")
     user = db.get_user(username)
     if user and db.verify_password(user["password_hash"], password):
@@ -3593,6 +3665,49 @@ button:hover{transform:translateY(-1px)}
         return redirect("/")
     return redirect("/login?err=1")
 
+@app.route("/register", methods=["GET","POST"])
+def register():
+    if not CONFIG.get("multi_user"):
+        return redirect("/login")
+    if request.method == "GET":
+        ok_msg = '<div class="ok">✅ Konto erstellt – bitte jetzt anmelden</div>' if request.args.get("ok") else ""
+        err_msg = f'<div class="err">❌ {request.args.get("err","Fehler")}</div>' if request.args.get("err") else ""
+        return f"""<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TREVLIX – Registrieren</title>
+<style>{_AUTH_CSS}</style></head><body>
+<div class="box">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div class="logo-name">TREV<span>LIX</span></div>
+    <div class="logo-sub">Neues Konto erstellen</div>
+  </div>
+  <form method="POST" action="/register">
+    {ok_msg}{err_msg}
+    <label>Benutzername</label>
+    <input type="text" name="username" minlength="3" maxlength="30" autocomplete="username" required autofocus>
+    <label>Passwort</label>
+    <input type="password" name="password" minlength="6" autocomplete="new-password" required>
+    <label>Passwort bestätigen</label>
+    <input type="password" name="password2" autocomplete="new-password" required>
+    <button class="btn" type="submit">Konto erstellen →</button>
+  </form>
+  <div class="divider">oder</div>
+  <a href="/login" style="display:block;text-align:center;color:#00d4ff;text-decoration:none;font-size:12px">← Bereits registriert? Anmelden</a>
+  <div class="ver">trevlix.app · Neural Exchange Unified System</div>
+</div>
+</body></html>"""
+    username  = request.form.get("username","").strip()
+    password  = request.form.get("password","")
+    password2 = request.form.get("password2","")
+    if password != password2:
+        return redirect("/register?err=Passwörter+stimmen+nicht+überein")
+    ok, errmsg = db.register_user(username, password)
+    if ok:
+        db_audit(0, "register", f"Neuer User: {username}")
+        return redirect("/register?ok=1")
+    return redirect(f"/register?err={requests.utils.quote(errmsg)}")
+
 @app.route("/logout")
 def logout():
     session.clear(); return redirect("/login")
@@ -3600,6 +3715,27 @@ def logout():
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API — JWT-gesichert
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# ── Benutzerprofil (jeder eingeloggte User) ──────────────────────────────────
+@app.route("/api/v1/profile", methods=["GET"])
+@api_auth_required
+def api_profile_get():
+    profile = db.get_user_profile(request.user_id)
+    return jsonify(profile)
+
+@app.route("/api/v1/profile", methods=["POST"])
+@api_auth_required
+def api_profile_update():
+    data    = request.json or {}
+    api_key = data.get("api_key")
+    secret  = data.get("api_secret")
+    exchange = data.get("exchange")
+    ok = db.update_user_profile(request.user_id, api_key=api_key,
+                                api_secret=secret, exchange=exchange)
+    if ok:
+        db_audit(request.user_id, "profile_update", f"Exchange: {exchange or '—'}")
+    return jsonify({"ok": ok})
+
 @app.route("/api/v1/state")
 @api_auth_required
 def api_state():
@@ -3921,6 +4057,9 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
+    if session.get("user_role") != "admin":
+        emit("status", {"msg":"❌ Nur Administratoren können globale Einstellungen ändern","type":"error"})
+        return
     allowed = {"stop_loss_pct","take_profit_pct","max_open_trades","scan_interval",
                "paper_trading","trailing_stop","ai_min_confidence","circuit_breaker_losses",
                "circuit_breaker_min","max_spread_pct","use_fear_greed","ai_use_kelly",
@@ -3932,15 +4071,44 @@ def on_update_config(data):
                "trailing_pct","lstm_lookback"}
     for k,v in data.items():
         if k in allowed: CONFIG[k] = v
+    db_audit(session.get("user_id",0), "config_update", "Einstellungen gespeichert")
     emit("status", {"msg":"✅ Einstellungen gespeichert","type":"success"})
     emit("update", state.snapshot(), broadcast=True)
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
-    CONFIG["api_key"] = data.get("api_key","")
-    CONFIG["secret"]  = data.get("secret","")
-    if data.get("exchange"): CONFIG["exchange"] = data["exchange"]
-    emit("status",{"msg":f"🔑 Keys gespeichert ({CONFIG['exchange']})","type":"success"})
+    uid  = session.get("user_id")
+    role = session.get("user_role","user")
+    api_key  = data.get("api_key","")
+    secret   = data.get("secret","")
+    exchange = data.get("exchange", CONFIG["exchange"])
+    if role == "admin":
+        # Admin: globale CONFIG aktualisieren
+        CONFIG["api_key"]  = api_key
+        CONFIG["secret"]   = secret
+        CONFIG["exchange"] = exchange
+        msg = f"🔑 Globale Keys gespeichert ({exchange})"
+    else:
+        # User: in eigenem DB-Eintrag speichern
+        db.update_user_profile(uid, api_key=api_key, api_secret=secret, exchange=exchange)
+        msg = f"🔑 Deine persönlichen Keys gespeichert ({exchange})"
+    db_audit(uid, "save_api_keys", f"Exchange: {exchange}")
+    emit("status", {"msg": msg, "type":"success"})
+
+@socketio.on("save_user_profile")
+def on_save_user_profile(data):
+    """User speichert eigene API-Keys + Exchange-Präferenz."""
+    uid = session.get("user_id")
+    if not uid:
+        emit("status", {"msg":"❌ Nicht eingeloggt","type":"error"}); return
+    ok = db.update_user_profile(
+        uid,
+        api_key    = data.get("api_key"),
+        api_secret = data.get("api_secret"),
+        exchange   = data.get("exchange"),
+    )
+    db_audit(uid, "profile_update", f"Exchange: {data.get('exchange','—')}")
+    emit("status", {"msg":"✅ Profil gespeichert" if ok else "❌ Fehler","type":"success" if ok else "error"})
 
 @socketio.on("update_discord")
 def on_update_discord(data):

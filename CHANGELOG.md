@@ -7,6 +7,32 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/) — `MAJO
 
 ---
 
+## [1.0.3] – 2026-03-02
+
+### Hinzugefügt
+
+**Registrierung & getrennte Bereiche**
+- `GET/POST /register` — Benutzer können sich selbst registrieren (wenn `multi_user=true`)
+- Login-Seite zeigt "Noch kein Konto? Jetzt registrieren →" Link
+- Neues Dashboard-Panel **👤 Mein Profil** für alle eingeloggten User
+- Benutzer können eigene API-Keys (Exchange, API Key, Secret) separat vom Bot-Account speichern
+- Nav-Schaltfläche **👤 Profil** (immer sichtbar) und **🛡️ Admin** (nur Admins)
+
+**Sicherheit**
+- `update_config` SocketIO-Event: jetzt nur noch für Admins — User können globale Config nicht ändern
+- `save_api_keys`: Admin → globaler CONFIG; User → eigener DB-Eintrag
+- Neuer SocketIO-Event `save_user_profile` für benutzerspezifische Schlüssel
+- Settings ⚙️ und Admin 🛡️ Nav-Items nur für Admins sichtbar
+
+**API**
+- `GET /api/v1/profile` — eigenes Profil abrufen
+- `POST /api/v1/profile` — eigene API-Keys und Exchange aktualisieren
+
+**Datenbank**
+- Neue Methoden: `update_user_profile()`, `get_user_profile()`, `register_user()`
+
+---
+
 ## [1.0.2] – 2026-03-02
 
 ### Behoben

@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.2 – Dockerfile                                ║
+# ║  TREVLIX v1.0.3 – Dockerfile                                ║
 # ║  Build:  docker build -t trevlix .                           ║
 # ║  Run:    docker run -p 5000:5000 --env-file .env trevlix     ║
 # ╚══════════════════════════════════════════════════════════════╝
