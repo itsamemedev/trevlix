@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY server.py .
+COPY ai_engine.py .
 COPY trevlix_i18n.py .
 COPY trevlix_translations.js .
 COPY dashboard.html .
