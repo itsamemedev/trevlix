@@ -119,6 +119,20 @@ nav.scrolled { background: rgba(2,5,7,.98); }
   transition:.2s; white-space:nowrap;
 }
 .nav-gh-btn:hover { border-color:var(--jade); color:var(--jade); }
+.nav-login-btn {
+  font-family:var(--fw); font-size:13px; font-weight:600;
+  color:var(--dim); text-decoration:none; padding:7px 16px;
+  border:1px solid var(--muted); border-radius:7px;
+  transition:.2s; white-space:nowrap;
+}
+.nav-login-btn:hover { color:var(--white); border-color:var(--sub); }
+.nav-register-btn {
+  font-family:var(--fw); font-size:13px; font-weight:600;
+  color:var(--jade); text-decoration:none; padding:7px 16px;
+  border:1px solid rgba(0,255,136,.35); border-radius:7px;
+  transition:.2s; white-space:nowrap;
+}
+.nav-register-btn:hover { background:rgba(0,255,136,.08); border-color:var(--jade); }
 .nav-cta {
   font-family:var(--fc); font-size:14px; font-weight:800;
   background: var(--jade); color:var(--ink); text-decoration:none;
@@ -689,6 +703,8 @@ footer {
     </a>
     <a class="nav-link" href="#donate" style="color:var(--muted);font-size:14px;margin-right:4px">Spenden</a>
     <a class="nav-link" href="/installation" target="_blank" style="color:var(--muted);font-size:14px;margin-right:8px">Docs</a>
+    <a class="nav-login-btn" href="/login" data-i18n="web_nav_login">Login</a>
+    <a class="nav-register-btn" href="/register" data-i18n="web_nav_register">Registrieren</a>
     <a class="nav-cta" href="#cta" data-i18n="web_nav_download">Download</a>
     <button class="nav-mobile-btn" onclick="toggleMobileNav()">☰</button>
   </div>
@@ -701,6 +717,9 @@ footer {
   <a href="#how" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">Installation</a>
   <a href="#compare" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">Vergleich</a>
   <a href="https://github.com/DEIN_USER/trevlix" style="color:var(--jade);text-decoration:none;font-size:16px;font-weight:500;" target="_blank">⭐ GitHub</a>
+  <div style="border-top:1px solid var(--muted);margin:6px 0;"></div>
+  <a href="/login" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:600;" data-i18n="web_nav_login">Login</a>
+  <a href="/register" style="color:var(--jade);text-decoration:none;font-size:16px;font-weight:600;" data-i18n="web_nav_register">Registrieren</a>
 </div>
 
 <!-- HERO -->

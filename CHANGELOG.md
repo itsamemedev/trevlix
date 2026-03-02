@@ -7,6 +7,30 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/) — `MAJO
 
 ---
 
+## [1.0.4] – 2026-03-02
+
+### Hinzugefügt
+
+**Per-User Bot-Instanzen**
+- Jeder Benutzer erhält eine eigene `UserBotRunner`-Instanz mit isoliertem `BotState`, eigenem Exchange-Client und eigenem WebSocket-Room (`room=f"user_{uid}"`)
+- Thread-local-Speicher (`threading.local()`) für Bot-Kontext: `_cur_state()`, `_cur_uid()`, `_tls.make_exchange`
+- `emit_event()` sendet jetzt in den Raum des jeweiligen Nutzers statt global
+- `create_exchange()` verwendet nutzerspezifische API-Keys aus der DB (via `_tls.make_exchange`)
+- Start/Stop/Pause SocketIO-Events sind jetzt rollenabhängig: Admin → globaler Bot, User → eigene Instanz
+- `api_state()` gibt den State der eigenen Bot-Instanz zurück
+
+**Landing Page**
+- `GET /` liefert `index.html` — eine vollständige öffentliche Landing Page
+- `GET /dashboard` erfordert Login und liefert `dashboard.html`
+- Login-Redirect geändert von `/` nach `/dashboard`
+
+**Navigation & Übersetzungen**
+- Login- und Registrieren-Buttons in der Navigationsleiste von `index.html`
+- Mobile-Nav ebenfalls mit Login/Registrieren-Links
+- Neue Übersetzungsschlüssel `web_nav_login` und `web_nav_register` in `trevlix_translations.js` (DE, EN, ES, RU, PT)
+
+---
+
 ## [1.0.3] – 2026-03-02
 
 ### Hinzugefügt

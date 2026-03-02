@@ -157,7 +157,7 @@ except ImportError:
 load_dotenv()
 
 BOT_NAME    = "NEXUS"
-BOT_VERSION = "1.0.3"
+BOT_VERSION = "1.0.4"
 BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3127,9 +3127,28 @@ backup_sched = BackupScheduler()
 state        = BotState(db)
 ai_engine    = AIEngine(db)
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PER-USER BOT INFRASTRUCTURE  (Thread-Local State)
+# ═══════════════════════════════════════════════════════════════════════════════
+_tls = threading.local()          # Thread-local storage for per-user bot context
+
+def _cur_state() -> "BotState":
+    """Returns the active BotState for the current thread (user-specific or global)."""
+    return getattr(_tls, "cur_state", state)
+
+def _cur_uid() -> Optional[int]:
+    """Returns the active user_id for the current thread, or None for admin/global."""
+    return getattr(_tls, "cur_uid", None)
+
 
 def emit_event(event, data):
-    try: socketio.emit(event, data)
+    """Emit a SocketIO event — scoped to the current user's room if in a user thread."""
+    try:
+        uid = _cur_uid()
+        if uid:
+            socketio.emit(event, data, room=f"user_{uid}")
+        else:
+            socketio.emit(event, data)
     except Exception: pass
 
 
@@ -3137,6 +3156,9 @@ def emit_event(event, data):
 # EXCHANGE FACTORY
 # ═══════════════════════════════════════════════════════════════════════════════
 def create_exchange():
+    """Create exchange — uses thread-local user keys if inside a UserBotRunner thread."""
+    fn = getattr(_tls, "make_exchange", None)
+    if fn: return fn()
     name = CONFIG.get("exchange","cryptocom")
     ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name,name))
     return ex_cls({"apiKey":CONFIG["api_key"],"secret":CONFIG["secret"],
@@ -3179,7 +3201,7 @@ def scan_symbol(ex, symbol) -> Optional[dict]:
         ph = list(df["close"].values[-50:])
         adv_risk.classify_regime(ph) if ph else None
         risk.update_prices(symbol, price)
-        state.prices[symbol] = price
+        _cur_state().prices[symbol] = price
 
         votes = {}
         for nm,fn in STRATEGIES:
@@ -3231,12 +3253,12 @@ def scan_symbol(ex, symbol) -> Optional[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 def open_position(ex, scan: dict):
     symbol = scan["symbol"]; price = scan["price"]
-    if len(state.positions) >= CONFIG["max_open_trades"]: return
-    if symbol in state.positions: return
+    if len(_cur_state().positions) >= CONFIG["max_open_trades"]: return
+    if symbol in _cur_state().positions: return
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert"); return
     if not regime.is_bull and CONFIG["use_market_regime"]: return
-    if risk.daily_loss_exceeded(state.balance): return
+    if risk.daily_loss_exceeded(_cur_state().balance): return
     if risk.circuit_breaker_active(): return
     # News-Sentiment-Filter (Verbesserung 9)
     news_score = scan.get("news_score", 0.0)
@@ -3260,7 +3282,7 @@ def open_position(ex, scan: dict):
         log.info(f"📰 {symbol} News blockiert: {ns:.2f} – {scan.get('news_headline','')[:60]}")
         return
 
-    if risk.is_correlated(symbol, list(state.positions.keys())): return
+    if risk.is_correlated(symbol, list(_cur_state().positions.keys())): return
     if not scan.get("mtf_ok",True) and CONFIG.get("mtf_enabled"): return
     if scan.get("ob_ratio",0.5) < CONFIG.get("ob_imbalance_min",0.45): return
     ok, spread, _ = liq.check(ex,symbol)
@@ -3268,7 +3290,7 @@ def open_position(ex, scan: dict):
 
     features = ai_engine.extract_features(
         scan["votes"], scan, regime.is_bull, fg_idx.value,
-        state.closed_trades, ob_imbalance=scan.get("ob_ratio",0.5),
+        _cur_state().closed_trades, ob_imbalance=scan.get("ob_ratio",0.5),
         mtf_bullish=int(scan.get("mtf_ok",True)), sentiment=scan.get("sentiment",0.5),
         news_score=ns, onchain_score=scan.get("onchain_score",0),
         dominance_ok=int(dom_ok))
@@ -3284,9 +3306,9 @@ def open_position(ex, scan: dict):
     if not allowed: return
 
     fg_boost = fg_idx.buy_boost()
-    invest = (ai_engine.kelly_size(win_prob/100, state.balance, scan.get("atr14",0), fg_boost)
-              if CONFIG["ai_use_kelly"] else state.balance*CONFIG["risk_per_trade"]*fg_boost)
-    invest = min(invest, state.balance * CONFIG["max_position_pct"])
+    invest = (ai_engine.kelly_size(win_prob/100, _cur_state().balance, scan.get("atr14",0), fg_boost)
+              if CONFIG["ai_use_kelly"] else _cur_state().balance*CONFIG["risk_per_trade"]*fg_boost)
+    invest = min(invest, _cur_state().balance * CONFIG["max_position_pct"])
     if invest < 5: return
 
     fee = invest * CONFIG["fee_rate"]
@@ -3294,14 +3316,14 @@ def open_position(ex, scan: dict):
     sl  = price * (1 - CONFIG["stop_loss_pct"])
     tp  = price * (1 + CONFIG["take_profit_pct"])
 
-    if CONFIG["paper_trading"]: state.balance -= invest
+    if CONFIG["paper_trading"]: _cur_state().balance -= invest
     else:
         try: ex.create_market_buy_order(symbol, qty)
         except Exception as e:
             log.error(f"Order {symbol}: {e}"); discord.error(str(e)); return
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
-    state.positions[symbol] = {
+    _cur_state().positions[symbol] = {
         "entry":price,"qty":qty,"invested":invest-fee,
         "sl":sl,"tp":tp,"highest":price,
         "opened":datetime.now().isoformat(),
@@ -3311,7 +3333,7 @@ def open_position(ex, scan: dict):
         "news_score":round(ns,3),"onchain_score":round(scan.get("onchain_score",0),3),
     }
     log.info(f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score*100:.0f}% | News:{ns:+.2f}")
-    state.add_activity("🟢",f"Kauf: {symbol}",
+    _cur_state().add_activity("🟢",f"Kauf: {symbol}",
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score*100:.0f}%","success")
     discord.trade_buy(symbol,price,invest,ai_score*100,win_prob,ns)
     emit_event("trade",{"type":"buy","symbol":symbol,"price":price,
@@ -3319,9 +3341,9 @@ def open_position(ex, scan: dict):
 
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
-    pos = state.positions.get(symbol)
+    pos = _cur_state().positions.get(symbol)
     if not pos: return
-    price = state.prices.get(symbol, pos["entry"])
+    price = _cur_state().prices.get(symbol, pos["entry"])
     is_partial = partial_ratio < 1.0
 
     close_qty    = pos["qty"] * partial_ratio
@@ -3330,7 +3352,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     fee      = close_invest * CONFIG["fee_rate"]
     pnl      = close_invest * (pnl_pct/100) - fee
 
-    if CONFIG["paper_trading"]: state.balance += close_invest + pnl
+    if CONFIG["paper_trading"]: _cur_state().balance += close_invest + pnl
     else:
         try: ex.create_market_sell_order(symbol, close_qty)
         except Exception as e:
@@ -3342,7 +3364,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         pos["invested"] -= close_invest
         pos["partial_sold"] = pos.get("partial_sold",0) + partial_ratio
         log.info(f"🔶 PARTIAL {symbol} {partial_ratio*100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
-        state.add_activity("🔶",f"Partial TP: {symbol}",
+        _cur_state().add_activity("🔶",f"Partial TP: {symbol}",
             f"{partial_ratio*100:.0f}% @ {price:.4f} | {pnl:+.2f}","success" if pnl>0 else "warning")
         discord.trade_sell(symbol,price,pnl,pnl_pct,reason,partial=True)
         trade = {**_make_trade(symbol,pos,price,close_qty,close_invest,pnl,pnl_pct,reason+"(partial)"),
@@ -3353,10 +3375,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         risk.record_result(pnl > 0)
         trade = _make_trade(symbol,pos,price,close_qty,close_invest,pnl,pnl_pct,reason,
                             dca_level=pos.get("dca_level",0))
-        state.closed_trades.insert(0,trade)
-        del state.positions[symbol]
+        _cur_state().closed_trades.insert(0,trade)
+        del _cur_state().positions[symbol]
         icon = "✅" if pnl>0 else "❌"
-        state.add_activity(icon,f"Verkauf: {symbol}",
+        _cur_state().add_activity(icon,f"Verkauf: {symbol}",
             f"PnL:{pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}","success" if pnl>0 else "error")
         discord.trade_sell(symbol,price,pnl,pnl_pct,reason)
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
@@ -3385,9 +3407,9 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
 def try_dca(ex, symbol):
     """Dollar-Cost-Averaging: bei Kursrückgang nachkaufen."""
     if not CONFIG.get("use_dca"): return
-    pos = state.positions.get(symbol)
+    pos = _cur_state().positions.get(symbol)
     if not pos: return
-    price = state.prices.get(symbol, pos["entry"])
+    price = _cur_state().prices.get(symbol, pos["entry"])
     dca_level = pos.get("dca_level",0)
     if dca_level >= CONFIG["dca_max_levels"]: return
     drop = (pos["entry"] - price) / pos["entry"]
@@ -3395,7 +3417,7 @@ def try_dca(ex, symbol):
     if drop < threshold: return
     # Nachkauf
     dca_invest = pos["invested"] * CONFIG["dca_size_mult"]
-    dca_invest = min(dca_invest, state.balance * 0.15)
+    dca_invest = min(dca_invest, _cur_state().balance * 0.15)
     if dca_invest < 5: return
     fee = dca_invest * CONFIG["fee_rate"]
     add_qty = (dca_invest - fee) / price
@@ -3403,7 +3425,7 @@ def try_dca(ex, symbol):
     total_qty  = pos["qty"] + add_qty
     total_cost = pos["invested"] + dca_invest - fee
     new_entry  = total_cost / total_qty
-    if CONFIG["paper_trading"]: state.balance -= dca_invest
+    if CONFIG["paper_trading"]: _cur_state().balance -= dca_invest
     else:
         try: ex.create_market_buy_order(symbol, add_qty)
         except Exception as e: log.error(f"DCA {symbol}: {e}"); return
@@ -3414,18 +3436,18 @@ def try_dca(ex, symbol):
     pos["sl"] = new_entry * (1 - CONFIG["stop_loss_pct"])
     pos["tp"] = new_entry * (1 + CONFIG["take_profit_pct"])
     log.info(f"📉 DCA Lvl{dca_level+1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}")
-    state.add_activity("📉",f"DCA Level {dca_level+1}: {symbol}",
+    _cur_state().add_activity("📉",f"DCA Level {dca_level+1}: {symbol}",
         f"Ø-Preis:{new_entry:.4f} | +{dca_invest:.0f} USDT","info")
 
 
 def manage_positions(ex):
-    for symbol in list(state.positions.keys()):
-        pos = state.positions.get(symbol)
+    for symbol in list(_cur_state().positions.keys()):
+        pos = _cur_state().positions.get(symbol)
         if not pos: continue
         try:
             ticker = ex.fetch_ticker(symbol)
             price  = float(ticker["last"])
-            state.prices[symbol] = price
+            _cur_state().prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception: continue
 
@@ -3481,6 +3503,75 @@ def get_heatmap_data(ex) -> List[dict]:
         return result
     except Exception as e:
         log.debug(f"Heatmap: {e}"); return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PER-USER BOT RUNNER
+# ═══════════════════════════════════════════════════════════════════════════════
+class UserBotRunner:
+    """Verwaltet eine individuelle Bot-Instanz pro Benutzer.
+
+    Jeder Nutzer erhält seinen eigenen BotState (Portfolio, Positionen, Trades)
+    und nutzt seine eigenen API-Keys für Exchange-Verbindungen.
+    Analytics-Module (KI, Regime, Fear&Greed, etc.) werden global geteilt.
+    """
+    _instances: Dict[int, "UserBotRunner"] = {}   # user_id → runner
+
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+        self.state   = BotState(db)
+        self._thread: Optional[threading.Thread] = None
+        user = db.get_user_by_id(user_id)
+        if user:
+            bal = user.get("balance", CONFIG["paper_balance"])
+            self.state.balance         = bal
+            self.state.initial_balance = user.get("initial_balance", bal)
+        UserBotRunner._instances[user_id] = self
+
+    @classmethod
+    def get_or_create(cls, user_id: int) -> "UserBotRunner":
+        if user_id not in cls._instances:
+            cls._instances[user_id] = cls(user_id)
+        return cls._instances[user_id]
+
+    @classmethod
+    def get(cls, user_id: int) -> Optional["UserBotRunner"]:
+        return cls._instances.get(user_id)
+
+    def make_exchange(self) -> "ccxt.Exchange":
+        """Erstellt Exchange-Verbindung mit den API-Keys des Nutzers."""
+        user    = db.get_user_by_id(self.user_id) or {}
+        api_key = user.get("api_key") or CONFIG["api_key"]
+        secret  = user.get("api_secret") or CONFIG["secret"]
+        exname  = user.get("exchange") or CONFIG["exchange"]
+        ex_cls  = getattr(ccxt, EXCHANGE_MAP.get(exname, exname))
+        return ex_cls({"apiKey": api_key, "secret": secret,
+                       "enableRateLimit": True, "options": {"defaultType": "spot"}})
+
+    def start(self):
+        if self.state.running:
+            return
+        self.state.running = True
+        self.state.paused  = False
+        self._thread = threading.Thread(target=self._run, daemon=True,
+                                        name=f"Bot-User-{self.user_id}")
+        self._thread.start()
+        log.info(f"🚀 User-Bot gestartet: uid={self.user_id}")
+
+    def stop(self):
+        self.state.running = False
+        self.state.paused  = False
+        log.info(f"⏹ User-Bot gestoppt: uid={self.user_id}")
+
+    def pause(self):
+        self.state.paused = not self.state.paused
+
+    def _run(self):
+        """Setzt Thread-Local-Kontext und startet die Bot-Schleife."""
+        _tls.cur_state    = self.state
+        _tls.cur_uid      = self.user_id
+        _tls.make_exchange = self.make_exchange
+        bot_loop()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3589,8 +3680,13 @@ _APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @app.route("/")
 def index():
-    if not session.get("user_id"):
-        return redirect("/login")
+    """Landing-Page — immer öffentlich zugänglich."""
+    return send_file(os.path.join(_APP_DIR, "index.html"))
+
+@app.route("/dashboard")
+@dashboard_auth
+def dashboard():
+    """Dashboard — erfordert Anmeldung."""
     return send_file(os.path.join(_APP_DIR, "dashboard.html"))
 
 _AUTH_CSS = """
@@ -3662,7 +3758,7 @@ def login():
         session["user_role"] = user.get("role","user")
         db.update_user_login(user["id"])
         db_audit(user["id"], "login", f"Login · {request.remote_addr}")
-        return redirect("/")
+        return redirect("/dashboard")
     return redirect("/login?err=1")
 
 @app.route("/register", methods=["GET","POST"])
@@ -3739,7 +3835,10 @@ def api_profile_update():
 @app.route("/api/v1/state")
 @api_auth_required
 def api_state():
-    return jsonify(state.snapshot())
+    uid    = request.user_id
+    runner = UserBotRunner.get(uid)
+    st     = runner.state if runner else state
+    return jsonify(st.snapshot())
 
 @app.route("/api/v1/trades")
 @api_auth_required
@@ -4030,30 +4129,72 @@ def api_health():
 # ═══════════════════════════════════════════════════════════════════════════════
 @socketio.on("connect")
 def on_connect():
-    if not session.get("user_id"): return False
-    emit("update", state.snapshot())
-    log.info(f"📱 Client verbunden: {session.get('username','?')}")
+    uid = session.get("user_id")
+    if not uid: return False
+    from flask_socketio import join_room
+    join_room(f"user_{uid}")                        # User tritt eigenem Raum bei
+    # Snapshot aus user-spezifischer oder globaler State
+    runner = UserBotRunner.get(uid)
+    st = runner.state if runner else state
+    emit("update", st.snapshot())
+    emit("update", {"user_role": session.get("user_role","user"),
+                    "username":  session.get("username","")})
+    log.info(f"📱 Client verbunden: {session.get('username','?')} (uid={uid})")
 
 @socketio.on("start_bot")
 def on_start_bot():
-    if state.running: return
-    state.running = True; state.paused = False
-    threading.Thread(target=bot_loop, daemon=True).start()
-    emit("status", {"msg":"🤖 QUANTRA gestartet","type":"success"}, broadcast=True)
-    state.add_activity("🚀","QUANTRA gestartet",f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}","success")
-    log.info("🚀 Bot gestartet")
+    uid  = session.get("user_id")
+    role = session.get("user_role","user")
+    if role == "admin":
+        # Admin: globale Bot-Instanz (bisheriges Verhalten)
+        if state.running: return
+        state.running = True; state.paused = False
+        threading.Thread(target=bot_loop, daemon=True).start()
+        user_name = "TREVLIX"
+    else:
+        # Normaler User: eigene Bot-Instanz
+        runner = UserBotRunner.get_or_create(uid)
+        if runner.state.running: return
+        user = db.get_user_by_id(uid) or {}
+        if not user.get("api_key"):
+            emit("status", {"msg":"⚠️ Bitte zuerst API-Keys in deinem Profil speichern","type":"warning"})
+            return
+        runner.start()
+        user_name = session.get("username","User")
+    msg = f"🤖 Bot gestartet ({user_name})"
+    emit("status", {"msg": msg, "type":"success"})
+    st = UserBotRunner.get(uid).state if role != "admin" else state
+    st.add_activity("🚀","Bot gestartet",f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}","success")
+    log.info(f"🚀 Bot gestartet: uid={uid} role={role}")
 
 @socketio.on("stop_bot")
 def on_stop_bot():
-    state.running = False; state.paused = False
-    emit("status", {"msg":"⏹ Bot gestoppt","type":"info"}, broadcast=True)
-    state.add_activity("⏹","Bot gestoppt","Alle Positionen offen","info")
+    uid  = session.get("user_id")
+    role = session.get("user_role","user")
+    if role == "admin":
+        state.running = False; state.paused = False
+        emit("status", {"msg":"⏹ Bot gestoppt","type":"info"}, broadcast=True)
+        state.add_activity("⏹","Bot gestoppt","Alle Positionen offen","info")
+    else:
+        runner = UserBotRunner.get(uid)
+        if runner: runner.stop()
+        emit("status", {"msg":"⏹ Dein Bot wurde gestoppt","type":"info"})
 
 @socketio.on("pause_bot")
 def on_pause_bot():
-    state.paused = not state.paused
-    msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
-    emit("status", {"msg":msg,"type":"warning"}, broadcast=True)
+    uid  = session.get("user_id")
+    role = session.get("user_role","user")
+    if role == "admin":
+        state.paused = not state.paused
+        msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
+    else:
+        runner = UserBotRunner.get(uid)
+        if runner:
+            runner.pause()
+            msg = "⏸ Dein Bot pausiert" if runner.state.paused else "▶ Dein Bot läuft weiter"
+        else:
+            msg = "⚠️ Kein Bot aktiv"
+    emit("status", {"msg":msg,"type":"warning"})
 
 @socketio.on("update_config")
 def on_update_config(data):

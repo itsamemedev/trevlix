@@ -275,6 +275,8 @@ const QT = {
   web_nav_install:     {de:'Installation',en:'Installation',es:'Instalación',ru:'Установка',pt:'Instalação'},
   web_nav_specs:       {de:'Spezifikationen',en:'Specifications',es:'Especificaciones',ru:'Технические характеристики',pt:'Especificações'},
   web_nav_download:    {de:'Download',en:'Download',es:'Descargar',ru:'Скачать',pt:'Download'},
+  web_nav_login:       {de:'Login',en:'Login',es:'Iniciar sesión',ru:'Войти',pt:'Entrar'},
+  web_nav_register:    {de:'Registrieren',en:'Register',es:'Registrarse',ru:'Регистрация',pt:'Registrar'},
   web_hero_eyebrow:    {de:'v1.0.0 · trevlix.com · Open Source',en:'v1.0.0 · trevlix.com · Open Source',es:'v1.0.0 · trevlix.com · Código Abierto',ru:'v1.0.0 · trevlix.com · Открытый код',pt:'v1.0.0 · trevlix.com · Código Aberto'},
   web_hero_sub:        {de:'Der fortschrittlichste Crypto Trading Bot. KI-gesteuert, selbstlernend, mit 14 Echtzeit-Features — von Anomalie-Detektion bis Arbitrage.',en:'The most advanced Crypto Trading Bot. AI-powered, self-learning, with 14 real-time features — from anomaly detection to arbitrage.',es:'El bot de trading cripto más avanzado. Impulsado por IA, autoaprendizaje, con 14 características en tiempo real.',ru:'Самый продвинутый крипто-торговый бот. ИИ-управление, самообучение, 14 функций в реальном времени.',pt:'O bot de trading cripto mais avançado. Alimentado por IA, autoaprendizagem, com 14 recursos em tempo real.'},
   web_btn_start:       {de:'⚡ Jetzt starten',en:'⚡ Get started',es:'⚡ Comenzar ahora',ru:'⚡ Начать сейчас',pt:'⚡ Começar agora'},
