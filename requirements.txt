@@ -1,0 +1,44 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX v1.0.0 – Python Dependencies                       ║
+# ║  Installieren: pip install -r requirements.txt               ║
+# ╚══════════════════════════════════════════════════════════════╝
+
+# ── Core Web Framework ─────────────────────────────────────────
+flask>=3.0.0
+flask-socketio>=5.3.6
+flask-cors>=4.0.0
+eventlet>=0.35.0
+
+# ── Exchange Connectivity ──────────────────────────────────────
+ccxt>=4.2.0
+
+# ── Database ───────────────────────────────────────────────────
+PyMySQL>=1.1.0
+cryptography>=41.0.0
+
+# ── Data Processing ────────────────────────────────────────────
+pandas>=2.1.0
+numpy>=1.26.0
+requests>=2.31.0
+
+# ── Machine Learning ───────────────────────────────────────────
+scikit-learn>=1.3.0
+xgboost>=2.0.0
+
+# ── Technical Analysis ─────────────────────────────────────────
+ta>=0.11.0
+
+# ── Auth & Security ────────────────────────────────────────────
+PyJWT>=2.8.0
+bcrypt>=4.1.0
+python-dotenv>=1.0.0
+
+# ── Deep Learning (optional – LSTM + Transformer) ─────────────
+# tensorflow>=2.15.0   ← Auskommentiert: nur installieren wenn gewünscht
+# Installieren mit: pip install tensorflow
+
+# ── Dev / Testing ─────────────────────────────────────────────
+# pytest>=7.4.0        ← Für Unit Tests (optional)
+# pytest-cov>=4.1.0
+
+pyotp>=2.9.0           # 2FA TOTP

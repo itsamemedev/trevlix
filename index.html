@@ -1,0 +1,1811 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TREVLIX – Der fortschrittlichste Open-Source Crypto Trading Bot. KI-gesteuert. Selbstlernend. 14 Module. Kostenlos.">
+<meta property="og:title" content="TREVLIX – Algorithmic Trading Intelligence">
+<meta property="og:description" content="Professioneller Crypto Trading Bot mit KI, 9 Strategien, Arbitrage, DCA und mehr. 100% Open Source.">
+<meta property="og:url" content="https://trevlix.dev">
+<meta name="theme-color" content="#020507">
+<title>TREVLIX — Algorithmic Trading Intelligence</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,300;0,400;0,600;0,700;0,900;1,700&family=Barlow+Condensed:wght@400;600;700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<script src="trevlix_translations.js" defer></script>
+
+<style>
+/* ══ ROOT ══════════════════════════════════════════════════ */
+:root {
+  --ink:   #020507;
+  --ink1:  #060c12;
+  --ink2:  #091017;
+  --ink3:  #0d1820;
+  --ink4:  #122030;
+  --jade:  #00ff88;
+  --jade2: #00cc6a;
+  --blue:  #0ea5e9;
+  --amber: #f59e0b;
+  --red:   #ef4444;
+  --muted: #1e3344;
+  --sub:   #3a5568;
+  --dim:   #7a9ab0;
+  --txt:   #b8d0e4;
+  --white: #e8f4ff;
+  --line:  rgba(0,255,136,.07);
+  --line2: rgba(255,255,255,.06);
+  --fw: 'Barlow', sans-serif;
+  --fc: 'Barlow Condensed', sans-serif;
+  --fm: 'Fira Code', monospace;
+}
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+html { scroll-behavior:smooth; font-size:16px; }
+body {
+  font-family: var(--fw);
+  background: var(--ink);
+  color: var(--txt);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  cursor: none;
+}
+
+/* ══ CUSTOM CURSOR ═════════════════════════════════════════ */
+#cursor {
+  position: fixed; width:10px; height:10px; border-radius:50%;
+  background: var(--jade); pointer-events:none; z-index:9999;
+  transform: translate(-50%,-50%); transition: transform .1s, width .2s, height .2s;
+  mix-blend-mode: screen;
+}
+#cursor-ring {
+  position: fixed; width:36px; height:36px; border-radius:50%;
+  border: 1px solid rgba(0,255,136,.35); pointer-events:none; z-index:9998;
+  transform: translate(-50%,-50%); transition: all .12s ease;
+}
+body:has(a:hover) #cursor { width:18px; height:18px; background:var(--jade2); }
+body:has(button:hover) #cursor { width:18px; height:18px; }
+
+/* ══ GRAIN OVERLAY ═════════════════════════════════════════ */
+body::after {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:500;
+  opacity:.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-repeat: repeat; background-size: 128px 128px;
+}
+
+/* ══ NAV ════════════════════════════════════════════════════ */
+nav {
+  position: fixed; top:0; left:0; right:0; z-index:400;
+  height: 62px;
+  display: flex; align-items:center; justify-content:space-between;
+  padding: 0 5vw;
+  background: rgba(2,5,7,.92);
+  backdrop-filter: blur(28px) saturate(1.8);
+  border-bottom: 1px solid var(--line);
+  transition: background .4s;
+}
+nav.scrolled { background: rgba(2,5,7,.98); }
+.nav-logo { display:flex; align-items:center; gap:10px; text-decoration:none; }
+.nav-logo-mark {
+  width:30px; height:30px; border-radius:7px;
+  background: linear-gradient(135deg, var(--jade), #00aa55);
+  display:flex; align-items:center; justify-content:center;
+  font-size:15px; flex-shrink:0;
+  box-shadow: 0 0 20px rgba(0,255,136,.25);
+}
+.nav-logo-txt {
+  font-family: var(--fc); font-weight:900; font-size:22px;
+  letter-spacing:1px; color:var(--white); line-height:1;
+}
+.nav-logo-txt em { font-style:normal; color:var(--jade); }
+.nav-logo-sub { font-family:var(--fm); font-size:8px; color:var(--sub); letter-spacing:1px; margin-top:1px; }
+.nav-center { display:flex; gap:36px; }
+.nav-center a {
+  font-size:13px; font-weight:500; color:var(--dim);
+  text-decoration:none; letter-spacing:.3px;
+  transition: color .2s; position:relative;
+}
+.nav-center a::after {
+  content:''; position:absolute; bottom:-4px; left:0; right:100%;
+  height:1px; background:var(--jade); transition:right .3s;
+}
+.nav-center a:hover { color:var(--white); }
+.nav-center a:hover::after { right:0; }
+.nav-right { display:flex; align-items:center; gap:12px; }
+.nav-gh-btn {
+  display:flex; align-items:center; gap:7px;
+  font-family:var(--fw); font-size:12px; font-weight:600;
+  color:var(--dim); text-decoration:none; padding:7px 14px;
+  border:1px solid var(--muted); border-radius:7px;
+  transition:.2s; white-space:nowrap;
+}
+.nav-gh-btn:hover { border-color:var(--jade); color:var(--jade); }
+.nav-cta {
+  font-family:var(--fc); font-size:14px; font-weight:800;
+  background: var(--jade); color:var(--ink); text-decoration:none;
+  padding:9px 22px; border-radius:7px; letter-spacing:.5px;
+  transition:.2s; white-space:nowrap; text-transform:uppercase;
+}
+.nav-cta:hover { background:#00e87a; box-shadow:0 0 32px rgba(0,255,136,.35); }
+.nav-mobile-btn {
+  display:none; background:none; border:none; color:var(--txt);
+  font-size:22px; cursor:none; padding:4px;
+}
+
+/* ══ HERO ═══════════════════════════════════════════════════ */
+#hero {
+  position: relative; min-height:100vh;
+  display: flex; flex-direction:column; align-items:flex-start;
+  justify-content: center; padding: 80px 5vw 60px;
+  overflow: hidden;
+}
+.hero-bg {
+  position:absolute; inset:0; z-index:0;
+  background:
+    radial-gradient(ellipse 50% 60% at 65% 50%, rgba(0,255,136,.04), transparent 60%),
+    radial-gradient(ellipse 30% 40% at 10% 80%, rgba(14,165,233,.03), transparent 55%);
+}
+.hero-grid {
+  position:absolute; inset:0; z-index:0;
+  background-image:
+    linear-gradient(rgba(0,255,136,.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,255,136,.03) 1px, transparent 1px);
+  background-size:80px 80px;
+  mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black, transparent);
+}
+.hero-eyebrow {
+  display:inline-flex; align-items:center; gap:8px; position:relative; z-index:1;
+  font-family:var(--fm); font-size:11px; letter-spacing:2.5px;
+  text-transform:uppercase; color:var(--jade);
+  border:1px solid rgba(0,255,136,.2); border-radius:4px;
+  padding:6px 14px; margin-bottom:28px;
+  background:rgba(0,255,136,.04);
+  animation: fadeUp .8s ease both;
+}
+.hero-eyebrow::before {
+  content:''; width:6px; height:6px; border-radius:50%;
+  background:var(--jade); box-shadow:0 0 8px var(--jade);
+  animation:blink 1.6s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:.1} }
+h1.hero-h1 {
+  font-family: var(--fc); font-weight:900;
+  font-size: clamp(52px, 10vw, 128px);
+  line-height: .88; letter-spacing:-1px;
+  color: var(--white); position:relative; z-index:1;
+  animation: fadeUp .9s .1s ease both;
+}
+h1.hero-h1 .jade { color:var(--jade); display:block; }
+h1.hero-h1 .stroke {
+  -webkit-text-stroke: 1px rgba(232,244,255,.25);
+  color: transparent;
+}
+.hero-desc {
+  font-size: clamp(15px, 2vw, 19px); font-weight:300;
+  color:var(--dim); max-width:540px; line-height:1.7;
+  margin:28px 0 44px; position:relative; z-index:1;
+  animation: fadeUp 1s .2s ease both;
+}
+.hero-btns {
+  display:flex; gap:14px; flex-wrap:wrap; position:relative; z-index:1;
+  animation: fadeUp 1s .3s ease both;
+}
+.btn-jade {
+  font-family:var(--fc); font-size:16px; font-weight:800;
+  text-transform:uppercase; letter-spacing:1px;
+  background:var(--jade); color:var(--ink); text-decoration:none;
+  padding:16px 36px; border-radius:6px; display:flex; align-items:center; gap:9px;
+  transition:.2s;
+}
+.btn-jade:hover { transform:translateY(-2px); box-shadow:0 12px 48px rgba(0,255,136,.3); }
+.btn-ghost {
+  font-family:var(--fc); font-size:16px; font-weight:700;
+  text-transform:uppercase; letter-spacing:1px;
+  background:transparent; color:var(--txt); text-decoration:none;
+  padding:15px 36px; border-radius:6px; display:flex; align-items:center; gap:9px;
+  border:1px solid var(--muted); transition:.2s;
+}
+.btn-ghost:hover { border-color:rgba(255,255,255,.25); color:var(--white); }
+
+/* hero numbers */
+.hero-numbers {
+  position:absolute; right:5vw; top:50%; transform:translateY(-50%);
+  z-index:1; display:flex; flex-direction:column; gap:6px;
+  animation: fadeUp 1s .4s ease both;
+}
+.hero-num-card {
+  display:flex; align-items:center; gap:14px;
+  padding:14px 20px;
+  background:rgba(255,255,255,.02);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:10px;
+  backdrop-filter: blur(12px);
+  min-width:200px;
+}
+.hn-val {
+  font-family:var(--fm); font-size:26px; color:var(--white);
+  font-weight:500; line-height:1;
+}
+.hn-val .accent { color:var(--jade); }
+.hn-label { font-size:11px; color:var(--sub); letter-spacing:.5px; margin-top:3px; }
+
+/* ══ TICKER ═════════════════════════════════════════════════ */
+.ticker-wrap {
+  position:relative; z-index:1; overflow:hidden;
+  border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+  background:rgba(6,12,18,.95);
+  padding:11px 0;
+}
+.ticker { display:flex; width:max-content; animation:ticker 50s linear infinite; }
+.ticker:hover { animation-play-state:paused; }
+.ticker-item {
+  display:flex; align-items:center; gap:10px;
+  padding:0 36px; font-family:var(--fm); font-size:12px; white-space:nowrap;
+  border-right:1px solid var(--muted);
+}
+.ticker-sym { color:var(--dim); }
+.ticker-price { color:var(--white); font-weight:500; }
+.tick-up { color:var(--jade); } .tick-dn { color:var(--red); }
+@keyframes ticker { from{transform:translateX(0)} to{transform:translateX(-50%)} }
+@keyframes fadeUp { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:none} }
+
+/* ══ SECTIONS ═══════════════════════════════════════════════ */
+section { position:relative; z-index:1; }
+.section-inner { max-width:1260px; margin:0 auto; padding:110px 5vw; }
+.eyebrow {
+  font-family:var(--fm); font-size:10px; letter-spacing:3px;
+  text-transform:uppercase; color:var(--jade); margin-bottom:16px;
+  display:flex; align-items:center; gap:10px;
+}
+.eyebrow::before { content:''; flex:none; width:24px; height:1px; background:var(--jade); }
+.sec-title {
+  font-family:var(--fc); font-weight:900;
+  font-size: clamp(36px, 6vw, 72px);
+  line-height:.9; letter-spacing:-.5px; color:var(--white);
+  margin-bottom:16px;
+}
+.sec-title em { font-style:normal; color:var(--jade); }
+.sec-sub {
+  font-size:17px; font-weight:300; color:var(--dim);
+  max-width:560px; line-height:1.7;
+}
+
+/* ══ MARQUEE TECH ═══════════════════════════════════════════ */
+.marquee-wrap { overflow:hidden; border-top:1px solid var(--muted); border-bottom:1px solid var(--muted); padding:14px 0; background:var(--ink1); }
+.marquee { display:flex; width:max-content; gap:0; animation:ticker 30s linear infinite; }
+.mq-item {
+  display:flex; align-items:center; gap:8px;
+  padding:0 28px; font-family:var(--fm); font-size:11px;
+  color:var(--sub); border-right:1px solid var(--muted); white-space:nowrap;
+}
+.mq-dot { width:5px; height:5px; border-radius:50%; background:var(--jade); flex-shrink:0; }
+
+/* ══ PROOF BAR ══════════════════════════════════════════════ */
+#proof {
+  background:var(--ink1);
+  border-top:1px solid var(--line); border-bottom:1px solid var(--line);
+}
+.proof-inner {
+  max-width:1260px; margin:0 auto; padding:0 5vw;
+  display:grid; grid-template-columns:repeat(5,1fr);
+}
+.proof-stat {
+  padding:40px 24px; border-right:1px solid var(--muted); text-align:center;
+  position:relative; overflow:hidden;
+}
+.proof-stat:last-child { border-right:none; }
+.proof-stat::before {
+  content:''; position:absolute; top:0; left:50%; transform:translateX(-50%);
+  width:0; height:2px; background:linear-gradient(90deg,transparent,var(--jade),transparent);
+  transition: width .6s ease;
+}
+.proof-stat.visible::before { width:100%; }
+.proof-val {
+  font-family:var(--fc); font-size:clamp(36px,4vw,56px); font-weight:900;
+  color:var(--white); line-height:1;
+}
+.proof-val .accent { color:var(--jade); }
+.proof-unit { font-size:14px; font-weight:400; opacity:.5; }
+.proof-label { font-size:12px; color:var(--sub); margin-top:8px; letter-spacing:.5px; text-transform:uppercase; }
+
+/* ══ FEATURES GRID ══════════════════════════════════════════ */
+#features { background:var(--ink); }
+.feat-grid {
+  display:grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap:1px; background:var(--muted);
+  border-radius:16px; overflow:hidden;
+  margin-top:64px;
+}
+.feat-card {
+  background:var(--ink1); padding:32px 28px;
+  transition:background .25s; position:relative;
+  overflow:hidden; display:flex; flex-direction:column; gap:12px;
+}
+.feat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--jade),var(--blue));
+  transform:scaleX(0); transform-origin:left; transition:.4s;
+}
+.feat-card:hover { background:#0a141d; }
+.feat-card:hover::before { transform:scaleX(1); }
+.feat-card.featured {
+  background: linear-gradient(145deg, #0a1a12, #06110e);
+  border-top:2px solid var(--jade);
+}
+.feat-icon { font-size:28px; }
+.feat-title { font-family:var(--fc); font-size:18px; font-weight:800; color:var(--white); letter-spacing:.3px; }
+.feat-desc { font-size:13px; color:var(--dim); line-height:1.6; flex:1; }
+.feat-tag {
+  display:inline-flex; align-self:flex-start;
+  font-family:var(--fm); font-size:10px; padding:3px 8px;
+  border-radius:3px; background:rgba(0,255,136,.07); color:var(--jade);
+  border:1px solid rgba(0,255,136,.15);
+}
+
+/* ══ HOW IT WORKS ═══════════════════════════════════════════ */
+#how { background:var(--ink1); }
+.how-grid { display:grid; grid-template-columns:1fr 1fr; gap:80px; align-items:center; }
+.steps-list { display:flex; flex-direction:column; gap:0; margin-top:48px; }
+.step {
+  display:grid; grid-template-columns:52px 1fr; gap:20px;
+  padding:28px 0; border-bottom:1px solid var(--muted);
+  transition:background .2s;
+}
+.step:last-child { border-bottom:none; }
+.step:hover .step-num { color:var(--jade); border-color:var(--jade); }
+.step-num {
+  width:44px; height:44px; border-radius:10px;
+  border:1px solid var(--muted); display:flex; align-items:center; justify-content:center;
+  font-family:var(--fm); font-size:15px; color:var(--sub);
+  transition:.3s; flex-shrink:0;
+}
+.step-title { font-family:var(--fc); font-size:20px; font-weight:800; color:var(--white); margin-bottom:6px; }
+.step-desc { font-size:14px; color:var(--dim); line-height:1.7; }
+.step-cmd {
+  display:inline-block; margin-top:10px;
+  font-family:var(--fm); font-size:12px;
+  background:rgba(0,255,136,.06); border:1px solid rgba(0,255,136,.15);
+  color:var(--jade); padding:6px 12px; border-radius:5px;
+}
+.tags { display:flex; flex-wrap:wrap; gap:5px; margin-top:10px; }
+.tag {
+  font-family:var(--fm); font-size:10px; padding:3px 8px;
+  border-radius:3px; background:rgba(255,255,255,.04);
+  border:1px solid var(--muted); color:var(--sub);
+}
+
+/* Terminal */
+.terminal {
+  background:#010305; border-radius:14px; overflow:hidden;
+  border:1px solid rgba(255,255,255,.08);
+  box-shadow:0 40px 120px rgba(0,0,0,.9), 0 0 80px rgba(0,255,136,.05);
+}
+.term-bar {
+  background:#080d12; padding:12px 18px;
+  display:flex; align-items:center; gap:7px;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.term-dot { width:11px; height:11px; border-radius:50%; }
+.term-title { font-family:var(--fm); font-size:11px; color:var(--sub); margin-left:6px; }
+.term-body { padding:20px 24px; font-family:var(--fm); font-size:12px; line-height:2; }
+.t-prompt { color:var(--jade); }
+.t-cmd { color:var(--white); }
+.t-g { color:var(--jade); }
+.t-c { color:var(--blue); }
+.t-y { color:var(--amber); }
+.t-s { color:var(--sub); }
+.t-r { color:var(--red); }
+.t-cursor { display:inline-block; width:7px; height:14px; background:var(--jade); animation:blink 1s infinite; vertical-align:middle; }
+
+/* ══ AI ENGINE ══════════════════════════════════════════════ */
+#ai { background:var(--ink); overflow:hidden; }
+.ai-inner { display:grid; grid-template-columns:1fr 1fr; gap:80px; align-items:center; }
+.ai-vis { position:relative; height:420px; }
+.ai-center-dot {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  width:80px; height:80px; border-radius:50%;
+  background:radial-gradient(circle, rgba(0,255,136,.25), rgba(0,255,136,.05), transparent);
+  display:flex; align-items:center; justify-content:center;
+  font-size:36px;
+  box-shadow:0 0 80px rgba(0,255,136,.15), 0 0 160px rgba(0,255,136,.07);
+}
+.ai-orbit {
+  position:absolute; border-radius:50%; border:1px solid;
+  top:50%; left:50%; transform:translate(-50%,-50%);
+}
+.orbit-1 { width:160px; height:160px; border-color:rgba(0,255,136,.12); animation:spin 18s linear infinite; }
+.orbit-2 { width:260px; height:260px; border-color:rgba(14,165,233,.1);  animation:spin 28s linear infinite reverse; }
+.orbit-3 { width:360px; height:360px; border-color:rgba(245,158,11,.07); animation:spin 40s linear infinite; }
+@keyframes spin { to { transform:translate(-50%,-50%) rotate(360deg); } }
+.ai-node {
+  position:absolute; width:10px; height:10px; border-radius:50%;
+  transform:translate(-50%,-50%);
+}
+.ai-node-label {
+  position:absolute; transform:translate(-50%,-50%);
+  background:rgba(6,12,18,.9); border:1px solid rgba(255,255,255,.1);
+  border-radius:7px; padding:7px 12px; white-space:nowrap;
+  font-family:var(--fm); font-size:11px; color:var(--txt);
+  text-align:center; backdrop-filter:blur(12px);
+}
+.ai-model-cards { display:flex; flex-direction:column; gap:10px; margin-top:36px; }
+.ai-model {
+  display:flex; align-items:center; gap:14px;
+  padding:16px 18px; border-radius:10px;
+  background:rgba(255,255,255,.02); border:1px solid var(--muted);
+  transition:.25s;
+}
+.ai-model:hover { border-color:rgba(0,255,136,.2); background:rgba(0,255,136,.03); }
+.ai-model-icon { font-size:22px; flex-shrink:0; }
+.ai-model-name { font-family:var(--fc); font-size:15px; font-weight:700; color:var(--white); }
+.ai-model-desc { font-size:12px; color:var(--sub); margin-top:2px; }
+.ai-acc {
+  margin-left:auto; font-family:var(--fm); font-size:13px;
+  color:var(--jade); background:rgba(0,255,136,.08);
+  border:1px solid rgba(0,255,136,.15); border-radius:5px;
+  padding:3px 10px; flex-shrink:0;
+}
+.ai-bar-wrap { flex-shrink:0; width:80px; height:4px; background:rgba(255,255,255,.06); border-radius:2px; overflow:hidden; }
+.ai-bar { height:100%; border-radius:2px; background:linear-gradient(90deg,var(--jade),var(--blue)); }
+
+/* ══ STRATEGIES ═════════════════════════════════════════════ */
+#strategies { background:var(--ink1); }
+.strat-header { display:grid; grid-template-columns:1fr 1fr; gap:60px; align-items:end; margin-bottom:56px; }
+.strat-table { border:1px solid var(--muted); border-radius:12px; overflow:hidden; }
+.strat-row {
+  display:grid; grid-template-columns:40px 1fr 80px 80px;
+  gap:16px; align-items:center; padding:16px 24px;
+  border-bottom:1px solid var(--muted); transition:.2s;
+}
+.strat-row:last-child { border-bottom:none; }
+.strat-row:hover { background:rgba(0,255,136,.03); }
+.strat-row.header-row { background:var(--ink2); font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--sub); font-family:var(--fm); }
+.strat-num { font-family:var(--fm); font-size:12px; color:var(--muted); }
+.strat-name { font-family:var(--fc); font-size:16px; font-weight:700; color:var(--white); }
+.strat-desc { font-size:12px; color:var(--sub); }
+.strat-perf { font-family:var(--fm); font-size:12px; text-align:right; }
+.perf-up { color:var(--jade); }
+.vote-bar {
+  height:4px; border-radius:2px; background:rgba(255,255,255,.06);
+  overflow:hidden; grid-column:2/-1; margin-top:4px;
+}
+.vote-fill { height:100%; border-radius:2px; background:linear-gradient(90deg,var(--jade),var(--blue)); transition:width 1s; }
+
+/* ══ COMPARISON ═════════════════════════════════════════════ */
+#compare { background:var(--ink); }
+.compare-table { border:1px solid var(--muted); border-radius:14px; overflow:hidden; margin-top:56px; }
+.cmp-header { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; background:var(--ink2); }
+.cmp-row { display:grid; grid-template-columns:2fr 1fr 1fr 1fr; border-top:1px solid var(--muted); }
+.cmp-row:hover { background:rgba(255,255,255,.015); }
+.cmp-cell { padding:16px 20px; font-size:14px; display:flex; align-items:center; gap:6px; border-right:1px solid var(--muted); }
+.cmp-cell:last-child { border-right:none; }
+.cmp-head { font-family:var(--fm); font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--sub); }
+.cmp-head.highlight { color:var(--jade); }
+.cmp-feat { color:var(--txt); font-weight:500; }
+.cmp-yes { color:var(--jade); font-weight:700; }
+.cmp-no  { color:var(--muted); }
+.cmp-part { color:var(--amber); }
+.cmp-trevlix { background:rgba(0,255,136,.03); }
+
+/* ══ GITHUB UPDATE ══════════════════════════════════════════ */
+#github-update { background:var(--ink1); }
+.update-inner { display:grid; grid-template-columns:1fr 1fr; gap:80px; align-items:center; }
+.update-flow { display:flex; flex-direction:column; gap:0; }
+.update-step {
+  display:flex; gap:20px; align-items:flex-start;
+  padding:22px 0; border-bottom:1px solid var(--muted);
+  position:relative;
+}
+.update-step:last-child { border-bottom:none; }
+.update-step::before {
+  content:''; position:absolute; left:18px; top:56px; bottom:0;
+  width:1px; background:linear-gradient(var(--muted),transparent);
+}
+.update-step:last-child::before { display:none; }
+.us-icon {
+  width:38px; height:38px; border-radius:9px; flex-shrink:0;
+  background:rgba(0,255,136,.08); border:1px solid rgba(0,255,136,.2);
+  display:flex; align-items:center; justify-content:center; font-size:17px;
+}
+.us-title { font-family:var(--fc); font-size:17px; font-weight:800; color:var(--white); margin-bottom:4px; }
+.us-desc { font-size:13px; color:var(--dim); line-height:1.6; }
+
+/* ══ OPEN SOURCE ════════════════════════════════════════════ */
+#opensource { background:var(--ink); }
+.oss-hero {
+  border:1px solid rgba(0,255,136,.12); border-radius:20px;
+  padding:72px 64px; position:relative; overflow:hidden;
+  background:linear-gradient(135deg, rgba(0,255,136,.04), rgba(14,165,233,.02), transparent);
+}
+.oss-hero::before {
+  content:''; position:absolute; top:-40%; right:-10%; width:50%; height:180%;
+  background:radial-gradient(ellipse, rgba(0,255,136,.05), transparent 60%);
+  pointer-events:none;
+}
+.oss-title {
+  font-family:var(--fc); font-weight:900;
+  font-size:clamp(36px,6vw,72px); line-height:.9; color:var(--white);
+  margin-bottom:20px; letter-spacing:-.5px;
+}
+.oss-title em { font-style:normal; color:var(--jade); }
+.oss-desc { font-size:17px; font-weight:300; color:var(--dim); max-width:560px; line-height:1.7; margin-bottom:40px; }
+.oss-chips { display:flex; flex-wrap:wrap; gap:8px; margin-bottom:40px; }
+.oss-chip {
+  display:flex; align-items:center; gap:6px; font-size:13px; font-weight:500;
+  padding:8px 16px; border-radius:6px;
+  background:rgba(255,255,255,.04); border:1px solid var(--muted); color:var(--txt);
+}
+.oss-chip::before { content:'✓'; color:var(--jade); font-weight:700; }
+.oss-code {
+  background:rgba(0,0,0,.4); border:1px solid var(--muted);
+  border-radius:10px; padding:20px 24px; margin-top:32px;
+  font-family:var(--fm); font-size:13px; line-height:1.8; color:var(--dim);
+  position:relative;
+}
+.oss-code .cmt { color:var(--muted); }
+.oss-code .kw  { color:var(--blue); }
+.oss-code .str { color:var(--jade); }
+
+/* ══ SPECS TABLE ════════════════════════════════════════════ */
+#specs { background:var(--ink1); }
+.specs-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:2px; background:var(--muted); border-radius:14px; overflow:hidden; margin-top:56px; }
+.spec-group { background:var(--ink1); padding:28px 24px; }
+.spec-group-title { font-family:var(--fm); font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--jade); margin-bottom:20px; padding-bottom:12px; border-bottom:1px solid var(--muted); }
+.spec-row { display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid rgba(255,255,255,.03); font-size:13px; }
+.spec-row:last-child { border-bottom:none; }
+.spec-key { color:var(--sub); }
+.spec-val { color:var(--white); font-weight:500; font-family:var(--fm); font-size:12px; }
+.spec-val.jade { color:var(--jade); }
+
+/* ══ FAQ ════════════════════════════════════════════════════ */
+#faq { background:var(--ink); }
+.faq-grid { display:grid; grid-template-columns:1fr 1fr; gap:2px; background:var(--muted); border-radius:14px; overflow:hidden; margin-top:56px; }
+.faq-item { background:var(--ink1); padding:28px 32px; cursor:pointer; transition:.2s; }
+.faq-item:hover { background:var(--ink2); }
+.faq-q { font-family:var(--fc); font-size:18px; font-weight:700; color:var(--white); margin-bottom:10px; display:flex; justify-content:space-between; gap:12px; }
+.faq-q::after { content:'↓'; color:var(--jade); font-size:16px; flex-shrink:0; }
+.faq-a { font-size:14px; color:var(--dim); line-height:1.7; }
+
+/* ══ CTA ════════════════════════════════════════════════════ */
+#cta {
+  background:var(--ink);
+  text-align:center; padding:160px 5vw;
+  position:relative; overflow:hidden;
+}
+#cta::before {
+  content:''; position:absolute; inset:0;
+  background:radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,255,136,.04), transparent 70%);
+  pointer-events:none;
+}
+.cta-eyebrow { justify-content:center; margin-bottom:20px; }
+.cta-title {
+  font-family:var(--fc); font-weight:900;
+  font-size:clamp(48px,9vw,112px);
+  line-height:.85; letter-spacing:-2px; color:var(--white);
+  margin-bottom:24px; position:relative; z-index:1;
+}
+.cta-title em { font-style:normal; color:var(--jade); display:block; }
+.cta-sub { font-size:18px; font-weight:300; color:var(--dim); margin-bottom:52px; position:relative; z-index:1; }
+.cta-btns { display:flex; gap:14px; justify-content:center; flex-wrap:wrap; position:relative; z-index:1; }
+.cta-hint {
+  margin-top:28px; font-family:var(--fm); font-size:11px;
+  color:var(--muted); position:relative; z-index:1;
+}
+.cta-hint .cmd { color:var(--jade); }
+
+/* ══ FOOTER ═════════════════════════════════════════════════ */
+footer {
+  background:var(--ink1); border-top:1px solid var(--muted);
+  padding:48px 5vw; display:flex; align-items:center;
+  justify-content:space-between; flex-wrap:wrap; gap:20px;
+  position:relative; z-index:1;
+}
+.footer-logo { font-family:var(--fc); font-weight:900; font-size:20px; letter-spacing:.5px; color:var(--white); }
+.footer-logo em { font-style:normal; color:var(--jade); }
+.footer-links { display:flex; gap:28px; flex-wrap:wrap; }
+.footer-links a { font-size:13px; color:var(--sub); text-decoration:none; transition:.2s; }
+.footer-links a:hover { color:var(--jade); }
+.footer-right { display:flex; align-items:center; gap:14px; }
+.footer-lang-btn {
+  background:rgba(255,255,255,.04); border:1px solid var(--muted);
+  border-radius:6px; color:var(--dim); cursor:none; font-family:var(--fm);
+  font-size:11px; font-weight:700; padding:5px 9px; transition:.2s;
+}
+.footer-lang-btn:hover { border-color:var(--jade); color:var(--jade); }
+.footer-copy { font-size:12px; color:var(--muted); font-family:var(--fm); }
+
+/* ══ LANG SWITCHER ══════════════════════════════════════════ */
+.lang-btn {
+  background:rgba(255,255,255,.04); border:1px solid var(--muted);
+  border-radius:6px; color:var(--dim); cursor:none; font-family:var(--fm);
+  font-size:11px; font-weight:700; padding:5px 9px; transition:.2s;
+  display:flex; align-items:center; gap:4px;
+}
+.lang-btn:hover { border-color:var(--jade); color:var(--jade); }
+.lang-btn.active { border-color:var(--jade); color:var(--jade); background:rgba(0,255,136,.07); }
+.lang-switcher { display:flex; gap:3px; }
+
+/* ══ REVEAL ═════════════════════════════════════════════════ */
+.reveal { opacity:0; transform:translateY(28px); transition:opacity .7s ease, transform .7s ease; }
+.reveal.visible { opacity:1; transform:none; }
+
+/* ══ RESPONSIVE ═════════════════════════════════════════════ */
+@media(max-width:1100px){
+  .feat-grid { grid-template-columns:repeat(2,1fr); }
+  .ai-inner, .how-grid, .update-inner, .strat-header { grid-template-columns:1fr; }
+  .ai-vis { display:none; }
+  .hero-numbers { position:relative; right:auto; top:auto; transform:none; margin-top:48px; flex-direction:row; flex-wrap:wrap; }
+  .hero-num-card { flex:1; min-width:160px; }
+  .proof-inner { grid-template-columns:repeat(3,1fr); }
+  .proof-stat:nth-child(3) { border-right:none; }
+  .specs-grid { grid-template-columns:1fr; }
+  .faq-grid { grid-template-columns:1fr; }
+  .cmp-header,.cmp-row { grid-template-columns:2fr 1fr 1fr; }
+  .cmp-cell:nth-child(3) { display:none; }
+}
+@media(max-width:760px){
+  .nav-center { display:none; }
+  .nav-mobile-btn { display:block; }
+  .hero-numbers { display:none; }
+  .proof-inner { grid-template-columns:repeat(2,1fr); }
+  .proof-stat:nth-child(2),.proof-stat:nth-child(4) { border-right:none; }
+  .feat-grid { grid-template-columns:1fr; }
+  .compare-table { display:none; }
+  .oss-hero { padding:40px 24px; }
+  body { cursor:auto; }
+  #cursor,#cursor-ring { display:none; }
+}
+</style>
+</head>
+<body>
+
+<!-- Custom Cursor -->
+<div id="cursor"></div>
+<div id="cursor-ring"></div>
+
+<!-- NAV -->
+<nav id="mainNav">
+  <a class="nav-logo" href="/">
+    <div class="nav-logo-mark">⚡</div>
+    <div>
+      <div class="nav-logo-txt">TREV<em>LIX</em></div>
+      <div class="nav-logo-sub">TREVLIX.DEV</div>
+    </div>
+  </a>
+  <div class="nav-center">
+    <a href="#features" data-i18n="web_nav_features">Features</a>
+    <a href="#ai" data-i18n="web_nav_ai">KI Engine</a>
+    <a href="#strategies" data-i18n="web_nav_strategies">Strategien</a>
+    <a href="#compare">Vergleich</a>
+    <a href="#github-update">Auto-Update</a>
+    <a href="#how" data-i18n="web_nav_install">Installation</a>
+    <a href="/installation">Docs</a>
+  </div>
+  <div class="nav-right">
+    <div class="lang-switcher" id="langSwitcher"></div>
+    <a class="nav-gh-btn" href="https://github.com/DEIN_USER/trevlix" target="_blank">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="nav-link" href="#donate" style="color:var(--muted);font-size:14px;margin-right:4px">Spenden</a>
+    <a class="nav-link" href="/installation" target="_blank" style="color:var(--muted);font-size:14px;margin-right:8px">Docs</a>
+    <a class="nav-cta" href="#cta" data-i18n="web_nav_download">Download</a>
+    <button class="nav-mobile-btn" onclick="toggleMobileNav()">☰</button>
+  </div>
+</nav>
+
+<!-- Mobile Nav -->
+<div id="mobileNav" style="display:none;position:fixed;top:62px;left:0;right:0;z-index:399;background:rgba(2,5,7,.98);border-bottom:1px solid var(--muted);padding:20px 5vw;flex-direction:column;gap:14px;">
+  <a href="#features" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">Features</a>
+  <a href="#ai" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">KI Engine</a>
+  <a href="#how" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">Installation</a>
+  <a href="#compare" style="color:var(--dim);text-decoration:none;font-size:16px;font-weight:500;" onclick="toggleMobileNav()">Vergleich</a>
+  <a href="https://github.com/DEIN_USER/trevlix" style="color:var(--jade);text-decoration:none;font-size:16px;font-weight:500;" target="_blank">⭐ GitHub</a>
+</div>
+
+<!-- HERO -->
+<section id="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-eyebrow" data-i18n="web_hero_eyebrow">v1.0.0 · trevlix.dev · Open Source</div>
+  <h1 class="hero-h1">
+    ALGORITHMIC<br>
+    <span class="jade">TRADING</span>
+    <span class="stroke">INTELLIGENCE</span>
+  </h1>
+  <p class="hero-desc" data-i18n="web_hero_sub">Der fortschrittlichste Open-Source Crypto Trading Bot. KI-gesteuert, selbstlernend, 14 integrierte Module — von Anomalie-Detektion bis Cross-Exchange Arbitrage.</p>
+  <div class="hero-btns">
+    <a class="btn-jade" href="#cta" data-i18n="web_btn_start">⚡ Jetzt starten</a>
+    <a class="btn-ghost" href="#features" data-i18n="web_btn_discover">Features entdecken →</a>
+  </div>
+  <div class="hero-numbers">
+    <div class="hero-num-card">
+      <div><div class="hn-val"><span class="accent">14</span></div><div class="hn-label">Module</div></div>
+    </div>
+    <div class="hero-num-card">
+      <div><div class="hn-val"><span class="accent">9</span></div><div class="hn-label">KI-Strategien</div></div>
+    </div>
+    <div class="hero-num-card">
+      <div><div class="hn-val">3.8<span class="accent">K</span></div><div class="hn-label">Lines of Code</div></div>
+    </div>
+    <div class="hero-num-card">
+      <div><div class="hn-val"><span class="accent">5</span></div><div class="hn-label">Sprachen</div></div>
+    </div>
+    <div class="hero-num-card">
+      <div><div class="hn-val"><span class="accent">0</span> €</div><div class="hn-label">Kosten</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER -->
+<div class="ticker-wrap">
+  <div class="ticker" id="ticker"></div>
+</div>
+
+<!-- MARQUEE TECH STACK -->
+<div class="marquee-wrap">
+  <div class="marquee" id="marquee"></div>
+</div>
+
+<!-- PROOF BAR -->
+<section id="proof">
+  <div class="proof-inner">
+    <div class="proof-stat reveal">
+      <div class="proof-val"><span class="js-count accent" data-target="14">0</span></div>
+      <div class="proof-label">Integrierte Module</div>
+    </div>
+    <div class="proof-stat reveal">
+      <div class="proof-val"><span class="js-count accent" data-target="9">0</span></div>
+      <div class="proof-label">KI-Strategien</div>
+    </div>
+    <div class="proof-stat reveal">
+      <div class="proof-val"><span class="js-count accent" data-target="5">0</span></div>
+      <div class="proof-label">Exchanges</div>
+    </div>
+    <div class="proof-stat reveal">
+      <div class="proof-val"><span class="js-count accent" data-target="31">0</span></div>
+      <div class="proof-label">KI Feature-Dimensionen</div>
+    </div>
+    <div class="proof-stat reveal">
+      <div class="proof-val"><span class="accent">100</span><span class="proof-unit">%</span></div>
+      <div class="proof-label">Open Source</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     FEATURES
+     ══════════════════════════════════════════════════════════ -->
+<section id="features">
+<div class="section-inner">
+  <div class="reveal">
+    <div class="eyebrow" data-i18n="web_feat_eyebrow">Features</div>
+    <h2 class="sec-title"><span data-i18n="web_feat_title1">Alles was du</span><br><em><span data-i18n="web_feat_title2">brauchst</span></em></h2>
+    <p class="sec-sub" data-i18n="web_feat_sub">14 voll integrierte Module — von der KI-Engine bis zur automatischen Steuerauswertung. Kein Plugin, kein Abo, kein Kompromiss.</p>
+  </div>
+
+  <div class="feat-grid reveal">
+    <div class="feat-card featured">
+      <span class="feat-icon">🧠</span>
+      <div class="feat-title">AI Engine v4</div>
+      <div class="feat-desc">RandomForest + XGBoost Ensemble mit kalibrierter Wahrscheinlichkeit. LSTM-Layer für Zeitreihen. Automatische Bull/Bear-Regime-Erkennung und modellspezifisches Routing.</div>
+      <span class="feat-tag">31 Features · Walk-Forward CV</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">📰</span>
+      <div class="feat-title">News-Sentiment</div>
+      <div class="feat-desc">CryptoPanic API Integration mit Keyword-Scoring. Automatische Kauf-Blockierung bei negativem Score. 30-Minuten-Cache für Performance.</div>
+      <span class="feat-tag">Echtzeit · CryptoPanic</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🔗</span>
+      <div class="feat-title">On-Chain Daten</div>
+      <div class="feat-desc">CoinGecko Proxy für Whale-Flows, Developer-Activity und Community-Score als KI-Input-Features. Gibt dem Bot echte Markttiefe.</div>
+      <span class="feat-tag">CoinGecko · 1h Cache</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">💹</span>
+      <div class="feat-title">Arbitrage-Scanner</div>
+      <div class="feat-desc">Cross-Exchange Preisüberwachung zwischen Binance, Bybit und OKX. Automatische Net-Spread-Berechnung nach Fees (~0.16%). Discord-Alert bei Chance.</div>
+      <span class="feat-tag">Binance · Bybit · OKX</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">📉</span>
+      <div class="feat-title">DCA + Partial TP</div>
+      <div class="feat-desc">Dollar-Cost-Averaging bis 3 Levels mit konfigurierbarem Multiplikator. Stufenweise Gewinnmitnahme: 25% bei +3%, 25% bei +5%, Rest am Take-Profit.</div>
+      <span class="feat-tag">Vollautomatisch · Konfigurierbar</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">📉</span>
+      <div class="feat-title">Short-Selling</div>
+      <div class="feat-desc">Futures-Handel auf Bybit und Binance. Bis zu 2× Hebel. Automatische PnL-Berechnung für inverse Positionen. Nutzt Bear-Regime-Modell der KI.</div>
+      <span class="feat-tag">Futures · Bear-Market</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🧬</span>
+      <div class="feat-title">Genetischer Optimizer</div>
+      <div class="feat-desc">Evolutionäre Optimierung von SL/TP/Vote-Threshold über 20 Generationen × 30 Genotypen. Fitness = Sharpe × WinRate − MaxDD. Automatisches Retraining.</div>
+      <span class="feat-tag">20 Gen · 30 Genotypen</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🤖</span>
+      <div class="feat-title">RL-Agent</div>
+      <div class="feat-desc">Q-Learning mit 5-dimensionalem Zustandsraum: RSI-Bucket, BollingerBand-Position, Volumen-Ratio, ATR-Volatilität, Stunden-PnL. Epsilon-Greedy Exploration.</div>
+      <span class="feat-tag">Q-Learning · Epsilon-Greedy</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🔍</span>
+      <div class="feat-title">Anomalie-Detektion</div>
+      <div class="feat-desc">Isolation Forest mit 4 Features (return, volume_ratio, rsi, bb_pos). Pausiert automatisch den Handel bei ungewöhnlichen Marktbewegungen. Schützt vor Flash-Crashes.</div>
+      <span class="feat-tag">Isolation Forest · Auto-Pause</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🌐</span>
+      <div class="feat-title">Dominanz-Filter</div>
+      <div class="feat-desc">BTC-Dominanz &gt;60% blockiert Altcoin-Käufe. USDT-Dominanz &gt;12% blockiert alle Long-Positionen. Marktregime-bewusste Positionierung.</div>
+      <span class="feat-tag">BTC-Dom · USDT-Dom</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🧾</span>
+      <div class="feat-title">Steuer-Report</div>
+      <div class="feat-desc">FIFO/LIFO Berechnungsmethode wählbar. Automatische Gain/Loss Separation. CSV-Export aller abgeschlossenen Trades. Warnung bei &gt;600 USDT steuerpflichtigem Gewinn.</div>
+      <span class="feat-tag">FIFO · LIFO · CSV</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🔐</span>
+      <div class="feat-title">JWT REST-API</div>
+      <div class="feat-desc">Bearer-Token-Authentifizierung. TradingView Webhook-Support unter /api/v1/signal. Vollständige API-Dokumentation. Multi-User-Rollensystem (Admin/User).</div>
+      <span class="feat-tag">JWT · Webhook · Multi-User</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">⚡</span>
+      <div class="feat-title">Circuit Breaker</div>
+      <div class="feat-desc">Automatische Handelspause nach N Verlusten in Folge (konfigurierbar). Tagesverlust-Limit. Korrelations-Filter (Pearson max 0.7) verhindert übermäßige Risikokonzentration.</div>
+      <span class="feat-tag">Risikomanagement · Auto-Stop</span>
+    </div>
+    <div class="feat-card">
+      <span class="feat-icon">🔄</span>
+      <div class="feat-title">GitHub Auto-Update</div>
+      <div class="feat-desc">Prüft automatisch auf neue Versionen im GitHub-Repository. Ein-Klick-Update aller Dateien mit automatischem Neustart. Rollback zu .bak-Dateien bei Problemen.</div>
+      <span class="feat-tag">Zero-Downtime · Rollback</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     AI ENGINE
+     ══════════════════════════════════════════════════════════ -->
+<section id="ai">
+<div class="section-inner">
+  <div class="ai-inner">
+    <div class="reveal">
+      <div class="eyebrow" data-i18n="web_ai_eyebrow">KI Engine v4</div>
+      <h2 class="sec-title"><span data-i18n="web_ai_title1">4 Modelle.</span><br><em><span data-i18n="web_ai_title2">Ein Ziel.</span></em></h2>
+      <p class="sec-sub" data-i18n="web_ai_sub">TREVLIX kombiniert vier KI-Systeme zu einem hochpräzisen Ensemble, das sich automatisch an den Markt anpasst — Bull, Bear oder Seitwärts.</p>
+      <div class="ai-model-cards">
+        <div class="ai-model">
+          <div class="ai-model-icon">🌍</div>
+          <div>
+            <div class="ai-model-name">Global Ensemble</div>
+            <div class="ai-model-desc">RandomForest + XGBoost · Kalibriert · 31-dim Feature-Vektor · 5-Fold Walk-Forward</div>
+          </div>
+          <div class="ai-bar-wrap"><div class="ai-bar" style="width:95%"></div></div>
+          <div class="ai-acc">95%</div>
+        </div>
+        <div class="ai-model">
+          <div class="ai-model-icon">🐂</div>
+          <div>
+            <div class="ai-model-name">Bull-Regime Modell</div>
+            <div class="ai-model-desc">Aktiviert wenn BTC-Trend positiv · Höherer Risikoappetit · Optimiert für steigende Märkte</div>
+          </div>
+          <div class="ai-bar-wrap"><div class="ai-bar" style="width:87%"></div></div>
+          <div class="ai-acc">87%</div>
+        </div>
+        <div class="ai-model">
+          <div class="ai-model-icon">🐻</div>
+          <div>
+            <div class="ai-model-name">Bear-Regime Modell</div>
+            <div class="ai-model-desc">Aktiviert bei negativem Trend · Short-Signale · Konservative Positionsgröße</div>
+          </div>
+          <div class="ai-bar-wrap"><div class="ai-bar" style="width:82%"></div></div>
+          <div class="ai-acc">82%</div>
+        </div>
+        <div class="ai-model">
+          <div class="ai-model-icon">🧠</div>
+          <div>
+            <div class="ai-model-name">LSTM Neural Network</div>
+            <div class="ai-model-desc">2 Schichten · Lookback 60 Kerzen · 55/45 Blend mit Ensemble · TensorFlow</div>
+          </div>
+          <div class="ai-bar-wrap"><div class="ai-bar" style="width:89%"></div></div>
+          <div class="ai-acc">89%</div>
+        </div>
+      </div>
+      <div style="margin-top:24px;padding:16px 20px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);border-radius:10px;font-size:13px;color:var(--dim);line-height:1.7">
+        💡 <strong style="color:var(--white)">Kelly-Sizing:</strong> Positionsgröße wird dynamisch nach Kelly-Kriterium berechnet. Maximiert langfristiges Kapitalwachstum ohne Ruin-Risiko. Begrenzt auf konfigurierbaren Max-Anteil.
+      </div>
+    </div>
+    <div class="ai-vis reveal">
+      <div class="ai-center-dot">🧠</div>
+      <div class="ai-orbit orbit-1"></div>
+      <div class="ai-orbit orbit-2"></div>
+      <div class="ai-orbit orbit-3"></div>
+      <!-- Orbit nodes -->
+      <div class="ai-node" style="top:18%;left:78%;background:#00ff88;box-shadow:0 0 10px #00ff88"></div>
+      <div class="ai-node" style="top:78%;left:22%;background:#0ea5e9;box-shadow:0 0 10px #0ea5e9"></div>
+      <div class="ai-node" style="top:22%;left:22%;background:#f59e0b;box-shadow:0 0 10px #f59e0b"></div>
+      <div class="ai-node" style="top:78%;left:78%;background:#00ff88;box-shadow:0 0 10px #00ff88;opacity:.6"></div>
+      <!-- Labels -->
+      <div class="ai-node-label" style="top:12%;left:55%">🐂 Bull</div>
+      <div class="ai-node-label" style="top:82%;left:10%">🐻 Bear</div>
+      <div class="ai-node-label" style="top:10%;left:8%">🌍 Global</div>
+      <div class="ai-node-label" style="top:72%;left:62%">LSTM</div>
+      <div class="ai-node-label" style="top:42%;left:68%">🧬 Genetik</div>
+      <div class="ai-node-label" style="top:50%;left:2%">🤖 RL</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     STRATEGIES
+     ══════════════════════════════════════════════════════════ -->
+<section id="strategies">
+<div class="section-inner">
+  <div class="strat-header reveal">
+    <div>
+      <div class="eyebrow" data-i18n="web_strat_eyebrow">9 Strategien</div>
+      <h2 class="sec-title"><span data-i18n="web_strat_title1">Mehrheitsentscheid</span><br><em><span data-i18n="web_strat_title2">durch Abstimmung</span></em></h2>
+    </div>
+    <p class="sec-sub" data-i18n="web_strat_sub">Jede Strategie gibt eine gewichtete Stimme ab. Der genetische Optimizer passt die Gewichte kontinuierlich an. Kauf erst wenn &gt;N Strategien zustimmen.</p>
+  </div>
+  <div class="strat-table reveal">
+    <div class="strat-row header-row">
+      <span>#</span>
+      <span>Strategie</span>
+      <span>Signal</span>
+      <span style="text-align:right">Gewicht</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">01</span>
+      <div><div class="strat-name">EMA Trend</div><div class="strat-desc">EMA 8/21/50/200 Kreuzungssystem · Trend-Richtung · Slope-Analyse</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:88%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.88</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">02</span>
+      <div><div class="strat-name">RSI + Stochastic</div><div class="strat-desc">Überkauft/Überverkauft Zonen · Stochastic %K/%D Kreuzung · Divergenz</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:79%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.79</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">03</span>
+      <div><div class="strat-name">MACD Momentum</div><div class="strat-desc">MACD/Signal-Kreuzung · Histogram-Slope · Zero-Line-Cross</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:83%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.83</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">04</span>
+      <div><div class="strat-name">Bollinger Bands</div><div class="strat-desc">%B Position · Bandwidth · Mean-Reversion bei Extremwerten</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:72%"></div></div></div>
+      <span class="strat-perf" style="color:var(--amber)">NEUT</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.72</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">05</span>
+      <div><div class="strat-name">Volumen-Ausbruch</div><div class="strat-desc">Volume MA 20 · Volume-Ratio · Kauf-/Verkaufsvolumen-Imbalance</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:76%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.76</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">06</span>
+      <div><div class="strat-name">OBV Trend</div><div class="strat-desc">On-Balance-Volume · OBV-EMA · Divergenz zum Preis</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:68%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.68</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">07</span>
+      <div><div class="strat-name">ROC Momentum</div><div class="strat-desc">Rate of Change 10 + 20 Perioden · Momentum-Bestätigung · Crossover</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:71%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.71</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">08</span>
+      <div><div class="strat-name">Ichimoku Cloud</div><div class="strat-desc">Tenkan-sen/Kijun-sen · Kumo-Cloud · Chikou-Span Bestätigung</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:85%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.85</span>
+    </div>
+    <div class="strat-row">
+      <span class="strat-num">09</span>
+      <div><div class="strat-name">VWAP</div><div class="strat-desc">Volume Weighted Average Price · Preis über/unter VWAP · Institutional Level</div>
+      <div class="vote-bar"><div class="vote-fill" style="width:80%"></div></div></div>
+      <span class="strat-perf perf-up">LONG</span>
+      <span class="strat-perf" style="font-family:var(--fm);color:var(--jade)">0.80</span>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     COMPARE
+     ══════════════════════════════════════════════════════════ -->
+<section id="compare">
+<div class="section-inner">
+  <div class="reveal">
+    <div class="eyebrow">Marktvergleich</div>
+    <h2 class="sec-title">Warum <em>TREVLIX</em><br>die Wahl ist</h2>
+    <p class="sec-sub">Transparenter Vergleich mit populären Alternativen. Alle Features — kein Abo, kein Lock-in, kein Cloud-Zwang.</p>
+  </div>
+  <div class="compare-table reveal">
+    <div class="cmp-header">
+      <div class="cmp-cell cmp-head">Feature</div>
+      <div class="cmp-cell cmp-head highlight">⚡ TREVLIX</div>
+      <div class="cmp-cell cmp-head">3Commas</div>
+      <div class="cmp-cell cmp-head">Freqtrade</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Preis</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Kostenlos</div>
+      <div class="cmp-cell cmp-no">29–99 $/Monat</div>
+      <div class="cmp-cell cmp-yes">✓ Kostenlos</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Self-Hosted</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Ja</div>
+      <div class="cmp-cell cmp-no">✗ Cloud only</div>
+      <div class="cmp-cell cmp-yes">✓ Ja</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Eingebautes Dashboard</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Mobile-First</div>
+      <div class="cmp-cell cmp-yes">✓ Web-App</div>
+      <div class="cmp-cell cmp-part">~ Frequi</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Ensemble KI (RF+XGB+LSTM)</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Integriert</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-part">~ Plugin</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Genetischer Optimizer</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Eingebaut</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-part">~ Hyperopt</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">News-Sentiment KI</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ CryptoPanic</div>
+      <div class="cmp-cell cmp-part">~ Basic</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">On-Chain Daten</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ CoinGecko</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Arbitrage-Scanner</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Cross-Exchange</div>
+      <div class="cmp-cell cmp-yes">✓ Ja</div>
+      <div class="cmp-cell cmp-part">~ Plugin</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">DCA + Partial TP</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Beides</div>
+      <div class="cmp-cell cmp-yes">✓ DCA</div>
+      <div class="cmp-cell cmp-part">~ Manuell</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Short-Selling (Futures)</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Bybit/Binance</div>
+      <div class="cmp-cell cmp-yes">✓ Ja</div>
+      <div class="cmp-cell cmp-yes">✓ Ja</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Anomalie-Detektion</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Isolation Forest</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">RL-Agent (Q-Learning)</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Eingebaut</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">GitHub Auto-Update</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ Ein-Klick</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">Steuer-Report</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ FIFO/LIFO</div>
+      <div class="cmp-cell cmp-part">~ Basic</div>
+      <div class="cmp-cell cmp-no">✗ Nein</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">5 Sprachen (i18n)</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ DE/EN/ES/RU/PT</div>
+      <div class="cmp-cell cmp-yes">✓ Viele</div>
+      <div class="cmp-cell cmp-part">~ EN/DE</div>
+    </div>
+    <div class="cmp-row">
+      <div class="cmp-cell cmp-feat">JWT REST-API</div>
+      <div class="cmp-cell cmp-trevlix cmp-yes">✓ 30+ Endpoints</div>
+      <div class="cmp-cell cmp-yes">✓ API</div>
+      <div class="cmp-cell cmp-yes">✓ API</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     GITHUB AUTO-UPDATE
+     ══════════════════════════════════════════════════════════ -->
+<section id="github-update">
+<div class="section-inner">
+  <div class="update-inner">
+    <div class="reveal">
+      <div class="eyebrow">GitHub Auto-Update</div>
+      <h2 class="sec-title">Immer auf dem<br><em>neuesten Stand</em></h2>
+      <p class="sec-sub">TREVLIX prüft automatisch das GitHub-Repository auf neue Versionen. Ein Klick im Dashboard installiert das Update und startet den Bot neu — kein manuelles Kopieren.</p>
+      <div class="update-flow">
+        <div class="update-step">
+          <div class="us-icon">🔍</div>
+          <div>
+            <div class="us-title">Version prüfen</div>
+            <div class="us-desc">Dashboard oder REST-API fragt GitHub Releases API ab. Vergleich von <code style="font-family:var(--fm);color:var(--jade);font-size:11px">current_version</code> mit <code style="font-family:var(--fm);color:var(--jade);font-size:11px">latest_tag</code>.</div>
+          </div>
+        </div>
+        <div class="update-step">
+          <div class="us-icon">📋</div>
+          <div>
+            <div class="us-title">Changelog anzeigen</div>
+            <div class="us-desc">Release-Notes werden direkt im Dashboard angezeigt. Was ist neu? Was wurde gefixt? Informierte Entscheidung vor dem Update.</div>
+          </div>
+        </div>
+        <div class="update-step">
+          <div class="us-icon">⬇</div>
+          <div>
+            <div class="us-title">Dateien laden</div>
+            <div class="us-desc">Neue <code style="font-family:var(--fm);color:var(--jade);font-size:11px">server.py</code>, <code style="font-family:var(--fm);color:var(--jade);font-size:11px">dashboard.html</code> und Sprachdateien werden von GitHub Raw geladen. Original als <code style="font-family:var(--fm);color:var(--jade);font-size:11px">.bak</code> gesichert.</div>
+          </div>
+        </div>
+        <div class="update-step">
+          <div class="us-icon">🔄</div>
+          <div>
+            <div class="us-title">Automatischer Neustart</div>
+            <div class="us-desc">Nach erfolgreichem Update startet der Bot via <code style="font-family:var(--fm);color:var(--jade);font-size:11px">os.execv()</code> automatisch neu. Keine Downtime außer der Neustart-Sekunde.</div>
+          </div>
+        </div>
+        <div class="update-step">
+          <div class="us-icon">↩</div>
+          <div>
+            <div class="us-title">Rollback möglich</div>
+            <div class="us-desc">Probleme nach dem Update? Ein Klick auf Rollback stellt alle <code style="font-family:var(--fm);color:var(--jade);font-size:11px">.bak</code>-Dateien wieder her.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="terminal">
+        <div class="term-bar">
+          <div class="term-dot" style="background:#ff5f57"></div>
+          <div class="term-dot" style="background:#febc2e"></div>
+          <div class="term-dot" style="background:#28c840"></div>
+          <span class="term-title">TREVLIX Dashboard → Settings → Auto-Update</span>
+        </div>
+        <div class="term-body">
+<span class="t-s"># Aktuelle Situation</span>
+<span class="t-s">Installiert : </span><span class="t-c">v1.0.0</span>
+<span class="t-s">GitHub      : </span><span class="t-g">v1.1.0 ← NEU!</span>
+
+<span class="t-s">──────────────────────────────</span>
+<span class="t-s"># Changelog v1.1.0:</span>
+<span class="t-g">+ Neue MTF Strategie (8h)</span>
+<span class="t-g">+ Verbesserte Anomalie-Erkennung</span>
+<span class="t-g">+ SOL/USDT Arbitrage Fix</span>
+<span class="t-g">+ RU Übersetzung vervollständigt</span>
+
+<span class="t-s">──────────────────────────────</span>
+<span class="t-s"># Update wird installiert...</span>
+<span class="t-g">[OK] server.py gesichert als .bak</span>
+<span class="t-g">[OK] server.py v1.1.0 geladen</span>
+<span class="t-g">[OK] dashboard.html aktualisiert</span>
+<span class="t-g">[OK] trevlix_i18n.py aktualisiert</span>
+<span class="t-g">[OK] trevlix_translations.js aktualisiert</span>
+
+<span class="t-s">──────────────────────────────</span>
+<span class="t-g">✅ Update erfolgreich!</span>
+<span class="t-s">   Neustart in 1.5s...</span>
+<span class="t-s">   → </span><span class="t-g">TREVLIX v1.1.0</span><span class="t-s"> gestartet</span>
+<span class="t-s">&gt; </span><span class="t-cursor"></span>
+        </div>
+      </div>
+      <div style="margin-top:16px;padding:14px 18px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);border-radius:9px;font-size:12px;color:var(--dim);line-height:1.7">
+        🔑 <strong style="color:var(--white)">Eigenes Repo einrichten:</strong> Fork auf GitHub → <code style="color:var(--jade);font-family:var(--fm)">GITHUB_REPO</code> in <code style="color:var(--jade);font-family:var(--fm)">server.py</code> anpassen → Release mit Versionstag pushen → Fertig.
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     HOW IT WORKS / INSTALLATION
+     ══════════════════════════════════════════════════════════ -->
+<section id="how">
+<div class="section-inner">
+  <div class="how-grid">
+    <div class="reveal">
+      <div class="eyebrow" data-i18n="web_how_eyebrow">Installation</div>
+      <h2 class="sec-title"><em data-i18n="web_how_title1">In 5 Minuten</em><br><span data-i18n="web_how_title2">live</span></h2>
+      <p class="sec-sub" data-i18n="web_how_sub">TREVLIX läuft auf jedem Linux-Server oder lokal. MySQL + Python 3.9 — fertig. Kein Docker, kein Kubernetes, kein Overhead.</p>
+      <div class="steps-list">
+        <div class="step">
+          <div class="step-num">01</div>
+          <div>
+            <div class="step-title">Voraussetzungen</div>
+            <div class="step-desc">Python 3.9+, MySQL 8.0+, pip. Läuft auf Ubuntu, Debian, Raspberry Pi, macOS und Windows (WSL).</div>
+            <div class="tags"><span class="tag">Python 3.9+</span><span class="tag">MySQL 8.0+</span><span class="tag">Linux/Mac/Win</span></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">02</div>
+          <div>
+            <div class="step-title">Pakete installieren</div>
+            <div class="step-desc">Ein einziger pip-Befehl installiert alle Abhängigkeiten. TensorFlow ist optional für LSTM.</div>
+            <div class="step-cmd">pip install flask ccxt scikit-learn xgboost PyJWT bcrypt</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">03</div>
+          <div>
+            <div class="step-title">MySQL-Datenbank anlegen</div>
+            <div class="step-desc">14 Tabellen werden beim ersten Start automatisch erstellt. Nur Datenbank + User anlegen reicht.</div>
+            <div class="step-cmd">CREATE DATABASE trevlix;</div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">04</div>
+          <div>
+            <div class="step-title">.env konfigurieren</div>
+            <div class="step-desc">Exchange-Keys, MySQL-Zugangsdaten, Discord-Webhook — alles in einer einzigen .env-Datei.</div>
+            <div class="tags"><span class="tag">API_KEY</span><span class="tag">MYSQL_PASS</span><span class="tag">JWT_SECRET</span><span class="tag">DISCORD_WEBHOOK</span></div>
+          </div>
+        </div>
+        <div class="step">
+          <div class="step-num">05</div>
+          <div>
+            <div class="step-title">Starten → Paper Trading</div>
+            <div class="step-desc">5-Schritte-Wizard führt durch die Einrichtung. Paper-Trading ist standardmäßig aktiv — kein echtes Geld bis du bereit bist.</div>
+            <div class="step-cmd">python3 server.py</div>
+            <div class="tags"><span class="tag">localhost:5000</span><span class="tag">Paper Trading</span><span class="tag">Wizard</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="margin-top:28px">
+        <a class="btn-ghost" href="/installation" target="_blank" style="display:inline-flex;font-size:14px;padding:12px 24px">
+          📖 Vollständige Installations-Anleitung →
+        </a>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="terminal">
+        <div class="term-bar">
+          <div class="term-dot" style="background:#ff5f57"></div>
+          <div class="term-dot" style="background:#febc2e"></div>
+          <div class="term-dot" style="background:#28c840"></div>
+          <span class="term-title">trevlix@server ~ python3 server.py</span>
+        </div>
+        <div class="term-body">
+<span class="t-c">╔════════════════════════════════╗</span>
+<span class="t-c">║  ⚡ TREVLIX v1.0.0             ║</span>
+<span class="t-c">║  Algorithmic Trading Intelligence ║</span>
+<span class="t-c">╚════════════════════════════════╝</span>
+
+<span class="t-s">MySQL    : localhost/trevlix ✓</span>
+<span class="t-s">Exchange : Crypto.com ✓</span>
+<span class="t-s">Modus    : 📝 Paper Trading</span>
+<span class="t-s">GitHub   : </span><span class="t-g">v1.0.0 (aktuell)</span>
+
+<span class="t-g">[OK]</span> <span class="t-s">Fear &amp; Greed: </span><span class="t-y">72 — Gier</span>
+<span class="t-g">[OK]</span> <span class="t-s">BTC Dom: </span><span class="t-c">52.3%</span> <span class="t-s">· USDT: </span><span class="t-c">6.1%</span>
+<span class="t-g">[OK]</span> <span class="t-s">247 Märkte geladen</span>
+<span class="t-g">[OK]</span> <span class="t-s">KI trainiert · Walk-Forward: </span><span class="t-g">71.4%</span>
+
+<span class="t-c">[SCAN]</span> <span class="t-s">BTC/USDT Votes: 7/9 ✓ KI: </span><span class="t-g">76.2%</span>
+<span class="t-g">[BUY]</span>  <span class="t-s">ETH/USDT @ 3.241,50 Kelly: </span><span class="t-c">8.4%</span>
+<span class="t-g">[TP+]</span>  <span class="t-s">BTC Partial 25% @ +3.1% → </span><span class="t-g">+94 USDT</span>
+<span class="t-c">[ARB]</span>  <span class="t-s">SOL Binance→Bybit: </span><span class="t-g">+0.41%</span>
+<span class="t-c">[AI]</span>   <span class="t-s">Gen 7/20 Fitness: </span><span class="t-g">1.847</span>
+<span class="t-s">   SL:</span><span class="t-y">2.1%</span> <span class="t-s">TP:</span><span class="t-y">6.3%</span> <span class="t-s">Votes:</span><span class="t-y">6/9</span>
+
+<span class="t-s">Dashboard: </span><span class="t-c">http://localhost:5000</span>
+<span class="t-s">&gt; </span><span class="t-cursor"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     OPEN SOURCE
+     ══════════════════════════════════════════════════════════ -->
+<section id="opensource">
+<div class="section-inner">
+  <div class="oss-hero reveal">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center">
+      <div>
+        <div class="eyebrow" data-i18n="web_oss_eyebrow">Open Source</div>
+        <h2 class="oss-title"><em data-i18n="web_oss_title">100% kostenlos.</em><br>100% dein Code.</h2>
+        <p class="oss-desc" data-i18n="web_oss_desc">TREVLIX ist vollständig Open Source. Kein Abo, keine versteckten Kosten, kein Cloud-Zwang. Du betreibst alles auf deiner eigenen Infrastruktur — vollständige Datenkontrolle.</p>
+        <div class="oss-chips">
+          <span class="oss-chip">Kein Abo</span>
+          <span class="oss-chip">Self-Hosted</span>
+          <span class="oss-chip">Voller Source-Code</span>
+          <span class="oss-chip">MySQL lokal</span>
+          <span class="oss-chip">Keine API-Limits</span>
+          <span class="oss-chip">Multi-User</span>
+          <span class="oss-chip">GitHub Updates</span>
+          <span class="oss-chip">Discord Integration</span>
+          <span class="oss-chip">5 Sprachen</span>
+          <span class="oss-chip">JWT REST-API</span>
+        </div>
+        <div style="display:flex;gap:12px;flex-wrap:wrap">
+          <a class="btn-jade" href="https://github.com/DEIN_USER/trevlix" target="_blank" style="font-size:14px;padding:13px 28px">
+            ⭐ Auf GitHub ansehen
+          </a>
+          <a class="btn-ghost" href="#cta" style="font-size:14px;padding:12px 28px">⬇ Download</a>
+        </div>
+      </div>
+      <div>
+        <div class="oss-code">
+          <span class="cmt"># Schnellstart in 60 Sekunden</span><br>
+          <span class="kw">git clone</span> https://github.com/DEIN_USER/<span class="str">trevlix</span><br>
+          <span class="kw">cd</span> trevlix<br>
+          <span class="kw">pip install</span> -r requirements.txt<br>
+          <span class="kw">cp</span> .env.example .env<br>
+          <span class="cmt"># .env mit deinen Keys befüllen</span><br>
+          <span class="kw">python3</span> <span class="str">server.py</span><br>
+          <span class="cmt"># → http://localhost:5000</span>
+        </div>
+        <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div style="padding:16px;background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:9px;text-align:center">
+            <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--jade)">3.8K</div>
+            <div style="font-size:11px;color:var(--sub);margin-top:4px">Lines of Code</div>
+          </div>
+          <div style="padding:16px;background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:9px;text-align:center">
+            <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--jade)">14</div>
+            <div style="font-size:11px;color:var(--sub);margin-top:4px">Module</div>
+          </div>
+          <div style="padding:16px;background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:9px;text-align:center">
+            <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--jade)">5</div>
+            <div style="font-size:11px;color:var(--sub);margin-top:4px">Sprachen</div>
+          </div>
+          <div style="padding:16px;background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:9px;text-align:center">
+            <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--jade)">0€</div>
+            <div style="font-size:11px;color:var(--sub);margin-top:4px">Kosten</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     SPECS
+     ══════════════════════════════════════════════════════════ -->
+<section id="specs">
+<div class="section-inner">
+  <div class="reveal">
+    <div class="eyebrow" data-i18n="web_specs_eyebrow">Technische Spezifikationen</div>
+    <h2 class="sec-title"><span data-i18n="web_specs_title1">Gebaut für</span><br><em><span data-i18n="web_specs_title2">Performance</span></em></h2>
+  </div>
+  <div class="specs-grid reveal">
+    <div class="spec-group">
+      <div class="spec-group-title">Backend</div>
+      <div class="spec-row"><span class="spec-key">Framework</span><span class="spec-val jade">Flask + SocketIO</span></div>
+      <div class="spec-row"><span class="spec-key">Datenbank</span><span class="spec-val">MySQL 8.0+</span></div>
+      <div class="spec-row"><span class="spec-key">Auth</span><span class="spec-val">JWT Bearer</span></div>
+      <div class="spec-row"><span class="spec-key">WebSocket</span><span class="spec-val">Socket.IO 4.7</span></div>
+      <div class="spec-row"><span class="spec-key">Codezeilen</span><span class="spec-val jade">3.800+</span></div>
+      <div class="spec-row"><span class="spec-key">DB-Tabellen</span><span class="spec-val">14</span></div>
+      <div class="spec-row"><span class="spec-key">REST-Endpoints</span><span class="spec-val jade">30+</span></div>
+      <div class="spec-row"><span class="spec-key">Sprachen</span><span class="spec-val">DE/EN/ES/RU/PT</span></div>
+    </div>
+    <div class="spec-group">
+      <div class="spec-group-title">KI & ML</div>
+      <div class="spec-row"><span class="spec-key">Feature-Vektor</span><span class="spec-val jade">31 Dimensionen</span></div>
+      <div class="spec-row"><span class="spec-key">Modelle</span><span class="spec-val">RF + XGB + LSTM</span></div>
+      <div class="spec-row"><span class="spec-key">Validierung</span><span class="spec-val">Walk-Forward 5-Fold</span></div>
+      <div class="spec-row"><span class="spec-key">LSTM Lookback</span><span class="spec-val">60 Kerzen</span></div>
+      <div class="spec-row"><span class="spec-key">LSTM Blend</span><span class="spec-val">55% ML / 45% DL</span></div>
+      <div class="spec-row"><span class="spec-key">RL Zustandsraum</span><span class="spec-val jade">5-dimensional</span></div>
+      <div class="spec-row"><span class="spec-key">Genetik Gen.</span><span class="spec-val">20 × 30</span></div>
+      <div class="spec-row"><span class="spec-key">Min. Trainings-Samples</span><span class="spec-val">30 Trades</span></div>
+    </div>
+    <div class="spec-group">
+      <div class="spec-group-title">Exchange & Risiko</div>
+      <div class="spec-row"><span class="spec-key">Crypto.com</span><span class="spec-val jade">Spot ✓</span></div>
+      <div class="spec-row"><span class="spec-key">Binance</span><span class="spec-val jade">Spot + Futures ✓</span></div>
+      <div class="spec-row"><span class="spec-key">Bybit</span><span class="spec-val jade">Spot + Futures ✓</span></div>
+      <div class="spec-row"><span class="spec-key">OKX</span><span class="spec-val jade">Spot + Futures ✓</span></div>
+      <div class="spec-row"><span class="spec-key">KuCoin</span><span class="spec-val jade">Spot ✓</span></div>
+      <div class="spec-row"><span class="spec-key">Circuit Breaker</span><span class="spec-val">N Verluste → Pause</span></div>
+      <div class="spec-row"><span class="spec-key">Correlation Filter</span><span class="spec-val">Pearson max 0.7</span></div>
+      <div class="spec-row"><span class="spec-key">Trailing Stop</span><span class="spec-val">ATR-basiert</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     FAQ
+     ══════════════════════════════════════════════════════════ -->
+<section id="faq">
+<div class="section-inner">
+  <div class="reveal">
+    <div class="eyebrow">FAQ</div>
+    <h2 class="sec-title">Häufig gestellte<br><em>Fragen</em></h2>
+  </div>
+  <div class="faq-grid reveal">
+    <div class="faq-item">
+      <div class="faq-q">Ist TREVLIX wirklich kostenlos?</div>
+      <div class="faq-a">Ja — 100% kostenlos und Open Source. Kein Abo, keine Premium-Features, kein verstecktes Pricing. Der vollständige Quellcode liegt auf GitHub. Du zahlst nur deine eigenen Server- und Exchange-Kosten.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Brauche ich Programmierkenntnisse?</div>
+      <div class="faq-a">Nein. Der Einrichtungsassistent führt dich in 5 Schritten durch die komplette Konfiguration. Du musst nur Python installieren, eine .env-Datei ausfüllen und <code style="font-family:var(--fm);color:var(--jade)">python3 server.py</code> ausführen.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Wie sicher ist Paper-Trading?</div>
+      <div class="faq-a">Paper-Trading ist eine vollständige Simulation — kein echtes Geld wird bewegt. Du kannst den Bot Wochen oder Monate testen, bevor du ihn mit echten Mitteln betreibst. Empfehlenswert für mindestens 30 Trades.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Welchen Server brauche ich?</div>
+      <div class="faq-a">TREVLIX läuft auf einem einfachen VPS ab 5 €/Monat (z.B. Hetzner CX11). Alternativ lokal auf deinem PC oder einem Raspberry Pi 4. Empfohlen: Ubuntu 22.04, 2 GB RAM, 20 GB SSD.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Wann lernt die KI?</div>
+      <div class="faq-a">Das KI-Training beginnt automatisch nach 30 abgeschlossenen Trades. Der genetische Optimizer und der RL-Agent verbessern die Strategie-Gewichtung kontinuierlich. Walk-Forward Validation verhindert Overfitting.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Wie funktionieren die Updates?</div>
+      <div class="faq-a">Im Dashboard unter Settings → GitHub Auto-Update einmal auf "Prüfen" klicken. Bei verfügbarem Update zeigt TREVLIX den Changelog an. "Update installieren" lädt alle Dateien und startet neu. Rollback ist jederzeit möglich.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Welche API-Rechte brauche ich?</div>
+      <div class="faq-a">Für Spot-Trading: Read + Trade-Permissions. Kein Withdraw! Für Futures/Short: zusätzlich Futures-Permission auf Bybit oder Binance. Paper-Trading läuft ohne jede API-Permission.</div>
+    </div>
+    <div class="faq-item">
+      <div class="faq-q">Gibt es einen Support?</div>
+      <div class="faq-a">Community-Support über GitHub Issues und Discussions. Bugs können direkt als Issue gemeldet werden. Feature-Requests sind willkommen. Pull Requests werden geprüft und bei Qualität gemergt.</div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     CTA
+     ══════════════════════════════════════════════════════════ -->
+<section id="cta">
+  <div class="eyebrow cta-eyebrow">Kostenlos · Open Source · Self-Hosted</div>
+  <h2 class="cta-title" data-i18n="web_cta_title1">Bereit für<br><em data-i18n="web_cta_title2">Trevlix?</em></h2>
+  <p class="cta-sub" data-i18n="web_cta_sub">Starte heute mit Paper-Trading — kein echtes Geld, kein Risiko. TREVLIX lernt und verbessert sich während du zuschaust.</p>
+  <div class="cta-btns">
+    <a class="btn-jade" href="/install.sh" download="trevlix_install.sh" style="background:linear-gradient(135deg,#00ff88,#00cc6a);color:#020507;display:inline-flex;align-items:center;gap:8px">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="21" x2="12" y2="3"/></svg>
+      install.sh — Automatisch installieren
+    </a>
+    <a class="btn-ghost" href="/installation" target="_blank">📖 Installations-Guide</a>
+    <a class="btn-ghost" href="server.py" download style="font-size:13px">⬇ server.py</a>
+    <a class="btn-ghost" href="https://github.com/DEIN_USER/trevlix" target="_blank" style="border-color:rgba(255,255,255,.15)">⭐ GitHub</a>
+  </div>
+  <div class="cta-hint" style="margin-top:20px">
+    Ein-Zeilen-Install: <span class="cmd">sudo bash &lt;(curl -fsSL trevlix.dev/install.sh)</span>
+  </div>
+  <div style="margin-top:12px;font-size:11px;color:var(--muted);font-family:var(--fc)">
+    Unterstützt: Ubuntu 16.04–24.04 · Debian 6–12 · VPS · Raspberry Pi 4+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SPENDEN — KI-Training durch die Community
+     ══════════════════════════════════════════════════════════ -->
+<section id="donate" style="padding:80px 24px;max-width:900px;margin:0 auto;text-align:center">
+  <div class="eyebrow" style="color:var(--jade);margin-bottom:16px">
+    Community · Open Source · KI-Training
+  </div>
+  <h2 style="font-size:clamp(28px,5vw,48px);font-weight:900;font-family:var(--fc);letter-spacing:-.5px;color:#e8f4ff;margin-bottom:16px;line-height:1.1">
+    Die KI wird durch<br><em style="color:var(--jade);font-style:normal">Spenden trainiert</em>
+  </h2>
+  <p style="color:var(--muted);max-width:600px;margin:0 auto 40px;font-size:16px;line-height:1.7">
+    TREVLIX ist und bleibt <strong style="color:#e8f4ff">100% kostenlos</strong>. Das Training der KI-Modelle — 
+    XGBoost, Random Forest, LSTM und Transformer — erfordert erhebliche Rechenkapazität.
+    Jede Spende hilft, die Modelle mit mehr Daten zu trainieren und die Trefferquote zu verbessern.
+  </p>
+
+  <!-- Was Spenden bewirken -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:48px">
+    <div style="background:#060c12;border:1px solid rgba(0,255,136,.1);border-radius:12px;padding:20px 16px">
+      <div style="font-size:28px;margin-bottom:8px">🧠</div>
+      <div style="font-family:var(--fc);font-size:18px;font-weight:800;color:#00ff88">10 USDT</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">1 Woche GPU-Training mit 50.000 Datenpunkten</div>
+    </div>
+    <div style="background:#060c12;border:1px solid rgba(0,255,136,.1);border-radius:12px;padding:20px 16px">
+      <div style="font-size:28px;margin-bottom:8px">📊</div>
+      <div style="font-family:var(--fc);font-size:18px;font-weight:800;color:#00ff88">50 USDT</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">Neues KI-Modell für eine zusätzliche Exchange</div>
+    </div>
+    <div style="background:#060c12;border:1px solid rgba(0,255,136,.1);border-radius:12px;padding:20px 16px">
+      <div style="font-size:28px;margin-bottom:8px">🚀</div>
+      <div style="font-family:var(--fc);font-size:18px;font-weight:800;color:#00ff88">100 USDT</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">Monatliches Server-Training für alle Nutzer</div>
+    </div>
+    <div style="background:#060c12;border:1px solid rgba(0,255,136,.1);border-radius:12px;padding:20px 16px">
+      <div style="font-size:28px;margin-bottom:8px">⭐</div>
+      <div style="font-family:var(--fc);font-size:18px;font-weight:800;color:#0ea5e9">GitHub Star</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:6px;line-height:1.5">Kostenlos helfen — mehr Sichtbarkeit = mehr Daten</div>
+    </div>
+  </div>
+
+  <!-- USDT Adressen -->
+  <div style="background:#060c12;border:1px solid rgba(0,255,136,.12);border-radius:16px;padding:32px;max-width:700px;margin:0 auto">
+    <div style="font-family:var(--fc);font-size:20px;font-weight:800;color:#e8f4ff;margin-bottom:8px">
+      USDT Spendenaddressen
+    </div>
+    <div style="font-size:13px;color:var(--muted);margin-bottom:24px">
+      Wähle deine Exchange — alle Adressen akzeptieren <strong style="color:#e8f4ff">USDT (TRC-20 / ERC-20)</strong>
+    </div>
+
+    <!-- Exchange Tabs -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:20px" id="donateTabs">
+      <button class="donate-tab active" onclick="showDonateAddr('cryptocom')" data-ex="cryptocom">Crypto.com</button>
+      <button class="donate-tab" onclick="showDonateAddr('binance')"   data-ex="binance">Binance</button>
+      <button class="donate-tab" onclick="showDonateAddr('bybit')"     data-ex="bybit">Bybit</button>
+      <button class="donate-tab" onclick="showDonateAddr('okx')"       data-ex="okx">OKX</button>
+      <button class="donate-tab" onclick="showDonateAddr('kucoin')"    data-ex="kucoin">KuCoin</button>
+    </div>
+
+    <!-- Address display -->
+    <div id="donateAddrWrap">
+      <div id="donateAddr" style="font-family:'Fira Code',monospace;font-size:13px;
+        background:#020507;border:1px solid rgba(0,255,136,.15);border-radius:10px;
+        padding:14px 16px;color:#00ff88;word-break:break-all;text-align:left;
+        cursor:pointer;transition:.2s;position:relative"
+        onclick="copyDonateAddr()" title="Klicken zum Kopieren">
+        TXxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px" id="donateNetwork">
+        Netzwerk: TRC-20 (TRON) — günstigste Gebühren
+      </div>
+      <div style="font-size:11px;color:rgba(0,255,136,.5);margin-top:4px" id="donateCopyHint">
+        👆 Klicken zum Kopieren
+      </div>
+    </div>
+
+    <div style="margin-top:20px;padding-top:20px;border-top:1px solid rgba(255,255,255,.06);
+      font-size:12px;color:var(--muted)">
+      ⚠️ Bitte nur USDT senden · Andere Coins gehen verloren · Mindestbetrag: 1 USDT
+    </div>
+  </div>
+
+  <style>
+    .donate-tab {
+      background:rgba(255,255,255,.03); border:1px solid var(--muted);
+      border-radius:20px; color:var(--muted); cursor:pointer;
+      font-family:var(--fc); font-size:13px; font-weight:700;
+      padding:6px 16px; transition:.2s;
+    }
+    .donate-tab:hover { border-color:var(--jade); color:var(--jade); }
+    .donate-tab.active { background:rgba(0,255,136,.08); border-color:var(--jade); color:var(--jade); }
+  </style>
+  <script>
+    const DONATE_ADDRS = {
+      cryptocom: { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_CRO',   network: 'TRC-20 (TRON)' },
+      binance:   { addr: '0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxBNB', network: 'BEP-20 (BSC) oder TRC-20' },
+      bybit:     { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_BBT',    network: 'TRC-20 (TRON)' },
+      okx:       { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_OKX',    network: 'TRC-20 (TRON) oder ERC-20' },
+      kucoin:    { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_KUC',    network: 'TRC-20 (TRON)' },
+    };
+    function showDonateAddr(ex) {
+      const d = DONATE_ADDRS[ex];
+      if (!d) return;
+      document.getElementById('donateAddr').textContent = d.addr;
+      document.getElementById('donateNetwork').textContent = 'Netzwerk: ' + d.network;
+      document.querySelectorAll('.donate-tab').forEach(t =>
+        t.classList.toggle('active', t.dataset.ex === ex));
+    }
+    function copyDonateAddr() {
+      const addr = document.getElementById('donateAddr').textContent;
+      navigator.clipboard.writeText(addr).then(() => {
+        const hint = document.getElementById('donateCopyHint');
+        hint.textContent = '✅ Kopiert!';
+        hint.style.color = '#00ff88';
+        setTimeout(() => { hint.textContent = '👆 Klicken zum Kopieren'; hint.style.color = ''; }, 2000);
+      });
+    }
+  </script>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════
+     FOOTER
+     ══════════════════════════════════════════════════════════ -->
+<footer>
+  <div>
+    <div class="footer-logo">TREV<em>LIX</em></div>
+    <div style="font-size:11px;color:var(--sub);margin-top:4px;font-family:var(--fm)">trevlix.dev · v1.0.0 · Algorithmic Trading Intelligence</div>
+  </div>
+  <div class="footer-links">
+    <a href="#features">Features</a>
+    <a href="#ai">KI Engine</a>
+    <a href="#strategies">Strategien</a>
+    <a href="#compare">Vergleich</a>
+    <a href="#github-update">Auto-Update</a>
+    <a href="/installation" target="_blank">Docs</a>
+    <a href="https://github.com/DEIN_USER/trevlix" target="_blank">GitHub</a>
+  </div>
+  <div class="footer-right">
+    <div class="lang-switcher" id="footerLangSwitcher"></div>
+    <div class="footer-copy">Open Source · Paper Trading empfohlen</div>
+  </div>
+</footer>
+
+<!-- ══════════════════════════════════════════════════════════
+     JAVASCRIPT
+     ══════════════════════════════════════════════════════════ -->
+<script>
+/* ── Custom Cursor ──────────────────────────────────────────── */
+const cur = document.getElementById('cursor');
+const ring = document.getElementById('cursor-ring');
+let mx=0,my=0,rx=0,ry=0;
+document.addEventListener('mousemove', e => { mx=e.clientX; my=e.clientY; cur.style.left=mx+'px'; cur.style.top=my+'px'; });
+(function animRing(){rx+=(mx-rx)*.12;ry+=(my-ry)*.12;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(animRing);})();
+
+/* ── Nav scroll ─────────────────────────────────────────────── */
+const nav = document.getElementById('mainNav');
+window.addEventListener('scroll', () => {
+  nav.classList.toggle('scrolled', window.scrollY > 60);
+});
+
+/* ── Mobile Nav ─────────────────────────────────────────────── */
+function toggleMobileNav(){
+  const mn = document.getElementById('mobileNav');
+  mn.style.display = mn.style.display==='flex' ? 'none' : 'flex';
+}
+
+/* ── Ticker data ────────────────────────────────────────────── */
+const TICKS = [
+  {s:'BTC/USDT',p:'94.820',c:'+2.14%',u:true},{s:'ETH/USDT',p:'3.241',c:'+1.87%',u:true},
+  {s:'SOL/USDT',p:'182,40',c:'+4.21%',u:true},{s:'BNB/USDT',p:'612,50',c:'+0.93%',u:true},
+  {s:'XRP/USDT',p:'0.884',c:'-1.20%',u:false},{s:'ADA/USDT',p:'0.612',c:'+3.44%',u:true},
+  {s:'DOGE/USDT',p:'0.184',c:'-0.75%',u:false},{s:'AVAX/USDT',p:'38.90',c:'+5.12%',u:true},
+  {s:'DOT/USDT',p:'9.240',c:'-2.10%',u:false},{s:'LINK/USDT',p:'18.60',c:'+2.88%',u:true},
+  {s:'MATIC/USDT',p:'0.784',c:'+1.55%',u:true},{s:'UNI/USDT',p:'12.40',c:'-0.82%',u:false},
+  {s:'ATOM/USDT',p:'8.920',c:'+3.10%',u:true},{s:'LTC/USDT',p:'87.40',c:'+1.22%',u:true},
+  {s:'NEAR/USDT',p:'5.640',c:'+6.88%',u:true},{s:'FIL/USDT',p:'4.120',c:'-1.44%',u:false},
+];
+const html = [...TICKS,...TICKS].map(t=>
+  `<div class="ticker-item"><span class="ticker-sym">${t.s}</span><span class="ticker-price">${t.p}</span><span class="${t.u?'tick-up':'tick-dn'}">${t.c}</span></div>`
+).join('');
+document.getElementById('ticker').innerHTML = html;
+
+/* ── Marquee tech ───────────────────────────────────────────── */
+const TECH = ['Python 3.9+','Flask','Socket.IO','MySQL 8','ccxt','scikit-learn','XGBoost','TensorFlow/LSTM','PyJWT','bcrypt','Chart.js','TradingView LW Charts','CryptoPanic API','CoinGecko API','GitHub API','Isolation Forest','Q-Learning','Genetic Algorithm'];
+const mq = [...TECH,...TECH].map(t=>`<div class="mq-item"><div class="mq-dot"></div>${t}</div>`).join('');
+document.getElementById('marquee').innerHTML = mq;
+
+/* ── Animated counters ──────────────────────────────────────── */
+function animCount(el, target, duration=1500){
+  let start=null;
+  function step(ts){
+    if(!start) start=ts;
+    const prog = Math.min((ts-start)/duration, 1);
+    const ease = 1 - Math.pow(1-prog, 3);
+    el.textContent = Math.floor(ease*target);
+    if(prog<1) requestAnimationFrame(step);
+    else el.textContent = target;
+  }
+  requestAnimationFrame(step);
+}
+
+/* ── Scroll reveal ──────────────────────────────────────────── */
+const io = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      e.target.classList.add('visible');
+      // counter animation
+      e.target.querySelectorAll('.js-count').forEach(c => {
+        animCount(c, parseInt(c.dataset.target));
+      });
+      // proof stat top border
+      e.target.classList.add('visible');
+      io.unobserve(e.target);
+    }
+  });
+}, {threshold:.1, rootMargin:'0px 0px -40px 0px'});
+
+document.querySelectorAll('.reveal, .proof-stat').forEach(el => io.observe(el));
+
+/* ── Vote bars animation ────────────────────────────────────── */
+const vbObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      e.target.querySelectorAll('.vote-fill').forEach(bar => {
+        const w = bar.style.width;
+        bar.style.width = '0';
+        setTimeout(() => { bar.style.width = w; }, 200);
+      });
+      vbObs.unobserve(e.target);
+    }
+  });
+}, {threshold:.2});
+document.querySelectorAll('.strat-table').forEach(el => vbObs.observe(el));
+
+/* ── AI bar animation ───────────────────────────────────────── */
+const aiObs = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if(e.isIntersecting){
+      e.target.querySelectorAll('.ai-bar').forEach(b => {
+        const w=b.style.width; b.style.width='0';
+        setTimeout(()=>{b.style.width=w;},300);
+      });
+      aiObs.unobserve(e.target);
+    }
+  });
+},{threshold:.2});
+document.querySelectorAll('.ai-model-cards').forEach(el=>aiObs.observe(el));
+
+/* ── i18n Init ──────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  if(typeof QI18n !== 'undefined'){
+    QI18n.init('langSwitcher');
+    QI18n.renderSwitcher('footerLangSwitcher');
+  }
+});
+
+/* ── Smooth anchor scroll with offset ──────────────────────── */
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const target = document.querySelector(a.getAttribute('href'));
+    if(target){ e.preventDefault(); target.scrollIntoView({behavior:'smooth',block:'start'}); }
+  });
+});
+
+/* ── FAQ accordion ──────────────────────────────────────────── */
+document.querySelectorAll('.faq-item').forEach(item => {
+  const q = item.querySelector('.faq-q');
+  const a = item.querySelector('.faq-a');
+  a.style.cssText = 'overflow:hidden;transition:max-height .4s ease,opacity .4s ease;';
+  a.style.maxHeight = a.scrollHeight + 'px';
+  item.addEventListener('click', () => {
+    const open = item.classList.toggle('open');
+    a.style.maxHeight = open ? a.scrollHeight+'px' : '0';
+    a.style.opacity = open ? '1' : '0';
+    q.style.color = open ? 'var(--jade)' : '';
+  });
+});
+
+/* ── Parallax hero ──────────────────────────────────────────── */
+window.addEventListener('scroll', () => {
+  const y = window.scrollY;
+  const heroGrid = document.querySelector('.hero-grid');
+  if(heroGrid) heroGrid.style.transform = `translateY(${y*0.3}px)`;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,870 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TREVLIX v1.0.0 — Installation Guide</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<script src="trevlix_translations.js"></script>
+<style>
+:root{--ink:#020507;--ink1:#060c12;--ink2:#091017;--jade:#00ff88;--blue:#0ea5e9;--amber:#f59e0b;--red:#ef4444;--muted:#1e3344;--sub:#3a5568;--dim:#7a9ab0;--txt:#b8d0e4;--white:#e8f4ff;--fw:"Barlow",sans-serif;--fc:"Barlow Condensed",sans-serif;--fm:"Fira Code",monospace}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6}
+.wrap{max-width:920px;margin:0 auto;padding:40px 24px 100px}
+/* Header */
+.hero{border-bottom:1px solid var(--muted);padding:48px 0 40px;margin-bottom:40px}
+.logo-row{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
+.logo-mark{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--jade),#00aa55);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.logo-txt{font-family:var(--fc);font-weight:900;font-size:32px;color:var(--white);letter-spacing:1px}
+.logo-txt em{font-style:normal;color:var(--jade)}
+.version-badge{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;background:rgba(0,255,136,.07);color:var(--jade);border:1px solid rgba(0,255,136,.2);margin-left:8px;vertical-align:middle}
+.hero-sub{font-size:15px;color:var(--dim);margin-top:10px;max-width:600px}
+/* Nav */
+.doc-nav{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:36px;padding-bottom:20px;border-bottom:1px solid var(--muted)}
+.doc-nav a{font-size:11px;font-weight:600;color:var(--sub);text-decoration:none;padding:5px 11px;border:1px solid var(--muted);border-radius:5px;transition:.2s;font-family:var(--fm)}
+.doc-nav a:hover{border-color:var(--jade);color:var(--jade)}
+/* Lang switcher */
+.lang-row{display:flex;align-items:center;gap:8px;margin-top:20px;flex-wrap:wrap}
+.lang-btn{background:var(--ink1);border:1px solid var(--muted);border-radius:6px;color:var(--sub);cursor:pointer;font-family:var(--fm);font-size:11px;font-weight:700;padding:5px 10px;transition:.2s;display:flex;align-items:center;gap:5px}
+.lang-btn:hover,.lang-btn.active{border-color:var(--jade);color:var(--jade);background:rgba(0,255,136,.06)}
+/* Typography */
+h2{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);margin:48px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--muted);display:flex;align-items:center;gap:10px}
+h3{font-family:var(--fc);font-size:17px;font-weight:800;color:var(--white);margin:28px 0 12px}
+p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
+a{color:var(--jade);text-decoration:none}
+a:hover{text-decoration:underline}
+/* Code */
+pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:18px 20px;overflow-x:auto;margin:12px 0;font-family:var(--fm);font-size:12px;line-height:1.9;position:relative}
+code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
+.c-cmd{color:#00ff88}.c-cmt{color:#2a4a5a}.c-kw{color:#0ea5e9}.c-str{color:#f59e0b}.c-ok{color:#00ff88}.c-err{color:#ef4444}.c-var{color:#b8d0e4}
+.copy-btn{position:absolute;top:10px;right:10px;font-family:var(--fm);font-size:10px;padding:4px 10px;background:rgba(255,255,255,.04);border:1px solid var(--muted);border-radius:5px;color:var(--sub);cursor:pointer;transition:.2s}
+.copy-btn:hover{border-color:var(--jade);color:var(--jade)}
+/* Cards */
+.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:12px 0}
+.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
+.card.info{border-color:rgba(14,165,233,.2);background:rgba(14,165,233,.04)}
+.card.ok{border-color:rgba(0,255,136,.2);background:rgba(0,255,136,.04)}
+.card.danger{border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.04)}
+.card-title{font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:8px}
+.card-body{font-size:13px;color:var(--dim);line-height:1.75}
+/* Steps */
+.step-block{display:grid;grid-template-columns:48px 1fr;gap:16px;padding:20px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.step-block:last-child{border-bottom:none}
+.step-num{width:38px;height:38px;border-radius:9px;background:rgba(0,255,136,.08);border:1px solid rgba(0,255,136,.2);display:flex;align-items:center;justify-content:center;font-family:var(--fm);font-size:13px;color:var(--jade);flex-shrink:0}
+.step-title{font-family:var(--fc);font-size:17px;font-weight:800;color:var(--white);margin-bottom:6px}
+.step-desc{font-size:13px;color:var(--dim);line-height:1.75}
+/* Tables */
+table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid var(--muted);border-radius:10px;overflow:hidden}
+th{background:var(--ink2);padding:10px 14px;text-align:left;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;font-family:var(--fm)}
+td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--dim)}
+td:first-child{font-family:var(--fm);color:var(--jade);font-size:12px}
+tr:last-child td{border-bottom:none}
+.td-req{color:#ef4444;font-weight:700}.td-opt{color:#f59e0b}.td-default{color:#0ea5e9;font-family:var(--fm);font-size:11px}
+/* Checklist */
+.checklist{list-style:none;display:flex;flex-direction:column;gap:7px;margin:10px 0}
+.checklist li{font-size:13px;color:var(--dim);display:flex;gap:10px;align-items:flex-start;line-height:1.6}
+.checklist li::before{content:"✓";color:var(--jade);font-weight:900;flex-shrink:0;margin-top:1px}
+/* API grid */
+.ep-grid{display:grid;grid-template-columns:80px 1fr 1fr;gap:1px;background:var(--muted);border-radius:10px;overflow:hidden;margin:12px 0}
+.ep-cell{background:var(--ink1);padding:10px 14px;font-size:12px}
+.ep-method{font-family:var(--fm);font-weight:700;color:var(--jade)}
+.ep-path{font-family:var(--fm);color:var(--txt)}
+.ep-desc{color:var(--dim)}
+.ep-head{background:var(--ink2);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--sub);font-family:var(--fm)}
+/* Tags */
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin:8px 0}
+.tag{font-family:var(--fm);font-size:10px;padding:3px 9px;border-radius:3px;background:rgba(255,255,255,.04);border:1px solid var(--muted);color:var(--sub)}
+.tag.jade{border-color:rgba(0,255,136,.25);color:var(--jade);background:rgba(0,255,136,.05)}
+.tag.blue{border-color:rgba(14,165,233,.25);color:var(--blue);background:rgba(14,165,233,.05)}
+.tag.amber{border-color:rgba(245,158,11,.25);color:var(--amber);background:rgba(245,158,11,.05)}
+/* 2-col grid on desktop */
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media(max-width:640px){.grid-2{grid-template-columns:1fr}.ep-grid{grid-template-columns:60px 1fr}}
+/* Footer */
+footer{border-top:1px solid var(--muted);margin-top:60px;padding-top:30px;text-align:center;font-size:13px;color:var(--sub)}
+footer a{color:var(--jade)}
+/* Scrollbar */
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
+/* New badge */
+.new-badge{font-family:var(--fm);font-size:9px;padding:2px 6px;border-radius:3px;background:rgba(0,255,136,.12);color:var(--jade);border:1px solid rgba(0,255,136,.25);vertical-align:middle;margin-left:6px}
+</style>
+
+<style>
+/* ── Language Switcher ── */
+.lang-bar { position:fixed;top:0;left:0;right:0;z-index:500;
+  background:rgba(2,5,7,.97);border-bottom:1px solid rgba(0,255,136,.08);
+  display:flex;align-items:center;justify-content:space-between;
+  padding:10px 24px;backdrop-filter:blur(16px); }
+.lang-bar .brand { font-family:'Barlow Condensed',sans-serif;font-weight:900;
+  font-size:18px;letter-spacing:1px;color:#e8f4ff; }
+.lang-bar .brand span { color:#00ff88; }
+.lang-switcher { display:flex;gap:4px; }
+.lang-btn { background:transparent;border:1px solid rgba(255,255,255,.08);
+  border-radius:6px;color:#5a7a90;cursor:pointer;
+  font-family:'Fira Code',monospace;font-size:10px;font-weight:700;
+  padding:4px 9px;transition:.2s; }
+.lang-btn:hover { border-color:#00ff88;color:#00ff88; }
+.lang-btn.active { border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.07); }
+body { padding-top:60px; }
+</style>
+
+</head>
+<body>
+
+<div class="lang-bar">
+  <div class="brand">TREV<span>LIX</span> <span style="font-size:11px;color:#3a5568;font-family:'Fira Code',monospace;font-weight:400;letter-spacing:2px">INSTALLATION GUIDE</span></div>
+  <div class="lang-switcher" id="langSwitcher"></div>
+</div>
+
+<div class="wrap">
+
+<!-- ══ HERO ════════════════════════════════════════════════════════ -->
+<div class="hero">
+  <div class="logo-row">
+    <div class="logo-mark">⚡</div>
+    <div class="logo-txt">TREV<em>LIX</em></div>
+    <span class="version-badge">v1.0.0</span>
+  </div>
+  <div class="hero-sub" data-i18n="inst_subtitle">Algorithmic Trading Intelligence — Installations-Anleitung</div>
+  <div class="lang-row">
+    <span style="font-size:11px;color:var(--sub);font-family:var(--fm)">LANG:</span>
+    <div id="langSwitcher"></div>
+  </div>
+</div>
+
+<!-- ══ NAV ════════════════════════════════════════════════════════ -->
+<nav class="doc-nav" aria-label="Sections">
+  <a href="#requirements"  data-i18n="inst_nav_req">📋 Voraussetzungen</a>
+  <a href="#install"       data-i18n="inst_nav_install">⬇ Installation</a>
+  <a href="#docker"        data-i18n="inst_nav_docker">🐳 Docker</a>
+  <a href="#database"      data-i18n="inst_nav_db">🗄 Datenbank</a>
+  <a href="#config"        data-i18n="inst_nav_config">⚙️ Konfiguration</a>
+  <a href="#security"      data-i18n="inst_nav_sec">🔐 Sicherheit</a>
+  <a href="#start"         data-i18n="inst_nav_start">🚀 Start</a>
+  <a href="#exchanges"     data-i18n="inst_nav_exchanges">🏦 Exchanges</a>
+  <a href="#update"        data-i18n="inst_nav_update">🔄 Auto-Update</a>
+  <a href="#ai"            data-i18n="inst_nav_ai">🧠 KI & Backtest</a>
+  <a href="#copy-trading"  data-i18n="inst_nav_copy">🤝 Copy-Trading</a>
+  <a href="#api"           data-i18n="inst_nav_api">📡 REST-API</a>
+  <a href="#discord"       data-i18n="inst_nav_discord">💬 Discord</a>
+  <a href="#tips"          data-i18n="inst_nav_tips">💡 Tipps</a>
+</nav>
+
+<!-- ══ 1. REQUIREMENTS ════════════════════════════════════════════ -->
+<h2 id="requirements">📋 <span data-i18n="inst_req_title">Voraussetzungen</span></h2>
+<div class="grid-2">
+  <div class="card ok">
+    <div class="card-title" data-i18n="inst_req_soft">Software</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li>Python 3.10+ <code data-i18n="inst_req_recommended">empfohlen: 3.11</code></li>
+        <li>MySQL 8.0+ <span data-i18n="inst_req_or">oder</span> MariaDB 10.6+</li>
+        <li>Git <span style="color:var(--sub);font-size:11px" data-i18n="inst_req_optional">(optional, für Auto-Update)</span></li>
+        <li>pip 23+</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card info">
+    <div class="card-title" data-i18n="inst_req_hw">Hardware</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_req_ram">RAM: min. 1 GB (2 GB für LSTM)</li>
+        <li data-i18n="inst_req_cpu">CPU: 1 Core (2+ für paralleles Scanning)</li>
+        <li data-i18n="inst_req_disk">Disk: 2 GB (inkl. Backups)</li>
+        <li data-i18n="inst_req_net">Internet: Dauerhaft (Exchange-API)</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="card warn">
+  <div class="card-title">🐳 <span data-i18n="inst_docker_alt">Docker Alternative</span></div>
+  <div class="card-body" data-i18n="inst_docker_alt_desc">Mit Docker Compose entfallen Python/MySQL-Installation — alles läuft im Container. Empfohlen für Server-Deployments.</div>
+</div>
+
+<!-- ══ 2. INSTALLATION ════════════════════════════════════════════ -->
+<h2 id="install">⬇ <span data-i18n="inst_install_title">Installation</span></h2>
+
+<h3 data-i18n="inst_method_git">Methode A — Git Clone (empfohlen)</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># Repository klonen</span>
+<span class="c-cmd">git clone</span> https://github.com/DEIN_USER/trevlix.git
+<span class="c-cmd">cd</span> trevlix
+
+<span class="c-cmt"># Virtuelle Umgebung (empfohlen)</span>
+<span class="c-cmd">python -m venv</span> .venv
+<span class="c-cmd">source</span> .venv/bin/activate  <span class="c-cmt"># Linux/Mac</span>
+<span class="c-cmt"># .venv\Scriptsctivate   # Windows</span>
+
+<span class="c-cmt"># Abhängigkeiten installieren</span>
+<span class="c-cmd">pip install</span> -r requirements.txt
+
+<span class="c-cmt"># Optional: TensorFlow für LSTM + Transformer</span>
+<span class="c-cmd">pip install</span> tensorflow
+
+<span class="c-cmt"># Optional: SHAP für KI-Erklärungen</span>
+<span class="c-cmd">pip install</span> shap</pre>
+
+<h3 data-i18n="inst_method_direct">Methode B — Direkter Download</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># Alle Dateien herunterladen und in einen Ordner legen:</span>
+<span class="c-var">server.py</span>               <span class="c-cmt"># Haupt-Bot</span>
+<span class="c-var">dashboard.html</span>          <span class="c-cmt"># Web-Dashboard</span>
+<span class="c-var">trevlix_translations.js</span> <span class="c-cmt"># i18n (gleicher Ordner!)</span>
+<span class="c-var">trevlix_i18n.py</span>         <span class="c-cmt"># Python i18n</span>
+<span class="c-var">requirements.txt</span>        <span class="c-cmt"># Abhängigkeiten</span>
+<span class="c-var">.env.example</span>            <span class="c-cmt"># Konfigurationsvorlage</span>
+
+<span class="c-cmd">pip install</span> -r requirements.txt</pre>
+
+<!-- ══ 3. DOCKER ════════════════════════════════════════════════== -->
+<h2 id="docker">🐳 <span data-i18n="inst_docker_title">Docker Compose</span> <span class="new-badge">NEU</span></h2>
+<p data-i18n="inst_docker_desc">Docker Compose startet TREVLIX, MySQL und optional Nginx in einer einzigen Zeile — kein manuelles Setup nötig.</p>
+
+<div class="step-block">
+  <div class="step-num">1</div>
+  <div>
+    <div class="step-title" data-i18n="inst_docker_step1">.env erstellen</div>
+    <div class="step-desc" data-i18n="inst_docker_step1_desc">Vorlage kopieren und alle Werte befüllen.</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">cp</span> .env.example .env
+<span class="c-cmd">nano</span> .env  <span class="c-cmt"># Werte eintragen</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">2</div>
+  <div>
+    <div class="step-title" data-i18n="inst_docker_step2">Starten</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">docker compose up -d</span>
+
+<span class="c-cmt"># Mit Nginx (HTTPS) für Production:</span>
+<span class="c-cmd">docker compose</span> --profile production <span class="c-cmd">up -d</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">3</div>
+  <div>
+    <div class="step-title" data-i18n="inst_docker_step3">Logs &amp; Status</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">docker compose logs -f</span> trevlix
+<span class="c-cmd">docker compose ps</span>
+<span class="c-cmd">docker compose restart</span> trevlix</pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">4</div>
+  <div>
+    <div class="step-title" data-i18n="inst_docker_step4">SSL / HTTPS</div>
+    <div class="step-desc" data-i18n="inst_docker_step4_desc">Zertifikate in <code>docker/ssl/</code> legen (fullchain.pem + privkey.pem). Für Let's Encrypt:</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">certbot certonly</span> --standalone -d trevlix.dev
+<span class="c-cmd">cp</span> /etc/letsencrypt/live/trevlix.dev/fullchain.pem docker/ssl/
+<span class="c-cmd">cp</span> /etc/letsencrypt/live/trevlix.dev/privkey.pem   docker/ssl/</pre>
+  </div>
+</div>
+
+<!-- ══ 4. DATABASE ════════════════════════════════════════════════ -->
+<h2 id="database">🗄 <span data-i18n="inst_db_title">Datenbank</span></h2>
+<p data-i18n="inst_db_desc">TREVLIX erstellt alle Tabellen beim ersten Start automatisch. Nur die leere Datenbank muss vorab existieren.</p>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt">-- MySQL / MariaDB</span>
+<span class="c-kw">CREATE DATABASE</span> trevlix <span class="c-kw">CHARACTER SET</span> utf8mb4 <span class="c-kw">COLLATE</span> utf8mb4_unicode_ci;
+<span class="c-kw">CREATE USER</span> <span class="c-str">'trevlix'@'localhost'</span> <span class="c-kw">IDENTIFIED BY</span> <span class="c-str">'SICHERES_PASSWORT'</span>;
+<span class="c-kw">GRANT ALL PRIVILEGES ON</span> trevlix.* <span class="c-kw">TO</span> <span class="c-str">'trevlix'@'localhost'</span>;
+<span class="c-kw">FLUSH PRIVILEGES</span>;</pre>
+<div class="card info">
+  <div class="card-title" data-i18n="inst_db_tables_title">Automatisch erstellte Tabellen</div>
+  <div class="card-body">
+    <div class="tags">
+      <span class="tag jade">trades</span><span class="tag jade">open_positions</span>
+      <span class="tag jade">signals</span><span class="tag jade">backtest_results</span>
+      <span class="tag jade">ai_training_data</span><span class="tag jade">price_alerts</span>
+      <span class="tag jade">users</span><span class="tag jade">config</span>
+      <span class="tag jade">portfolio_history</span><span class="tag jade">activity_log</span>
+      <span class="tag jade">tax_report</span><span class="tag jade">discord_log</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 5. CONFIG ══════════════════════════════════════════════════ -->
+<h2 id="config">⚙️ <span data-i18n="inst_config_title">Konfiguration (.env)</span></h2>
+<p data-i18n="inst_config_desc">Alle Einstellungen werden über die <code>.env</code> Datei gesteuert. Vorlage: <code>cp .env.example .env</code></p>
+
+<table>
+  <thead><tr><th data-i18n="inst_tbl_var">Variable</th><th data-i18n="inst_tbl_desc">Beschreibung</th><th data-i18n="inst_tbl_req">Pflicht</th><th data-i18n="inst_tbl_default">Standard</th></tr></thead>
+  <tbody>
+    <tr><td>EXCHANGE</td><td data-i18n="inst_cfg_exchange">Exchange (cryptocom/binance/bybit/okx/kucoin)</td><td class="td-req">✓</td><td class="td-default">cryptocom</td></tr>
+    <tr><td>API_KEY</td><td data-i18n="inst_cfg_apikey">Exchange API Key</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>API_SECRET</td><td data-i18n="inst_cfg_apisecret">Exchange API Secret</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>MYSQL_HOST</td><td data-i18n="inst_cfg_mysqlhost">MySQL Server (Docker: "mysql")</td><td class="td-req">✓</td><td class="td-default">localhost</td></tr>
+    <tr><td>MYSQL_USER</td><td data-i18n="inst_cfg_mysqluser">MySQL Benutzer</td><td class="td-req">✓</td><td class="td-default">trevlix</td></tr>
+    <tr><td>MYSQL_PASS</td><td data-i18n="inst_cfg_mysqlpass">MySQL Passwort</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>MYSQL_DB</td><td data-i18n="inst_cfg_mysqldb">Datenbankname</td><td class="td-req">✓</td><td class="td-default">trevlix</td></tr>
+    <tr><td>ADMIN_PASSWORD</td><td data-i18n="inst_cfg_adminpw">Dashboard Passwort <strong style="color:var(--red)" data-i18n="inst_cfg_change">— unbedingt ändern!</strong></td><td class="td-req">✓</td><td class="td-default">admin123</td></tr>
+    <tr><td>JWT_SECRET</td><td data-i18n="inst_cfg_jwt">JWT Signing Key (min. 32 Zeichen)</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>DASHBOARD_SECRET</td><td data-i18n="inst_cfg_dash">Dashboard Session Key (min. 16 Zeichen)</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>SECRET_KEY</td><td data-i18n="inst_cfg_secret">Flask Session Key (min. 32 Zeichen)</td><td class="td-req">✓</td><td>—</td></tr>
+    <tr><td>PAPER_TRADING</td><td data-i18n="inst_cfg_paper">true = kein echtes Geld, false = Live</td><td class="td-opt">○</td><td class="td-default">true</td></tr>
+    <tr><td>SESSION_TIMEOUT_MIN</td><td data-i18n="inst_cfg_session">Inaktivitäts-Timeout in Minuten <span class="new-badge">NEU</span></td><td class="td-opt">○</td><td class="td-default">30</td></tr>
+    <tr><td>ALLOWED_ORIGINS</td><td data-i18n="inst_cfg_cors">Erlaubte CORS-Origins (kommagetrennt) <span class="new-badge">NEU</span></td><td class="td-opt">○</td><td class="td-default">localhost:5000</td></tr>
+    <tr><td>GITHUB_REPO</td><td data-i18n="inst_cfg_github">GitHub Repo für Auto-Update (USER/REPO)</td><td class="td-opt">○</td><td>—</td></tr>
+    <tr><td>DISCORD_WEBHOOK</td><td data-i18n="inst_cfg_discord">Discord Webhook URL</td><td class="td-opt">○</td><td>—</td></tr>
+    <tr><td>CRYPTOPANIC_TOKEN</td><td data-i18n="inst_cfg_cryptopanic">CryptoPanic API Token</td><td class="td-opt">○</td><td>—</td></tr>
+    <tr><td>BLOCKNATIVE_KEY</td><td data-i18n="inst_cfg_blocknative">Blocknative Key für Gas-Fees <span class="new-badge">NEU</span></td><td class="td-opt">○</td><td>—</td></tr>
+    <tr><td>LANGUAGE</td><td data-i18n="inst_cfg_lang">Sprache (de/en/es/ru/pt)</td><td class="td-opt">○</td><td class="td-default">de</td></tr>
+    <tr><td>PORT</td><td data-i18n="inst_cfg_port">Dashboard Port</td><td class="td-opt">○</td><td class="td-default">5000</td></tr>
+  </tbody>
+</table>
+
+<!-- ══ 6. SECURITY ════════════════════════════════════════════════ -->
+<h2 id="security">🔐 <span data-i18n="inst_sec_title">Sicherheit</span> <span class="new-badge">NEU</span></h2>
+<div class="card danger">
+  <div class="card-title">⛔ <span data-i18n="inst_sec_warn_title">Kritische Sicherheitshinweise</span></div>
+  <div class="card-body">
+    <ul class="checklist">
+      <li data-i18n="inst_sec_w1">ADMIN_PASSWORD sofort ändern — "admin123" wird beim Start blockiert</li>
+      <li data-i18n="inst_sec_w2">JWT_SECRET, DASHBOARD_SECRET und SECRET_KEY müssen zufällige Strings sein (min. 32 Zeichen)</li>
+      <li data-i18n="inst_sec_w3">.env Datei niemals in Git committen — .gitignore ist bereits vorkonfiguriert</li>
+      <li data-i18n="inst_sec_w4">Exchange API: nur Lesen + Handeln erlauben — NIEMALS Abheben</li>
+      <li data-i18n="inst_sec_w5">IP-Whitelist im Exchange-Konto auf Server-IP einschränken</li>
+    </ul>
+  </div>
+</div>
+<div class="card info">
+  <div class="card-title" data-i18n="inst_sec_features_title">Enthaltene Sicherheitsfunktionen</div>
+  <div class="card-body">
+    <ul class="checklist">
+      <li data-i18n="inst_sec_f1">Rate Limiting: max. 5 Login-Versuche/Minute, 10 Minuten Sperre bei Überschreitung</li>
+      <li data-i18n="inst_sec_f2">WebSocket-Auth: Jede WS-Verbindung wird mit Session oder kurzlebigem Token validiert</li>
+      <li data-i18n="inst_sec_f3">CORS: Nur konfigurierte Origins (ALLOWED_ORIGINS) werden akzeptiert</li>
+      <li data-i18n="inst_sec_f4">Session-Timeout: Automatischer Logout nach Inaktivität (SESSION_TIMEOUT_MIN)</li>
+      <li data-i18n="inst_sec_f5">Passwort-Stärke: Schwache Passwörter werden beim Start gewarnt</li>
+      <li data-i18n="inst_sec_f6">Bcrypt: Alle Passwörter werden gehasht gespeichert</li>
+    </ul>
+  </div>
+</div>
+<h3 data-i18n="inst_sec_keygen">Sichere Keys generieren</h3>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># Zufälligen Key generieren (Linux/Mac):</span>
+<span class="c-cmd">python -c</span> <span class="c-str">"import secrets; print(secrets.token_hex(32))"</span>
+
+<span class="c-cmt"># Oder:</span>
+<span class="c-cmd">openssl rand</span> -hex 32</pre>
+
+<!-- ══ 7. START ════════════════════════════════════════════════════ -->
+<h2 id="start">🚀 <span data-i18n="inst_start_title">Bot starten</span></h2>
+<div class="step-block">
+  <div class="step-num">1</div>
+  <div>
+    <div class="step-title" data-i18n="inst_start_s1">.env konfigurieren</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">cp</span> .env.example .env
+<span class="c-cmd">nano</span> .env</pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">2</div>
+  <div>
+    <div class="step-title" data-i18n="inst_start_s2">Bot starten</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">python</span> server.py</pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">3</div>
+  <div>
+    <div class="step-title" data-i18n="inst_start_s3">Dashboard öffnen</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button>http://localhost:<span class="c-str">5000</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">4</div>
+  <div>
+    <div class="step-title" data-i18n="inst_start_s4">Als Dienst (systemd)</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># /etc/systemd/system/trevlix.service</span>
+[Unit]
+Description=TREVLIX Trading Bot
+After=network.target mysql.service
+
+[Service]
+User=<span class="c-var">ubuntu</span>
+WorkingDirectory=<span class="c-var">/home/ubuntu/trevlix</span>
+ExecStart=<span class="c-var">/home/ubuntu/trevlix/.venv/bin/python</span> server.py
+Restart=always
+RestartSec=10
+EnvironmentFile=<span class="c-var">/home/ubuntu/trevlix/.env</span>
+
+[Install]
+WantedBy=multi-user.target</pre>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">sudo systemctl</span> enable --now trevlix
+<span class="c-cmd">sudo journalctl</span> -u trevlix -f</pre>
+  </div>
+</div>
+
+<!-- ══ 8. EXCHANGES ════════════════════════════════════════════════ -->
+<h2 id="exchanges">🏦 <span data-i18n="inst_exc_title">Exchange-Konfiguration</span></h2>
+<p data-i18n="inst_exc_desc">API-Keys im Exchange erstellen: nur <strong>Lesen</strong> und <strong>Handeln</strong> erlauben — niemals Abheben!</p>
+<table>
+  <thead><tr><th>Exchange</th><th>EXCHANGE=</th><th data-i18n="inst_exc_spot">Spot</th><th data-i18n="inst_exc_futures">Futures</th><th data-i18n="inst_exc_note">Hinweis</th></tr></thead>
+  <tbody>
+    <tr><td>Crypto.com</td><td>cryptocom</td><td>✅</td><td>—</td><td data-i18n="inst_exc_default">Standard</td></tr>
+    <tr><td>Binance</td><td>binance</td><td>✅</td><td>✅</td><td data-i18n="inst_exc_binance">Größte Liquidität</td></tr>
+    <tr><td>Bybit</td><td>bybit</td><td>✅</td><td>✅</td><td data-i18n="inst_exc_bybit">Gut für Shorts</td></tr>
+    <tr><td>OKX</td><td>okx</td><td>✅</td><td>✅</td><td data-i18n="inst_exc_okx">Niedrige Gebühren</td></tr>
+    <tr><td>KuCoin</td><td>kucoin</td><td>✅</td><td>—</td><td data-i18n="inst_exc_kucoin">Viele Altcoins</td></tr>
+  </tbody>
+</table>
+
+<!-- ══ 9. AUTO-UPDATE ══════════════════════════════════════════════ -->
+<h2 id="update">🔄 <span data-i18n="inst_upd_title">GitHub Auto-Update</span></h2>
+<div class="step-block">
+  <div class="step-num">1</div>
+  <div>
+    <div class="step-title" data-i18n="inst_upd_s1">GitHub Fork erstellen</div>
+    <div class="step-desc" data-i18n="inst_upd_s1_desc">Repo forken → eigene Änderungen committen → Releases erstellen.</div>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">2</div>
+  <div>
+    <div class="step-title" data-i18n="inst_upd_s2">Repo in .env setzen</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button>GITHUB_REPO=<span class="c-var">DEIN_USER/trevlix</span>
+GITHUB_BRANCH=<span class="c-var">main</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">3</div>
+  <div>
+    <div class="step-title" data-i18n="inst_upd_s3">Update im Dashboard</div>
+    <div class="step-desc" data-i18n="inst_upd_s3_desc">Settings → GitHub Auto-Update → "Auf Updates prüfen" → "Update installieren". Bot startet automatisch neu.</div>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">4</div>
+  <div>
+    <div class="step-title" data-i18n="inst_upd_s4">Release erstellen (CI)</div>
+    <div class="step-desc" data-i18n="inst_upd_s4_desc">GitHub Actions erstellt automatisch ein Release wenn der Commit "[release]" enthält:</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmd">git commit</span> -m <span class="c-str">"[release] v1.1.0 — Neue Features"</span>
+<span class="c-cmd">git push</span></pre>
+  </div>
+</div>
+
+<!-- ══ 10. AI & BACKTEST ════════════════════════════════════════════ -->
+<h2 id="ai">🧠 <span data-i18n="inst_ai_title">KI & Backtest</span> <span class="new-badge">NEU</span></h2>
+<div class="grid-2">
+  <div class="card ok">
+    <div class="card-title" data-i18n="inst_ai_models">KI-Modelle</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_ai_rf">Random Forest + XGBoost (Ensemble)</li>
+        <li data-i18n="inst_ai_lstm">LSTM (Zeitreihen)</li>
+        <li data-i18n="inst_ai_transformer">Transformer / Multi-Head Attention <span class="new-badge">NEU</span></li>
+        <li data-i18n="inst_ai_bull_bear">Bull/Bear Regime-Modelle</li>
+        <li data-i18n="inst_ai_walkforward">Walk-Forward Validierung</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card info">
+    <div class="card-title" data-i18n="inst_ai_features">Features (31)</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_ai_f1">9 Strategie-Votes (EMA, RSI, MACD…)</li>
+        <li data-i18n="inst_ai_f2">Technische Indikatoren (RSI, ATR, BB…)</li>
+        <li data-i18n="inst_ai_f3">News-Sentiment (CryptoPanic)</li>
+        <li data-i18n="inst_ai_f4">On-Chain Daten (CryptoQuant)</li>
+        <li data-i18n="inst_ai_f5">ETH Gas Fees <span class="new-badge">NEU</span></li>
+        <li data-i18n="inst_ai_f6">Fear &amp; Greed, BTC-Dominanz</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<h3 data-i18n="inst_backtest_title">Backtest</h3>
+<p data-i18n="inst_backtest_desc">TREVLIX nutzt echte OHLCV-Daten von der Exchange mit realistischer Slippage- und Fee-Simulation.</p>
+<table>
+  <thead><tr><th data-i18n="inst_tbl_feature">Feature</th><th data-i18n="inst_tbl_detail">Detail</th></tr></thead>
+  <tbody>
+    <tr><td data-i18n="inst_bt_slippage">Slippage</td><td>0.05% je Trade (Spread + Marktimpakt)</td></tr>
+    <tr><td data-i18n="inst_bt_fees">Fees</td><td>0.10% Taker / 0.08% Maker</td></tr>
+    <tr><td data-i18n="inst_bt_kelly">Kelly Sizing</td><td data-i18n="inst_bt_kelly_desc">Dynamische Positionsgröße basierend auf bisheriger Win-Rate</td></tr>
+    <tr><td data-i18n="inst_bt_trailing">Trailing Stop</td><td data-i18n="inst_bt_trailing_desc">Optional aktivierbar</td></tr>
+    <tr><td data-i18n="inst_bt_metrics">Metriken</td><td>Return%, Win-Rate, Sharpe, Calmar, Max-DD, Profit-Factor</td></tr>
+    <tr><td data-i18n="inst_bt_monthly">Monatliche Aufschlüsselung</td><td data-i18n="inst_bt_monthly_desc">PnL und Win-Rate pro Monat</td></tr>
+    <tr><td>Pine Script Export</td><td data-i18n="inst_bt_pine">TradingView v5 Export per API oder Dashboard</td></tr>
+    <tr><td data-i18n="inst_bt_compare">Multi-Asset Vergleich</td><td data-i18n="inst_bt_compare_desc">Bis zu 6 Symbole parallel backtesten</td></tr>
+    <tr><td>Markowitz</td><td data-i18n="inst_bt_markowitz">Optimale Kapitalverteilung (Monte Carlo, 5000 Portfolios)</td></tr>
+  </tbody>
+</table>
+<div class="card info">
+  <div class="card-title" data-i18n="inst_shap_title">SHAP — KI-Erklärungen <span class="new-badge">NEU</span></div>
+  <div class="card-body" data-i18n="inst_shap_desc">Mit <code>pip install shap</code> werden SHAP-Werte für jeden Trade berechnet — erklärt warum TREVLIX eine Position geöffnet hat.</div>
+</div>
+
+<!-- ══ 11. COPY-TRADING ════════════════════════════════════════════ -->
+<h2 id="copy-trading">🤝 <span data-i18n="inst_copy_title">Copy-Trading API</span> <span class="new-badge">NEU</span></h2>
+<p data-i18n="inst_copy_desc">Follower empfangen jeden Trade als Webhook-POST an ihre URL — ideal um mehrere Konten zu synchronisieren.</p>
+<div class="step-block">
+  <div class="step-num">1</div>
+  <div>
+    <div class="step-title" data-i18n="inst_copy_s1">Follower registrieren</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># POST /api/v1/copy-trading/register</span>
+{
+  <span class="c-str">"name"</span>:        <span class="c-str">"Mein Konto 2"</span>,
+  <span class="c-str">"webhook_url"</span>: <span class="c-str">"https://meine-app.com/webhook"</span>,
+  <span class="c-str">"scale"</span>:       <span class="c-var">0.5</span>  <span class="c-cmt">// 50% der TREVLIX-Positionsgröße</span>
+}
+
+<span class="c-cmt">// Response: { "token": "abc123...", "name": "Mein Konto 2" }</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">2</div>
+  <div>
+    <div class="step-title" data-i18n="inst_copy_s2">Webhook Payload</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button>{
+  <span class="c-str">"source"</span>:       <span class="c-str">"TREVLIX"</span>,
+  <span class="c-str">"type"</span>:         <span class="c-str">"BUY"</span>,       <span class="c-cmt">// BUY | SELL | SHORT | TEST</span>
+  <span class="c-str">"symbol"</span>:       <span class="c-str">"BTC/USDT"</span>,
+  <span class="c-str">"price"</span>:        <span class="c-var">67450.0</span>,
+  <span class="c-str">"invest_usdt"</span>:  <span class="c-var">500.0</span>,    <span class="c-cmt">// Bereits mit scale multipliziert</span>
+  <span class="c-str">"confidence"</span>:   <span class="c-var">0.78</span>,
+  <span class="c-str">"votes"</span>:        { <span class="c-str">"EMA-Trend"</span>: <span class="c-var">1</span>, <span class="c-str">"RSI"</span>: <span class="c-var">1</span> },
+  <span class="c-str">"timestamp"</span>:    <span class="c-str">"2024-01-15T14:30:00Z"</span>
+}</pre>
+  </div>
+</div>
+
+<!-- ══ 12. API ════════════════════════════════════════════════════ -->
+<h2 id="api">📡 <span data-i18n="inst_api_title">REST-API Referenz</span></h2>
+<p data-i18n="inst_api_auth">Alle <code>/api/v1/</code> Endpoints erfordern einen JWT-Token im Header: <code>Authorization: Bearer TOKEN</code></p>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt"># Token holen</span>
+<span class="c-cmd">curl</span> -X POST http://localhost:5000/api/v1/token   -H <span class="c-str">"Content-Type: application/json"</span>   -d <span class="c-str">'{"username":"admin","password":"DEIN_PASSWORT"}'</span></pre>
+
+<div class="ep-grid">
+  <div class="ep-row"><div class="ep-cell ep-head ep-method">Method</div><div class="ep-cell ep-head ep-path">Endpoint</div><div class="ep-cell ep-head ep-desc" data-i18n="inst_api_desc">Beschreibung</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/state</div><div class="ep-cell ep-desc" data-i18n="inst_api_state">Bot-Status (Balance, Positionen…)</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/trades</div><div class="ep-cell ep-desc" data-i18n="inst_api_trades">Abgeschlossene Trades</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">POST</div><div class="ep-cell ep-path">/api/v1/backtest</div><div class="ep-cell ep-desc" data-i18n="inst_api_backtest">Backtest starten</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">POST</div><div class="ep-cell ep-path">/api/v1/backtest/compare</div><div class="ep-cell ep-desc" data-i18n="inst_api_btcompare">Multi-Asset Backtest <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/pine-script</div><div class="ep-cell ep-desc" data-i18n="inst_api_pine">TradingView Pine Script <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">POST</div><div class="ep-cell ep-path">/api/v1/portfolio/optimize</div><div class="ep-cell ep-desc" data-i18n="inst_api_markowitz">Markowitz Optimierung <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/ai/feature-importance</div><div class="ep-cell ep-desc" data-i18n="inst_api_fi">Feature Importance <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/gas</div><div class="ep-cell ep-desc" data-i18n="inst_api_gas">ETH Gas Fees <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">POST</div><div class="ep-cell ep-path">/api/v1/copy-trading/register</div><div class="ep-cell ep-desc" data-i18n="inst_api_copy">Follower registrieren <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">PATCH</div><div class="ep-cell ep-path">/api/v1/positions/{sym}/sl</div><div class="ep-cell ep-desc" data-i18n="inst_api_sl">SL manuell anpassen <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">PATCH</div><div class="ep-cell ep-path">/api/v1/positions/{sym}/tp</div><div class="ep-cell ep-desc" data-i18n="inst_api_tp">TP manuell anpassen <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/live-demo</div><div class="ep-cell ep-desc" data-i18n="inst_api_demo">Öffentliche Demo-Daten <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/changelog</div><div class="ep-cell ep-desc" data-i18n="inst_api_changelog">GitHub Releases <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/ws-token</div><div class="ep-cell ep-desc" data-i18n="inst_api_wstoken">WS Auth Token <span class="new-badge">NEU</span></div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">POST</div><div class="ep-cell ep-path">/api/v1/signal</div><div class="ep-cell ep-desc" data-i18n="inst_api_signal">TradingView Webhook</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/tax</div><div class="ep-cell ep-desc" data-i18n="inst_api_tax">Steuer-Report</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/export/csv</div><div class="ep-cell ep-desc" data-i18n="inst_api_csv">Trades als CSV</div></div>
+  <div class="ep-row"><div class="ep-cell ep-method">GET</div><div class="ep-cell ep-path">/api/v1/docs</div><div class="ep-cell ep-desc" data-i18n="inst_api_docs">API Dokumentation (JSON)</div></div>
+</div>
+
+<h3 data-i18n="inst_tv_title">TradingView Webhook</h3>
+<p data-i18n="inst_tv_desc">Alert-URL in TradingView: <code>http://DEINE-IP:5000/api/v1/signal</code></p>
+<pre><button class="copy-btn" onclick="copyCode(this)">Copy</button><span class="c-cmt">// TradingView Alert Message Body (JSON):</span>
+{
+  <span class="c-str">"symbol"</span>:     <span class="c-str">"{{ticker}}"</span>,
+  <span class="c-str">"action"</span>:     <span class="c-str">"buy"</span>,    <span class="c-cmt">// "buy" | "sell"</span>
+  <span class="c-str">"price"</span>:      <span class="c-var">{{close}}</span>,
+  <span class="c-str">"token"</span>:      <span class="c-str">"DEIN_JWT_TOKEN"</span>
+}</pre>
+
+<!-- ══ 13. DISCORD ══════════════════════════════════════════════════ -->
+<h2 id="discord">💬 <span data-i18n="inst_disc_title">Discord Integration</span></h2>
+<div class="step-block">
+  <div class="step-num">1</div>
+  <div>
+    <div class="step-title" data-i18n="inst_disc_s1">Webhook erstellen</div>
+    <div class="step-desc" data-i18n="inst_disc_s1_desc">Discord → Server-Einstellungen → Integrationen → Webhooks → Neuer Webhook</div>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">2</div>
+  <div>
+    <div class="step-title" data-i18n="inst_disc_s2">URL in .env eintragen</div>
+    <pre><button class="copy-btn" onclick="copyCode(this)">Copy</button>DISCORD_WEBHOOK=https://discord.com/api/webhooks/<span class="c-var">ID/TOKEN</span></pre>
+  </div>
+</div>
+<div class="step-block">
+  <div class="step-num">3</div>
+  <div>
+    <div class="step-title" data-i18n="inst_disc_s3">Benachrichtigungen</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_disc_n1">✅ Trade eröffnet / geschlossen (mit PnL)</li>
+        <li data-i18n="inst_disc_n2">⚠️ Circuit Breaker ausgelöst</li>
+        <li data-i18n="inst_disc_n3">💔 Heartbeat-Alarm (Bot hängt)</li>
+        <li data-i18n="inst_disc_n4">📊 Tages-Report (automatisch)</li>
+        <li data-i18n="inst_disc_n5">🔄 Update installiert</li>
+        <li data-i18n="inst_disc_n6">♻️ Positionen nach Neustart wiederhergestellt</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ══ 14. TIPS ════════════════════════════════════════════════════ -->
+<h2 id="tips">💡 <span data-i18n="inst_tips_title">Tipps &amp; Best Practices</span></h2>
+<div class="grid-2">
+  <div class="card warn">
+    <div class="card-title" data-i18n="inst_tips_live_title">⚠️ Vor Live-Trading</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_tips_l1">Mindestens 30 Tage Paper-Trading</li>
+        <li data-i18n="inst_tips_l2">Win-Rate &gt; 55% im Backtest</li>
+        <li data-i18n="inst_tips_l3">Max. Drawdown &lt; 15%</li>
+        <li data-i18n="inst_tips_l4">Sharpe-Ratio &gt; 1.0</li>
+        <li data-i18n="inst_tips_l5">Feature Importance prüfen — KI muss sinnvoll gewichten</li>
+        <li data-i18n="inst_tips_l6">Position Recovery testen: Bot stoppen, neu starten</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card ok">
+    <div class="card-title" data-i18n="inst_tips_prod_title">🚀 Production-Setup</div>
+    <div class="card-body">
+      <ul class="checklist">
+        <li data-i18n="inst_tips_p1">Docker Compose + Nginx für HTTPS verwenden</li>
+        <li data-i18n="inst_tips_p2">GitHub Actions für automatische Tests aktivieren</li>
+        <li data-i18n="inst_tips_p3">Tägliche MySQL-Backups prüfen</li>
+        <li data-i18n="inst_tips_p4">Discord-Heartbeat-Alerts aktivieren</li>
+        <li data-i18n="inst_tips_p5">ALLOWED_ORIGINS auf eigene Domain setzen</li>
+        <li data-i18n="inst_tips_p6">SESSION_TIMEOUT_MIN auf 15 reduzieren</li>
+      </ul>
+    </div>
+  </div>
+</div>
+<div class="card info">
+  <div class="card-title">⌨️ <span data-i18n="inst_tips_kbd_title">Dashboard Keyboard Shortcuts</span> <span class="new-badge">NEU</span></div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:12px">
+      <span><code>Space</code> — <span data-i18n="inst_kbd_startstop">Start/Stop</span></span>
+      <span><code>B</code> — Backtest</span>
+      <span><code>S</code> — Settings</span>
+      <span><code>D</code> — Dashboard</span>
+      <span><code>A</code> — <span data-i18n="inst_kbd_ai">KI-Sektion</span></span>
+      <span><code>T</code> — <span data-i18n="inst_kbd_theme">Dark/Light Mode</span></span>
+      <span><code>?</code> — <span data-i18n="inst_kbd_help">Alle Shortcuts</span></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ FOOTER ══════════════════════════════════════════════════════ -->
+<footer>
+  <p>TREVLIX v1.0.0 &nbsp;·&nbsp; <a href="index.html" data-i18n="inst_footer_web">Website</a> &nbsp;·&nbsp; <a href="dashboard.html" data-i18n="inst_footer_dash">Dashboard</a> &nbsp;·&nbsp; <a href="https://github.com" target="_blank" rel="noopener">GitHub</a></p>
+  <p style="margin-top:8px;font-size:11px" data-i18n="inst_footer_copy">© 2024 TREVLIX — Open Source, MIT Lizenz</p>
+</footer>
+
+</div>
+
+<script>
+// ── Copy-to-clipboard ──────────────────────────────────────────
+document.querySelectorAll('pre').forEach(pre => {
+  if (!pre.querySelector('.copy-btn')) {
+    const btn = document.createElement('button');
+    btn.className = 'copy-btn'; btn.textContent = 'Copy';
+    pre.style.position = 'relative';
+    pre.prepend(btn);
+  }
+});
+function copyCode(btn) {
+  const pre   = btn.closest('pre');
+  const text  = pre.innerText.replace(/^Copy\n?/, '').trim();
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '✓ OK';
+    setTimeout(() => btn.textContent = 'Copy', 1800);
+  });
+}
+
+// ── i18n ──────────────────────────────────────────────────────
+if (typeof QI18n !== 'undefined') {
+  QI18n.init('langSwitcher');
+} else {
+  // Fallback: render lang buttons manually without QI18n
+  const langs = {de:'🇩🇪 DE',en:'🇺🇸 EN',es:'🇪🇸 ES',ru:'🇷🇺 RU',pt:'🇧🇷 PT'};
+  const sw = document.getElementById('langSwitcher');
+  if(sw) {
+    sw.innerHTML = Object.entries(langs).map(([code,label]) =>
+      `<button class="lang-btn${code==='de'?' active':''}" onclick="switchLang('${code}')">${label}</button>`
+    ).join('');
+  }
+}
+
+function switchLang(code) {
+  if (typeof QI18n !== 'undefined') {
+    QI18n.setLang(code);
+  }
+  document.querySelectorAll('.lang-btn').forEach(b =>
+    b.classList.toggle('active', b.onclick?.toString().includes(code))
+  );
+}
+
+// ── Smooth scroll ──────────────────────────────────────────────
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    e.preventDefault();
+    const el = document.getElementById(a.getAttribute('href').slice(1));
+    if (el) el.scrollIntoView({behavior:'smooth', block:'start'});
+  });
+});
+</script>
+
+<script>
+// ── INSTALLATION GUIDE i18n ────────────────────────────────────────────────
+const INSTALL_LANGS = {
+  de: {
+    h1: 'Installations-Anleitung',
+    intro: 'Vollständige Anleitung zur Installation von TREVLIX auf Ubuntu/Debian.',
+    req_title: 'Voraussetzungen',
+    req_os: 'Betriebssystem: Ubuntu 16.04–24.04 oder Debian 6–12',
+    req_python: 'Python 3.9+ (empfohlen: 3.11)',
+    req_mysql: 'MySQL 5.7+ oder MariaDB 10.3+',
+    req_ram: 'RAM: mindestens 1 GB (empfohlen: 2 GB)',
+    req_disk: 'Speicher: mindestens 5 GB frei',
+    install_title: 'Installation',
+    install_auto: 'Automatisch (empfohlen)',
+    install_auto_desc: 'Ein Befehl installiert alles automatisch:',
+    install_manual: 'Manuell',
+    db_title: 'Datenbank einrichten',
+    env_title: '.env Konfiguration',
+    start_title: 'Bot starten',
+    update_title: 'GitHub Auto-Update',
+    api_title: 'REST-API Endpoints',
+    discord_title: 'Discord Integration',
+    tips_title: 'Tipps & Best Practices',
+    warning_live: '⚠️ Starte immer mit Paper-Trading! PAPER_TRADING=true in .env',
+    tip1: 'Mindestens 30 Tage Paper-Trading vor Live-Betrieb',
+    tip2: 'Win-Rate > 55% und Max-Drawdown < 15% als Mindestanforderung',
+    tip3: 'Nie Withdraw-Berechtigung für API-Keys vergeben',
+    tip4: 'Admin-Passwort nach Installation sofort ändern',
+  },
+  en: {
+    h1: 'Installation Guide',
+    intro: 'Complete guide for installing TREVLIX on Ubuntu/Debian.',
+    req_title: 'Requirements',
+    req_os: 'OS: Ubuntu 16.04–24.04 or Debian 6–12',
+    req_python: 'Python 3.9+ (recommended: 3.11)',
+    req_mysql: 'MySQL 5.7+ or MariaDB 10.3+',
+    req_ram: 'RAM: at least 1 GB (recommended: 2 GB)',
+    req_disk: 'Disk: at least 5 GB free',
+    install_title: 'Installation',
+    install_auto: 'Automatic (recommended)',
+    install_auto_desc: 'One command installs everything automatically:',
+    install_manual: 'Manual',
+    db_title: 'Database Setup',
+    env_title: '.env Configuration',
+    start_title: 'Start the Bot',
+    update_title: 'GitHub Auto-Update',
+    api_title: 'REST-API Endpoints',
+    discord_title: 'Discord Integration',
+    tips_title: 'Tips & Best Practices',
+    warning_live: '⚠️ Always start with Paper Trading! Set PAPER_TRADING=true in .env',
+    tip1: 'At least 30 days of paper trading before going live',
+    tip2: 'Win rate > 55% and max drawdown < 15% as minimum requirements',
+    tip3: 'Never grant Withdraw permission to API keys',
+    tip4: 'Change admin password immediately after installation',
+  },
+  es: {
+    h1: 'Guía de instalación',
+    intro: 'Guía completa para instalar TREVLIX en Ubuntu/Debian.',
+    req_title: 'Requisitos',
+    req_os: 'SO: Ubuntu 16.04–24.04 o Debian 6–12',
+    req_python: 'Python 3.9+ (recomendado: 3.11)',
+    req_mysql: 'MySQL 5.7+ o MariaDB 10.3+',
+    req_ram: 'RAM: mínimo 1 GB (recomendado: 2 GB)',
+    req_disk: 'Disco: mínimo 5 GB libres',
+    install_title: 'Instalación',
+    install_auto: 'Automática (recomendada)',
+    install_auto_desc: 'Un comando instala todo automáticamente:',
+    install_manual: 'Manual',
+    db_title: 'Configurar base de datos',
+    env_title: 'Configuración .env',
+    start_title: 'Iniciar el bot',
+    update_title: 'Actualización automática GitHub',
+    api_title: 'Endpoints REST-API',
+    discord_title: 'Integración Discord',
+    tips_title: 'Consejos y mejores prácticas',
+    warning_live: '⚠️ ¡Siempre empieza con Paper Trading! PAPER_TRADING=true en .env',
+    tip1: 'Al menos 30 días de paper trading antes de operar en vivo',
+    tip2: 'Tasa de victorias > 55% y drawdown máximo < 15%',
+    tip3: 'Nunca otorgar permiso de retiro a las claves API',
+    tip4: 'Cambiar la contraseña de admin inmediatamente después de instalar',
+  },
+  ru: {
+    h1: 'Руководство по установке',
+    intro: 'Полное руководство по установке TREVLIX на Ubuntu/Debian.',
+    req_title: 'Требования',
+    req_os: 'ОС: Ubuntu 16.04–24.04 или Debian 6–12',
+    req_python: 'Python 3.9+ (рекомендуется: 3.11)',
+    req_mysql: 'MySQL 5.7+ или MariaDB 10.3+',
+    req_ram: 'ОЗУ: минимум 1 ГБ (рекомендуется: 2 ГБ)',
+    req_disk: 'Диск: минимум 5 ГБ свободно',
+    install_title: 'Установка',
+    install_auto: 'Автоматически (рекомендуется)',
+    install_auto_desc: 'Одна команда устанавливает всё автоматически:',
+    install_manual: 'Вручную',
+    db_title: 'Настройка базы данных',
+    env_title: 'Конфигурация .env',
+    start_title: 'Запуск бота',
+    update_title: 'Автообновление GitHub',
+    api_title: 'REST-API Endpoints',
+    discord_title: 'Интеграция Discord',
+    tips_title: 'Советы и лучшие практики',
+    warning_live: '⚠️ Всегда начинайте с бумажной торговли! PAPER_TRADING=true в .env',
+    tip1: 'Минимум 30 дней бумажной торговли перед реальной',
+    tip2: 'Процент побед > 55% и макс. просадка < 15%',
+    tip3: 'Никогда не давайте права на вывод API-ключам',
+    tip4: 'Сменить пароль администратора сразу после установки',
+  },
+  pt: {
+    h1: 'Guia de instalação',
+    intro: 'Guia completo para instalar o TREVLIX no Ubuntu/Debian.',
+    req_title: 'Requisitos',
+    req_os: 'SO: Ubuntu 16.04–24.04 ou Debian 6–12',
+    req_python: 'Python 3.9+ (recomendado: 3.11)',
+    req_mysql: 'MySQL 5.7+ ou MariaDB 10.3+',
+    req_ram: 'RAM: mínimo 1 GB (recomendado: 2 GB)',
+    req_disk: 'Disco: mínimo 5 GB livres',
+    install_title: 'Instalação',
+    install_auto: 'Automática (recomendada)',
+    install_auto_desc: 'Um comando instala tudo automaticamente:',
+    install_manual: 'Manual',
+    db_title: 'Configurar banco de dados',
+    env_title: 'Configuração .env',
+    start_title: 'Iniciar o bot',
+    update_title: 'Atualização automática GitHub',
+    api_title: 'Endpoints REST-API',
+    discord_title: 'Integração Discord',
+    tips_title: 'Dicas e boas práticas',
+    warning_live: '⚠️ Comece sempre com Paper Trading! PAPER_TRADING=true no .env',
+    tip1: 'Pelo menos 30 dias de paper trading antes de operar ao vivo',
+    tip2: 'Taxa de vitórias > 55% e drawdown máximo < 15%',
+    tip3: 'Nunca conceder permissão de saque às chaves API',
+    tip4: 'Alterar a senha do admin imediatamente após a instalação',
+  },
+};
+
+const FLAGS = {de:'🇩🇪',en:'🇺🇸',es:'🇪🇸',ru:'🇷🇺',pt:'🇧🇷'};
+const NAMES = {de:'Deutsch',en:'English',es:'Español',ru:'Русский',pt:'Português'};
+let currentLang = localStorage.getItem('trevlix_lang') || navigator.language.slice(0,2) || 'de';
+if (!INSTALL_LANGS[currentLang]) currentLang = 'de';
+
+function applyLang(lang) {
+  currentLang = lang;
+  localStorage.setItem('trevlix_lang', lang);
+  const T = INSTALL_LANGS[lang];
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.dataset.i18n;
+    if (T[key]) el.textContent = T[key];
+  });
+  document.querySelectorAll('.lang-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.lang === lang));
+}
+
+function renderLangSwitcher() {
+  const el = document.getElementById('langSwitcher');
+  if (!el) return;
+  el.innerHTML = Object.entries(FLAGS).map(([code, flag]) =>
+    `<button class="lang-btn${currentLang===code?' active':''}" data-lang="${code}"
+       onclick="applyLang('${code}')" title="${NAMES[code]}">${flag} ${code.toUpperCase()}</button>`
+  ).join('');
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  renderLangSwitcher();
+  applyLang(currentLang);
+});
+</script>
+
+</body>
+</html>

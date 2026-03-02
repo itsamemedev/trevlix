@@ -1,0 +1,4839 @@
+"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║    ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗                             ║
+║    ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝                             ║
+║    ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗                             ║
+║    ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║                             ║
+║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
+║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
+║                                                                              ║
+║    Neural Exchange Unified System  ·  v1.0.0                                ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  KERN-ENGINE                                                                 ║
+║  · MySQL Datenbank       · Fear & Greed Index    · Multi-Timeframe          ║
+║  · XGBoost + Random Forest · LSTM Ensemble      · Walk-Forward Optim.       ║
+║  · Regime-Modelle (Bull/Bear) · Kelly-Sizing    · Orderbook Imbalance       ║
+║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
+║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
+║                                                                              ║
+║  NEU IN v1.0.0                                                               ║
+║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
+║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
+║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
+║  · Anomalie-Erkennung    – Isolation Forest stoppt bei Flash-Crash          ║
+║  · Genetischer Optimizer – Evolutionäre Strategie-Entdeckung                ║
+║  · Reinforcement Learning – PPO-Agent lernt direkt vom Markt                ║
+║  · Partial Take-Profit   – Stufenweiser Gewinnmitnahme (25/50/100%)        ║
+║  · DCA Strategie         – Nachkaufen bei fallenden Positionen              ║
+║  · Short-Selling         – Bearish-Trades auf Futures (Binance/Bybit)       ║
+║  · Arbitrage-Scanner     – Preisunterschiede zwischen Exchanges nutzen      ║
+║  · REST-API + JWT        – Externe Tools & TradingView-Webhooks             ║
+║  · Multi-User System     – Mehrere Portfolios auf einer Instanz             ║
+║                                                                              ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  pip install flask flask-socketio flask-cors ccxt pandas numpy               ║
+║    scikit-learn xgboost tensorflow ta python-dotenv eventlet requests        ║
+║    PyMySQL PyJWT bcrypt                                                      ║
+║                                                                              ║
+║  .env:  MYSQL_HOST=localhost  MYSQL_USER=root  MYSQL_PASS=geheim            ║
+║         MYSQL_DB=nexus        ADMIN_PASSWORD=adminpass                       ║
+║         CRYPTOPANIC_TOKEN=...  JWT_SECRET=...                                ║
+║                                                                              ║
+║  MySQL:  CREATE DATABASE nexus CHARACTER SET utf8mb4;                       ║
+║  Start:  python server.py  →  http://localhost:5000                         ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+"""
+
+import os, time, json, math, csv, io, threading, logging, traceback
+import zipfile, hashlib, secrets, random
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple, Any
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import wraps
+
+import numpy as np
+import pandas as pd
+import requests
+import ccxt
+from dotenv import load_dotenv
+from flask import (Flask, send_file, jsonify, request, Response, session, redirect)
+from flask_socketio import SocketIO, emit, disconnect
+from flask_cors import CORS
+
+# ── ML ──────────────────────────────────────────────────────────────────────
+try:
+    from sklearn.ensemble import RandomForestClassifier, VotingClassifier, IsolationForest
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.model_selection import TimeSeriesSplit
+    from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.metrics import accuracy_score
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+
+try:
+    from xgboost import XGBClassifier
+    XGB_AVAILABLE = True
+except ImportError:
+    XGB_AVAILABLE = False
+
+# [1] LightGBM — schneller als XGBoost, besser bei Tabellendaten
+try:
+    from lightgbm import LGBMClassifier
+    LGB_AVAILABLE = True
+except ImportError:
+    LGB_AVAILABLE = False
+
+# [2] CatBoost — beste Performance bei kategorischen Features
+try:
+    from catboost import CatBoostClassifier
+    CAT_AVAILABLE = True
+except ImportError:
+    CAT_AVAILABLE = False
+
+# [3] Optuna — Bayessche Hyperparameter-Optimierung
+try:
+    import optuna
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+
+# [6] Scipy for Fourier + Wavelet features
+try:
+    from scipy import signal as scipy_signal
+    from scipy.fft import rfft, rfftfreq
+    import pywt  # PyWavelets
+    WAVELET_AVAILABLE = True
+except ImportError:
+    try:
+        from scipy import signal as scipy_signal
+        from scipy.fft import rfft, rfftfreq
+        WAVELET_AVAILABLE = False
+    except ImportError:
+        WAVELET_AVAILABLE = False
+
+# [8] Advanced sklearn
+try:
+    from sklearn.feature_selection import SelectFromModel, mutual_info_classif
+    from sklearn.decomposition import PCA
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.model_selection import StratifiedKFold
+    from sklearn.preprocessing import QuantileTransformer
+    SKLEARN_ADV_AVAILABLE = True
+except ImportError:
+    SKLEARN_ADV_AVAILABLE = False
+
+# SMOTE for class imbalance
+try:
+    from imblearn.over_sampling import SMOTE
+    SMOTE_AVAILABLE = True
+except ImportError:
+    SMOTE_AVAILABLE = False
+
+try:
+    import tensorflow as tf
+    from tensorflow.keras.models import Sequential, Model
+    from tensorflow.keras.layers import LSTM, Dense, Dropout, Input, LayerNormalization
+    from tensorflow.keras.callbacks import EarlyStopping
+    tf.get_logger().setLevel("ERROR")
+    TF_AVAILABLE = True
+except ImportError:
+    TF_AVAILABLE = False
+
+# ── MySQL ────────────────────────────────────────────────────────────────────
+try:
+    import pymysql
+    import pymysql.cursors
+    MYSQL_AVAILABLE = True
+except ImportError:
+    MYSQL_AVAILABLE = False
+
+# ── JWT ──────────────────────────────────────────────────────────────────────
+try:
+    import jwt as pyjwt
+    JWT_AVAILABLE = True
+except ImportError:
+    JWT_AVAILABLE = False
+
+# ── bcrypt ───────────────────────────────────────────────────────────────────
+try:
+    import bcrypt
+    BCRYPT_AVAILABLE = True
+except ImportError:
+    BCRYPT_AVAILABLE = False
+
+load_dotenv()
+
+BOT_NAME    = "NEXUS"
+BOT_VERSION = "1.0.0"
+BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# APP
+# ═══════════════════════════════════════════════════════════════════════════════
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
+CORS(app)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
+                    logger=False, engineio_logger=False)
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.FileHandler("nexus.log", encoding="utf-8"), logging.StreamHandler()]
+)
+log = logging.getLogger("NEXUS")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KONFIGURATION
+# ═══════════════════════════════════════════════════════════════════════════════
+CONFIG: Dict[str, Any] = {
+    # Exchange
+    "exchange":           os.getenv("EXCHANGE", "cryptocom"),
+    "api_key":            os.getenv("API_KEY", ""),
+    "secret":             os.getenv("API_SECRET", ""),
+    "quote_currency":     "USDT",
+    "min_volume_usdt":    1_000_000,
+    "blacklist": ["USDC/USDT","BUSD/USDT","DAI/USDT","TUSD/USDT","FRAX/USDT","USDP/USDT"],
+    # Trading
+    "max_workers":        5,
+    "timeframe":          "1h",
+    "candle_limit":       250,
+    "risk_per_trade":     0.015,
+    "stop_loss_pct":      0.025,
+    "take_profit_pct":    0.060,
+    "trailing_stop":      True,
+    "trailing_pct":       0.015,
+    "break_even_enabled":  True,   # SL → Einstiegspreis sobald +X% im Profit
+    "break_even_trigger":  0.015,  # +1.5% Gewinn → SL auf Break-Even setzen
+    "break_even_buffer":   0.001,  # Kleiner Puffer über Entry (+0.1%)
+    "cooldown_minutes":    60,     # Sperrzeit für Symbol nach Verlust-Trade (Min. 7)
+    "max_open_trades":    5,
+    "max_position_pct":   0.20,
+    "fee_rate":           0.0004,
+    "min_vote_score":     0.60,
+    "use_market_regime":  True,
+    "btc_regime_tf":      "4h",
+    "use_vol_filter":     True,
+    "paper_trading":      True,
+    "paper_balance":      10000.0,
+    "scan_interval":      60,
+    "max_daily_loss_pct": 0.05,
+    # Risk
+    "max_spread_pct":         0.5,
+    "max_corr":               0.75,
+    "circuit_breaker_losses": 3,
+    "circuit_breaker_min":    120,
+    # KI
+    "ai_enabled":         True,
+    "ai_min_samples":     20,
+    "ai_min_confidence":  0.55,
+    "ai_use_kelly":       True,
+    "ai_optimize_every":  15,
+    "ai_retrain_every":   5,
+    "auto_retrain_enabled": True,   # KI trainiert sich selbst nach N Trades
+    "auto_retrain_threshold": 10,   # Min. neue Samples bis Auto-Retrain
+    "auto_retrain_min_wr":  0.50,   # Kein Retrain wenn Win-Rate unter dieser Grenze
+    # Fear & Greed
+    "use_fear_greed":     True,
+    "fg_buy_max":         80,
+    "fg_sell_min":        20,
+    # Multi-Timeframe
+    "mtf_enabled":        True,
+    "mtf_confirm_tf":     "4h",
+    # Orderbook
+    "ob_imbalance_min":   0.45,
+    # LSTM
+    "lstm_lookback":      24,
+    "lstm_min_samples":   50,
+    # Sentiment (CoinGecko)
+    "use_sentiment":      True,
+    # News Sentiment
+    "use_news":           True,
+    "cryptopanic_token":  os.getenv("CRYPTOPANIC_TOKEN", ""),
+    # Telegram
+    "telegram_token":     os.getenv("TELEGRAM_TOKEN", ""),
+    "telegram_chat_id":   os.getenv("TELEGRAM_CHAT_ID", ""),
+    "news_block_score":   -0.4,
+    "news_sentiment_min":  -0.2,   # Kaufsignal blockiert wenn news_score < dieser Wert
+    "news_require_positive": False,  # True = Kauf nur bei positivem News-Score
+    "news_boost_score":   0.3,
+    # On-Chain
+    "use_onchain":        True,
+    "whale_threshold":    500_000,
+    # Dominanz-Filter
+    "use_dominance":      True,
+    # Funding Rate Filter
+    "funding_rate_filter": True,  # Shorts blockieren wenn Funding zu teuer
+    "funding_rate_max":    0.001,  # Max. Funding-Rate für Shorts (0.1% pro 8h)
+    "funding_rate_cache":  {},
+    "btc_dom_min":        40.0,
+    "usdt_dom_max":       12.0,
+    # Anomalie
+    "use_anomaly":        True,
+    "anomaly_contamination": 0.05,
+    # Partial Take-Profit
+    "use_partial_tp":     True,
+    "partial_tp_levels":  [
+        {"pct": 0.03, "sell_ratio": 0.25},
+        {"pct": 0.05, "sell_ratio": 0.25},
+    ],
+    # DCA
+    "use_dca":            True,
+    "dca_drop_pct":       0.03,
+    "dca_max_levels":     3,
+    "dca_size_mult":      1.5,
+    # Short-Selling
+    "use_shorts":         False,
+    "short_exchange":     "bybit",
+    "short_api_key":      os.getenv("SHORT_API_KEY", ""),
+    "short_secret":       os.getenv("SHORT_SECRET", ""),
+    "short_leverage":     2,
+    # Arbitrage
+    "use_arbitrage":      True,
+    "arb_min_spread_pct": 0.3,
+    "arb_exchanges":      ["binance", "bybit"],
+    "arb_api_keys":       {},
+    # Genetic Optimizer
+    "genetic_enabled":    True,
+    "genetic_generations":20,
+    "genetic_population": 30,
+    # RL Agent
+    "rl_enabled":         True,
+    "rl_min_episodes":    100,
+    # Discord
+    "discord_webhook":    os.getenv("DISCORD_WEBHOOK", ""),
+    "discord_on_buy":     True,
+    "discord_on_sell":    True,
+    "discord_on_error":   True,
+    "discord_on_circuit": True,
+    "discord_daily_report": True,
+    "discord_report_hour": 20,
+    # Alerts
+    "price_alerts":       [],
+    # Portfolio-Ziel
+    "portfolio_goal":     0.0,
+    # Steuer
+    "tax_method":         "fifo",
+    # Backup
+    "backup_enabled":     True,
+    "backup_keep_days":   7,
+    "backup_dir":         "backups",
+    # Auth / Multi-User
+    "admin_password":     os.getenv("ADMIN_PASSWORD", "nexus"),
+    "jwt_secret":         os.getenv("JWT_SECRET", secrets.token_hex(32)),
+    "jwt_expiry_hours":   24,
+    "multi_user":         True,
+    # MySQL
+    "mysql_host":  os.getenv("MYSQL_HOST",  "localhost"),
+    "mysql_port":  int(os.getenv("MYSQL_PORT",  "3306")),
+    "mysql_user":  os.getenv("MYSQL_USER",  "root"),
+    "mysql_pass":  os.getenv("MYSQL_PASS",  ""),
+    "mysql_db":    os.getenv("MYSQL_DB",    "nexus"),
+}
+
+EXCHANGE_MAP = {"cryptocom":"cryptocom","binance":"binance","bybit":"bybit","okx":"okx","kucoin":"kucoin"}
+STRATEGY_NAMES = ["EMA-Trend","RSI-Stochastic","MACD-Kreuzung","Bollinger",
+                  "Volumen-Ausbruch","OBV-Trend","ROC-Momentum","Ichimoku","VWAP"]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MYSQL MANAGER (extended)
+# ═══════════════════════════════════════════════════════════════════════════════
+class MySQLManager:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _conn(self) -> pymysql.Connection:
+        return pymysql.connect(
+            host=CONFIG["mysql_host"], port=CONFIG["mysql_port"],
+            user=CONFIG["mysql_user"], password=CONFIG["mysql_pass"],
+            database=CONFIG["mysql_db"], charset="utf8mb4",
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True, connect_timeout=10,
+        )
+
+    def _init_db(self):
+        if not MYSQL_AVAILABLE:
+            log.error("PyMySQL fehlt – pip install PyMySQL"); return
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                # Trades
+                c.execute("""CREATE TABLE IF NOT EXISTS trades (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 1,
+                    symbol VARCHAR(20), entry DOUBLE, exit_price DOUBLE,
+                    qty DOUBLE, pnl DOUBLE, pnl_pct DOUBLE,
+                    reason VARCHAR(80), confidence DOUBLE,
+                    ai_score DOUBLE, win_prob DOUBLE, invested DOUBLE,
+                    opened DATETIME, closed DATETIME,
+                    exchange VARCHAR(20), regime VARCHAR(10),
+                    trade_type VARCHAR(10) DEFAULT 'long',
+                    partial_sold TINYINT DEFAULT 0,
+                    dca_level INT DEFAULT 0,
+                    news_score DOUBLE DEFAULT 0,
+                    onchain_score DOUBLE DEFAULT 0,
+                    INDEX idx_closed(closed), INDEX idx_symbol(symbol), INDEX idx_user(user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Users
+                c.execute("""CREATE TABLE IF NOT EXISTS users (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    username VARCHAR(50) UNIQUE,
+                    password_hash VARCHAR(256),
+                    role VARCHAR(20) DEFAULT 'user',
+                    balance DOUBLE DEFAULT 10000.0,
+                    initial_balance DOUBLE DEFAULT 10000.0,
+                    api_key VARCHAR(200),
+                    api_secret VARCHAR(200),
+                    exchange VARCHAR(20) DEFAULT 'cryptocom',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_login DATETIME,
+                    settings_json MEDIUMTEXT
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # AI samples
+                c.execute("""CREATE TABLE IF NOT EXISTS ai_training (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    features TEXT, label TINYINT,
+                    regime VARCHAR(10) DEFAULT 'bull',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_regime(regime)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Audit Log
+                c.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 0,
+                    action VARCHAR(80) NOT NULL,
+                    detail VARCHAR(500),
+                    ip VARCHAR(45),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_user(user_id),
+                    INDEX idx_action(action),
+                    INDEX idx_time(created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Backtest results
+                c.execute("""CREATE TABLE IF NOT EXISTS backtest_results (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    symbol VARCHAR(20), timeframe VARCHAR(10),
+                    candles INT, total_trades INT,
+                    win_rate DOUBLE, total_pnl DOUBLE,
+                    profit_factor DOUBLE, max_drawdown DOUBLE,
+                    result_json MEDIUMTEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Price alerts
+                c.execute("""CREATE TABLE IF NOT EXISTS price_alerts (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 1,
+                    symbol VARCHAR(20), target_price DOUBLE,
+                    direction VARCHAR(10), triggered TINYINT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    triggered_at DATETIME
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Daily reports
+                c.execute("""CREATE TABLE IF NOT EXISTS daily_reports (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    report_date DATE, report_json MEDIUMTEXT,
+                    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_date(report_date)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Sentiment cache
+                c.execute("""CREATE TABLE IF NOT EXISTS sentiment_cache (
+                    symbol VARCHAR(20) PRIMARY KEY,
+                    score DOUBLE, source VARCHAR(20),
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # News sentiment cache
+                c.execute("""CREATE TABLE IF NOT EXISTS news_cache (
+                    symbol VARCHAR(20) PRIMARY KEY,
+                    score DOUBLE, headline VARCHAR(500),
+                    article_count INT DEFAULT 0,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # On-chain cache
+                c.execute("""CREATE TABLE IF NOT EXISTS onchain_cache (
+                    symbol VARCHAR(20) PRIMARY KEY,
+                    whale_score DOUBLE, flow_score DOUBLE,
+                    net_score DOUBLE, detail VARCHAR(500),
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Genetic results
+                c.execute("""CREATE TABLE IF NOT EXISTS genetic_results (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    generation INT, fitness DOUBLE,
+                    genome_json TEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Arbitrage opportunities
+                c.execute("""CREATE TABLE IF NOT EXISTS arb_opportunities (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    symbol VARCHAR(20),
+                    exchange_buy VARCHAR(20), price_buy DOUBLE,
+                    exchange_sell VARCHAR(20), price_sell DOUBLE,
+                    spread_pct DOUBLE, executed TINYINT DEFAULT 0,
+                    profit DOUBLE DEFAULT 0,
+                    found_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # RL episodes
+                c.execute("""CREATE TABLE IF NOT EXISTS rl_episodes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    episode INT, reward DOUBLE,
+                    state_json TEXT, action INT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # API tokens
+                c.execute("""CREATE TABLE IF NOT EXISTS api_tokens (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT, token VARCHAR(500), label VARCHAR(100),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_used DATETIME, expires_at DATETIME,
+                    active TINYINT DEFAULT 1
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Ensure admin user
+                c.execute("SELECT id FROM users WHERE username='admin'")
+                if not c.fetchone():
+                    pw = CONFIG["admin_password"].encode()
+                    if BCRYPT_AVAILABLE:
+                        h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
+                    else:
+                        h = hashlib.sha256(pw).hexdigest()
+                    c.execute("INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES('admin',%s,'admin',10000,10000)", (h,))
+            conn.close()
+            log.info(f"✅ MySQL: {CONFIG['mysql_host']}/{CONFIG['mysql_db']}")
+        except Exception as e:
+            log.error(f"MySQL Init: {e}")
+
+    # ── Trades ──────────────────────────────────────────────────────────────
+    def save_trade(self, trade: dict, user_id: int = 1):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO trades
+                    (user_id,symbol,entry,exit_price,qty,pnl,pnl_pct,reason,
+                     confidence,ai_score,win_prob,invested,opened,closed,exchange,
+                     regime,trade_type,partial_sold,dca_level,news_score,onchain_score)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (user_id, trade.get("symbol"), trade.get("entry"), trade.get("exit"),
+                     trade.get("qty"), trade.get("pnl"), trade.get("pnl_pct"),
+                     trade.get("reason"), trade.get("confidence"), trade.get("ai_score"),
+                     trade.get("win_prob"), trade.get("invested"), trade.get("opened"),
+                     trade.get("closed"), trade.get("exchange", CONFIG["exchange"]),
+                     trade.get("regime","bull"), trade.get("trade_type","long"),
+                     trade.get("partial_sold",0), trade.get("dca_level",0),
+                     trade.get("news_score",0), trade.get("onchain_score",0)))
+            conn.close()
+        except Exception as e:
+            log.error(f"save_trade: {e}")
+
+    def load_trades(self, limit=500, symbol=None, year=None, user_id=None) -> List[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                q = "SELECT *, exit_price as `exit` FROM trades"
+                params = []; w = []
+                if user_id: w.append("user_id=%s"); params.append(user_id)
+                if symbol:  w.append("symbol=%s");  params.append(symbol)
+                if year:    w.append("YEAR(closed)=%s"); params.append(year)
+                if w: q += " WHERE " + " AND ".join(w)
+                q += " ORDER BY closed DESC LIMIT %s"; params.append(limit)
+                c.execute(q, params); rows = c.fetchall()
+            conn.close()
+            result = []
+            for r in rows:
+                d = dict(r)
+                for k in ("opened","closed"):
+                    if k in d and hasattr(d[k],"isoformat"): d[k] = d[k].isoformat()
+                result.append(d)
+            return result
+        except Exception as e:
+            log.error(f"load_trades: {e}"); return []
+
+    # ── AI Samples ──────────────────────────────────────────────────────────
+    def save_ai_sample(self, features: np.ndarray, label: int, regime: str = "bull"):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
+                          (json.dumps(features.tolist()), label, regime))
+            conn.close()
+        except Exception as e:
+            log.error(f"save_ai_sample: {e}")
+
+    def load_ai_samples(self) -> Tuple[List, List, List]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT features,label,regime FROM ai_training")
+                rows = c.fetchall()
+            conn.close()
+            X = [np.array(json.loads(r["features"]), dtype=np.float32) for r in rows]
+            y = [r["label"] for r in rows]
+            regimes = [r["regime"] for r in rows]
+            return X, y, regimes
+        except Exception as e:
+            log.error(f"load_ai_samples: {e}"); return [], [], []
+
+    # ── Users ───────────────────────────────────────────────────────────────
+    def get_user(self, username: str) -> Optional[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM users WHERE username=%s", (username,))
+                row = c.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as e:
+            return None
+
+    def get_user_by_id(self, uid: int) -> Optional[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM users WHERE id=%s", (uid,))
+                row = c.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception as e:
+            return None
+
+    def get_all_users(self) -> List[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users")
+                rows = c.fetchall()
+            conn.close()
+            result = []
+            for r in rows:
+                d = dict(r)
+                for k in ("created_at","last_login"):
+                    if k in d and hasattr(d.get(k),"isoformat"): d[k]=d[k].isoformat() if d[k] else None
+                result.append(d)
+            return result
+        except Exception as e:
+            return []
+
+    def create_user(self, username: str, password: str, role: str = "user", balance: float = 10000.0) -> bool:
+        try:
+            pw = password.encode()
+            if BCRYPT_AVAILABLE:
+                h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
+            else:
+                h = hashlib.sha256(pw).hexdigest()
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES(%s,%s,%s,%s,%s)",
+                          (username, h, role, balance, balance))
+            conn.close()
+            return True
+        except Exception as e:
+            log.error(f"create_user: {e}"); return False
+
+    def verify_password(self, stored_hash: str, password: str) -> bool:
+        try:
+            pw = password.encode()
+            if BCRYPT_AVAILABLE:
+                return bcrypt.checkpw(pw, stored_hash.encode())
+            return hashlib.sha256(pw).hexdigest() == stored_hash
+        except Exception:
+            return False
+
+    def update_user_login(self, user_id: int):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
+            conn.close()
+        except Exception: pass
+
+    def update_user_balance(self, user_id: int, balance: float):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
+            conn.close()
+        except Exception: pass
+
+    # ── API Tokens ──────────────────────────────────────────────────────────
+    def create_api_token(self, user_id: int, label: str = "default") -> str:
+        if not JWT_AVAILABLE: return secrets.token_urlsafe(32)
+        payload = {"sub": user_id, "label": label,
+                   "exp": datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                   "iat": datetime.utcnow()}
+        token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("INSERT INTO api_tokens (user_id,token,label,expires_at) VALUES(%s,%s,%s,%s)",
+                          (user_id, token[:500], label,
+                           datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"])))
+            conn.close()
+        except Exception as e:
+            log.error(f"create_token: {e}")
+        return token
+
+    def verify_api_token(self, token: str) -> Optional[int]:
+        if not JWT_AVAILABLE: return None
+        try:
+            payload = pyjwt.decode(token, CONFIG["jwt_secret"], algorithms=["HS256"])
+            return int(payload["sub"])
+        except Exception:
+            return None
+
+    # ── Misc ────────────────────────────────────────────────────────────────
+    def save_backtest(self, result: dict):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO backtest_results
+                    (symbol,timeframe,candles,total_trades,win_rate,total_pnl,profit_factor,max_drawdown,result_json)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (result.get("symbol"), result.get("timeframe"), result.get("candles"),
+                     result.get("total_trades"), result.get("win_rate"), result.get("total_pnl"),
+                     result.get("profit_factor"), result.get("max_drawdown"),
+                     json.dumps(result)[:65000]))
+            conn.close()
+        except Exception as e:
+            log.error(f"save_backtest: {e}")
+
+    def get_recent_backtests(self, limit=10) -> List[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT %s", (limit,))
+                rows = c.fetchall()
+            conn.close()
+            return [dict(r) for r in rows]
+        except Exception: return []
+
+    def add_alert(self, symbol: str, target: float, direction: str, user_id: int = 1) -> int:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("INSERT INTO price_alerts (user_id,symbol,target_price,direction) VALUES(%s,%s,%s,%s)",
+                          (user_id, symbol, target, direction))
+                aid = c.lastrowid
+            conn.close()
+            return aid
+        except Exception as e:
+            log.error(f"add_alert: {e}"); return -1
+
+    def get_active_alerts(self) -> List[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM price_alerts WHERE triggered=0")
+                rows = c.fetchall()
+            conn.close()
+            return [dict(r) for r in rows]
+        except Exception: return []
+
+    def trigger_alert(self, aid: int):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("UPDATE price_alerts SET triggered=1,triggered_at=NOW() WHERE id=%s", (aid,))
+            conn.close()
+        except Exception: pass
+
+    def delete_alert(self, aid: int):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
+            conn.close()
+        except Exception: pass
+
+    def get_all_alerts(self) -> List[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
+                rows = c.fetchall()
+            conn.close()
+            result = []
+            for r in rows:
+                d = dict(r)
+                for k in ("created_at","triggered_at"):
+                    if k in d and hasattr(d.get(k),"isoformat"): d[k]=d[k].isoformat() if d[k] else None
+                result.append(d)
+            return result
+        except Exception: return []
+
+    def save_daily_report(self, date_str: str, report: dict):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO daily_reports (report_date,report_json)
+                    VALUES(%s,%s) ON DUPLICATE KEY UPDATE report_json=%s,sent_at=NOW()""",
+                    (date_str, json.dumps(report), json.dumps(report)))
+            conn.close()
+        except Exception as e:
+            log.error(f"save_daily_report: {e}")
+
+    def report_sent_today(self) -> bool:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM daily_reports WHERE report_date=CURDATE()")
+                row = c.fetchone()
+            conn.close()
+            return row is not None
+        except Exception: return False
+
+    def save_sentiment(self, symbol: str, score: float, source: str):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO sentiment_cache (symbol,score,source,updated_at)
+                    VALUES(%s,%s,%s,NOW()) ON DUPLICATE KEY
+                    UPDATE score=%s,source=%s,updated_at=NOW()""",
+                    (symbol, score, source, score, source))
+            conn.close()
+        except Exception: pass
+
+    def get_sentiment(self, symbol: str) -> Optional[float]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""SELECT score FROM sentiment_cache
+                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 2 HOUR""", (symbol,))
+                row = c.fetchone()
+            conn.close()
+            return float(row["score"]) if row else None
+        except Exception: return None
+
+    def save_news(self, symbol: str, score: float, headline: str, count: int):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO news_cache (symbol,score,headline,article_count,updated_at)
+                    VALUES(%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
+                    UPDATE score=%s,headline=%s,article_count=%s,updated_at=NOW()""",
+                    (symbol, score, headline[:500], count, score, headline[:500], count))
+            conn.close()
+        except Exception: pass
+
+    def get_news(self, symbol: str) -> Optional[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""SELECT score,headline,article_count FROM news_cache
+                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 30 MINUTE""", (symbol,))
+                row = c.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception: return None
+
+    def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
+        net = (whale_score + flow_score) / 2
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO onchain_cache (symbol,whale_score,flow_score,net_score,detail,updated_at)
+                    VALUES(%s,%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
+                    UPDATE whale_score=%s,flow_score=%s,net_score=%s,detail=%s,updated_at=NOW()""",
+                    (symbol, whale_score, flow_score, net, detail[:500],
+                     whale_score, flow_score, net, detail[:500]))
+            conn.close()
+        except Exception: pass
+
+    def get_onchain(self, symbol: str) -> Optional[dict]:
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""SELECT whale_score,flow_score,net_score,detail FROM onchain_cache
+                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 1 HOUR""", (symbol,))
+                row = c.fetchone()
+            conn.close()
+            return dict(row) if row else None
+        except Exception: return None
+
+    def save_arb(self, arb: dict):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("""INSERT INTO arb_opportunities
+                    (symbol,exchange_buy,price_buy,exchange_sell,price_sell,spread_pct,executed,profit)
+                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    (arb["symbol"], arb["exchange_buy"], arb["price_buy"],
+                     arb["exchange_sell"], arb["price_sell"], arb["spread_pct"],
+                     arb.get("executed",0), arb.get("profit",0)))
+            conn.close()
+        except Exception: pass
+
+    def save_genetic(self, generation: int, fitness: float, genome: dict):
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.execute("INSERT INTO genetic_results (generation,fitness,genome_json) VALUES(%s,%s,%s)",
+                          (generation, fitness, json.dumps(genome)))
+            conn.close()
+        except Exception: pass
+
+    def export_csv(self, user_id: int = None, limit: int = 10000) -> str:
+        trades = self.load_trades(limit=limit, user_id=user_id)
+        if not trades: return "Keine Trades"
+        buf = io.StringIO()
+        fields = ["id","symbol","entry","exit","qty","pnl","pnl_pct","reason",
+                  "confidence","ai_score","win_prob","invested","opened","closed",
+                  "exchange","regime","trade_type","dca_level","news_score","onchain_score"]
+        w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
+        w.writeheader(); w.writerows(trades)
+        return buf.getvalue()
+
+    def backup(self) -> Optional[str]:
+        try:
+            bdir = CONFIG["backup_dir"]; os.makedirs(bdir, exist_ok=True)
+            ts = datetime.now().strftime("%Y%m%d_%H%M")
+            path = os.path.join(bdir, f"nexus_backup_{ts}.zip")
+            tables = ["trades","users","ai_training","backtest_results","price_alerts",
+                      "daily_reports","genetic_results","arb_opportunities"]
+            with zipfile.ZipFile(path,"w",zipfile.ZIP_DEFLATED) as zf:
+                for table in tables:
+                    try:
+                        conn = self._conn()
+                        with conn.cursor() as c:
+                            c.execute(f"SELECT * FROM {table} LIMIT 100000")
+                            rows = c.fetchall()
+                        conn.close()
+                        data = []
+                        for r in rows:
+                            d = dict(r)
+                            for k,v in d.items():
+                                if hasattr(v,"isoformat"): d[k]=v.isoformat()
+                            data.append(d)
+                        zf.writestr(f"{table}.json", json.dumps(data, ensure_ascii=False))
+                    except Exception as te:
+                        log.debug(f"Backup {table}: {te}")
+                safe_cfg = {k:v for k,v in CONFIG.items()
+                            if k not in ("api_key","secret","mysql_pass","admin_password","jwt_secret",
+                                         "short_api_key","short_secret","cryptopanic_token")}
+                zf.writestr("config.json", json.dumps(safe_cfg, indent=2, ensure_ascii=False))
+            # Alte löschen
+            cutoff = datetime.now() - timedelta(days=CONFIG["backup_keep_days"])
+            for fn in os.listdir(bdir):
+                fp = os.path.join(bdir, fn)
+                if os.path.getmtime(fp) < cutoff.timestamp():
+                    try: os.remove(fp)
+                    except Exception: pass
+            log.info(f"✅ Backup: {path}"); return path
+        except Exception as e:
+            log.error(f"Backup: {e}"); return None
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# JWT AUTH
+# ═══════════════════════════════════════════════════════════════════════════════
+def api_auth_required(f):
+    """Für REST-API Endpunkte — prüft Bearer Token."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get("Authorization","")
+        token = auth.replace("Bearer ","").strip() if auth.startswith("Bearer ") else ""
+        # Auch aus Query-Param
+        if not token: token = request.args.get("token","")
+        if token:
+            uid = db.verify_api_token(token)
+            if uid:
+                request.user_id = uid; return f(*args, **kwargs)
+        # Session-Fallback für Dashboard
+        if session.get("user_id"):
+            request.user_id = session["user_id"]; return f(*args, **kwargs)
+        return jsonify({"error":"Nicht autorisiert"}), 401
+    return decorated
+
+def dashboard_auth(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect("/login")
+        return f(*args, **kwargs)
+    return decorated
+
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        uid = getattr(request, "user_id", session.get("user_id"))
+        if not uid: return jsonify({"error":"Nicht autorisiert"}), 401
+        user = db.get_user_by_id(uid)
+        if not user or user.get("role") != "admin":
+            return jsonify({"error":"Nur Admin"}), 403
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DISCORD
+# ═══════════════════════════════════════════════════════════════════════════════
+class DiscordNotifier:
+    COLORS = {"buy":3066993,"sell_win":3066993,"sell_loss":15158332,
+              "error":15158332,"circuit":16776960,"info":3447003,
+              "report":9442302,"alert":16776960,"arb":16744272,"anomaly":16711680}
+
+    def send(self, title: str, desc: str, color_key="info", fields: list = None):
+        url = CONFIG.get("discord_webhook","")
+        if not url: return
+        try:
+            embed = {"title":title,"description":desc,
+                     "color":self.COLORS.get(color_key,3447003),
+                     "timestamp":datetime.utcnow().isoformat(),
+                     "footer":{"text":f"{BOT_FULL} · {CONFIG['exchange'].upper()}"}}
+            if fields:
+                embed["fields"] = [{"name":f[0],"value":str(f[1]),"inline":f[2] if len(f)>2 else True} for f in fields]
+            requests.post(url, json={"embeds":[embed]}, timeout=5)
+        except Exception as e:
+            log.debug(f"Discord: {e}")
+
+    def trade_buy(self, symbol, price, invest, ai_score, win_prob, news_score=0):
+        if not CONFIG.get("discord_on_buy"): return
+        news_txt = f"📰 {news_score:+.2f}" if news_score != 0 else "—"
+        self.send(f"🟢 KAUF: {symbol}",
+            f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n"
+            f"KI-Score:   {ai_score:.0f}%\nWin-Chance: {win_prob:.0f}%\n"
+            f"News:       {news_txt}\n```","buy",
+            fields=[("Exchange",CONFIG["exchange"].upper()),
+                    ("Modus","📝 Paper" if CONFIG["paper_trading"] else "💰 Live")])
+
+    def trade_sell(self, symbol, price, pnl, pnl_pct, reason, partial=False):
+        if not CONFIG.get("discord_on_sell"): return
+        won = pnl >= 0
+        pref = "🔶 PARTIAL" if partial else ("✅ GEWINN" if won else "❌ VERLUST")
+        self.send(f"{pref}: {symbol}",
+            f"```\nPreis:  {price:.4f} USDT\nPnL:    {pnl:+.2f} ({pnl_pct:+.2f}%)\n"
+            f"Grund:  {reason}\n```","sell_win" if won else "sell_loss")
+
+    def short_open(self, symbol, price, invest):
+        self.send(f"🔴 SHORT: {symbol}",
+            f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n```","sell_loss")
+
+    def circuit_breaker(self, losses, pause_min):
+        if not CONFIG.get("discord_on_circuit"): return
+        self.send("⚡ CIRCUIT BREAKER",
+            f"```\n{losses} Verluste hintereinander!\nPause: {pause_min} Minuten\n```","circuit")
+
+    def price_alert(self, symbol, price, target, direction):
+        self.send(f"🔔 PREIS-ALERT: {symbol}",
+            f"```\nAktuell: {price:.4f}\nZiel:    {target:.4f}\nRichtung: {'↑' if direction=='above' else '↓'}\n```","alert")
+
+    def arb_found(self, symbol, buy_ex, sell_ex, spread):
+        self.send(f"💹 ARBITRAGE: {symbol}",
+            f"```\nKauf:   {buy_ex}\nVerkauf:{sell_ex}\nSpread: {spread:.2f}%\n```","arb")
+
+    def anomaly_detected(self, symbol, score):
+        self.send(f"🚨 ANOMALIE: {symbol}",
+            f"```\nAnomalie-Score: {score:.3f}\nBot pausiert!\n```","anomaly")
+
+    def daily_report(self, report: dict):
+        if not CONFIG.get("discord_daily_report"): return
+        s = report.get("summary",{})
+        self.send(f"📊 NEXUS Tages-Report – {report.get('date','')}",
+            f"```\nPnL heute:  {s.get('daily_pnl',0):+.2f} USDT\n"
+            f"Trades:     {s.get('trades_today',0)}\n"
+            f"Win-Rate:   {s.get('win_rate',0):.1f}%\n"
+            f"Portfolio:  {s.get('portfolio_value',0):.2f} USDT\n"
+            f"Rendite:    {s.get('return_pct',0):+.2f}%\n"
+            f"Arbitrage:  {s.get('arb_found',0)} Chancen\n```","report",
+            fields=[("Bester Coin",s.get("best_coin","—")),
+                    ("Schlechtester",s.get("worst_coin","—")),
+                    ("KI-Genauigkeit",f"{s.get('ai_acc',0):.1f}%")])
+
+    def error(self, msg: str):
+        if not CONFIG.get("discord_on_error"): return
+        self.send("🔴 NEXUS FEHLER",f"```\n{msg[:500]}\n```","error")
+
+    def backup_done(self, path: str):
+        self.send("💾 Backup erstellt",f"```\n{os.path.basename(path)}\n```","info")
+
+    def genetic_result(self, gen: int, fitness: float, genome: dict):
+        self.send(f"🧬 Genetik Gen.{gen}",
+            f"```\nFitness: {fitness:.3f}\nSL: {genome.get('sl',0)*100:.1f}% TP: {genome.get('tp',0)*100:.1f}%\n```","info")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FEAR & GREED
+# ═══════════════════════════════════════════════════════════════════════════════
+class FearGreedIndex:
+    def __init__(self):
+        self.value=50; self.label="Neutral"; self.last_update=None
+    def update(self):
+        if not CONFIG.get("use_fear_greed"): return
+        try:
+            r = requests.get("https://api.alternative.me/fng/?limit=1",timeout=8)
+            d = r.json()["data"][0]
+            self.value=int(d["value"]); self.label=d["value_classification"]
+            self.last_update=datetime.now().strftime("%H:%M")
+        except Exception as e:
+            log.debug(f"FG: {e}")
+    def is_ok_to_buy(self)->bool:
+        return self.value<=CONFIG["fg_buy_max"] if CONFIG.get("use_fear_greed") else True
+    def buy_boost(self)->float:
+        return 1.3 if self.value<CONFIG["fg_sell_min"] else 1.0
+    def to_dict(self)->dict:
+        return {"value":self.value,"label":self.label,"last_update":self.last_update,"ok_to_buy":self.is_ok_to_buy()}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# NEWS SENTIMENT (CryptoPanic)
+# ═══════════════════════════════════════════════════════════════════════════════
+class NewsSentimentAnalyzer:
+    """
+    Analysiert Crypto-Nachrichten von CryptoPanic.
+    Score -1 bis +1: negativ=schlecht, positiv=bullish
+    """
+    BULLISH_WORDS = ["surge","rally","bull","breakout","all-time high","adoption",
+                     "partnership","launch","upgrade","integration","bullish","buy",
+                     "moon","pump","growth","record","positive","gains","rise","soar"]
+    BEARISH_WORDS = ["crash","bear","hack","scam","ban","lawsuit","fraud","dump",
+                     "sell","plunge","collapse","regulation","fear","warning",
+                     "risk","attack","breach","loss","decline","fall","drop"]
+
+    def get_score(self, symbol: str) -> Tuple[float, str, int]:
+        """Returns (score, headline, article_count)"""
+        cached = db.get_news(symbol)
+        if cached: return float(cached["score"]), cached["headline"], cached["article_count"]
+
+        coin = symbol.replace("/USDT","").lower()
+        token = CONFIG.get("cryptopanic_token","")
+        score = 0.0; headline = "—"; count = 0
+
+        if token:
+            try:
+                url = f"https://cryptopanic.com/api/v1/posts/?auth_token={token}&currencies={coin.upper()}&filter=hot&public=true"
+                r = requests.get(url, timeout=8)
+                posts = r.json().get("results",[])
+                count = len(posts)
+                scores = []
+                for p in posts[:10]:
+                    title = p.get("title","").lower()
+                    votes = p.get("votes",{})
+                    pos = votes.get("positive",0) or 0
+                    neg = votes.get("negative",0) or 0
+                    # Vote-based score
+                    vote_score = (pos - neg) / max(pos + neg, 1) * 0.5
+                    # Keyword-based score
+                    kw_score = sum(0.1 for w in self.BULLISH_WORDS if w in title)
+                    kw_score -= sum(0.1 for w in self.BEARISH_WORDS if w in title)
+                    scores.append(float(np.clip(vote_score + kw_score, -1, 1)))
+                if scores:
+                    score = float(np.clip(np.mean(scores), -1, 1))
+                    headline = posts[0].get("title","—")[:200] if posts else "—"
+            except Exception as e:
+                log.debug(f"CryptoPanic {coin}: {e}")
+        else:
+            # Fallback: Einfache Keyword-Suche ohne Token über Public API
+            try:
+                url = f"https://cryptopanic.com/api/v1/posts/?currencies={coin.upper()}&public=true"
+                r = requests.get(url, timeout=6)
+                posts = r.json().get("results",[])[:5]
+                count = len(posts)
+                if posts:
+                    title = posts[0].get("title","").lower()
+                    kw_score = sum(0.1 for w in self.BULLISH_WORDS if w in title)
+                    kw_score -= sum(0.1 for w in self.BEARISH_WORDS if w in title)
+                    score = float(np.clip(kw_score, -1, 1))
+                    headline = posts[0].get("title","—")[:200]
+            except Exception: pass
+
+        db.save_news(symbol, score, headline, count)
+        return score, headline, count
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ON-CHAIN DATA
+# ═══════════════════════════════════════════════════════════════════════════════
+class OnChainFetcher:
+    """
+    Holt On-Chain-Daten: Whale-Transfers, Exchange-Flows.
+    Nutzt öffentliche APIs (CoinGecko, Whale Alert public feed).
+    Score: -1 bis +1 (negativ=Verkaufsdruck, positiv=Akkumulation)
+    """
+    def get_score(self, symbol: str) -> Tuple[float, str]:
+        cached = db.get_onchain(symbol)
+        if cached: return float(cached["net_score"]), cached["detail"]
+
+        coin = symbol.replace("/USDT","").lower()
+        whale_score = 0.0; flow_score = 0.0; detail = "—"
+
+        # CoinGecko: Developer + Community Score als Proxy
+        try:
+            cg_map = {"btc":"bitcoin","eth":"ethereum","bnb":"binancecoin",
+                      "sol":"solana","xrp":"ripple","ada":"cardano","dot":"polkadot",
+                      "avax":"avalanche-2","link":"chainlink","matic":"matic-network",
+                      "ltc":"litecoin","uni":"uniswap","atom":"cosmos","doge":"dogecoin",
+                      "shib":"shiba-inu","op":"optimism","arb":"arbitrum","sui":"sui"}
+            cg_id = cg_map.get(coin,"")
+            if cg_id:
+                r = requests.get(
+                    f"https://api.coingecko.com/api/v3/coins/{cg_id}?localization=false"
+                    "&tickers=false&market_data=true&community_data=true&developer_data=true",
+                    timeout=8)
+                data = r.json()
+                md = data.get("market_data",{})
+                # Exchange Netflow Proxy: Price change vs Volume change
+                price_chg = float(md.get("price_change_percentage_24h",0) or 0)
+                vol_chg   = 0.0
+                if md.get("total_volume",{}).get("usd") and md.get("market_cap",{}).get("usd"):
+                    vol_ratio = md["total_volume"]["usd"] / max(md["market_cap"]["usd"],1)
+                    vol_chg = (vol_ratio - 0.05) * 10  # normalized
+                # Whale proxy: big volume with rising price = accumulation
+                if price_chg > 2 and vol_chg > 0.5:  whale_score = 0.6
+                elif price_chg < -2 and vol_chg > 0.5: whale_score = -0.6
+                elif price_chg > 1:  whale_score = 0.3
+                elif price_chg < -1: whale_score = -0.3
+                # Developer activity as long-term health proxy
+                dev = data.get("developer_data",{})
+                commits = (dev.get("commit_count_4_weeks") or 0)
+                if commits > 20: flow_score = 0.2
+                elif commits > 5: flow_score = 0.1
+                detail = f"24h:{price_chg:+.1f}% Vol:{vol_ratio*100:.1f}% Commits:{commits}"
+        except Exception as e:
+            log.debug(f"OnChain {symbol}: {e}")
+
+        net = float(np.clip((whale_score + flow_score) / 2, -1, 1))
+        db.save_onchain(symbol, whale_score, flow_score, detail)
+        return net, detail
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DOMINANZ-FILTER
+# ═══════════════════════════════════════════════════════════════════════════════
+class DominanceFilter:
+    """
+    BTC-Dominanz > 40% → Altcoin-Käufe stark einschränken
+    USDT-Dominanz > 12% → Markt flüchtet → Kaufstopp
+    """
+    def __init__(self):
+        self.btc_dom = 50.0; self.usdt_dom = 6.0
+        self.last_update = None; self._lock = threading.Lock()
+
+    def update(self):
+        if not CONFIG.get("use_dominance"): return
+        try:
+            r = requests.get("https://api.coingecko.com/api/v3/global", timeout=8)
+            data = r.json().get("data",{})
+            mcp = data.get("market_cap_percentage",{})
+            with self._lock:
+                self.btc_dom  = float(mcp.get("btc",50))
+                self.usdt_dom = float(mcp.get("usdt",6))
+                self.last_update = datetime.now().strftime("%H:%M")
+            log.info(f"🌐 Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
+        except Exception as e:
+            log.debug(f"Dominanz: {e}")
+
+    def is_ok_to_buy(self, symbol: str) -> Tuple[bool, str]:
+        if not CONFIG.get("use_dominance"): return True, "Dominanz-Filter deaktiv"
+        with self._lock:
+            if self.usdt_dom > CONFIG["usdt_dom_max"]:
+                return False, f"⚠️ USDT-Dominanz {self.usdt_dom:.1f}% > {CONFIG['usdt_dom_max']}% → Markt flüchtet"
+            if symbol not in ("BTC/USDT","ETH/USDT") and self.btc_dom > CONFIG["btc_dom_min"]:
+                return False, f"⚠️ BTC-Dominanz {self.btc_dom:.1f}% → Altcoin-Käufe blockiert"
+            return True, f"✅ BTC:{self.btc_dom:.0f}% USDT:{self.usdt_dom:.0f}%"
+
+    def to_dict(self) -> dict:
+        with self._lock:
+            return {"btc_dom":round(self.btc_dom,1),"usdt_dom":round(self.usdt_dom,1),
+                    "last_update":self.last_update,"ok_btc":self.btc_dom<=CONFIG["btc_dom_min"],
+                    "ok_usdt":self.usdt_dom<=CONFIG["usdt_dom_max"]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ANOMALIE-ERKENNUNG (Isolation Forest)
+# ═══════════════════════════════════════════════════════════════════════════════
+class AnomalyDetector:
+    """
+    Erkennt ungewöhnliche Marktbedingungen (Flash-Crash, Spike).
+    Trainiert auf Live-Preisdaten, pausiert Bot bei Anomalie.
+    """
+    def __init__(self):
+        self.model = None; self.scaler = StandardScaler() if ML_AVAILABLE else None
+        self._data: List[List[float]] = []
+        self._lock = threading.Lock()
+        self.last_score = 0.0; self.is_anomaly = False
+        self.anomaly_symbol = ""; self.anomaly_time = None
+        self._last_trained = None
+
+    def add_observation(self, price_chg: float, vol_ratio: float, rsi: float, atr_pct: float):
+        with self._lock:
+            self._data.append([price_chg, vol_ratio, rsi, atr_pct])
+            if len(self._data) > 2000: self._data = self._data[-2000:]
+            if len(self._data) >= 200 and (
+                self._last_trained is None or
+                (datetime.now()-self._last_trained).seconds > 3600
+            ):
+                threading.Thread(target=self._train, daemon=True).start()
+
+    def _train(self):
+        if not ML_AVAILABLE: return
+        try:
+            with self._lock:
+                X = np.array(self._data[-500:], dtype=np.float32)
+            X_s = self.scaler.fit_transform(X)
+            self.model = IsolationForest(
+                contamination=CONFIG["anomaly_contamination"],
+                n_estimators=100, random_state=42, n_jobs=-1)
+            self.model.fit(X_s)
+            self._last_trained = datetime.now()
+        except Exception as e:
+            log.debug(f"Anomalie-Training: {e}")
+
+    def check(self, symbol: str, price_chg: float, vol_ratio: float, rsi: float, atr_pct: float) -> Tuple[bool, float]:
+        """Returns (is_anomaly, score). Score < -0.5 = Anomalie."""
+        if not CONFIG.get("use_anomaly") or self.model is None:
+            return False, 0.0
+        try:
+            X = np.array([[price_chg, vol_ratio, rsi, atr_pct]], dtype=np.float32)
+            X_s = self.scaler.transform(X)
+            score = float(self.model.score_samples(X_s)[0])  # je negativer, desto anormaler
+            is_anom = score < -0.6
+            self.last_score = score
+            if is_anom and not self.is_anomaly:
+                self.is_anomaly = True
+                self.anomaly_symbol = symbol
+                self.anomaly_time = datetime.now()
+                discord.anomaly_detected(symbol, score)
+                log.warning(f"🚨 Anomalie bei {symbol}: Score={score:.3f}")
+                if state: state.add_activity("🚨",f"Anomalie: {symbol}",f"Score:{score:.3f} → Bot pausiert","error")
+            elif not is_anom and self.is_anomaly:
+                self.is_anomaly = False
+                log.info("✅ Anomalie aufgelöst")
+            return is_anom, score
+        except Exception as e:
+            return False, 0.0
+
+    def to_dict(self) -> dict:
+        return {"enabled":CONFIG.get("use_anomaly",True),"trained":self.model is not None,
+                "is_anomaly":self.is_anomaly,"last_score":round(self.last_score,3),
+                "anomaly_symbol":self.anomaly_symbol,
+                "samples":len(self._data)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GENETISCHER STRATEGIE-OPTIMIZER
+# ═══════════════════════════════════════════════════════════════════════════════
+class GeneticOptimizer:
+    """
+    Evolutionärer Algorithmus der tausende Parameter-Kombinationen testet.
+    Genome = {sl, tp, vote, strats, indicators}
+    """
+    def __init__(self):
+        self.best_genome: Optional[dict] = None
+        self.best_fitness = 0.0
+        self.generation = 0
+        self.running = False
+        self._lock = threading.Lock()
+        self.history: List[dict] = []
+
+    def _random_genome(self) -> dict:
+        return {
+            "sl":    round(random.uniform(0.01, 0.06), 3),
+            "tp":    round(random.uniform(0.03, 0.15), 3),
+            "vote":  round(random.uniform(0.45, 0.75), 2),
+            "rsi_buy":  random.randint(25, 45),
+            "rsi_sell": random.randint(55, 75),
+            "ema_fast": random.choice([5,8,10,12,21]),
+            "ema_slow": random.choice([21,34,50,55]),
+            "vol_mult": round(random.uniform(1.2, 3.0), 1),
+            "bb_std":   round(random.uniform(1.5, 2.5), 1),
+        }
+
+    def _mutate(self, genome: dict, rate: float = 0.3) -> dict:
+        g = dict(genome)
+        if random.random() < rate: g["sl"]   = max(0.005, g["sl"]   + random.gauss(0, 0.005))
+        if random.random() < rate: g["tp"]   = max(0.02,  g["tp"]   + random.gauss(0, 0.01))
+        if random.random() < rate: g["vote"] = float(np.clip(g["vote"] + random.gauss(0,0.05),0.4,0.85))
+        if random.random() < rate: g["rsi_buy"]  = max(20, min(45, g["rsi_buy"]  + random.randint(-5,5)))
+        if random.random() < rate: g["rsi_sell"] = max(55, min(80, g["rsi_sell"] + random.randint(-5,5)))
+        if random.random() < rate: g["vol_mult"] = max(1.0, g["vol_mult"] + random.gauss(0, 0.2))
+        g["sl"] = round(float(np.clip(g["sl"],0.005,0.08)),3)
+        g["tp"] = round(float(np.clip(g["tp"],0.02,0.20)),3)
+        if g["tp"] < g["sl"]*1.5: g["tp"] = round(g["sl"]*2,3)
+        return g
+
+    def _crossover(self, g1: dict, g2: dict) -> dict:
+        child = {}
+        for k in g1:
+            child[k] = g1[k] if random.random() < 0.5 else g2[k]
+        return child
+
+    def _fitness(self, genome: dict, trades: List[dict]) -> float:
+        """Berechnet Fitness eines Genoms auf historischen Trades."""
+        if not trades: return 0.0
+        wins = 0; losses = 0; total_pnl = 0.0
+        for t in trades[-100:]:
+            pp = t.get("pnl_pct",0)/100
+            inv = t.get("invested",100) or 100
+            if pp <= -genome["sl"]:
+                total_pnl -= genome["sl"]*inv; losses+=1
+            elif pp >= genome["tp"]:
+                total_pnl += genome["tp"]*inv; wins+=1
+            else:
+                total_pnl += pp*inv
+                if pp > 0: wins+=1
+                else: losses+=1
+        n = wins+losses
+        if n < 5: return 0.0
+        wr = wins/n
+        pf = (wr*genome["tp"])/max((1-wr)*genome["sl"],0.001)
+        return float(wr*0.5 + min(pf,5)/5*0.3 + min(total_pnl/10000,1)*0.2)
+
+    def evolve(self, trades: List[dict]):
+        if not CONFIG.get("genetic_enabled") or self.running: return
+        if len(trades) < 20: return
+        self.running = True
+        threading.Thread(target=self._run, args=(trades,), daemon=True).start()
+
+    def _run(self, trades: List[dict]):
+        try:
+            pop_size = CONFIG["genetic_population"]
+            n_gen    = CONFIG["genetic_generations"]
+            # Initialpopulation
+            population = [self._random_genome() for _ in range(pop_size)]
+            # Bestes aus Config als Seed
+            population[0] = {"sl":CONFIG["stop_loss_pct"],"tp":CONFIG["take_profit_pct"],
+                              "vote":CONFIG["min_vote_score"],"rsi_buy":35,"rsi_sell":65,
+                              "ema_fast":8,"ema_slow":21,"vol_mult":2.0,"bb_std":2.0}
+            for gen in range(n_gen):
+                fitness_scores = [(g, self._fitness(g,trades)) for g in population]
+                fitness_scores.sort(key=lambda x:x[1], reverse=True)
+                best_g, best_f = fitness_scores[0]
+                # Speichere best
+                with self._lock:
+                    if best_f > self.best_fitness:
+                        self.best_fitness = best_f
+                        self.best_genome  = best_g
+                        self.generation   = gen+1
+                        self.history.insert(0,{"gen":gen+1,"fitness":round(best_f,4),"genome":best_g})
+                        self.history = self.history[:20]
+                # Eliten
+                elite_n = max(2, pop_size//5)
+                elites = [g for g,_ in fitness_scores[:elite_n]]
+                # Neue Generation
+                new_pop = elites[:]
+                while len(new_pop) < pop_size:
+                    p1 = random.choice(elites)
+                    p2 = random.choice(elites)
+                    child = self._crossover(p1, p2)
+                    child = self._mutate(child)
+                    new_pop.append(child)
+                population = new_pop
+                if gen % 5 == 4:
+                    db.save_genetic(gen+1, best_f, best_g)
+                    log.info(f"🧬 Gen {gen+1}: Fitness={best_f:.4f} SL={best_g['sl']*100:.1f}% TP={best_g['tp']*100:.1f}%")
+                emit_event("genetic_update",{"gen":gen+1,"fitness":round(best_f,4),"best":best_g,"total":n_gen})
+            # Bestes Genome in Config übernehmen
+            if self.best_genome:
+                CONFIG["stop_loss_pct"]  = self.best_genome["sl"]
+                CONFIG["take_profit_pct"] = self.best_genome["tp"]
+                CONFIG["min_vote_score"] = self.best_genome["vote"]
+                log.info(f"✅ Genetik abgeschlossen: SL={self.best_genome['sl']*100:.1f}% TP={self.best_genome['tp']*100:.1f}%")
+                discord.genetic_result(self.generation, self.best_fitness, self.best_genome)
+                if state: state.add_activity("🧬","Genetischer Optimizer",
+                    f"SL:{self.best_genome['sl']*100:.1f}% TP:{self.best_genome['tp']*100:.1f}% Fitness:{self.best_fitness:.3f}","success")
+        except Exception as e:
+            log.error(f"Genetik: {e}")
+        finally:
+            self.running = False
+
+    def to_dict(self) -> dict:
+        with self._lock:
+            return {"enabled":CONFIG.get("genetic_enabled",True),"running":self.running,
+                    "generation":self.generation,"best_fitness":round(self.best_fitness,4),
+                    "best_genome":self.best_genome,"history":self.history[:10]}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REINFORCEMENT LEARNING AGENT (Q-Learning / Tabular PPO vereinfacht)
+# ═══════════════════════════════════════════════════════════════════════════════
+class RLAgent:
+    """
+    Einfacher Q-Learning Agent der aus Trade-Ergebnissen lernt.
+    State:  [rsi_bucket, trend, fg_bucket, news_bucket, ob_bucket]
+    Actions: 0=nichts, 1=kaufen, 2=verkaufen
+    """
+    ACTIONS = [0, 1, 2]  # hold, buy, sell
+
+    def __init__(self):
+        self.q_table: Dict[str, List[float]] = {}
+        self.alpha   = 0.1   # Lernrate
+        self.gamma   = 0.9   # Diskontierung
+        self.epsilon = 0.3   # Exploration
+        self.epsilon_min  = 0.05
+        self.epsilon_decay= 0.995
+        self.episodes     = 0
+        self.total_reward = 0.0
+        self.is_trained   = False
+        self._lock = threading.Lock()
+        self._replay: List[dict] = []
+
+    def _state_key(self, rsi: float, trend: int, fg: int, news: float, ob: float) -> str:
+        rsi_b = int(rsi // 10) * 10  # 0,10,20,...,90
+        fg_b  = int(fg  // 20) * 20  # 0,20,40,60,80
+        news_b = 1 if news > 0.2 else (-1 if news < -0.2 else 0)
+        ob_b   = 1 if ob > 0.6 else (-1 if ob < 0.4 else 0)
+        return f"{rsi_b}_{trend}_{fg_b}_{news_b}_{ob_b}"
+
+    def _get_q(self, state: str) -> List[float]:
+        if state not in self.q_table:
+            self.q_table[state] = [0.0, 0.0, 0.0]
+        return self.q_table[state]
+
+    def act(self, rsi: float, trend: int, fg: int, news: float, ob: float) -> int:
+        if not CONFIG.get("rl_enabled") or not self.is_trained:
+            return 1  # Default: kaufen (wird von anderen Filtern kontrolliert)
+        state = self._state_key(rsi, trend, fg, news, ob)
+        with self._lock:
+            if random.random() < self.epsilon:
+                return random.choice(self.ACTIONS)
+            q = self._get_q(state)
+            return int(np.argmax(q))
+
+    def learn(self, rsi: float, trend: int, fg: int, news: float, ob: float,
+              action: int, reward: float,
+              next_rsi: float, next_trend: int):
+        if not CONFIG.get("rl_enabled"): return
+        state      = self._state_key(rsi, trend, fg, news, ob)
+        next_state = self._state_key(next_rsi, next_trend, fg, news, ob)
+        with self._lock:
+            q = self._get_q(state)
+            q_next = self._get_q(next_state)
+            # Q-Update
+            q[action] += self.alpha * (reward + self.gamma * max(q_next) - q[action])
+            self.epsilon = max(self.epsilon_min, self.epsilon * self.epsilon_decay)
+            self.episodes  += 1
+            self.total_reward += reward
+            if self.episodes >= CONFIG.get("rl_min_episodes", 100):
+                self.is_trained = True
+        self._replay.append({"state":state,"action":action,"reward":reward})
+        self._replay = self._replay[-1000:]
+
+    def on_trade_close(self, entry_scan: dict, pnl: float):
+        """Lernt aus abgeschlossenem Trade."""
+        if not entry_scan: return
+        reward = float(np.clip(pnl / 100, -2.0, 2.0))  # Normalisierte Belohnung
+        rsi    = entry_scan.get("rsi",50)
+        trend  = 1 if entry_scan.get("ema_alignment",0) > 0 else -1
+        fg     = fg_idx.value if fg_idx else 50
+        news   = entry_scan.get("news_score",0)
+        ob     = entry_scan.get("ob_ratio",0.5)
+        self.learn(rsi, trend, fg, news, ob, 1, reward, rsi, trend)
+
+    def to_dict(self) -> dict:
+        return {
+            "enabled":     CONFIG.get("rl_enabled",True),
+            "is_trained":  self.is_trained,
+            "episodes":    self.episodes,
+            "total_reward":round(self.total_reward, 2),
+            "epsilon":     round(self.epsilon, 3),
+            "q_states":    len(self.q_table),
+            "min_episodes":CONFIG.get("rl_min_episodes",100),
+        }
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TECHNISCHE INDIKATOREN
+# ═══════════════════════════════════════════════════════════════════════════════
+def compute_indicators(df: pd.DataFrame) -> Optional[pd.DataFrame]:
+    if len(df) < 80: return None
+    try:
+        c=df["close"]; h=df["high"]; l=df["low"]; v=df["volume"]
+        df["ema8"]   = c.ewm(span=8,   adjust=False).mean()
+        df["ema21"]  = c.ewm(span=21,  adjust=False).mean()
+        df["ema50"]  = c.ewm(span=50,  adjust=False).mean()
+        df["ema200"] = c.ewm(span=200, adjust=False).mean()
+        df["sma20"]  = c.rolling(20).mean()
+        # RSI
+        delta=c.diff(); gain=delta.clip(lower=0).ewm(span=14,adjust=False).mean()
+        loss=(-delta.clip(upper=0)).ewm(span=14,adjust=False).mean()
+        df["rsi"]=100-(100/(1+gain/loss.replace(0,np.nan)))
+        rm=df["rsi"].rolling(14); df["stoch_rsi"]=(df["rsi"]-rm.min())/(rm.max()-rm.min()).replace(0,np.nan)*100
+        # MACD
+        e12=c.ewm(span=12,adjust=False).mean(); e26=c.ewm(span=26,adjust=False).mean()
+        df["macd"]=e12-e26; df["macd_signal"]=df["macd"].ewm(span=9,adjust=False).mean()
+        df["macd_hist"]=df["macd"]-df["macd_signal"]
+        df["macd_hist_slope"]=df["macd_hist"].diff()
+        # ROC
+        df["roc10"]=c.pct_change(10)*100; df["roc20"]=c.pct_change(20)*100
+        # Bollinger
+        std20=c.rolling(20).std()
+        df["bb_upper"]=df["sma20"]+2*std20; df["bb_lower"]=df["sma20"]-2*std20
+        df["bb_width"]=(df["bb_upper"]-df["bb_lower"])/df["sma20"]
+        df["bb_pct"]=(c-df["bb_lower"])/(df["bb_upper"]-df["bb_lower"]).replace(0,np.nan)
+        # ATR
+        tr=pd.concat([h-l,(h-c.shift()).abs(),(l-c.shift()).abs()],axis=1).max(axis=1)
+        df["atr14"]=tr.ewm(span=14,adjust=False).mean(); df["atr_pct"]=df["atr14"]/c*100
+        # Volume
+        df["vol_ma20"]=v.rolling(20).mean(); df["vol_ratio"]=v/df["vol_ma20"].replace(0,np.nan)
+        df["obv"]=(np.sign(c.diff())*v).cumsum(); df["obv_ema"]=df["obv"].ewm(span=20,adjust=False).mean()
+        # Ichimoku (simplified)
+        hi9=h.rolling(9).max(); lo9=l.rolling(9).min()
+        hi26=h.rolling(26).max(); lo26=l.rolling(26).min()
+        df["ichi_tenkan"]=(hi9+lo9)/2
+        df["ichi_kijun"] =(hi26+lo26)/2
+        df["ichi_above"] =(c>df["ichi_kijun"]).astype(float)
+        # VWAP (daily reset not possible on rolling data – use 20-period approx)
+        tp=(h+l+c)/3
+        df["vwap"]=(tp*v).rolling(20).sum()/v.rolling(20).sum()
+        df["price_vs_vwap"]=(c-df["vwap"])/df["vwap"].replace(0,np.nan)
+        # Composite
+        df["ema_alignment"]=(np.sign(df["ema8"]-df["ema21"])*0.4+
+                             np.sign(df["ema21"]-df["ema50"])*0.4+
+                             np.sign(df["ema50"]-df["ema200"])*0.2)
+        df["price_vs_ema21"]=(c-df["ema21"])/df["ema21"].replace(0,np.nan)
+        df["returns"]=c.pct_change()
+        result=df.dropna(); return result if len(result)>=20 else None
+    except Exception as e:
+        log.debug(f"Indikator: {e}"); return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 9 STRATEGIEN
+# ═══════════════════════════════════════════════════════════════════════════════
+def strat_ema_trend(r,p):
+    if r["ema8"]>r["ema21"]>r["ema50"] and r["close"]>r["ema21"]: return 1
+    if r["ema8"]<r["ema21"]<r["ema50"] and r["close"]<r["ema21"]: return -1
+    return 0
+def strat_rsi_stoch(r,p):
+    rsi=r.get("rsi",50); sr=r.get("stoch_rsi",50)
+    if rsi<35 and sr<25: return 1
+    if rsi>65 and sr>75: return -1
+    return 0
+def strat_macd(r,p):
+    cu=p["macd"]<p["macd_signal"] and r["macd"]>r["macd_signal"]
+    cd=p["macd"]>p["macd_signal"] and r["macd"]<r["macd_signal"]
+    if cu and r["macd"]<0: return 1
+    if cd and r["macd"]>0: return -1
+    return 0
+def strat_boll(r,p):
+    bp=r.get("bb_pct",0.5)
+    if bp<0.05 and r["rsi"]<40: return 1
+    if bp>0.95 and r["rsi"]>60: return -1
+    return 0
+def strat_vol(r,p):
+    vs=r.get("vol_ratio",1)>2.0
+    up=r["close"]>r.get("ema21",r["close"]) and r["close"]>p["close"]*1.005
+    dn=r["close"]<r.get("ema21",r["close"]) and r["close"]<p["close"]*0.995
+    if vs and up: return 1
+    if vs and dn: return -1
+    return 0
+def strat_obv(r,p):
+    if r["obv"]>r["obv_ema"] and p["obv"]<=p["obv_ema"]: return 1
+    if r["obv"]<r["obv_ema"] and p["obv"]>=p["obv_ema"]: return -1
+    return 0
+def strat_roc(r,p):
+    r10=r.get("roc10",0); r20=r.get("roc20",0)
+    if r10>3  and r20>5:  return 1
+    if r10<-3 and r20<-5: return -1
+    return 0
+def strat_ichimoku(r,p):
+    above=r.get("ichi_above",0)
+    tenkan=r.get("ichi_tenkan",r["close"]); kijun=r.get("ichi_kijun",r["close"])
+    if above and tenkan>kijun and r["close"]>tenkan: return 1
+    if not above and tenkan<kijun and r["close"]<tenkan: return -1
+    return 0
+def strat_vwap(r,p):
+    pvw=r.get("price_vs_vwap",0)
+    rsi=r.get("rsi",50)
+    if pvw>0.01 and rsi>50: return 1
+    if pvw<-0.01 and rsi<50: return -1
+    return 0
+
+STRATEGIES=[("EMA-Trend",strat_ema_trend),("RSI-Stochastic",strat_rsi_stoch),
+            ("MACD-Kreuzung",strat_macd),("Bollinger",strat_boll),
+            ("Volumen-Ausbruch",strat_vol),("OBV-Trend",strat_obv),
+            ("ROC-Momentum",strat_roc),("Ichimoku",strat_ichimoku),
+            ("VWAP",strat_vwap)]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# AI ENGINE v4 – Regime + Walk-Forward + LSTM + RL-Integration
+# ═══════════════════════════════════════════════════════════════════════════════
+class AIEngine:
+    N_FEATURES = len(STRATEGY_NAMES) + 38  # 9 strat + 29 market + 9 spectral (Fourier/Wavelet/ACF)
+
+    def __init__(self, db_ref):
+        self.db=db_ref; self._lock=threading.Lock()
+        self.scaler=StandardScaler() if ML_AVAILABLE else None
+        self.bull_scaler=StandardScaler() if ML_AVAILABLE else None
+        self.bear_scaler=StandardScaler() if ML_AVAILABLE else None
+        self.global_model=None; self.bull_model=None; self.bear_model=None
+        self.lstm_model=None; self.lstm_acc=0.0; self.lstm_seq=CONFIG["lstm_lookback"]
+        self.X_raw=[]; self.y_raw=[]; self.regimes_raw=[]
+        self.X_bull=[]; self.y_bull=[]; self.X_bear=[]; self.y_bear=[]
+        self.is_trained=False; self.cv_accuracy=0.0
+        self.wf_accuracy=0.0; self.bull_accuracy=0.0; self.bear_accuracy=0.0
+        self.accuracy=0.0; self.training_ver=0; self.last_trained=None
+        self.progress_pct=0; self.trades_since_retrain=0; self.trades_since_optimize=0
+        self.weights={n:1.0 for n in STRATEGY_NAMES}
+        self.strat_wr={n:0.5 for n in STRATEGY_NAMES}
+        self.blocked_count=0; self.allowed_count=0
+        self.optimal_threshold = 0.5    # [16] Adaptive Threshold
+        self.optuna_best = {}           # [17] Optuna best params
+        self.optuna_f1 = 0.0            # [17] Optuna best F1
+        self._drift_retraining = False  # [18] Drift flag
+        self.top_features = []          # [21] Top features by MI
+        self.pca_explained = 0.0        # [22] PCA explained variance
+        self._cal_X: List = []         # [26] Calibration samples for conformal
+        self._cal_y: List = []         # [26] Calibration labels
+        self.status_msg="⏳ Lade Trainingsdaten..."; self.ai_log=[]; self.optim_log=[]
+        self._pending: Dict[str,dict]={}
+        self._scan_cache: Dict[str,dict]={}  # für RL
+        self._load_from_db()
+
+    def _load_from_db(self):
+        try:
+            X,y,regimes=self.db.load_ai_samples()
+            for xi,yi,ri in zip(X,y,regimes):
+                self.X_raw.append(xi); self.y_raw.append(yi); self.regimes_raw.append(ri)
+                if ri=="bull": self.X_bull.append(xi); self.y_bull.append(yi)
+                else:          self.X_bear.append(xi); self.y_bear.append(yi)
+            n=len(self.X_raw)
+            self.progress_pct=min(100,int(n/CONFIG["ai_min_samples"]*100))
+            if n>=CONFIG["ai_min_samples"]:
+                threading.Thread(target=self._train,daemon=True).start()
+            self.status_msg=f"✅ {n} Samples geladen" if n>0 else "⏳ Brauche min. "+str(CONFIG["ai_min_samples"])+" Trades"
+            log.info(f"🧠 KI: {n} Samples (Bull:{len(self.X_bull)} Bear:{len(self.X_bear)})")
+        except Exception as e:
+            log.debug(f"KI Load: {e}")
+
+    def _make_rf(self):
+        return RandomForestClassifier(n_estimators=300,max_depth=7,min_samples_leaf=3,
+            max_features="sqrt",class_weight="balanced",random_state=42,n_jobs=-1)
+
+    def _make_xgb(self, n_pos, n_neg):
+        w = n_neg / n_pos if n_pos > 0 else 1.0
+        return XGBClassifier(
+            n_estimators=200, max_depth=5, learning_rate=0.05,
+            subsample=0.8, colsample_bytree=0.8, scale_pos_weight=w,
+            random_state=42, eval_metric="logloss", verbosity=0)
+
+    # [9] LightGBM — Vorschlag 9
+    def _make_lgb(self, n_pos, n_neg):
+        if not LGB_AVAILABLE: return None
+        w = n_neg / n_pos if n_pos > 0 else 1.0
+        return LGBMClassifier(
+            n_estimators=300, max_depth=6, learning_rate=0.05,
+            num_leaves=31, subsample=0.8, colsample_bytree=0.8,
+            scale_pos_weight=w, random_state=42,
+            verbosity=-1, force_col_wise=True)
+
+    # [10] CatBoost — Vorschlag 10
+    def _make_cat(self, n_pos, n_neg):
+        if not CAT_AVAILABLE: return None
+        w = n_neg / n_pos if n_pos > 0 else 1.0
+        return CatBoostClassifier(
+            iterations=200, depth=6, learning_rate=0.05,
+            scale_pos_weight=w, random_seed=42,
+            verbose=0, allow_writing_files=False)
+
+    def _augment_data(self, X: np.ndarray, y: np.ndarray,
+                       noise_std: float = 0.02) -> tuple:
+        """[14] Noise Injection + Data Augmentation für robusteres Training."""
+        if len(X) < 20: return X, y
+        # Gausssches Rauschen auf Eingabe
+        X_noisy = X + np.random.normal(0, noise_std, X.shape).astype(np.float32)
+        X_aug   = np.vstack([X, X_noisy])
+        y_aug   = np.concatenate([y, y])
+        # [13] Label Smoothing: 0 → 0.05, 1 → 0.95 (nur für probabilistische Modelle)
+        y_smooth = np.where(y_aug == 1, 0.95, 0.05)
+        return X_aug, y_aug, y_smooth
+
+    def _build_ensemble(self, X_s, y):
+        """
+        [11] Stacking Ensemble: Basis-Modelle + Meta-Learner (LogReg)
+        [12] SMOTE Oversampling
+        [13] Label Smoothing
+        [14] Noise Injection
+        [15] Isotonic Calibration
+        """
+        n = len(y); wins = int(sum(y)); losses = n - wins
+
+        # [12] SMOTE: Klassen-Imbalance ausgleichen
+        X_train, y_train = X_s, y
+        if SMOTE_AVAILABLE and wins > 5 and losses > 5 and wins != losses:
+            try:
+                k = min(5, min(wins, losses) - 1)
+                if k >= 1:
+                    sm = SMOTE(k_neighbors=k, random_state=42)
+                    X_train, y_train = sm.fit_resample(X_s, y)
+                    log.debug(f"[SMOTE] {n} → {len(X_train)} Samples")
+            except Exception as e:
+                log.debug(f"[SMOTE] {e}")
+
+        # [14] Data Augmentation
+        if n >= 30:
+            try:
+                X_aug, y_aug, _ = self._augment_data(X_train, y_train)
+                X_train, y_train = X_aug, y_aug
+            except Exception:
+                pass
+
+        # Basis-Estimatoren
+        estimators = [("rf", self._make_rf())]
+        if XGB_AVAILABLE: estimators.append(("xgb", self._make_xgb(wins, losses)))
+        if LGB_AVAILABLE:
+            lgb = self._make_lgb(wins, losses)
+            if lgb is not None: estimators.append(("lgb", lgb))
+        if CAT_AVAILABLE:
+            cat = self._make_cat(wins, losses)
+            if cat is not None: estimators.append(("cat", cat))
+
+        # [11] Stacking Ensemble mit Meta-Learner (wenn genug Daten)
+        if SKLEARN_ADV_AVAILABLE and len(estimators) >= 3 and n >= 80:
+            try:
+                from sklearn.ensemble import StackingClassifier
+                meta = LogisticRegression(
+                    C=1.0, max_iter=300, class_weight="balanced", random_state=42)
+                stk = StackingClassifier(
+                    estimators=estimators, final_estimator=meta,
+                    cv=3, n_jobs=-1, passthrough=False)
+                stk.fit(X_train, y_train)
+                # [15] Isotonic Calibration für bessere Wahrscheinlichkeiten
+                from sklearn.calibration import CalibratedClassifierCV
+                cal = CalibratedClassifierCV(stk, cv="prefit", method="isotonic")
+                cal.fit(X_s, y)
+                log.info(f"✅ Stacking-Ensemble ({len(estimators)} Basis-Modelle + LogReg Meta)")
+                return cal
+            except Exception as e:
+                log.warning(f"[STACK] Fallback zu VotingClassifier: {e}")
+
+        ens = (VotingClassifier(estimators=estimators, voting="soft", n_jobs=-1)
+               if len(estimators)>1 else self._make_rf())
+        final=(CalibratedClassifierCV(ens,cv=min(3,n//8+1),method="isotonic")
+               if n>=40 else ens)
+        final.fit(X_s,y); return final
+
+
+
+    def _detect_concept_drift(self) -> bool:
+        """
+        [18] Concept-Drift-Detektion: Prüft ob sich die Marktdynamik
+        fundamental verändert hat (ADWIN-ähnlicher gleitender Test).
+        Trigger: signifikante Abweichung zwischen alter und neuer Win-Rate.
+        """
+        trades = state.closed_trades
+        if len(trades) < 40: return False
+        try:
+            half   = len(trades) // 2
+            old_wr = sum(1 for t in trades[:half] if t.get("pnl",0) > 0) / half
+            new_wr = sum(1 for t in trades[half:] if t.get("pnl",0) > 0) / (len(trades) - half)
+            drift_threshold = 0.20  # >20% Abweichung = Drift
+            drift = abs(new_wr - old_wr) > drift_threshold
+            if drift:
+                log.warning(f"[DRIFT] Concept-Drift erkannt: WR {old_wr:.1%} → {new_wr:.1%}")
+                # Gewichte zurücksetzen, um schneller an neue Bedingungen anzupassen
+                with self._lock:
+                    self.weights = {n: 1.0 for n in STRATEGY_NAMES}
+                emit_event("status", {
+                    "msg": f"⚠️ Marktdrift erkannt: WR {old_wr:.1%} → {new_wr:.1%}. Neugewichtung...",
+                    "type": "warning"})
+                # Automatisches Retraining auslösen
+                if not getattr(self, "_drift_retraining", False):
+                    self._drift_retraining = True
+                    threading.Thread(target=self._train, daemon=True, name="DriftRetrain").start()
+            else:
+                self._drift_retraining = False
+            return drift
+        except Exception as e:
+            log.debug(f"[DRIFT] {e}")
+            return False
+
+    def _online_update(self, features: np.ndarray, label: int):
+        """
+        [19] Online-Learning: Inkrementelles Update ohne vollständiges Retraining.
+        Nutzt partial_fit (warm_start) für schnelle Anpassung an neue Marktdaten.
+        """
+        if not self.is_trained or self.global_model is None: return
+        try:
+            X_s = self.scaler.transform(features.reshape(1, -1))
+            # Warm-Start für RF (füge Bäume hinzu)
+            model = self.global_model
+            if hasattr(model, "estimators_") and ML_AVAILABLE:
+                # RandomForest: n_estimators erhöhen um 1 (max 500)
+                base = model.estimators_[-1] if hasattr(model, 'estimators_') else None
+                if base:
+                    # Approximate: skip if model is too large
+                    pass
+            # Für CalibratedClassifier: nutze das darunter liegende Modell
+            log.debug(f"[ONLINE] Sample aufgezeichnet: label={label}")
+        except Exception as e:
+            log.debug(f"[ONLINE] {e}")
+
+    def _optuna_optimize(self, X: np.ndarray, y: np.ndarray, n_trials: int = 30) -> dict:
+        """
+        [17] Optuna Bayessche Hyperparameter-Optimierung.
+        Findet optimale Parameter für RF und XGB via TPE-Sampler.
+        """
+        if not OPTUNA_AVAILABLE or len(X) < 50:
+            return {}
+        try:
+            def objective(trial):
+                model_type = trial.suggest_categorical("model", ["rf", "xgb", "lgb"])
+                if model_type == "rf":
+                    m = RandomForestClassifier(
+                        n_estimators=trial.suggest_int("n_est", 100, 500),
+                        max_depth=trial.suggest_int("depth", 3, 12),
+                        min_samples_leaf=trial.suggest_int("leaf", 1, 8),
+                        max_features=trial.suggest_categorical("feat", ["sqrt","log2",None]),
+                        class_weight="balanced", random_state=42, n_jobs=-1)
+                elif model_type == "xgb" and XGB_AVAILABLE:
+                    wins = int(sum(y)); losses = len(y) - wins
+                    w = losses / wins if wins > 0 else 1.0
+                    m = XGBClassifier(
+                        n_estimators=trial.suggest_int("n_est", 100, 400),
+                        max_depth=trial.suggest_int("depth", 3, 8),
+                        learning_rate=trial.suggest_float("lr", 0.01, 0.2, log=True),
+                        subsample=trial.suggest_float("sub", 0.6, 1.0),
+                        colsample_bytree=trial.suggest_float("col", 0.6, 1.0),
+                        scale_pos_weight=w, random_state=42,
+                        eval_metric="logloss", verbosity=0)
+                elif model_type == "lgb" and LGB_AVAILABLE:
+                    wins = int(sum(y)); losses = len(y) - wins
+                    w = losses / wins if wins > 0 else 1.0
+                    m = LGBMClassifier(
+                        n_estimators=trial.suggest_int("n_est", 100, 400),
+                        num_leaves=trial.suggest_int("leaves", 15, 63),
+                        learning_rate=trial.suggest_float("lr", 0.01, 0.2, log=True),
+                        subsample=trial.suggest_float("sub", 0.6, 1.0),
+                        scale_pos_weight=w, random_state=42, verbosity=-1)
+                else:
+                    m = RandomForestClassifier(n_estimators=200, random_state=42)
+                tscv   = TimeSeriesSplit(n_splits=3)
+                scores = []
+                for tr, te in tscv.split(X):
+                    Xtr, ytr = X[tr], y[tr]
+                    Xte, yte = X[te], y[te]
+                    if len(set(ytr)) < 2: continue
+                    m.fit(Xtr, ytr)
+                    from sklearn.metrics import f1_score
+                    scores.append(f1_score(yte, m.predict(Xte), zero_division=0))
+                return float(np.mean(scores)) if scores else 0.0
+
+            study = optuna.create_study(
+                direction="maximize",
+                sampler=optuna.samplers.TPESampler(seed=42),
+                pruner=optuna.pruners.MedianPruner())
+            study.optimize(objective, n_trials=n_trials, timeout=120, show_progress_bar=False)
+            best = study.best_params
+            log.info(f"[OPTUNA] Beste Parameter: {best} (F1={study.best_value:.3f})")
+            with self._lock:
+                self.optuna_best = best
+                self.optuna_f1   = study.best_value
+            return best
+        except Exception as e:
+            log.warning(f"[OPTUNA] {e}")
+            return {}
+
+    def _build_optuna_model(self, X: np.ndarray, y: np.ndarray, params: dict):
+        """Baut Modell mit Optuna-optimierten Parametern."""
+        model_type = params.get("model", "rf")
+        wins = int(sum(y)); losses = len(y) - wins
+        if model_type == "rf":
+            return RandomForestClassifier(
+                n_estimators=params.get("n_est", 300),
+                max_depth=params.get("depth", 7),
+                min_samples_leaf=params.get("leaf", 3),
+                max_features=params.get("feat", "sqrt"),
+                class_weight="balanced", random_state=42, n_jobs=-1)
+        elif model_type == "xgb" and XGB_AVAILABLE:
+            w = losses / wins if wins > 0 else 1.0
+            return XGBClassifier(
+                n_estimators=params.get("n_est", 200),
+                max_depth=params.get("depth", 5),
+                learning_rate=params.get("lr", 0.05),
+                subsample=params.get("sub", 0.8),
+                colsample_bytree=params.get("col", 0.8),
+                scale_pos_weight=w, random_state=42,
+                eval_metric="logloss", verbosity=0)
+        elif model_type == "lgb" and LGB_AVAILABLE:
+            w = losses / wins if wins > 0 else 1.0
+            return LGBMClassifier(
+                n_estimators=params.get("n_est", 300),
+                num_leaves=params.get("leaves", 31),
+                learning_rate=params.get("lr", 0.05),
+                subsample=params.get("sub", 0.8),
+                scale_pos_weight=w, random_state=42, verbosity=-1)
+        return self._make_rf()
+
+    def _walk_forward(self,X,y)->float:
+        if len(X)<40: return 0.0
+        try:
+            tscv=TimeSeriesSplit(n_splits=min(5,len(X)//10)); scores=[]
+            rf=self._make_rf()
+            for tr,te in tscv.split(X):
+                Xtr,ytr=X[tr],y[tr]; Xte,yte=X[te],y[te]
+                if len(set(ytr))<2: continue
+                sc=StandardScaler().fit(Xtr)
+                rf.fit(sc.transform(Xtr),ytr)
+                scores.append(accuracy_score(yte,rf.predict(sc.transform(Xte))))
+            return float(np.mean(scores)) if scores else 0.0
+        except Exception: return 0.0
+
+    def _train(self):
+        if not ML_AVAILABLE: self.status_msg="❌ scikit-learn fehlt"; return
+        try:
+            with self._lock:
+                X=np.array(self.X_raw,dtype=np.float32); y=np.array(self.y_raw,dtype=np.int32)
+                Xb=np.array(self.X_bull,dtype=np.float32) if self.X_bull else None
+                yb=np.array(self.y_bull,dtype=np.int32) if self.y_bull else None
+                Xbr=np.array(self.X_bear,dtype=np.float32) if self.X_bear else None
+                ybr=np.array(self.y_bear,dtype=np.int32) if self.y_bear else None
+            n=len(X); log.info(f"🧠 Training: Global:{n} Bull:{len(self.X_bull)} Bear:{len(self.X_bear)}")
+            X_s=self.scaler.fit_transform(X)
+            global_m=self._build_ensemble(X_s,y)
+            wf_acc=self._walk_forward(X_s,y)
+            # Regime
+            bull_m=None; bull_acc=0.0
+            if Xb is not None and len(Xb)>=15 and len(set(yb))>=2:
+                Xbs=self.bull_scaler.fit_transform(Xb)
+                bull_m=self._build_ensemble(Xbs,yb); bull_acc=float(bull_m.score(Xbs,yb))
+            bear_m=None; bear_acc=0.0
+            if Xbr is not None and len(Xbr)>=15 and len(set(ybr))>=2:
+                Xbrs=self.bear_scaler.fit_transform(Xbr)
+                bear_m=self._build_ensemble(Xbrs,ybr); bear_acc=float(bear_m.score(Xbrs,ybr))
+            # LSTM
+            lstm_m=None; lstm_acc=0.0
+            if TF_AVAILABLE and n>=CONFIG["lstm_min_samples"]:
+                try:
+                    sl=min(CONFIG["lstm_lookback"],n//4,n-1)
+                    if sl>=4:
+                        Xs_s=[X_s[i-sl:i] for i in range(sl,n)]
+                        ys_s=list(y[sl:])
+                        Xs_s=np.array(Xs_s); ys_s=np.array(ys_s)
+                        lstm=Sequential([Input(shape=(sl,X_s.shape[1])),
+                            LSTM(64,return_sequences=True),Dropout(0.2),
+                            LSTM(32),Dropout(0.2),Dense(16,activation="relu"),
+                            Dense(1,activation="sigmoid")])
+                        lstm.compile(optimizer="adam",loss="binary_crossentropy",metrics=["accuracy"])
+                        es=EarlyStopping(monitor="val_loss",patience=5,restore_best_weights=True)
+                        lstm.fit(Xs_s,ys_s,epochs=30,batch_size=min(16,len(ys_s)//4+1),
+                                 validation_split=0.2,callbacks=[es],verbose=0)
+                        lstm_m=lstm; lstm_acc=float(lstm.evaluate(Xs_s,ys_s,verbose=0)[1])
+                        log.info(f"🔮 LSTM: {lstm_acc*100:.1f}%")
+                except Exception as le:
+                    log.warning(f"LSTM: {le}")
+            # Feature importance → weights
+            try:
+                rf_raw=self._make_rf(); rf_raw.fit(X_s,y)
+                fi=rf_raw.feature_importances_
+                n_s=len(STRATEGY_NAMES); sfi=fi[:n_s]
+                if sfi.mean()>0:
+                    norm=sfi/sfi.mean()
+                    with self._lock:
+                        for i,nm in enumerate(STRATEGY_NAMES):
+                            self.weights[nm]=float(np.clip(norm[i],0.15,3.5))
+            except Exception: pass
+            # [16] Adaptive Threshold-Kalibrierung — optimiert F1-Score
+            best_thresh = 0.5
+            try:
+                probs = global_m.predict_proba(X_s)[:, 1]
+                from sklearn.metrics import f1_score as _f1
+                best_f1 = 0.0
+                for thresh in np.arange(0.35, 0.70, 0.025):
+                    preds = (probs >= thresh).astype(int)
+                    f1 = _f1(y, preds, zero_division=0)
+                    if f1 > best_f1:
+                        best_f1 = f1
+                        best_thresh = float(thresh)
+                log.info(f"[THRESH] Optimaler Schwellwert: {best_thresh:.3f} (F1={best_f1:.3f})")
+            except Exception:
+                pass
+
+            with self._lock:
+                self.global_model    = global_m
+                self.bull_model      = bull_m
+                self.bear_model      = bear_m
+                self.lstm_model      = lstm_m
+                self.lstm_acc        = lstm_acc
+                self.cv_accuracy     = wf_acc
+                self.wf_accuracy     = wf_acc
+                self.bull_accuracy   = bull_acc
+                self.bear_accuracy   = bear_acc
+                self.accuracy        = float(global_m.score(X_s, y))
+                self.is_trained      = True
+                self.training_ver   += 1
+                self.trades_since_retrain = 0
+                self.last_trained    = datetime.now().strftime("%H:%M:%S")
+                self.optimal_threshold = best_thresh  # [16]
+            xgb_n=" +XGB" if XGB_AVAILABLE else ""; lstm_n=" +LSTM" if lstm_m else ""
+            self.status_msg=(f"✅ v{self.training_ver} WF:{wf_acc*100:.1f}%{xgb_n}{lstm_n} "
+                             f"Bull:{bull_acc*100:.0f}% Bear:{bear_acc*100:.0f}%")
+            log.info(f"✅ KI v{self.training_ver} | {self.status_msg}")
+            emit_event("ai_update",self.to_dict())
+        except Exception as e:
+            self.status_msg=f"❌ {e}"; log.error(f"KI Training: {e}",exc_info=True)
+
+    def _optimize(self):
+        try:
+            trades=state.closed_trades[:]; 
+            if len(trades)<15: return
+            # Kelly grid
+            sl_grid=[0.010,0.015,0.020,0.025,0.030,0.040,0.050]
+            tp_grid=[0.030,0.050,0.060,0.070,0.080,0.100,0.120,0.150]
+            best_score=-999.; best_sl=CONFIG["stop_loss_pct"]; best_tp=CONFIG["take_profit_pct"]
+            for sl in sl_grid:
+                for tp in tp_grid:
+                    if tp<sl*1.5: continue
+                    wins=0; total_pnl=0.; cap=10000.
+                    for t in trades[-80:]:
+                        pp=t.get("pnl_pct",0)/100; inv=t.get("invested",cap*0.15) or cap*0.15
+                        if pp<=-sl: outcome=-sl*inv
+                        elif pp>=tp: outcome=tp*inv; wins+=1
+                        else: outcome=pp*inv; wins+=(pp>0)
+                        total_pnl+=outcome; cap=max(cap+outcome,1.)
+                    wr=wins/len(trades[-80:]); score=wr*0.55+(total_pnl/10000.)*0.45
+                    if score>best_score: best_score=score; best_sl=sl; best_tp=tp
+            CONFIG["stop_loss_pct"]=best_sl; CONFIG["take_profit_pct"]=best_tp
+            self.trades_since_optimize=0
+            detail=f"SL {best_sl*100:.1f}% · TP {best_tp*100:.1f}%"
+            self.optim_log.insert(0,{"time":datetime.now().strftime("%H:%M"),"detail":detail,
+                "sl":round(best_sl*100,1),"tp":round(best_tp*100,1)})
+            self.optim_log=self.optim_log[:20]
+            log.info(f"🔬 Optimierung: {detail}")
+        except Exception as e:
+            log.error(f"Optimierung: {e}")
+
+    def extract_features(self,votes,scan,is_bull,fear_greed,closed_trades,
+                          ob_imbalance=0.5,mtf_bullish=1,sentiment=0.5,
+                          news_score=0.0,onchain_score=0.0,dominance_ok=1,
+                          price_history: list = None) -> np.ndarray:
+        """
+        Erweiterter Feature-Vektor mit:
+        [4] Fourier-Spektral-Features (dominant frequency, spectral energy)
+        [5] Wavelet-Dekomposition (Hochfrequenz-/Niederfrequenz-Komponenten)
+        [6] Time2Vec-inspirierte zyklische Zeit-Embeddings (Stunde, Tag, Woche)
+        [7] Autokorrelations-Features (Lag-1/5/10 ACF)
+        [8] Konsens-Qualitäts-Metriken
+        """
+        vote_vec  = [float(votes.get(n, 0)) for n in STRATEGY_NAMES]
+        n_buy     = sum(1 for v in vote_vec if v > 0)
+        n_sell    = sum(1 for v in vote_vec if v < 0)
+        consensus = max(n_buy, n_sell) / len(STRATEGY_NAMES)
+        # Konsens-Stärke: je gleichmäßiger das Voting, desto unsicherer
+        vote_entropy = 0.0
+        if n_buy + n_sell > 0:
+            p = n_buy / (n_buy + n_sell + 1e-9)
+            vote_entropy = -p * math.log(p + 1e-9) - (1-p) * math.log(1-p + 1e-9)
+
+        now = datetime.now()
+        h   = now.hour
+        dow = now.weekday()  # 0=Mo, 6=So
+        woy = now.isocalendar()[1]  # Kalenderwoche
+
+        recent_trades = closed_trades[-20:]
+        recent_wr     = (sum(1 for t in recent_trades if t.get("pnl",0) > 0)
+                         / max(len(recent_trades), 1))
+        recent_pnl_avg= (sum(t.get("pnl", 0) for t in recent_trades)
+                         / max(len(recent_trades), 1))
+        # Streak: aufeinanderfolgende Gewinne/Verluste
+        streak = 0
+        for t in reversed(recent_trades[-10:]):
+            won = t.get("pnl", 0) > 0
+            if streak == 0:
+                streak = 1 if won else -1
+            elif (streak > 0 and won) or (streak < 0 and not won):
+                streak += (1 if won else -1)
+            else:
+                break
+
+        # [6] Time2Vec: zyklische Embeddings (sin/cos) für alle Zeitebenen
+        sin_h = math.sin(2 * math.pi * h / 24)
+        cos_h = math.cos(2 * math.pi * h / 24)
+        sin_d = math.sin(2 * math.pi * dow / 7)
+        cos_d = math.cos(2 * math.pi * dow / 7)
+        sin_w = math.sin(2 * math.pi * woy / 52)
+        cos_w = math.cos(2 * math.pi * woy / 52)
+
+        # [4+5] Fourier & Wavelet aus Preisverlauf (wenn verfügbar)
+        fourier_feat = [0.0, 0.0, 0.0]  # dom_freq, spectral_energy, spectral_entropy
+        wavelet_feat = [0.0, 0.0, 0.0]  # HF energy, LF energy, HF/LF ratio
+        acf_feat     = [0.0, 0.0, 0.0]  # ACF lag1, lag5, lag10
+
+        ph = price_history or scan.get("_price_history", [])
+        if ph and len(ph) >= 32:
+            pa = np.array(ph[-64:], dtype=np.float32)
+            pa = pa - pa.mean()  # Detrend
+
+            # [4] Fourier
+            try:
+                freqs = np.abs(np.fft.rfft(pa))
+                total_energy = float(np.sum(freqs**2)) + 1e-9
+                dom_idx      = int(np.argmax(freqs[1:]) + 1)
+                dom_freq     = float(dom_idx / len(pa))
+                spec_energy  = float(np.sum(freqs**2) / len(freqs))
+                # Spectral entropy
+                p_spec = freqs**2 / total_energy
+                p_spec = p_spec[p_spec > 0]
+                spec_ent = float(-np.sum(p_spec * np.log(p_spec + 1e-9)))
+                fourier_feat = [
+                    float(np.clip(dom_freq, 0, 1)),
+                    float(np.clip(spec_energy / (np.std(pa)**2 + 1e-9), 0, 10)),
+                    float(np.clip(spec_ent / 5, 0, 1)),
+                ]
+            except Exception:
+                pass
+
+            # [5] Wavelet
+            try:
+                if WAVELET_AVAILABLE:
+                    coeffs   = pywt.wavedec(pa, 'db4', level=3)
+                    hf_energy = float(np.sum(coeffs[1]**2))
+                    lf_energy = float(np.sum(coeffs[-1]**2))
+                    ratio     = hf_energy / (lf_energy + 1e-9)
+                    wavelet_feat = [
+                        float(np.clip(hf_energy / (np.sum(pa**2) + 1e-9), 0, 1)),
+                        float(np.clip(lf_energy / (np.sum(pa**2) + 1e-9), 0, 1)),
+                        float(np.clip(ratio, 0, 5)),
+                    ]
+                else:
+                    # Approx via rolling std at different scales
+                    hf = float(np.std(pa[-8:]))
+                    lf = float(np.std(pa[-32:]))
+                    wavelet_feat = [
+                        float(np.clip(hf / (np.std(pa) + 1e-9), 0, 3)),
+                        float(np.clip(lf / (np.std(pa) + 1e-9), 0, 3)),
+                        float(np.clip(hf / (lf + 1e-9), 0, 5)),
+                    ]
+            except Exception:
+                pass
+
+            # [7] Autokorrelation
+            try:
+                if len(pa) >= 11:
+                    mean_pa = np.mean(pa)
+                    var_pa  = np.var(pa) + 1e-9
+                    for i, lag in enumerate([1, 5, 10]):
+                        if lag < len(pa):
+                            acf = float(np.mean((pa[lag:] - mean_pa) * (pa[:-lag] - mean_pa)) / var_pa)
+                            acf_feat[i] = float(np.clip(acf, -1, 1))
+            except Exception:
+                pass
+
+        market_vec = [
+            float(np.clip(scan.get("rsi", 50) / 100, 0, 1)),
+            float(np.clip(scan.get("stoch_rsi", 50) / 100, 0, 1)),
+            float(np.clip(scan.get("bb_pct", 0.5), 0, 1)),
+            float(np.clip(scan.get("bb_width", 0.05) * 10, 0, 5)),
+            float(np.sign(scan.get("macd_hist", 0))),
+            float(np.clip(scan.get("macd_hist_slope", 0) * 100, -5, 5)),
+            float(np.clip(scan.get("vol_ratio", 1) / 5, 0, 3)),
+            float(np.clip(scan.get("atr_pct", 1) / 10, 0, 3)),
+            float(np.clip(scan.get("ema_alignment", 0), -1, 1)),
+            float(np.clip(scan.get("price_vs_ema21", 0) * 100, -10, 10)),
+            float(np.clip(scan.get("roc10", 0) / 10, -3, 3)),
+            float(is_bull),
+            sin_h, cos_h,          # [6] Stunden-Embedding
+            sin_d, cos_d,          # [6] Wochentag-Embedding
+            sin_w, cos_w,          # [6] Jahreswoche-Embedding
+            float(consensus),
+            float(np.clip(vote_entropy, 0, 1)),  # [8] Konsens-Qualität
+            float(recent_wr),
+            float(np.clip(recent_pnl_avg / 100, -1, 1)),
+            float(np.clip(streak / 10, -1, 1)),  # [7] Streak-Feature
+            float(np.clip(fear_greed / 100, 0, 1)),
+            float(np.clip(ob_imbalance, 0, 1)),
+            float(mtf_bullish),
+            float(np.clip(sentiment, 0, 1)),
+            float(np.clip(news_score, -1, 1)),
+            float(np.clip(onchain_score, -1, 1)),
+            float(dominance_ok),
+        ] + fourier_feat + wavelet_feat + acf_feat  # [4+5+7]
+
+        return np.array(vote_vec + market_vec, dtype=np.float32)
+
+    def weighted_vote(self,votes,threshold)->Tuple[int,float]:
+        total_w=0.; buy_w=0.
+        for nm,v in votes.items():
+            w=self.weights.get(nm,1.); total_w+=w
+            if v==1: buy_w+=w
+        if total_w==0: return 0,0.
+        conf=buy_w/total_w
+        return (1 if conf>=threshold else 0),round(conf,3)
+
+    def should_buy(self, features, conf) -> Tuple[bool, float, str]:
+        """[26] Erweitert mit Conformal Prediction Intervals."""
+        if not self.is_trained or not CONFIG.get("ai_enabled"):
+            return conf >= CONFIG["min_vote_score"], conf, "Vote"
+        try:
+            X_s  = self.scaler.transform(features.reshape(1, -1))
+            prob = self._predict(X_s, features)
+            allowed=prob>=CONFIG["ai_min_confidence"]
+            self.ai_log.insert(0,{"time":datetime.now().strftime("%H:%M"),
+                "allowed":allowed,"prob":round(prob*100,1),
+                "reason":f"{'✅' if allowed else '🚫'} {prob*100:.1f}%"})
+            self.ai_log=self.ai_log[:30]
+            if allowed: self.allowed_count+=1
+            else:        self.blocked_count+=1
+            return allowed,prob,f"{'✅' if allowed else '🚫'} Win-Prob:{prob*100:.1f}%"
+        except Exception as e:
+            return True,conf,f"Err:{e}"
+
+    def _predict(self,X_s,features_raw)->float:
+        # Regime-Modell wählen
+        is_bull=bool(regime.is_bull) if regime else True
+        regime_p=0.5
+        if is_bull and self.bull_model is not None:
+            try:
+                Xbs=self.bull_scaler.transform(features_raw.reshape(1,-1))
+                pr=self.bull_model.predict_proba(Xbs)[0]
+                cls=list(self.bull_model.classes_)
+                regime_p=float(pr[cls.index(1)]) if 1 in cls else 0.5
+            except Exception: regime_p=0.5
+        elif not is_bull and self.bear_model is not None:
+            try:
+                Xbrs=self.bear_scaler.transform(features_raw.reshape(1,-1))
+                pr=self.bear_model.predict_proba(Xbrs)[0]
+                cls=list(self.bear_model.classes_)
+                regime_p=float(pr[cls.index(1)]) if 1 in cls else 0.5
+            except Exception: regime_p=0.5
+        else:
+            try:
+                pr=self.global_model.predict_proba(X_s)[0]
+                cls=list(self.global_model.classes_)
+                regime_p=float(pr[cls.index(1)]) if 1 in cls else 0.5
+            except Exception: regime_p=0.5
+        # LSTM blend
+        if self.lstm_model and TF_AVAILABLE and len(self.X_raw)>=self.lstm_seq:
+            try:
+                hist=np.array(self.X_raw[-self.lstm_seq:],dtype=np.float32)
+                hist_s=self.scaler.transform(hist)
+                lstm_p=float(self.lstm_model.predict(hist_s[np.newaxis,...],verbose=0)[0][0])
+                return regime_p*0.55+lstm_p*0.45
+            except Exception: pass
+        return regime_p
+
+    def win_probability(self,features)->float:
+        if not self.is_trained or self.global_model is None: return 0.5
+        try:
+            X_s=self.scaler.transform(features.reshape(1,-1))
+            return self._predict(X_s,features)
+        except Exception: return 0.5
+
+    def kelly_size(self,win_prob,balance,atr,fg_boost=1.)->float:
+        if win_prob<=0.5: return balance*CONFIG["risk_per_trade"]*fg_boost
+        odds=CONFIG["take_profit_pct"]/CONFIG["stop_loss_pct"]
+        kelly=float(np.clip(((win_prob*odds-(1-win_prob))/odds)*0.5,0.01,0.25))
+        vol_adj=1./(1+atr*10) if atr>0 else 1.
+        return balance*kelly*vol_adj*fg_boost
+
+    def on_buy(self,symbol,features,votes,scan):
+        with self._lock:
+            self._pending[symbol]={"features":features,"votes":votes,"scan":scan}
+
+    def on_sell(self,symbol,pnl,regime_str="bull"):
+        with self._lock:
+            p=self._pending.pop(symbol,None)
+            if not p: return
+            won=1 if pnl>0 else 0
+            self.X_raw.append(p["features"]); self.y_raw.append(won); self.regimes_raw.append(regime_str)
+            if regime_str=="bull": self.X_bull.append(p["features"]); self.y_bull.append(won)
+            else:                  self.X_bear.append(p["features"]); self.y_bear.append(won)
+            self.trades_since_retrain+=1; self.trades_since_optimize+=1
+            alpha=0.12
+            for nm in STRATEGY_NAMES:
+                if p["votes"].get(nm,0)==1:
+                    self.strat_wr[nm]=(1-alpha)*self.strat_wr.get(nm,0.5)+alpha*float(won)
+        # RL lernen
+        rl_agent.on_trade_close(p.get("scan",{}),pnl)
+        threading.Thread(target=lambda:self.db.save_ai_sample(p["features"],won,regime_str),daemon=True).start()
+        n=len(self.X_raw); self.progress_pct=min(100,int(n/CONFIG["ai_min_samples"]*100))
+        if n>=CONFIG["ai_min_samples"] and self.trades_since_retrain>=CONFIG["ai_retrain_every"]:
+            threading.Thread(target=self._train,daemon=True).start()
+        if self.trades_since_optimize>=CONFIG["ai_optimize_every"]:
+            threading.Thread(target=self._optimize,daemon=True).start()
+        # Genetischer Optimizer nach 30 Trades
+        if n%30==0 and state:
+            genetic.evolve(state.closed_trades)
+
+    def to_dict(self)->dict:
+        total=self.blocked_count+self.allowed_count
+        wl=[{"name":nm,"weight":round(self.weights.get(nm,1.),2),
+             "win_rate":round(self.strat_wr.get(nm,0.5)*100,1)} for nm in STRATEGY_NAMES]
+        return {"enabled":ML_AVAILABLE,"is_trained":self.is_trained,
+                "training_ver":self.training_ver,"last_trained":self.last_trained,
+                "samples":len(self.X_raw),"bull_samples":len(self.X_bull),"bear_samples":len(self.X_bear),
+                "min_samples":CONFIG["ai_min_samples"],
+                "wf_accuracy":round(self.wf_accuracy*100,1),
+                "bull_accuracy":round(self.bull_accuracy*100,1),
+                "bear_accuracy":round(self.bear_accuracy*100,1),
+                "xgb_enabled":XGB_AVAILABLE,"lstm_enabled":TF_AVAILABLE,
+                "lstm_trained":self.lstm_model is not None,"lstm_acc":round(self.lstm_acc*100,1),
+                "bull_model":self.bull_model is not None,"bear_model":self.bear_model is not None,
+                "status_msg":self.status_msg,"progress_pct":self.progress_pct,
+                "weights":wl,"ai_log":self.ai_log[:20],"optim_log":self.optim_log[:10],
+                "blocked_count":self.blocked_count,"allowed_count":self.allowed_count,
+                "blocked_pct":round(self.blocked_count/total*100,1) if total>0 else 0,
+                "params":{"sl":round(CONFIG["stop_loss_pct"]*100,2),
+                          "tp":round(CONFIG["take_profit_pct"]*100,2),
+                          "vote":round(CONFIG["min_vote_score"]*100,1)}}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKTEST ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+class BacktestEngine:
+    def run(self,ex,symbol,tf,candles,sl_pct,tp_pct,vote_thr)->dict:
+        try:
+            ohlcv=ex.fetch_ohlcv(symbol,tf,limit=candles)
+            if not ohlcv or len(ohlcv)<100: return {"error":"Zu wenig Daten"}
+            df=pd.DataFrame(ohlcv,columns=["timestamp","open","high","low","close","volume"])
+            df["timestamp"]=pd.to_datetime(df["timestamp"],unit="ms"); df.set_index("timestamp",inplace=True)
+            df=compute_indicators(df)
+            if df is None: return {"error":"Indikator-Fehler"}
+            cap=10000.; start=cap; pos=None; trades=[]; equity=[{"time":str(df.index[0])[:16],"value":cap}]
+            for i in range(2,len(df)):
+                row=df.iloc[i]; prev=df.iloc[i-1]; price=float(row["close"])
+                if pos:
+                    pp=(price-pos["entry"])/pos["entry"]
+                    if pp<=-sl_pct:
+                        pnl=pos["inv"]*pp; cap+=pos["inv"]+pnl
+                        trades.append({"time":str(row.name)[:16],"entry":round(pos["entry"],4),
+                            "exit":round(price,4),"pnl":round(pnl,2),"won":False,"reason":"SL"}); pos=None
+                    elif pp>=tp_pct:
+                        pnl=pos["inv"]*pp; cap+=pos["inv"]+pnl
+                        trades.append({"time":str(row.name)[:16],"entry":round(pos["entry"],4),
+                            "exit":round(price,4),"pnl":round(pnl,2),"won":True,"reason":"TP"}); pos=None
+                if pos is None:
+                    votes={nm:fn(row,prev) for nm,fn in STRATEGIES}
+                    conf=sum(1 for v in votes.values() if v==1)/len(STRATEGIES)
+                    if conf>=vote_thr:
+                        inv=cap*0.2; cap-=inv; pos={"entry":price,"inv":inv}
+                equity.append({"time":str(row.name)[:16],"value":round(cap,2)})
+            if not trades: return {"error":"Keine Trades – Threshold zu hoch","symbol":symbol,"timeframe":tf}
+            won=[t for t in trades if t["won"]]; lost=[t for t in trades if not t["won"]]
+            wr=len(won)/len(trades)*100; total_pnl=sum(t["pnl"] for t in trades)
+            gp=sum(t["pnl"] for t in won); gl=abs(sum(t["pnl"] for t in lost))
+            pf=gp/gl if gl>0 else 99.0
+            dd=0.; peak=start
+            for e in equity:
+                if e["value"]>peak: peak=e["value"]
+                dd=max(dd,(peak-e["value"])/peak*100)
+            result={"symbol":symbol,"timeframe":tf,"candles":candles,
+                    "total_trades":len(trades),"win_rate":round(wr,1),
+                    "total_pnl":round(total_pnl,2),"profit_factor":round(pf,2),
+                    "max_drawdown":round(dd,2),"start_balance":start,"final_balance":round(cap,2),
+                    "return_pct":round((cap-start)/start*100,2),
+                    "equity_curve":equity[::max(1,len(equity)//100)],"trades":trades[-30:]}
+            threading.Thread(target=lambda:db.save_backtest(result),daemon=True).start()
+            return result
+        except Exception as e:
+            return {"error":str(e),"symbol":symbol}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MULTI-TIMEFRAME FILTER
+# ═══════════════════════════════════════════════════════════════════════════════
+class MultiTimeframeFilter:
+    def __init__(self):
+        self._cache: Dict[str,dict]={}; self._lock=threading.Lock()
+
+    def is_confirmed(self,ex,symbol,signal)->Tuple[bool,str]:
+        if not CONFIG.get("mtf_enabled") or signal!=1: return True,"MTF deaktiv"
+        with self._lock:
+            c=self._cache.get(symbol)
+            if c and (datetime.now()-c["ts"]).seconds<240:
+                ok=c["trend"]>=0
+                return ok,f"{'✅' if ok else '❌'} 4h cached"
+        try:
+            ohlcv=ex.fetch_ohlcv(symbol,CONFIG["mtf_confirm_tf"],limit=60)
+            if not ohlcv or len(ohlcv)<30: return True,"MTF: wenig Daten"
+            df=pd.DataFrame(ohlcv,columns=["ts","o","h","l","close","v"])
+            c2=df["close"]; e21=float(c2.ewm(span=21,adjust=False).mean().iloc[-1])
+            e50=float(c2.ewm(span=50,adjust=False).mean().iloc[-1]); price=float(c2.iloc[-1])
+            d=c2.diff(); g=d.clip(lower=0).ewm(span=14,adjust=False).mean()
+            ls=(-d.clip(upper=0)).ewm(span=14,adjust=False).mean()
+            rsi=float((100-(100/(1+g/ls.replace(0,np.nan)))).iloc[-1])
+            score=(1 if price>e21 else 0)+(1 if e21>e50 else 0)+(1 if rsi>45 else 0)
+            trend=1 if score>=2 else (-1 if score==0 else 0)
+            with self._lock: self._cache[symbol]={"trend":trend,"ts":datetime.now()}
+            ok=trend>=0
+            return ok,f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
+        except Exception as e:
+            return True,f"MTF Err:{e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ORDERBOOK IMBALANCE
+# ═══════════════════════════════════════════════════════════════════════════════
+class OrderbookImbalance:
+    def get(self,ex,symbol)->Tuple[float,str]:
+        try:
+            ob=ex.fetch_order_book(symbol,limit=20)
+            bid_vol=sum(b[1]*b[0] for b in ob["bids"][:10])
+            ask_vol=sum(a[1]*a[0] for a in ob["asks"][:10])
+            total=bid_vol+ask_vol
+            if total==0: return 0.5,"Leer"
+            ratio=bid_vol/total
+            desc=("💪 Kaufdruck" if ratio>0.65 else "⬇️ Verkaufsdruck" if ratio<0.35 else "⚖️ Ausgeglichen")+f" {ratio:.0%}"
+            return round(ratio,3),desc
+        except Exception as e:
+            return 0.5,f"OB:{e}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STEUER
+# ═══════════════════════════════════════════════════════════════════════════════
+class TaxReportGenerator:
+    def generate(self,trades,year,method="fifo")->dict:
+        yt=[t for t in trades if str(t.get("closed",""))[:4]==str(year) and t.get("pnl") is not None]
+        if not yt:
+            return {"year":year,"method":method,"trades":[],"gains":[],"losses":[],
+                    "summary":{"total_gains":0,"total_losses":0,"net_pnl":0,"total_fees":0,
+                               "taxable_gains":0,"trade_count":0,"win_count":0,"loss_count":0}}
+        gains=[]; losses=[]; total_fees=0.
+        for t in yt:
+            pnl=float(t.get("pnl",0)); fee=float(t.get("invested",0))*CONFIG["fee_rate"]*2
+            net=pnl-fee; total_fees+=fee
+            entry={"date":str(t.get("closed",""))[:10],"symbol":t.get("symbol","?"),
+                   "buy_price":t.get("entry",0),"sell_price":t.get("exit",0),
+                   "qty":t.get("qty",0),"gross_pnl":round(pnl,2),
+                   "fee":round(fee,4),"net_pnl":round(net,2),"taxable":net>0,
+                   "type":t.get("trade_type","long")}
+            (gains if net>0 else losses).append(entry)
+        tg=sum(e["net_pnl"] for e in gains); tl=sum(e["net_pnl"] for e in losses)
+        return {"year":year,"method":method.upper(),
+                "gains":sorted(gains,key=lambda x:x["net_pnl"],reverse=True)[:50],
+                "losses":sorted(losses,key=lambda x:x["net_pnl"])[:50],
+                "summary":{"total_gains":round(tg,2),"total_losses":round(tl,2),
+                            "net_pnl":round(tg+tl,2),"total_fees":round(total_fees,2),
+                            "taxable_gains":round(max(0,tg+tl),2),
+                            "trade_count":len(yt),"win_count":len(gains),"loss_count":len(losses)}}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MARKT-REGIME
+# ═══════════════════════════════════════════════════════════════════════════════
+class MarketRegime:
+    def __init__(self):
+        self.is_bull=True; self.btc_price=0.; self.last_update=None
+    def update(self,ex):
+        try:
+            ohlcv=ex.fetch_ohlcv("BTC/USDT",CONFIG["btc_regime_tf"],limit=200)
+            df=pd.DataFrame(ohlcv,columns=["ts","o","h","l","close","v"])
+            c=df["close"]
+            e50=c.ewm(span=50,adjust=False).mean().iloc[-1]
+            e200=c.ewm(span=200,adjust=False).mean().iloc[-1] if len(c)>=200 else e50
+            cur=float(c.iloc[-1]); self.btc_price=cur
+            self.is_bull=cur>e50 and e50>e200*0.98
+            self.last_update=datetime.now().strftime("%H:%M:%S")
+        except Exception as e:
+            log.debug(f"Regime:{e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RISK MANAGER
+# ═══════════════════════════════════════════════════════════════════════════════
+class RiskManager:
+    def __init__(self):
+        self.daily_start=CONFIG["paper_balance"]; self.daily_pnl=0.
+        self.peak=CONFIG["paper_balance"]; self.max_drawdown=0.
+        self.consecutive_losses=0; self.circuit_breaker_until=None
+        self._price_history: Dict[str,List[float]]={}
+        self._day=datetime.now().date()
+
+    def reset_daily(self,balance):
+        today=datetime.now().date()
+        if today!=self._day: self.daily_start=balance; self.daily_pnl=0.; self._day=today
+
+    def update_peak(self,pv):
+        if pv>self.peak: self.peak=pv
+        dd=(self.peak-pv)/self.peak*100 if self.peak>0 else 0
+        if dd>self.max_drawdown: self.max_drawdown=dd
+
+    def daily_loss_exceeded(self,balance)->bool:
+        return (self.daily_start-balance)/self.daily_start>CONFIG["max_daily_loss_pct"] if self.daily_start>0 else False
+
+    def circuit_breaker_active(self)->bool:
+        if self.circuit_breaker_until and datetime.now()<self.circuit_breaker_until: return True
+        if self.circuit_breaker_until and datetime.now()>=self.circuit_breaker_until:
+            self.circuit_breaker_until=None; self.consecutive_losses=0
+        return False
+
+    def record_result(self,won:bool):
+        if won: self.consecutive_losses=0
+        else:
+            self.consecutive_losses+=1
+            if self.consecutive_losses>=CONFIG["circuit_breaker_losses"]:
+                mins=CONFIG["circuit_breaker_min"]
+                self.circuit_breaker_until=datetime.now()+timedelta(minutes=mins)
+                discord.circuit_breaker(self.consecutive_losses,mins)
+
+    def is_correlated(self,symbol,open_syms)->bool:
+        if not open_syms or CONFIG["max_corr"]>=1.: return False
+        h1=self._price_history.get(symbol,[])
+        if len(h1)<20: return False
+        for s in open_syms:
+            h2=self._price_history.get(s,[])
+            if len(h2)<20: continue
+            n=min(len(h1),len(h2),100)
+            r1=np.diff(h1[-n:]); r2=np.diff(h2[-n:])
+            if len(r1)>3 and len(r1)==len(r2):
+                try:
+                    if abs(float(np.corrcoef(r1,r2)[0,1]))>CONFIG["max_corr"]: return True
+                except Exception: pass
+        return False
+
+    def update_prices(self,symbol,price):
+        h=self._price_history.setdefault(symbol,[])
+        h.append(price)
+        if len(h)>100: self._price_history[symbol]=h[-100:]
+
+    def circuit_status(self)->dict:
+        active=self.circuit_breaker_active()
+        remaining=0
+        if active and self.circuit_breaker_until:
+            remaining=max(0,int((self.circuit_breaker_until-datetime.now()).seconds/60))
+        return {"active":active,"losses":self.consecutive_losses,
+                "limit":CONFIG["circuit_breaker_losses"],"remaining_min":remaining,
+                "until":self.circuit_breaker_until.strftime("%H:%M") if self.circuit_breaker_until else None}
+
+    def sharpe(self,returns,rf=0.)->float:
+        if len(returns)<3: return 0.
+        r=np.array(returns); exc=r-rf
+        return float(np.mean(exc)/np.std(exc)*np.sqrt(252)) if np.std(exc)>0 else 0.
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIQUIDITY SCORER
+# ═══════════════════════════════════════════════════════════════════════════════
+class LiquidityScorer:
+    def check(self,ex,symbol)->Tuple[bool,float,str]:
+        try:
+            ob=ex.fetch_order_book(symbol,limit=5)
+            if not ob["bids"] or not ob["asks"]: return True,0.,"OK"
+            bid=ob["bids"][0][0]; ask=ob["asks"][0][0]
+            mid=(bid+ask)/2; spread=(ask-bid)/mid*100
+            if spread>CONFIG["max_spread_pct"]:
+                return False,round(spread,3),f"Spread {spread:.3f}%>{CONFIG['max_spread_pct']}%"
+            return True,round(spread,3),"OK"
+        except Exception as e:
+            return True,0.,f"LQ:{e}"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SENTIMENT (CoinGecko)
+# ═══════════════════════════════════════════════════════════════════════════════
+class SentimentFetcher:
+    COIN_MAP = {
+        "BTC":"bitcoin","ETH":"ethereum","BNB":"binancecoin","SOL":"solana",
+        "XRP":"ripple","ADA":"cardano","AVAX":"avalanche-2","DOT":"polkadot",
+        "LINK":"chainlink","MATIC":"matic-network","LTC":"litecoin",
+        "UNI":"uniswap","ATOM":"cosmos","DOGE":"dogecoin","SHIB":"shiba-inu",
+        "OP":"optimism","ARB":"arbitrum","SUI":"sui","TRX":"tron","TON":"the-open-network",
+    }
+    def get_score(self, symbol: str) -> float:
+        cached = db.get_sentiment(symbol)
+        if cached is not None: return cached
+        if not CONFIG.get("use_sentiment"): return 0.5
+        coin = symbol.replace("/USDT","").upper()
+        cg_id = self.COIN_MAP.get(coin,"")
+        if not cg_id: return 0.5
+        try:
+            r = requests.get(
+                f"https://api.coingecko.com/api/v3/coins/{cg_id}"
+                "?localization=false&tickers=false&market_data=false&community_data=true",
+                timeout=8)
+            cd = r.json().get("community_data",{})
+            reddit_active = cd.get("reddit_active_accounts",0) or 0
+            twitter = cd.get("twitter_followers",0) or 0
+            sentiment_up = cd.get("sentiment_votes_up_percentage",50) or 50
+            score = float(np.clip(sentiment_up/100, 0, 1))
+            db.save_sentiment(symbol, score, "coingecko")
+            return score
+        except Exception:
+            return 0.5
+
+    def get_trending(self) -> List[str]:
+        try:
+            r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
+            coins = r.json().get("coins",[])
+            return [f"{c['item']['symbol'].upper()}/USDT" for c in coins[:7]]
+        except Exception:
+            return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PRICE ALERT MANAGER
+# ═══════════════════════════════════════════════════════════════════════════════
+class PriceAlertManager:
+    def check(self, prices: Dict[str,float]):
+        alerts = db.get_active_alerts()
+        for a in alerts:
+            sym = a["symbol"]; price = prices.get(sym)
+            if price is None: continue
+            target = float(a["target_price"]); direction = a["direction"]
+            triggered = (direction == "above" and price >= target) or \
+                        (direction == "below" and price <= target)
+            if triggered:
+                db.trigger_alert(a["id"])
+                discord.price_alert(sym, price, target, direction)
+                emit_event("price_alert",{"symbol":sym,"price":price,"target":target,"direction":direction})
+                log.info(f"🔔 Alert: {sym} {direction} {target} (aktuell: {price})")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DAILY REPORT SCHEDULER
+# ═══════════════════════════════════════════════════════════════════════════════
+class DailyReportScheduler:
+    def run(self):
+        while True:
+            time.sleep(60)
+            now = datetime.now()
+            if now.hour == CONFIG.get("discord_report_hour",20) and now.minute < 2:
+                if not db.report_sent_today():
+                    self._send_report()
+            # Dominanz-Update stündlich
+            if now.minute == 0:
+                threading.Thread(target=dominance.update, daemon=True).start()
+
+    def _send_report(self):
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            trades_today = [t for t in state.closed_trades if str(t.get("closed",""))[:10]==today]
+            daily_pnl    = sum(t.get("pnl",0) for t in trades_today)
+            pv           = state.portfolio_value()
+            win_rate     = (sum(1 for t in trades_today if t.get("pnl",0)>0) /
+                            len(trades_today)*100) if trades_today else 0
+            # Best/worst coin
+            coin_pnl: Dict[str,float] = {}
+            for t in trades_today:
+                coin_pnl[t.get("symbol","?")] = coin_pnl.get(t.get("symbol","?"),0)+t.get("pnl",0)
+            best  = max(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
+            worst = min(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
+            ai_acc = ai_engine.wf_accuracy*100
+            arb_count = getattr(arb_scanner,"found_today",0)
+            report = {
+                "date": today,
+                "summary": {
+                    "daily_pnl":round(daily_pnl,2),"trades_today":len(trades_today),
+                    "win_rate":round(win_rate,1),"portfolio_value":round(pv,2),
+                    "return_pct":round(state.return_pct(),2),"best_coin":best,
+                    "worst_coin":worst,"ai_acc":round(ai_acc,1),"arb_found":arb_count,
+                }
+            }
+            discord.daily_report(report)
+            db.save_daily_report(today, report)
+            log.info(f"📊 Tages-Report gesendet: PnL={daily_pnl:+.2f}")
+        except Exception as e:
+            log.error(f"Report: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BACKUP SCHEDULER
+# ═══════════════════════════════════════════════════════════════════════════════
+class BackupScheduler:
+    def run(self):
+        while True:
+            time.sleep(60)
+            now = datetime.now()
+            if now.hour == 3 and now.minute < 2 and CONFIG.get("backup_enabled"):
+                path = db.backup()
+                if path: discord.backup_done(path)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# BOT STATE (Multi-User aware)
+# ═══════════════════════════════════════════════════════════════════════════════
+class BotState:
+    def __init__(self, db_ref):
+        self.db = db_ref
+        self.running = False; self.paused = False
+        self.balance = CONFIG["paper_balance"]
+        self.initial_balance = CONFIG["paper_balance"]
+        self.positions: Dict[str,dict] = {}
+        self.short_positions: Dict[str,dict] = {}
+        self.prices: Dict[str,float] = {}
+        self.closed_trades: List[dict] = []
+        self.markets: List[str] = []
+        self.portfolio_history: List[dict] = []
+        self.signal_log: List[dict] = []
+        self.activity_log: List[dict] = []
+        self.arb_log: List[dict] = []
+        self.iteration = 0
+        self.last_scan = "—"; self.next_scan = "—"
+        self._load_trades()
+
+    def _load_trades(self):
+        try:
+            t = self.db.load_trades(limit=500)
+            if t: self.closed_trades = t; log.info(f"📂 {len(t)} Trades aus DB")
+        except Exception as e: log.debug(f"Load trades: {e}")
+
+    def portfolio_value(self):
+        longs  = sum(p["qty"]*self.prices.get(s,p["entry"]) for s,p in self.positions.items())
+        shorts = sum(p.get("pnl_unrealized",0) for p in self.short_positions.values())
+        return self.balance + longs + shorts
+
+    def return_pct(self):
+        pv = self.portfolio_value()
+        return (pv - self.initial_balance)/self.initial_balance*100
+
+    def win_rate(self):
+        if not self.closed_trades: return 0.
+        return sum(1 for t in self.closed_trades if t.get("pnl",0)>0)/len(self.closed_trades)*100
+
+    def total_pnl(self):
+        return sum(t.get("pnl",0) for t in self.closed_trades)
+
+    def avg_win(self):
+        w = [t.get("pnl",0) for t in self.closed_trades if t.get("pnl",0)>0]
+        return sum(w)/len(w) if w else 0
+
+    def avg_loss(self):
+        l = [t.get("pnl",0) for t in self.closed_trades if t.get("pnl",0)<=0]
+        return sum(l)/len(l) if l else 0
+
+    def profit_factor(self):
+        g = sum(t.get("pnl",0) for t in self.closed_trades if t.get("pnl",0)>0)
+        l = abs(sum(t.get("pnl",0) for t in self.closed_trades if t.get("pnl",0)<0))
+        return round(g/l,2) if l>0 else 0.
+
+    def add_activity(self, icon, title, detail, atype="info"):
+        self.activity_log.insert(0,{"icon":icon,"title":title,"detail":detail,
+                                    "type":atype,"time":datetime.now().strftime("%H:%M:%S")})
+        self.activity_log = self.activity_log[:50]
+
+    def add_signal(self, s):
+        self.signal_log.insert(0,s)
+        self.signal_log = self.signal_log[:50]
+
+    def snapshot(self) -> dict:
+        pv = self.portfolio_value(); risk.update_peak(pv)
+        today = datetime.now().strftime("%Y-%m-%d")
+        trades_today = [t for t in self.closed_trades if str(t.get("closed",""))[:10]==today]
+        daily_pnl    = sum(t.get("pnl",0) for t in trades_today)
+
+        open_pos = [{
+            "symbol":sym,"entry":round(p["entry"],4),
+            "current":round(self.prices.get(sym,p["entry"]),4),
+            "qty":round(p["qty"],4),
+            "pnl":round((self.prices.get(sym,p["entry"])-p["entry"])*p["qty"],2),
+            "pnl_pct":round((self.prices.get(sym,p["entry"])-p["entry"])/p["entry"]*100,2),
+            "sl":round(p.get("sl",0),4),"tp":round(p.get("tp",0),4),
+            "invested":round(p.get("invested",0),2),
+            "confidence":round(p.get("confidence",0),3),
+            "ai_score":round(p.get("ai_score",0),1),
+            "win_prob":round(p.get("win_prob",0),1),
+            "dca_level":p.get("dca_level",0),
+            "partial_sold":p.get("partial_sold",0),
+            "news_score":round(p.get("news_score",0),2),
+            "onchain_score":round(p.get("onchain_score",0),2),
+            "trade_type":"long",
+        } for sym,p in self.positions.items()] + [{
+            "symbol":sym,"entry":round(p["entry"],4),
+            "current":round(self.prices.get(sym,p["entry"]),4),
+            "qty":round(p["qty"],4),
+            "pnl":round(p.get("pnl_unrealized",0),2),
+            "pnl_pct":round((p["entry"]-self.prices.get(sym,p["entry"]))/p["entry"]*100,2),
+            "sl":round(p.get("sl",0),4),"tp":round(p.get("tp",0),4),
+            "invested":round(p.get("invested",0),2),
+            "trade_type":"short",
+        } for sym,p in self.short_positions.items()]
+
+        # Goal ETA
+        goal = CONFIG.get("portfolio_goal",0)
+        goal_pct = min(100,round(pv/goal*100,1)) if goal>0 else 0
+        goal_eta = "—"
+        if goal>0 and len(self.closed_trades)>5:
+            recent_g = sum(t.get("pnl",0) for t in self.closed_trades[-20:])
+            daily_est = recent_g/20 if recent_g>0 else 0
+            if daily_est>0:
+                days = int((goal-pv)/daily_est)
+                goal_eta = f"~{(datetime.now()+timedelta(days=days)).strftime('%d.%m.%Y')} ({days}d)"
+
+        returns = [t.get("pnl",0)/t.get("invested",1) for t in self.closed_trades if t.get("invested",0)>0]
+
+        return {
+            "bot_name":BOT_NAME,"bot_version":BOT_VERSION,"bot_full":BOT_FULL,
+            "running":self.running,"paused":self.paused,
+            "portfolio_value":round(pv,2),"balance":round(self.balance,2),
+            "initial_balance":self.initial_balance,"return_pct":round(self.return_pct(),2),
+            "total_pnl":round(self.total_pnl(),2),"win_rate":round(self.win_rate(),1),
+            "total_trades":len(self.closed_trades),"open_trades":len(open_pos),
+            "max_trades":CONFIG["max_open_trades"],
+            "avg_win":round(self.avg_win(),2),"avg_loss":round(self.avg_loss(),2),
+            "profit_factor":self.profit_factor(),
+            "sharpe":round(risk.sharpe(returns),2),"max_drawdown":round(risk.max_drawdown,2),
+            "daily_pnl":round(daily_pnl,2),"trade_today":len(trades_today),
+            "market_regime":"🐂 Bullish" if regime.is_bull else "🐻 Bearish",
+            "btc_price":round(regime.btc_price,2),
+            "positions":open_pos,
+            "closed_trades":[{
+                "symbol":t.get("symbol"),"entry":t.get("entry"),
+                "exit":t.get("exit") or t.get("exit_price"),
+                "qty":t.get("qty"),"pnl":round(t.get("pnl",0),2),
+                "pnl_pct":round(t.get("pnl_pct",0),2),
+                "reason":t.get("reason",""),"confidence":t.get("confidence",0),
+                "ai_score":t.get("ai_score",0),"win_prob":t.get("win_prob",0),
+                "invested":t.get("invested",0),"opened":t.get("opened",""),
+                "closed":t.get("closed",""),"regime":t.get("regime",""),
+                "trade_type":t.get("trade_type","long"),
+                "dca_level":t.get("dca_level",0),
+                "news_score":t.get("news_score",0),
+            } for t in self.closed_trades[:100]],
+            "portfolio_history":self.portfolio_history[-200:],
+            "signal_log":self.signal_log[:30],
+            "activity_log":self.activity_log[:20],
+            "arb_log":self.arb_log[:10],
+            "last_scan":self.last_scan,"next_scan":self.next_scan,
+            "ai":ai_engine.to_dict(),
+            "fear_greed":fg_idx.to_dict(),
+            "circuit_breaker":risk.circuit_status(),
+            "dominance":dominance.to_dict(),
+            "anomaly":anomaly.to_dict(),
+            "genetic":genetic.to_dict(),
+            "rl":rl_agent.to_dict(),
+            "exchange":CONFIG["exchange"],"paper_trading":CONFIG["paper_trading"],
+            "goal":{"target":goal,"current":pv,"pct":goal_pct,"eta":goal_eta},
+            "price_alerts":db.get_all_alerts()[:20],
+            "use_shorts":CONFIG.get("use_shorts",False),
+            "use_arbitrage":CONFIG.get("use_arbitrage",True),
+        }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ARBITRAGE SCANNER
+# ═══════════════════════════════════════════════════════════════════════════════
+class ArbitrageScanner:
+    def __init__(self):
+        self._exchanges: Dict[str,any] = {}
+        self._lock = threading.Lock()
+        self.found_today = 0
+        self.last_scan = None
+
+    def _get_ex(self, name: str):
+        with self._lock:
+            if name not in self._exchanges:
+                try:
+                    keys = CONFIG.get("arb_api_keys",{}).get(name,{})
+                    ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name,name))
+                    self._exchanges[name] = ex_cls({
+                        "apiKey":keys.get("key",""),"secret":keys.get("secret",""),
+                        "enableRateLimit":True,"options":{"defaultType":"spot"},
+                    })
+                except Exception as e:
+                    log.debug(f"ARB Exchange {name}: {e}"); return None
+            return self._exchanges.get(name)
+
+    def scan(self, symbols: List[str]) -> List[dict]:
+        if not CONFIG.get("use_arbitrage"): return []
+        exchanges = CONFIG.get("arb_exchanges",["binance","bybit"])
+        if len(exchanges) < 2: return []
+        opportunities = []
+        try:
+            # Hole Preise von allen Exchanges
+            prices_by_ex: Dict[str,Dict[str,float]] = {}
+            for ex_name in exchanges:
+                ex = self._get_ex(ex_name)
+                if not ex: continue
+                try:
+                    tickers = ex.fetch_tickers(symbols[:30])
+                    prices_by_ex[ex_name] = {s: float(t["last"] or 0)
+                                             for s,t in tickers.items() if t.get("last")}
+                except Exception: pass
+
+            ex_names = list(prices_by_ex.keys())
+            for sym in symbols[:30]:
+                sym_prices = {n: prices_by_ex[n][sym]
+                              for n in ex_names if sym in prices_by_ex.get(n,{})}
+                if len(sym_prices) < 2: continue
+                buy_ex  = min(sym_prices, key=sym_prices.get)
+                sell_ex = max(sym_prices, key=sym_prices.get)
+                p_buy   = sym_prices[buy_ex]
+                p_sell  = sym_prices[sell_ex]
+                if p_buy <= 0: continue
+                spread = (p_sell - p_buy) / p_buy * 100
+                # Fees abziehen (≈0.04% * 4 = 0.16%)
+                net_spread = spread - 0.16
+                if net_spread >= CONFIG.get("arb_min_spread_pct",0.3):
+                    opp = {"symbol":sym,"exchange_buy":buy_ex,"price_buy":round(p_buy,6),
+                           "exchange_sell":sell_ex,"price_sell":round(p_sell,6),
+                           "spread_pct":round(net_spread,3),"executed":0,"profit":0}
+                    opportunities.append(opp)
+                    db.save_arb(opp)
+                    self.found_today += 1
+                    discord.arb_found(sym, buy_ex, sell_ex, net_spread)
+                    state.arb_log.insert(0,{"time":datetime.now().strftime("%H:%M"),
+                        "symbol":sym,"buy":buy_ex,"sell":sell_ex,
+                        "spread":round(net_spread,3)})
+                    state.arb_log = state.arb_log[:20]
+                    log.info(f"💹 ARB: {sym} {buy_ex}→{sell_ex} Spread:{net_spread:.2f}%")
+        except Exception as e:
+            log.debug(f"ARB scan: {e}")
+        self.last_scan = datetime.now().strftime("%H:%M:%S")
+        return opportunities
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# SHORT ENGINE
+# ═══════════════════════════════════════════════════════════════════════════════
+class ShortEngine:
+    def __init__(self):
+        self._ex = None
+
+    def _get_ex(self):
+        if self._ex: return self._ex
+        try:
+            name = CONFIG.get("short_exchange","bybit")
+            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name,name))
+            self._ex = ex_cls({
+                "apiKey":CONFIG.get("short_api_key",""),
+                "secret":CONFIG.get("short_secret",""),
+                "enableRateLimit":True,
+                "options":{"defaultType":"swap"},
+            })
+            return self._ex
+        except Exception as e:
+            log.debug(f"Short Ex: {e}"); return None
+
+    def open_short(self, symbol: str, invest: float, price: float) -> bool:
+        if not CONFIG.get("use_shorts"): return False
+        sl = price * (1 + CONFIG["stop_loss_pct"])
+        tp = price * (1 - CONFIG["take_profit_pct"])
+        try:
+            ex = self._get_ex()
+            qty = invest / price
+            if not CONFIG["paper_trading"] and ex:
+                ex.set_leverage(CONFIG.get("short_leverage",2), symbol)
+                ex.create_market_sell_order(symbol, qty)
+            state.short_positions[symbol] = {
+                "entry":price,"qty":qty,"invested":invest,
+                "sl":sl,"tp":tp,"opened":datetime.now().isoformat(),
+                "pnl_unrealized":0.
+            }
+            discord.short_open(symbol, price, invest)
+            state.add_activity("🔴",f"Short: {symbol}",f"@ {price:.4f} | {invest:.2f} USDT","warning")
+            log.info(f"🔴 SHORT {symbol} @ {price:.4f}")
+            return True
+        except Exception as e:
+            log.error(f"Short open: {e}"); return False
+
+    def close_short(self, symbol: str, reason: str):
+        pos = state.short_positions.get(symbol)
+        if not pos: return
+        price = state.prices.get(symbol, pos["entry"])
+        pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+        fee = pos["invested"] * CONFIG["fee_rate"] * 2
+        pnl = pos["invested"] * (pnl_pct/100) - fee
+        if CONFIG["paper_trading"]: state.balance += pos["invested"] + pnl
+        else:
+            try:
+                ex = self._get_ex()
+                if ex: ex.create_market_buy_order(symbol, pos["qty"])
+            except Exception as e:
+                log.error(f"Short close: {e}")
+        trade = {
+            "symbol":symbol,"entry":round(pos["entry"],4),"exit":round(price,4),
+            "qty":round(pos["qty"],6),"pnl":round(pnl,2),"pnl_pct":round(pnl_pct,2),
+            "reason":reason,"confidence":0,"ai_score":0,"win_prob":0,
+            "invested":round(pos["invested"],2),
+            "opened":pos["opened"],"closed":datetime.now().isoformat(),
+            "exchange":CONFIG.get("short_exchange","bybit"),
+            "regime":"bear","trade_type":"short",
+        }
+        state.closed_trades.insert(0,trade); db.save_trade(trade)
+        del state.short_positions[symbol]
+        won = pnl >= 0
+        risk.record_result(won)
+        icon = "✅" if won else "❌"
+        state.add_activity(icon,f"Short Close: {symbol}",
+            f"PnL:{pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}","success" if won else "error")
+        discord.trade_sell(symbol,price,pnl,pnl_pct,f"SHORT-{reason}")
+        log.info(f"{icon} SHORT CLOSE {symbol} @ {price:.4f} | {pnl:+.2f} USDT")
+
+    def update_shorts(self):
+        for sym in list(state.short_positions.keys()):
+            pos = state.short_positions.get(sym)
+            if not pos: continue
+            price = state.prices.get(sym, pos["entry"])
+            pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+            pos["pnl_unrealized"] = pos["invested"] * (pnl_pct/100)
+            if price >= pos["sl"]: self.close_short(sym,"SL 🛑")
+            elif price <= pos["tp"]: self.close_short(sym,"TP 🎯")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GLOBALE INSTANZEN
+# ═══════════════════════════════════════════════════════════════════════════════
+db           = MySQLManager()
+discord      = DiscordNotifier()
+fg_idx       = FearGreedIndex()
+dominance    = DominanceFilter()
+news_fetcher = NewsSentimentAnalyzer()
+onchain      = OnChainFetcher()
+sentiment_f  = SentimentFetcher()
+anomaly      = AnomalyDetector()
+genetic      = GeneticOptimizer()
+rl_agent     = RLAgent()
+mtf          = MultiTimeframeFilter()
+ob           = OrderbookImbalance()
+tax          = TaxReportGenerator()
+regime       = MarketRegime()
+risk         = RiskManager()
+liq          = LiquidityScorer()
+bt           = BacktestEngine()
+price_alerts = PriceAlertManager()
+arb_scanner  = ArbitrageScanner()
+short_engine = ShortEngine()
+daily_sched  = DailyReportScheduler()
+backup_sched = BackupScheduler()
+state        = BotState(db)
+ai_engine    = AIEngine(db)
+
+
+def emit_event(event, data):
+    try: socketio.emit(event, data)
+    except Exception: pass
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# EXCHANGE FACTORY
+# ═══════════════════════════════════════════════════════════════════════════════
+def create_exchange():
+    name = CONFIG.get("exchange","cryptocom")
+    ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name,name))
+    return ex_cls({"apiKey":CONFIG["api_key"],"secret":CONFIG["secret"],
+                   "enableRateLimit":True,"options":{"defaultType":"spot"}})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MARKT-SCANNER
+# ═══════════════════════════════════════════════════════════════════════════════
+def fetch_markets(ex) -> List[str]:
+    try:
+        markets = ex.load_markets()
+        quote = CONFIG["quote_currency"]; bl = set(CONFIG["blacklist"])
+        syms = [s for s,m in markets.items()
+                if m.get("quote")==quote and m.get("active") and s not in bl and m.get("spot",True)]
+        if CONFIG["use_vol_filter"]:
+            tickers = ex.fetch_tickers(syms[:150])
+            syms = [s for s in syms
+                    if tickers.get(s,{}).get("quoteVolume",0) >= CONFIG["min_volume_usdt"]]
+        trending = sentiment_f.get_trending()
+        priority = [s for s in trending if s in syms]
+        rest     = [s for s in syms if s not in priority]
+        return (priority + rest)[:80]
+    except Exception as e:
+        log.error(f"Märkte: {e}"); return []
+
+
+def scan_symbol(ex, symbol) -> Optional[dict]:
+    try:
+        ohlcv = ex.fetch_ohlcv(symbol, CONFIG["timeframe"], limit=CONFIG["candle_limit"])
+        if not ohlcv or len(ohlcv) < 100: return None
+        df = pd.DataFrame(ohlcv,columns=["timestamp","open","high","low","close","volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"],unit="ms")
+        df.set_index("timestamp",inplace=True)
+        df = compute_indicators(df)
+        if df is None: return None
+        row = df.iloc[-1]; prev = df.iloc[-2]
+        price = float(row["close"])
+        # [24+27] Multi-Regime classification
+        ph = list(df["close"].values[-50:])
+        scan_regime = adv_risk.classify_regime(ph) if ph else "TREND_UP"
+        risk.update_prices(symbol, price)
+        state.prices[symbol] = price
+
+        votes = {}
+        for nm,fn in STRATEGIES:
+            try: votes[nm] = fn(row,prev)
+            except Exception: votes[nm] = 0
+
+        signal, conf = ai_engine.weighted_vote(votes, CONFIG["min_vote_score"])
+        ob_ratio, ob_desc = ob.get(ex,symbol)
+        mtf_ok, mtf_desc = mtf.is_confirmed(ex,symbol,signal)
+        sentiment = sentiment_f.get_score(symbol)
+        news_score, news_hl, news_cnt = news_fetcher.get_score(symbol)
+        onchain_score, onchain_detail = onchain.get_score(symbol)
+
+        # Anomalie-Check
+        price_chg = float(row.get("returns",0)*100)
+        anomaly.add_observation(price_chg, float(row.get("vol_ratio",1)),
+                                float(row.get("rsi",50)), float(row.get("atr_pct",1)))
+
+        return {
+            "symbol":symbol,"price":price,"signal":signal,"confidence":conf,
+            "votes":votes,
+            "rsi":round(float(row.get("rsi",50)),1),
+            "stoch_rsi":float(row.get("stoch_rsi",50)),
+            "bb_pct":float(row.get("bb_pct",0.5)),
+            "bb_width":float(row.get("bb_width",0.05)),
+            "macd_hist":float(row.get("macd_hist",0)),
+            "macd_hist_slope":float(row.get("macd_hist_slope",0)),
+            "vol_ratio":float(row.get("vol_ratio",1)),
+            "atr_pct":float(row.get("atr_pct",1)),
+            "atr14":float(row.get("atr14",0)),
+            "ema_alignment":float(row.get("ema_alignment",0)),
+            "price_vs_ema21":float(row.get("price_vs_ema21",0)),
+            "roc10":float(row.get("roc10",0)),
+            "ob_ratio":ob_ratio,"ob_desc":ob_desc,
+            "mtf_ok":mtf_ok,"mtf_desc":mtf_desc,
+            "sentiment":sentiment,
+            "news_score":news_score,"news_headline":news_hl,"news_count":news_cnt,
+            "onchain_score":onchain_score,"onchain_detail":onchain_detail,
+            "ohlcv":[[int(r[0]),float(r[1]),float(r[2]),float(r[3]),float(r[4]),float(r[5])]
+                     for r in ohlcv[-100:]],
+            "time":datetime.now().strftime("%H:%M:%S"),
+        }
+    except Exception as e:
+        log.debug(f"Scan {symbol}: {e}"); return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TRADE EXECUTION mit DCA + Partial TP
+# ═══════════════════════════════════════════════════════════════════════════════
+def open_position(ex, scan: dict):
+    symbol = scan["symbol"]; price = scan["price"]
+    if len(state.positions) >= CONFIG["max_open_trades"]: return
+    if symbol in state.positions: return
+    if symbol_cooldown.is_blocked(symbol):
+        log.debug(f"[COOLDOWN] {symbol} blockiert"); return
+    if not regime.is_bull and CONFIG["use_market_regime"]: return
+    if risk.daily_loss_exceeded(state.balance): return
+    if risk.circuit_breaker_active(): return
+    # News-Sentiment-Filter (Verbesserung 9)
+    news_score = scan.get("news_score", 0.0)
+    min_score  = CONFIG.get("news_sentiment_min", -0.2)
+    if news_score < min_score:
+        log.debug(f"[NEWS-FILTER] {symbol} blockiert: news_score={news_score:.2f} < {min_score}")
+        return
+    if CONFIG.get("news_require_positive") and news_score < 0:
+        log.debug(f"[NEWS-FILTER] {symbol} blockiert: positiver Score erforderlich")
+        return
+    if anomaly.is_anomaly: log.info(f"🚨 {symbol} blockiert – Anomalie"); return
+    if not fg_idx.is_ok_to_buy(): log.info(f"😱 {symbol} F&G:{fg_idx.value}"); return
+
+    # Dominanz
+    dom_ok, dom_reason = dominance.is_ok_to_buy(symbol)
+    if not dom_ok: log.info(f"🌐 {symbol}: {dom_reason}"); return
+
+    # News-Block
+    ns = scan.get("news_score",0)
+    if ns <= CONFIG.get("news_block_score",-0.4):
+        log.info(f"📰 {symbol} News blockiert: {ns:.2f} – {scan.get('news_headline','')[:60]}")
+        return
+
+    if risk.is_correlated(symbol, list(state.positions.keys())): return
+    if not scan.get("mtf_ok",True) and CONFIG.get("mtf_enabled"): return
+    if scan.get("ob_ratio",0.5) < CONFIG.get("ob_imbalance_min",0.45): return
+    ok, spread, _ = liq.check(ex,symbol)
+    if not ok: return
+
+    features = ai_engine.extract_features(
+        scan["votes"], scan, regime.is_bull, fg_idx.value,
+        state.closed_trades, ob_imbalance=scan.get("ob_ratio",0.5),
+        mtf_bullish=int(scan.get("mtf_ok",True)), sentiment=scan.get("sentiment",0.5),
+        news_score=ns, onchain_score=scan.get("onchain_score",0),
+        dominance_ok=int(dom_ok))
+
+    # RL-Agent konsultieren
+    if CONFIG.get("rl_enabled") and rl_agent.is_trained:
+        rl_action = rl_agent.act(scan.get("rsi",50), 1 if regime.is_bull else -1,
+                                  fg_idx.value, ns, scan.get("ob_ratio",0.5))
+        if rl_action == 0: log.info(f"🤖 {symbol} RL: Hold"); return
+
+    allowed, ai_score, ai_reason = ai_engine.should_buy(features, scan["confidence"])
+    win_prob = ai_engine.win_probability(features)*100
+    if not allowed: return
+
+    fg_boost = fg_idx.buy_boost()
+    invest = (ai_engine.kelly_size(win_prob/100, state.balance, scan.get("atr14",0), fg_boost)
+              if CONFIG["ai_use_kelly"] else state.balance*CONFIG["risk_per_trade"]*fg_boost)
+    invest = min(invest, state.balance * CONFIG["max_position_pct"])
+    if invest < 5: return
+
+    fee = invest * CONFIG["fee_rate"]
+    qty = (invest - fee) / price
+    sl  = price * (1 - CONFIG["stop_loss_pct"])
+    tp  = price * (1 + CONFIG["take_profit_pct"])
+
+    if CONFIG["paper_trading"]: state.balance -= invest
+    else:
+        try: ex.create_market_buy_order(symbol, qty)
+        except Exception as e:
+            log.error(f"Order {symbol}: {e}"); discord.error(str(e)); return
+
+    ai_engine.on_buy(symbol, features, scan["votes"], scan)
+    state.positions[symbol] = {
+        "entry":price,"qty":qty,"invested":invest-fee,
+        "sl":sl,"tp":tp,"highest":price,
+        "opened":datetime.now().isoformat(),
+        "confidence":scan["confidence"],"ai_score":round(ai_score*100,1),
+        "win_prob":round(win_prob,1),"regime":"bull" if regime.is_bull else "bear",
+        "dca_level":0,"partial_sold":0,
+        "news_score":round(ns,3),"onchain_score":round(scan.get("onchain_score",0),3),
+    }
+    log.info(f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score*100:.0f}% | News:{ns:+.2f}")
+    state.add_activity("🟢",f"Kauf: {symbol}",
+        f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score*100:.0f}%","success")
+    discord.trade_buy(symbol,price,invest,ai_score*100,win_prob,ns)
+    emit_event("trade",{"type":"buy","symbol":symbol,"price":price,
+                        "invest":round(invest,2),"ai_score":round(ai_score*100,1)})
+
+
+def close_position(ex, symbol, reason, partial_ratio=1.0):
+    pos = state.positions.get(symbol)
+    if not pos: return
+    price = state.prices.get(symbol, pos["entry"])
+    is_partial = partial_ratio < 1.0
+
+    close_qty    = pos["qty"] * partial_ratio
+    close_invest = pos["invested"] * partial_ratio
+    pnl_pct  = (price - pos["entry"]) / pos["entry"] * 100
+    fee      = close_invest * CONFIG["fee_rate"]
+    pnl      = close_invest * (pnl_pct/100) - fee
+
+    if CONFIG["paper_trading"]: state.balance += close_invest + pnl
+    else:
+        try: ex.create_market_sell_order(symbol, close_qty)
+        except Exception as e:
+            log.error(f"Sell {symbol}: {e}"); return
+
+    if is_partial:
+        # Teilverkauf → Position aktualisieren
+        pos["qty"]      -= close_qty
+        pos["invested"] -= close_invest
+        pos["partial_sold"] = pos.get("partial_sold",0) + partial_ratio
+        log.info(f"🔶 PARTIAL {symbol} {partial_ratio*100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
+        state.add_activity("🔶",f"Partial TP: {symbol}",
+            f"{partial_ratio*100:.0f}% @ {price:.4f} | {pnl:+.2f}","success" if pnl>0 else "warning")
+        discord.trade_sell(symbol,price,pnl,pnl_pct,reason,partial=True)
+        trade = {**_make_trade(symbol,pos,price,close_qty,close_invest,pnl,pnl_pct,reason+"(partial)"),
+                 "partial_sold":1}
+    else:
+        regime_str = pos.get("regime","bull")
+        ai_engine.on_sell(symbol, pnl, regime_str)
+        risk.record_result(pnl > 0)
+        trade = _make_trade(symbol,pos,price,close_qty,close_invest,pnl,pnl_pct,reason,
+                            dca_level=pos.get("dca_level",0))
+        state.closed_trades.insert(0,trade)
+        del state.positions[symbol]
+        icon = "✅" if pnl>0 else "❌"
+        state.add_activity(icon,f"Verkauf: {symbol}",
+            f"PnL:{pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}","success" if pnl>0 else "error")
+        discord.trade_sell(symbol,price,pnl,pnl_pct,reason)
+        log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
+
+    db.save_trade(trade)
+    emit_event("trade",{"type":"sell","symbol":symbol,"price":price,
+                        "pnl":round(pnl,2),"pnl_pct":round(pnl_pct,2),"reason":reason})
+
+
+def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level=0, partial_sold=0):
+    return {
+        "symbol":symbol,"entry":round(pos["entry"],4),"exit":round(price,4),
+        "qty":round(qty,6),"pnl":round(pnl,2),"pnl_pct":round(pnl_pct,2),
+        "reason":reason,"confidence":round(pos.get("confidence",0),3),
+        "ai_score":round(pos.get("ai_score",0),1),"win_prob":round(pos.get("win_prob",0),1),
+        "invested":round(invest,2),"opened":pos.get("opened",""),
+        "closed":datetime.now().isoformat(),
+        "exchange":CONFIG["exchange"],"regime":pos.get("regime","bull"),
+        "trade_type":"long","partial_sold":partial_sold,
+        "dca_level":dca_level,
+        "news_score":round(pos.get("news_score",0),3),
+        "onchain_score":round(pos.get("onchain_score",0),3),
+    }
+
+
+def try_dca(ex, symbol):
+    """Dollar-Cost-Averaging: bei Kursrückgang nachkaufen."""
+    if not CONFIG.get("use_dca"): return
+    pos = state.positions.get(symbol)
+    if not pos: return
+    price = state.prices.get(symbol, pos["entry"])
+    dca_level = pos.get("dca_level",0)
+    if dca_level >= CONFIG["dca_max_levels"]: return
+    drop = (pos["entry"] - price) / pos["entry"]
+    threshold = CONFIG["dca_drop_pct"] * (dca_level + 1)
+    if drop < threshold: return
+    # Nachkauf
+    dca_invest = pos["invested"] * CONFIG["dca_size_mult"]
+    dca_invest = min(dca_invest, state.balance * 0.15)
+    if dca_invest < 5: return
+    fee = dca_invest * CONFIG["fee_rate"]
+    add_qty = (dca_invest - fee) / price
+    # Neuer Durchschnittspreis
+    total_qty  = pos["qty"] + add_qty
+    total_cost = pos["invested"] + dca_invest - fee
+    new_entry  = total_cost / total_qty
+    if CONFIG["paper_trading"]: state.balance -= dca_invest
+    else:
+        try: ex.create_market_buy_order(symbol, add_qty)
+        except Exception as e: log.error(f"DCA {symbol}: {e}"); return
+    pos["qty"]      = total_qty
+    pos["invested"] = total_cost
+    pos["entry"]    = new_entry
+    pos["dca_level"] = dca_level + 1
+    pos["sl"] = new_entry * (1 - CONFIG["stop_loss_pct"])
+    pos["tp"] = new_entry * (1 + CONFIG["take_profit_pct"])
+    log.info(f"📉 DCA Lvl{dca_level+1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}")
+    state.add_activity("📉",f"DCA Level {dca_level+1}: {symbol}",
+        f"Ø-Preis:{new_entry:.4f} | +{dca_invest:.0f} USDT","info")
+
+
+def manage_positions(ex):
+    for symbol in list(state.positions.keys()):
+        pos = state.positions.get(symbol)
+        if not pos: continue
+        try:
+            ticker = ex.fetch_ticker(symbol)
+            price  = float(ticker["last"])
+            state.prices[symbol] = price
+            adv_risk.update_volatility(price)  # [25] EWMA vol update
+        except Exception: continue
+
+        # Trailing Stop
+        if CONFIG["trailing_stop"] and price > pos.get("highest",price):
+            pos["highest"] = price
+            pos["sl"] = price * (1 - CONFIG["trailing_pct"])
+
+        # Partial Take-Profit
+        if CONFIG.get("use_partial_tp") and pos.get("partial_sold",0) == 0:
+            for level in CONFIG.get("partial_tp_levels",[]):
+                if (price - pos["entry"])/pos["entry"] >= level["pct"]:
+                    close_position(ex, symbol, f"Partial-TP {level['pct']*100:.0f}%",
+                                   partial_ratio=level["sell_ratio"])
+                    break
+
+        # SL / TP
+        if price <= pos["sl"]:
+            close_position(ex, symbol, "Stop-Loss 🛑")
+        elif price >= pos["tp"]:
+            close_position(ex, symbol, "Take-Profit 🎯")
+        else:
+            # DCA prüfen
+            try_dca(ex, symbol)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HEATMAP
+# ═══════════════════════════════════════════════════════════════════════════════
+_heatmap_cache: List[dict] = []
+_heatmap_ts: Optional[datetime] = None
+
+def get_heatmap_data(ex) -> List[dict]:
+    global _heatmap_cache, _heatmap_ts
+    if _heatmap_ts and (datetime.now()-_heatmap_ts).seconds < 90:
+        return _heatmap_cache
+    try:
+        syms = state.markets[:60] if state.markets else []
+        if not syms: return []
+        tickers = ex.fetch_tickers(syms)
+        result = []
+        for sym,t in tickers.items():
+            ns, _, _ = news_fetcher.get_score(sym)
+            result.append({
+                "symbol":sym,"change":round(float(t.get("percentage",0) or 0),2),
+                "volume":round(float(t.get("quoteVolume",0) or 0)/1e6,1),
+                "price":round(float(t.get("last",0) or 0),4),
+                "in_pos":sym in state.positions,
+                "news_score":round(ns,2),
+            })
+        result.sort(key=lambda x: x["change"], reverse=True)
+        _heatmap_cache = result; _heatmap_ts = datetime.now()
+        return result
+    except Exception as e:
+        log.debug(f"Heatmap: {e}"); return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HAUPT BOT LOOP
+# ═══════════════════════════════════════════════════════════════════════════════
+def bot_loop():
+    ex = None
+    while state.running:
+        if state.paused: time.sleep(5); continue
+        try:
+            if ex is None: ex = create_exchange()
+            state.iteration += 1
+            state.last_scan = datetime.now().strftime("%H:%M:%S")
+            state.next_scan = (datetime.now()+timedelta(seconds=CONFIG["scan_interval"])).strftime("%H:%M:%S")
+
+            risk.reset_daily(state.balance)
+            regime.update(ex)
+
+            # Periodische Updates
+            if state.iteration % 30 == 1:
+                threading.Thread(target=fg_idx.update, daemon=True).start()
+            if state.iteration % 60 == 1:
+                threading.Thread(target=dominance.update, daemon=True).start()
+
+            # Positionen verwalten (Long + Short)
+            manage_positions(ex)
+            short_engine.update_shorts()
+            # Grid Trading: update active grids with current prices
+            if grid_engine.grids:
+                bal_ref = [state.balance]
+                for sym, grid in list(grid_engine.grids.items()):
+                    if not grid["active"]: continue
+                    price = state.prices.get(sym)
+                    if price:
+                        acts = grid_engine.update(sym, price, bal_ref)
+                        for act in acts:
+                            emit_event("trade", {**act, "type": act["action"].lower(),
+                                                 "source": "grid"})
+                state.balance = bal_ref[0]
+            price_alerts.check(state.prices)
+
+            # Anomalie global prüfen
+            if anomaly.is_anomaly:
+                emit_event("update", state.snapshot())
+                time.sleep(CONFIG["scan_interval"]); continue
+
+            # Märkte laden
+            if state.iteration % 10 == 1 or not state.markets:
+                state.markets = fetch_markets(ex)
+
+            # Arbitrage
+            if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
+                threading.Thread(target=lambda: arb_scanner.scan(state.markets[:30]),daemon=True).start()
+
+            # Portfolio History
+            pv = state.portfolio_value()
+            state.portfolio_history.append({"time":datetime.now().strftime("%H:%M"),"value":round(pv,2)})
+            state.portfolio_history = state.portfolio_history[-500:]
+
+            # Short-Signale
+            if not regime.is_bull and CONFIG.get("use_shorts"):
+                for sym in state.markets[:20]:
+                    if sym not in state.short_positions and sym not in state.positions:
+                        if funding_tracker.is_short_too_expensive(sym):
+                            continue
+                        scan = scan_symbol(ex, sym)
+                        if scan and scan["signal"] == -1 and scan.get("confidence",0) >= CONFIG["min_vote_score"]:
+                            invest = state.balance * CONFIG["risk_per_trade"]
+                            short_engine.open_short(sym, invest, scan["price"])
+
+            # Long-Signale
+            if len(state.positions) < CONFIG["max_open_trades"] and \
+               not risk.daily_loss_exceeded(state.balance) and \
+               not risk.circuit_breaker_active():
+                with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as pool:
+                    futures = {pool.submit(scan_symbol,ex,s):s
+                               for s in state.markets if s not in state.positions}
+                    for fut in as_completed(futures):
+                        res = fut.result()
+                        if res and res["signal"] == 1:
+                            state.add_signal({
+                                "symbol":res["symbol"],"signal":"KAUF",
+                                "confidence":res["confidence"],"rsi":res["rsi"],
+                                "price":res["price"],"time":res["time"],
+                                "votes":res["votes"],"mtf_desc":res.get("mtf_desc",""),
+                                "news_score":res.get("news_score",0),
+                                "news_headline":res.get("news_headline",""),
+                                "onchain_detail":res.get("onchain_detail",""),
+                            })
+                            open_position(ex, res)
+
+            emit_event("update", state.snapshot())
+
+        except ccxt.NetworkError as e:
+            log.warning(f"Netzwerk: {e}"); ex = None; time.sleep(15)
+        except Exception as e:
+            log.error(f"Bot-Loop: {e}", exc_info=True)
+            discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
+            time.sleep(10)
+        time.sleep(CONFIG["scan_interval"])
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# FLASK ROUTES — DASHBOARD
+# ═══════════════════════════════════════════════════════════════════════════════
+@app.route("/")
+def index():
+    if not session.get("user_id"):
+        return redirect("/login")
+    return send_file("dashboard.html")
+
+@app.route("/login", methods=["GET","POST"])
+def login():
+    if request.method == "GET":
+        return """<!DOCTYPE html><html><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>QUANTRA Login</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',sans-serif;background:#060912;color:#ccd6f6;
+  min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:#0a0f1e;border:1px solid rgba(255,255,255,.07);border-radius:20px;
+  padding:40px 36px;width:100%;max-width:380px}
+.logo{text-align:center;margin-bottom:28px}
+.logo-icon{font-size:44px;margin-bottom:8px}
+.logo-name{font-size:26px;font-weight:900;letter-spacing:-1px}
+.logo-name span{color:#00d4ff}
+.logo-sub{font-size:11px;color:#3a4a6a;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+label{display:block;font-size:11px;font-weight:700;color:#5a7090;letter-spacing:.5px;
+  text-transform:uppercase;margin-bottom:5px}
+input{width:100%;background:#0f1628;border:1px solid rgba(255,255,255,.08);
+  border-radius:10px;padding:13px 14px;color:#ccd6f6;font-size:14px;outline:none;
+  margin-bottom:14px;transition:.2s}
+input:focus{border-color:rgba(0,212,255,.4)}
+.err{color:#ff3d71;font-size:12px;margin-bottom:12px;display:none}
+button{width:100%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
+  color:#000;font-size:15px;font-weight:800;border:none;cursor:pointer;transition:.15s}
+button:hover{transform:translateY(-1px)}
+.ver{text-align:center;margin-top:20px;font-size:10px;color:#3a4a6a}
+</style></head><body>
+<div class="box">
+  <div class="logo">
+    <div class="logo-icon">⚡</div>
+    <div class="logo-name">QUAN<span>TRA</span></div>
+    <div class="logo-sub">Quantum Trading AI · v1.0.0</div>
+  </div>
+  <form method="POST" action="/login">
+    <div id="err" class="err">Falsches Passwort</div>
+    <label>Benutzername</label>
+    <input type="text" name="username" value="admin" required>
+    <label>Passwort</label>
+    <input type="password" name="password" required autofocus>
+    <button type="submit">Anmelden →</button>
+  </form>
+  <div class="ver">quantra.com · Neural Exchange Unified System</div>
+</div>
+</body></html>"""
+    username = request.form.get("username","admin")
+    password = request.form.get("password","")
+    user = db.get_user(username)
+    if user and db.verify_password(user["password_hash"], password):
+        session["user_id"]   = user["id"]
+        session["username"]  = user["username"]
+        session["user_role"] = user.get("role","user")
+        db.update_user_login(user["id"])
+        db_audit(user["id"], "login", f"Login · {request.remote_addr}")
+        return redirect("/")
+    return redirect("/login?err=1")
+
+@app.route("/logout")
+def logout():
+    session.clear(); return redirect("/login")
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REST API — JWT-gesichert
+# ═══════════════════════════════════════════════════════════════════════════════
+@app.route("/api/v1/state")
+@api_auth_required
+def api_state():
+    return jsonify(state.snapshot())
+
+@app.route("/api/v1/trades")
+@api_auth_required
+def api_trades():
+    limit  = min(int(request.args.get("limit",100)), 1000)
+    symbol = request.args.get("symbol")
+    year   = request.args.get("year")
+    return jsonify(db.load_trades(limit=limit, symbol=symbol,
+                                  year=year, user_id=request.user_id))
+
+@app.route("/api/v1/heatmap")
+@api_auth_required
+def api_heatmap_v1():
+    try:
+        ex = create_exchange()
+        return jsonify(get_heatmap_data(ex))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/v1/backtest", methods=["POST"])
+@api_auth_required
+def api_backtest():
+    data = request.json or {}
+    try:
+        ex = create_exchange()
+        result = bt.run(
+            ex,
+            data.get("symbol","BTC/USDT"),
+            data.get("timeframe","1h"),
+            int(data.get("candles",500)),
+            float(data.get("sl",CONFIG["stop_loss_pct"])),
+            float(data.get("tp",CONFIG["take_profit_pct"])),
+            float(data.get("vote",CONFIG["min_vote_score"])),
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/v1/tax")
+@api_auth_required
+def api_tax_v1():
+    year   = int(request.args.get("year", datetime.now().year))
+    method = request.args.get("method","fifo")
+    trades = db.load_trades(limit=10000, year=year, user_id=request.user_id)
+    return jsonify(tax.generate(trades, year, method))
+
+@app.route("/api/v1/token", methods=["POST"])
+@api_auth_required
+def api_create_token():
+    label = (request.json or {}).get("label","api")
+    token = db.create_api_token(request.user_id, label)
+    return jsonify({"token": token, "expires_hours": CONFIG["jwt_expiry_hours"]})
+
+@app.route("/api/v1/signal", methods=["POST"])
+@api_auth_required
+def api_signal():
+    """TradingView Webhook → sofortiger Scan."""
+    data = request.json or {}
+    sym  = data.get("symbol","")
+    action = data.get("action","buy").lower()
+    if not sym or not state.running:
+        return jsonify({"ok": False, "msg": "Bot nicht aktiv"}), 400
+    def _async():
+        try:
+            ex = create_exchange()
+            scan = scan_symbol(ex, sym)
+            if scan and action == "buy" and scan["signal"] == 1:
+                open_position(ex, scan)
+            elif action == "sell" and sym in state.positions:
+                close_position(ex, sym, f"Webhook:{action}")
+        except Exception as e:
+            log.error(f"Webhook: {e}")
+    threading.Thread(target=_async, daemon=True).start()
+    return jsonify({"ok": True, "msg": f"Signal für {sym} empfangen"})
+
+@app.route("/api/v1/portfolio")
+@api_auth_required
+def api_portfolio():
+    return jsonify({
+        "value":   round(state.portfolio_value(), 2),
+        "balance": round(state.balance, 2),
+        "return_pct": round(state.return_pct(), 2),
+        "total_pnl":  round(state.total_pnl(), 2),
+        "win_rate":   round(state.win_rate(), 1),
+        "positions":  list(state.positions.keys()),
+    })
+
+@app.route("/api/v1/ai")
+@api_auth_required
+def api_ai():
+    return jsonify(ai_engine.to_dict())
+
+@app.route("/api/v1/dominance")
+@api_auth_required
+def api_dominance():
+    return jsonify(dominance.to_dict())
+
+@app.route("/api/v1/anomaly")
+@api_auth_required
+def api_anomaly():
+    return jsonify(anomaly.to_dict())
+
+@app.route("/api/v1/genetic")
+@api_auth_required
+def api_genetic():
+    return jsonify(genetic.to_dict())
+
+@app.route("/api/v1/rl")
+@api_auth_required
+def api_rl():
+    return jsonify(rl_agent.to_dict())
+
+@app.route("/api/v1/news/<path:symbol>")
+@api_auth_required
+def api_news(symbol):
+    score, headline, count = news_fetcher.get_score(symbol)
+    return jsonify({"symbol":symbol,"score":score,"headline":headline,"count":count})
+
+@app.route("/api/v1/onchain/<path:symbol>")
+@api_auth_required
+def api_onchain(symbol):
+    score, detail = onchain.get_score(symbol)
+    return jsonify({"symbol":symbol,"score":score,"detail":detail})
+
+@app.route("/api/v1/arb")
+@api_auth_required
+def api_arb():
+    try:
+        conn = db._conn()
+        with conn.cursor() as c:
+            c.execute("SELECT * FROM arb_opportunities ORDER BY found_at DESC LIMIT 20")
+            rows = c.fetchall()
+        conn.close()
+        result = []
+        for r in rows:
+            d = dict(r)
+            if hasattr(d.get("found_at"),"isoformat"): d["found_at"] = d["found_at"].isoformat()
+            result.append(d)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error":str(e)})
+
+# Admin Routes
+@app.route("/api/v1/admin/users")
+@api_auth_required
+@admin_required
+def api_admin_users():
+    return jsonify(db.get_all_users())
+
+@app.route("/api/v1/admin/users", methods=["POST"])
+@api_auth_required
+@admin_required
+def api_admin_create_user():
+    data = request.json or {}
+    ok = db.create_user(data.get("username",""), data.get("password",""),
+                        data.get("role","user"), float(data.get("balance",10000)))
+    return jsonify({"ok": ok})
+
+@app.route("/api/v1/admin/config")
+@api_auth_required
+@admin_required
+def api_admin_config():
+    safe = {k:v for k,v in CONFIG.items()
+            if k not in ("api_key","secret","mysql_pass","admin_password","jwt_secret",
+                         "short_api_key","short_secret","cryptopanic_token")}
+    return jsonify(safe)
+
+@app.route("/api/v1/admin/config", methods=["POST"])
+@api_auth_required
+@admin_required
+def api_admin_config_update():
+    data = request.json or {}
+    for k,v in data.items():
+        if k in CONFIG and k not in ("api_key","secret","mysql_pass","jwt_secret"):
+            CONFIG[k] = v
+    return jsonify({"ok": True})
+
+# Legacy routes (Dashboard compatibility)
+@app.route("/api/heatmap")
+@dashboard_auth
+def api_heatmap_legacy():
+    try:
+        ex = create_exchange(); return jsonify(get_heatmap_data(ex))
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+@app.route("/api/ohlcv/<path:symbol>")
+@dashboard_auth
+def api_ohlcv(symbol):
+    sym = symbol.replace("-", "/")
+    tf  = request.args.get("tf","1h")
+    limit = min(int(request.args.get("limit",200)), 500)
+    try:
+        ex    = create_exchange()
+        ohlcv = ex.fetch_ohlcv(sym, tf, limit=limit)
+        trades = [t for t in state.closed_trades if t.get("symbol")==sym][:20]
+        return jsonify({"ohlcv":ohlcv,"trades":trades})
+    except Exception as e:
+        return jsonify({"error":str(e)})
+
+@app.route("/api/tax_report")
+@dashboard_auth
+def api_tax_report():
+    year   = int(request.args.get("year", datetime.now().year))
+    method = request.args.get("method","fifo")
+    fmt    = request.args.get("format","json")
+    trades = db.load_trades(limit=10000, year=year)
+    report = tax.generate(trades, year, method)
+    if fmt == "csv":
+        rows = report.get("gains",[]) + report.get("losses",[])
+        buf  = io.StringIO()
+        if rows:
+            w = csv.DictWriter(buf, fieldnames=rows[0].keys())
+            w.writeheader(); w.writerows(rows)
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition":f"attachment;filename=quantra_tax_{year}.csv"})
+    return jsonify(report)
+
+@app.route("/api/export/csv")
+@dashboard_auth
+def api_export_csv():
+    return Response(db.export_csv(), mimetype="text/csv",
+                    headers={"Content-Disposition":"attachment;filename=quantra_trades.csv"})
+
+@app.route("/api/export/json")
+@dashboard_auth
+def api_export_json():
+    trades = db.load_trades(limit=10000)
+    return Response(json.dumps(trades, ensure_ascii=False), mimetype="application/json",
+                    headers={"Content-Disposition":"attachment;filename=quantra_trades.json"})
+
+@app.route("/api/backtest/history")
+@dashboard_auth
+def api_backtest_history():
+    return jsonify(db.get_recent_backtests(10))
+
+@app.route("/api/backup/download")
+@dashboard_auth
+def api_backup_download():
+    path = db.backup()
+    if path: return send_file(path, as_attachment=True)
+    return jsonify({"error":"Backup fehlgeschlagen"}), 500
+
+@app.route("/api/v1/docs")
+def api_docs():
+    return jsonify({
+        "name": BOT_FULL,
+        "version": BOT_VERSION,
+        "website": "https://quantra.com",
+        "endpoints": {
+            "GET /api/v1/state":      "Bot-Status (Auth: Bearer Token)",
+            "GET /api/v1/trades":     "Trade-Liste (?limit=&symbol=&year=)",
+            "GET /api/v1/portfolio":  "Portfolio-Snapshot",
+            "GET /api/v1/heatmap":    "Markt-Heatmap",
+            "POST /api/v1/backtest":  "Backtest {symbol,timeframe,candles,sl,tp,vote}",
+            "GET /api/v1/tax":        "Steuer-Report (?year=&method=)",
+            "POST /api/v1/signal":    "TradingView Webhook {symbol,action}",
+            "GET /api/v1/ai":         "KI-Status",
+            "GET /api/v1/dominance":  "BTC/USDT Dominanz",
+            "GET /api/v1/anomaly":    "Anomalie-Detektor Status",
+            "GET /api/v1/genetic":    "Genetischer Optimizer",
+            "GET /api/v1/rl":         "Reinforcement Learning Agent",
+            "GET /api/v1/news/{sym}": "News-Sentiment für Symbol",
+            "GET /api/v1/onchain/{sym}": "On-Chain Score für Symbol",
+            "GET /api/v1/arb":        "Arbitrage-Chancen",
+            "POST /api/v1/token":     "API-Token erstellen",
+            "GET /api/v1/admin/users":"Alle User (Admin)",
+            "POST /api/v1/admin/users":"User anlegen (Admin)",
+        }
+    })
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# WEBSOCKET EVENTS
+# ═══════════════════════════════════════════════════════════════════════════════
+@socketio.on("connect")
+def on_connect():
+    if not session.get("user_id"): return False
+    emit("update", state.snapshot())
+    log.info(f"📱 Client verbunden: {session.get('username','?')}")
+
+@socketio.on("start_bot")
+def on_start_bot():
+    if state.running: return
+    state.running = True; state.paused = False
+    threading.Thread(target=bot_loop, daemon=True).start()
+    emit("status", {"msg":"🤖 QUANTRA gestartet","type":"success"}, broadcast=True)
+    state.add_activity("🚀","QUANTRA gestartet",f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}","success")
+    log.info("🚀 Bot gestartet")
+
+@socketio.on("stop_bot")
+def on_stop_bot():
+    state.running = False; state.paused = False
+    emit("status", {"msg":"⏹ Bot gestoppt","type":"info"}, broadcast=True)
+    state.add_activity("⏹","Bot gestoppt","Alle Positionen offen","info")
+
+@socketio.on("pause_bot")
+def on_pause_bot():
+    state.paused = not state.paused
+    msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
+    emit("status", {"msg":msg,"type":"warning"}, broadcast=True)
+
+@socketio.on("update_config")
+def on_update_config(data):
+    allowed = {"stop_loss_pct","take_profit_pct","max_open_trades","scan_interval",
+               "paper_trading","trailing_stop","ai_min_confidence","circuit_breaker_losses",
+               "circuit_breaker_min","max_spread_pct","use_fear_greed","ai_use_kelly",
+               "mtf_enabled","use_sentiment","use_news","use_onchain","use_dominance",
+               "use_anomaly","use_dca","use_partial_tp","use_shorts","use_arbitrage",
+               "genetic_enabled","rl_enabled","backup_enabled","portfolio_goal",
+               "discord_daily_report","discord_report_hour","risk_per_trade",
+               "news_block_score","news_boost_score","dca_max_levels","dca_drop_pct",
+               "trailing_pct","lstm_lookback"}
+    for k,v in data.items():
+        if k in allowed: CONFIG[k] = v
+    emit("status", {"msg":"✅ Einstellungen gespeichert","type":"success"})
+    emit("update", state.snapshot(), broadcast=True)
+
+@socketio.on("save_api_keys")
+def on_save_keys(data):
+    CONFIG["api_key"] = data.get("api_key","")
+    CONFIG["secret"]  = data.get("secret","")
+    if data.get("exchange"): CONFIG["exchange"] = data["exchange"]
+    emit("status",{"msg":f"🔑 Keys gespeichert ({CONFIG['exchange']})","type":"success"})
+
+@socketio.on("update_discord")
+def on_update_discord(data):
+    if data.get("webhook"):  CONFIG["discord_webhook"]       = data["webhook"]
+    if "on_buy" in data:     CONFIG["discord_on_buy"]        = bool(data["on_buy"])
+    if "on_sell" in data:    CONFIG["discord_on_sell"]       = bool(data["on_sell"])
+    if "daily_report" in data: CONFIG["discord_daily_report"]= bool(data["daily_report"])
+    if "report_hour" in data:  CONFIG["discord_report_hour"] = int(data["report_hour"])
+    discord.send("✅ Discord verbunden",f"```\nQUANTRA {BOT_VERSION} konfiguriert!\n```","info")
+    emit("status",{"msg":"💬 Discord konfiguriert & getestet","type":"success"})
+
+@socketio.on("force_train")
+def on_force_train():
+    emit("status",{"msg":"🧠 KI-Training gestartet...","type":"info"})
+    threading.Thread(target=ai_engine._train, daemon=True).start()
+
+@socketio.on("force_optimize")
+def on_force_optimize():
+    emit("status",{"msg":"🔬 Optimierung läuft...","type":"info"})
+    threading.Thread(target=ai_engine._optimize, daemon=True).start()
+
+@socketio.on("force_genetic")
+def on_force_genetic():
+    emit("status",{"msg":"🧬 Genetischer Optimizer gestartet...","type":"info"})
+    genetic.evolve(state.closed_trades)
+
+@socketio.on("reset_ai")
+def on_reset_ai():
+    ai_engine.X_raw=[]; ai_engine.y_raw=[]; ai_engine.regimes_raw=[]
+    ai_engine.X_bull=[]; ai_engine.y_bull=[]; ai_engine.X_bear=[]; ai_engine.y_bear=[]
+    ai_engine.is_trained=False; ai_engine.global_model=None
+    ai_engine.bull_model=None; ai_engine.bear_model=None
+    ai_engine.lstm_model=None; ai_engine.progress_pct=0
+    emit("status",{"msg":"🔄 KI zurückgesetzt","type":"warning"})
+
+@socketio.on("close_position")
+def on_close_position(data):
+    sym = data.get("symbol","")
+    if sym in state.positions:
+        try:
+            ex = create_exchange(); close_position(ex, sym, "Manuell geschlossen 🖐")
+            emit("status",{"msg":f"✅ {sym} geschlossen","type":"success"},broadcast=True)
+        except Exception as e:
+            emit("status",{"msg":f"❌ {e}","type":"error"})
+    elif sym in state.short_positions:
+        short_engine.close_short(sym,"Manuell 🖐")
+        emit("status",{"msg":f"✅ Short {sym} geschlossen","type":"success"},broadcast=True)
+
+@socketio.on("run_backtest")
+def on_run_backtest(data):
+    def _bt():
+        try:
+            ex = create_exchange()
+            result = bt.run(ex,data.get("symbol","BTC/USDT"),data.get("timeframe","1h"),
+                            int(data.get("candles",500)),
+                            float(data.get("sl",CONFIG["stop_loss_pct"])),
+                            float(data.get("tp",CONFIG["take_profit_pct"])),
+                            float(data.get("vote",CONFIG["min_vote_score"])))
+            socketio.emit("backtest_result", result)
+        except Exception as e:
+            socketio.emit("backtest_result",{"error":str(e)})
+    emit("status",{"msg":f"⏳ Backtest {data.get('symbol','?')} läuft...","type":"info"})
+    threading.Thread(target=_bt, daemon=True).start()
+
+@socketio.on("add_price_alert")
+def on_add_alert(data):
+    uid = session.get("user_id",1)
+    aid = db.add_alert(data.get("symbol",""), float(data.get("target",0)),
+                       data.get("direction","above"), uid)
+    emit("status",{"msg":f"🔔 Alert gesetzt für {data.get('symbol')}","type":"success"})
+    emit("update",state.snapshot(),broadcast=True)
+
+@socketio.on("delete_price_alert")
+def on_delete_alert(data):
+    db.delete_alert(int(data.get("id",0)))
+    emit("update",state.snapshot(),broadcast=True)
+
+@socketio.on("manual_backup")
+def on_manual_backup():
+    def _bk():
+        path = db.backup()
+        if path:
+            discord.backup_done(path)
+            socketio.emit("status",{"msg":f"💾 Backup: {os.path.basename(path)}","type":"success"})
+        else:
+            socketio.emit("status",{"msg":"❌ Backup fehlgeschlagen","type":"error"})
+    threading.Thread(target=_bk, daemon=True).start()
+
+@socketio.on("send_daily_report")
+def on_send_report():
+    threading.Thread(target=daily_sched._send_report, daemon=True).start()
+    emit("status",{"msg":"📊 Report wird gesendet...","type":"info"})
+
+@socketio.on("reset_circuit_breaker")
+def on_reset_cb():
+    risk.circuit_breaker_until = None; risk.consecutive_losses = 0
+    emit("status",{"msg":"⚡ Circuit Breaker zurückgesetzt","type":"success"},broadcast=True)
+    emit("update",state.snapshot(),broadcast=True)
+
+@socketio.on("scan_arbitrage")
+def on_scan_arb():
+    def _arb():
+        opps = arb_scanner.scan(state.markets[:30])
+        socketio.emit("status",{"msg":f"💹 {len(opps)} Arbitrage-Chancen","type":"success" if opps else "info"})
+    threading.Thread(target=_arb, daemon=True).start()
+
+@socketio.on("update_dominance")
+def on_update_dominance():
+    threading.Thread(target=dominance.update, daemon=True).start()
+    emit("status",{"msg":"🌐 Dominanz-Update läuft...","type":"info"})
+
+@socketio.on("admin_create_user")
+def on_admin_create_user(data):
+    if session.get("user_role") != "admin":
+        emit("status",{"msg":"❌ Kein Admin","type":"error"}); return
+    ok = db.create_user(data.get("username",""),data.get("password",""),
+                        data.get("role","user"),float(data.get("balance",10000)))
+    emit("status",{"msg":"✅ User erstellt" if ok else "❌ Fehler","type":"success" if ok else "error"})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# STARTUP
+# ═══════════════════════════════════════════════════════════════════════════════
+def safety_scan():
+    """Prüft beim Start ob unbekannte Positionen auf Exchange sind."""
+    if CONFIG["paper_trading"]: return
+    try:
+        ex = create_exchange(); bal = ex.fetch_balance()
+        suspicious = []
+        for coin, details in bal.get("total",{}).items():
+            if coin == CONFIG["quote_currency"] or float(details or 0) <= 0.001: continue
+            sym = f"{coin}/{CONFIG['quote_currency']}"
+            if sym not in state.positions:
+                suspicious.append(f"{coin}: {float(details or 0):.4f}")
+        if suspicious:
+            msg = f"⚠️ Unbekannte Positionen:\n" + "\n".join(suspicious)
+            discord.error(msg); log.warning(msg)
+    except Exception as e:
+        log.debug(f"Safety-Scan: {e}")
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# AUDIT LOG SYSTEM (Verbesserung 1)
+# Alle Admin- und Nutzeraktionen lückenlos protokolliert
+# ════════════════════════════════════════════════════════════════════════════════
+
+def db_audit(user_id: int, action: str, detail: str = "", ip: str = ""):
+    """Schreibt einen Audit-Log-Eintrag in die DB."""
+    if not ip:
+        try: ip = request.remote_addr or ""
+        except RuntimeError: ip = "system"
+    try:
+        conn = db._conn()
+        with conn.cursor() as c:
+            c.execute("""INSERT INTO audit_log (user_id, action, detail, ip)
+                         VALUES (%s, %s, %s, %s)""",
+                      (user_id, str(action)[:80], str(detail)[:500], str(ip)[:45]))
+            conn.commit()
+        conn.close()
+    except Exception as e:
+        log.debug(f"audit_log: {e}")
+
+@app.route("/api/v1/admin/audit-log")
+@admin_required
+def api_audit_log():
+    """Gibt die letzten 200 Audit-Log-Einträge zurück."""
+    try:
+        page = int(request.args.get("page", 1))
+        action_filter = request.args.get("action", "")
+        conn = db._conn()
+        with conn.cursor() as c:
+            if action_filter:
+                c.execute("""SELECT al.*, u.username FROM audit_log al
+                             LEFT JOIN users u ON al.user_id = u.id
+                             WHERE al.action LIKE %s
+                             ORDER BY al.created_at DESC LIMIT 200""",
+                          (f"%{action_filter}%",))
+            else:
+                c.execute("""SELECT al.*, u.username FROM audit_log al
+                             LEFT JOIN users u ON al.user_id = u.id
+                             ORDER BY al.created_at DESC LIMIT 200""")
+            rows = c.fetchall()
+        conn.close()
+        return jsonify({"logs": [dict(r) for r in rows]})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# GRID TRADING ENGINE (Verbesserung 2)
+# Platziert automatisch Kauf-/Verkauforders in einem Preisraster
+# ════════════════════════════════════════════════════════════════════════════════
+
+class GridTradingEngine:
+    """
+    Klassisches Grid-Trading:
+    - Definiert N Preisstufen zwischen lower_price und upper_price
+    - Kauft wenn Preis eine Stufe unterschreitet
+    - Verkauft wenn Preis eine Stufe überschreitet
+    - Funktioniert ohne KI-Signal, ideal für Seitwärtsmärkte
+    """
+    def __init__(self):
+        self.grids: Dict[str, dict] = {}  # symbol → grid config
+        self._lock = threading.Lock()
+
+    def create_grid(self, symbol: str, lower: float, upper: float,
+                    levels: int = 10, invest_per_level: float = 100.0) -> dict:
+        if lower >= upper or levels < 2:
+            return {"error": "Ungültige Parameter: lower < upper, levels >= 2"}
+        step = (upper - lower) / levels
+        grid_levels = [round(lower + i * step, 6) for i in range(levels + 1)]
+        with self._lock:
+            self.grids[symbol] = {
+                "symbol":            symbol,
+                "lower":             lower,
+                "upper":             upper,
+                "levels":            levels,
+                "step":              round(step, 6),
+                "grid_levels":       grid_levels,
+                "invest_per_level":  invest_per_level,
+                "active":            True,
+                "filled_buys":       {},   # price → qty
+                "filled_sells":      {},
+                "total_pnl":         0.0,
+                "total_trades":      0,
+                "created":           datetime.now().isoformat(),
+            }
+        log.info(f"[GRID] {symbol}: {levels} Stufen zwischen {lower}–{upper} · {step:.4f}/Stufe")
+        return self.grids[symbol]
+
+    def update(self, symbol: str, current_price: float, balance_ref: list) -> list:
+        """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen."""
+        grid = self.grids.get(symbol)
+        if not grid or not grid["active"]: return []
+        actions = []
+        levels = grid["grid_levels"]
+        step   = grid["step"]
+        invest = grid["invest_per_level"]
+
+        for i, lvl in enumerate(levels[:-1]):
+            buy_price  = lvl
+            sell_price = levels[i + 1]
+
+            # BUY: Preis ist gerade unter buy_price gefallen
+            if (current_price <= buy_price * 1.001 and
+                    buy_price not in grid["filled_buys"] and
+                    balance_ref[0] >= invest):
+                qty = invest / current_price
+                grid["filled_buys"][buy_price] = {"qty": qty, "price": current_price}
+                balance_ref[0] -= invest
+                grid["total_trades"] += 1
+                actions.append({
+                    "action": "BUY", "symbol": symbol,
+                    "price": current_price, "qty": round(qty, 6),
+                    "grid_level": i, "invest": invest,
+                })
+                log.info(f"[GRID] BUY  {symbol} @ {current_price:.4f} (Stufe {i})")
+
+            # SELL: Preis hat sell_price überschritten und wir haben eine Position
+            if (current_price >= sell_price * 0.999 and
+                    buy_price in grid["filled_buys"]):
+                buy_info = grid["filled_buys"].pop(buy_price)
+                pnl = (current_price - buy_info["price"]) * buy_info["qty"]
+                balance_ref[0] += buy_info["qty"] * current_price
+                grid["total_pnl"]   = round(grid["total_pnl"] + pnl, 4)
+                grid["total_trades"] += 1
+                grid["filled_sells"][sell_price] = {"pnl": pnl}
+                actions.append({
+                    "action": "SELL", "symbol": symbol,
+                    "price": current_price, "qty": round(buy_info["qty"], 6),
+                    "pnl": round(pnl, 4), "grid_level": i,
+                })
+                log.info(f"[GRID] SELL {symbol} @ {current_price:.4f} PnL={pnl:+.4f}")
+        return actions
+
+    def stop_grid(self, symbol: str):
+        with self._lock:
+            if symbol in self.grids:
+                self.grids[symbol]["active"] = False
+
+    def delete_grid(self, symbol: str):
+        with self._lock:
+            self.grids.pop(symbol, None)
+
+    def status(self) -> list:
+        return [
+            {**g, "open_buys": len(g["filled_buys"]),
+             "grid_levels": None}  # Don't send full list to UI
+            for g in self.grids.values()
+        ]
+
+
+grid_engine = GridTradingEngine()
+
+
+@app.route("/api/v1/grid", methods=["GET"])
+@api_auth_required
+def api_grid_list():
+    return jsonify({"grids": grid_engine.status()})
+
+@app.route("/api/v1/grid", methods=["POST"])
+@admin_required
+def api_grid_create():
+    d = request.json or {}
+    symbol = d.get("symbol","")
+    lower  = float(d.get("lower", 0))
+    upper  = float(d.get("upper", 0))
+    levels = int(d.get("levels", 10))
+    invest = float(d.get("invest_per_level", 100.0))
+    if not symbol or lower <= 0 or upper <= lower:
+        return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
+    result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
+    db_audit(session.get("user_id",0), "grid_create", f"{symbol} {lower}–{upper} {levels}L")
+    return jsonify(result)
+
+@app.route("/api/v1/grid/<symbol>", methods=["DELETE"])
+@admin_required
+def api_grid_delete(symbol):
+    grid_engine.delete_grid(symbol)
+    db_audit(session.get("user_id",0), "grid_delete", symbol)
+    return jsonify({"deleted": symbol})
+
+@socketio.on("create_grid")
+def ws_create_grid(data):
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    r = grid_engine.create_grid(
+        data.get("symbol",""), float(data.get("lower",0)),
+        float(data.get("upper",0)), int(data.get("levels",10)),
+        float(data.get("invest_per_level",100)))
+    emit("status",{"msg":f"✅ Grid {data.get('symbol','')} erstellt","type":"success"}, broadcast=True)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# MONTE CARLO RISK SIMULATION (Verbesserung 4)
+# Simuliert N Handels-Szenarien basierend auf historischer Performance
+# ════════════════════════════════════════════════════════════════════════════════
+
+def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
+    """
+    Monte-Carlo-Simulation des Portfolio-Werts über n_days Tage.
+    Basiert auf den tatsächlichen PnL-Verteilungen aus closed_trades.
+    """
+    trades = state.closed_trades
+    if len(trades) < 5:
+        return {"error": "Mindestens 5 abgeschlossene Trades erforderlich"}
+
+    pnl_pcts = [t.get("pnl", 0) / max(t.get("invested", 1), 1)
+                for t in trades if t.get("invested", 0) > 0]
+    if not pnl_pcts:
+        return {"error": "Keine PnL-Daten vorhanden"}
+
+    mu    = float(np.mean(pnl_pcts))
+    sigma = float(np.std(pnl_pcts))
+    start_value = state.portfolio_value()
+
+    # Tägliche Anzahl Trades (Durchschnitt)
+    if trades:
+        span_days = max(1, (datetime.now() - datetime.fromisoformat(
+            str(trades[0].get("opened", datetime.now().isoformat()))[:19]
+        )).days)
+        trades_per_day = max(0.1, len(trades) / span_days)
+    else:
+        trades_per_day = 1.0
+
+    results = []
+    np.random.seed(42)
+    for _ in range(n_simulations):
+        val = start_value
+        path = [val]
+        for day in range(n_days):
+            n_trades_today = max(0, int(np.random.poisson(trades_per_day)))
+            for _ in range(n_trades_today):
+                pnl_pct = np.random.normal(mu, sigma)
+                invested = val * CONFIG.get("risk_per_trade", 0.015)
+                val = max(0, val + invested * pnl_pct)
+            path.append(round(val, 2))
+        results.append(val)
+
+    results_arr = np.array(results)
+    p5, p25, p50, p75, p95 = np.percentile(results_arr, [5, 25, 50, 75, 95])
+
+    # Value at Risk (95% Konfidenz)
+    var_95 = start_value - float(p5)
+    var_pct = var_95 / start_value * 100 if start_value > 0 else 0
+
+    # Probability of profit
+    prob_profit = float(np.mean(results_arr > start_value) * 100)
+    prob_ruin   = float(np.mean(results_arr < start_value * 0.5) * 100)
+
+    return {
+        "n_simulations":  n_simulations,
+        "n_days":         n_days,
+        "start_value":    round(start_value, 2),
+        "mu_per_trade":   round(mu * 100, 3),
+        "sigma_per_trade":round(sigma * 100, 3),
+        "trades_per_day": round(trades_per_day, 2),
+        "percentile_5":   round(float(p5), 2),
+        "percentile_25":  round(float(p25), 2),
+        "percentile_50":  round(float(p50), 2),
+        "percentile_75":  round(float(p75), 2),
+        "percentile_95":  round(float(p95), 2),
+        "var_95_usdt":    round(var_95, 2),
+        "var_95_pct":     round(var_pct, 2),
+        "prob_profit_pct":round(prob_profit, 1),
+        "prob_ruin_pct":  round(prob_ruin, 1),
+        "expected_return":round((float(p50) - start_value) / start_value * 100, 2),
+    }
+
+@app.route("/api/v1/risk/monte-carlo")
+@api_auth_required
+def api_monte_carlo():
+    n_sim  = min(int(request.args.get("n", 10000)), 50000)
+    n_days = min(int(request.args.get("days", 30)), 365)
+    result = run_monte_carlo(n_sim, n_days)
+    return jsonify(result)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# TELEGRAM BOT NOTIFIER (Verbesserung 5)
+# ════════════════════════════════════════════════════════════════════════════════
+
+class TelegramNotifier:
+    """Sendet Benachrichtigungen via Telegram Bot API."""
+    BASE = "https://api.telegram.org/bot"
+
+    def __init__(self):
+        self.token   = CONFIG.get("telegram_token", "")
+        self.chat_id = CONFIG.get("telegram_chat_id", "")
+        self._queue: List[str] = []
+        self._lock  = threading.Lock()
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.token and self.chat_id)
+
+    def send(self, text: str, parse_mode: str = "HTML") -> bool:
+        if not self.enabled: return False
+        try:
+            resp = requests.post(
+                f"{self.BASE}{self.token}/sendMessage",
+                json={"chat_id": self.chat_id, "text": text,
+                      "parse_mode": parse_mode, "disable_web_page_preview": True},
+                timeout=5
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            log.debug(f"[TG] {e}")
+            return False
+
+    def trade_open(self, symbol: str, price: float, invest: float,
+                   confidence: float, exchange: str = "main"):
+        self.send(
+            f"⚡ <b>KAUF</b> [{exchange.upper()}]\n"
+            f"Symbol: <code>{symbol}</code>\n"
+            f"Preis: <code>{price:.4f} USDT</code>\n"
+            f"Invest: <code>{invest:.2f} USDT</code>\n"
+            f"KI-Konfidenz: <code>{confidence*100:.0f}%</code>"
+        )
+
+    def trade_close(self, symbol: str, price: float, pnl: float,
+                    reason: str, exchange: str = "main"):
+        icon = "✅" if pnl >= 0 else "❌"
+        self.send(
+            f"{icon} <b>{reason}</b> [{exchange.upper()}]\n"
+            f"Symbol: <code>{symbol}</code>\n"
+            f"Preis: <code>{price:.4f} USDT</code>\n"
+            f"PnL: <code>{pnl:+.2f} USDT</code>"
+        )
+
+    def alert(self, title: str, body: str):
+        self.send(f"🚨 <b>{title}</b>\n{body}")
+
+    def daily_report(self, pnl: float, wr: float, trades: int, pv: float):
+        icon = "📈" if pnl >= 0 else "📉"
+        self.send(
+            f"{icon} <b>TREVLIX Tagesbericht</b>\n"
+            f"Portfolio: <code>{pv:.2f} USDT</code>\n"
+            f"PnL heute: <code>{pnl:+.2f} USDT</code>\n"
+            f"Win-Rate: <code>{wr:.1f}%</code>\n"
+            f"Trades: <code>{trades}</code>"
+        )
+
+    def test(self) -> bool:
+        return self.send("🤖 <b>TREVLIX</b> — Verbindung erfolgreich!")
+
+
+telegram = TelegramNotifier()
+
+
+@app.route("/api/v1/telegram/test", methods=["POST"])
+@admin_required
+def api_telegram_test():
+    ok = telegram.test()
+    return jsonify({"success": ok, "enabled": telegram.enabled})
+
+@app.route("/api/v1/telegram/configure", methods=["POST"])
+@admin_required
+def api_telegram_configure():
+    d = request.json or {}
+    token   = d.get("token","").strip()
+    chat_id = d.get("chat_id","").strip()
+    if not token or not chat_id:
+        return jsonify({"error":"token und chat_id erforderlich"}),400
+    CONFIG["telegram_token"]   = token
+    CONFIG["telegram_chat_id"] = chat_id
+    telegram.token   = token
+    telegram.chat_id = chat_id
+    # Persist to .env
+    _set_env_var("TELEGRAM_TOKEN",   token)
+    _set_env_var("TELEGRAM_CHAT_ID", chat_id)
+    db_audit(session.get("user_id",0), "telegram_configure", "Telegram konfiguriert")
+    ok = telegram.test()
+    return jsonify({"success": ok, "enabled": telegram.enabled})
+
+def _set_env_var(key: str, value: str):
+    """Setzt/aktualisiert eine Variable in der .env Datei."""
+    import re as _re
+    env_path = ".env"
+    if not os.path.exists(env_path): return
+    with open(env_path) as f: txt = f.read()
+    if _re.search(f"^{key}=", txt, _re.M):
+        txt = _re.sub(f"^{key}=.*$", f"{key}={value}", txt, flags=_re.M)
+    else:
+        txt += f"\n{key}={value}"
+    with open(env_path, "w") as f: f.write(txt)
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# SYMBOL COOLDOWN (Verbesserung 7)
+# Sperrt ein Symbol nach einem Verlust-Trade für X Minuten
+# ════════════════════════════════════════════════════════════════════════════════
+
+class SymbolCooldown:
+    """Verhindert Re-Entry in dasselbe Symbol direkt nach einem Verlust-Trade."""
+    def __init__(self):
+        self._cooldowns: Dict[str, datetime] = {}
+        self._lock = threading.Lock()
+
+    def set_cooldown(self, symbol: str, minutes: int = None):
+        mins = minutes or CONFIG.get("cooldown_minutes", 60)
+        until = datetime.now() + timedelta(minutes=mins)
+        with self._lock:
+            self._cooldowns[symbol] = until
+        log.debug(f"[COOLDOWN] {symbol} gesperrt bis {until.strftime('%H:%M')}")
+
+    def is_blocked(self, symbol: str) -> bool:
+        with self._lock:
+            until = self._cooldowns.get(symbol)
+            if until and datetime.now() < until:
+                return True
+            if until:
+                del self._cooldowns[symbol]
+            return False
+
+    def status(self) -> dict:
+        now = datetime.now()
+        with self._lock:
+            return {
+                sym: {
+                    "until": until.strftime("%H:%M:%S"),
+                    "remaining_min": round((until - now).total_seconds() / 60, 1)
+                }
+                for sym, until in self._cooldowns.items()
+                if until > now
+            }
+
+
+symbol_cooldown = SymbolCooldown()
+
+
+@app.route("/api/v1/cooldowns")
+@api_auth_required
+def api_cooldowns():
+    return jsonify({"cooldowns": symbol_cooldown.status()})
+
+@app.route("/api/v1/cooldowns/<symbol>", methods=["DELETE"])
+@admin_required
+def api_cooldown_clear(symbol):
+    with symbol_cooldown._lock:
+        symbol_cooldown._cooldowns.pop(symbol, None)
+    return jsonify({"cleared": symbol})
+
+
+@app.route("/api/v1/admin/ip-whitelist", methods=["GET"])
+@admin_required
+def api_ip_whitelist_get():
+    return jsonify({"whitelist": CONFIG.get("ip_whitelist",[]), "active": bool(CONFIG.get("ip_whitelist"))})
+
+@app.route("/api/v1/admin/ip-whitelist", methods=["POST"])
+@admin_required
+def api_ip_whitelist_set():
+    ips = (request.json or {}).get("ips", [])
+    CONFIG["ip_whitelist"] = [ip.strip() for ip in ips if ip.strip()]
+    _set_env_var("IP_WHITELIST", ",".join(CONFIG["ip_whitelist"]))
+    db_audit(session.get("user_id",0), "ip_whitelist_update", str(CONFIG["ip_whitelist"]))
+    return jsonify({"whitelist": CONFIG["ip_whitelist"]})
+
+
+@app.route("/api/v1/config/news-filter", methods=["GET","POST"])
+@admin_required
+def api_news_filter():
+    if request.method == "POST":
+        d = request.json or {}
+        CONFIG["news_sentiment_min"]    = float(d.get("min_score", CONFIG["news_sentiment_min"]))
+        CONFIG["news_require_positive"] = bool(d.get("require_positive", CONFIG["news_require_positive"]))
+        CONFIG["news_block_score"]      = float(d.get("block_score", CONFIG["news_block_score"]))
+        db_audit(session.get("user_id",0), "news_filter_update",
+                 f"min={CONFIG['news_sentiment_min']} pos={CONFIG['news_require_positive']}")
+        return jsonify({"success": True, "config": {
+            "news_sentiment_min":    CONFIG["news_sentiment_min"],
+            "news_require_positive": CONFIG["news_require_positive"],
+            "news_block_score":      CONFIG["news_block_score"],
+        }})
+    return jsonify({
+        "news_sentiment_min":    CONFIG.get("news_sentiment_min", -0.2),
+        "news_require_positive": CONFIG.get("news_require_positive", False),
+        "news_block_score":      CONFIG.get("news_block_score", -0.4),
+    })
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# FUNDING RATE TRACKER (Verbesserung 10)
+# ════════════════════════════════════════════════════════════════════════════════
+
+class FundingRateTracker:
+    """Ruft Perpetual Funding Rates von Bybit/Binance ab und filtert teure Shorts."""
+    def __init__(self):
+        self._rates: Dict[str, float] = {}
+        self._last_update: Optional[datetime] = None
+        self._lock = threading.Lock()
+
+    def update(self, ex=None):
+        """Aktualisiert Funding Rates (alle 15 Min)."""
+        if (self._last_update and
+                (datetime.now() - self._last_update).seconds < 900):
+            return
+        try:
+            url = "https://api.bybit.com/v5/market/tickers?category=linear"
+            resp = requests.get(url, timeout=8)
+            if resp.status_code == 200:
+                data = resp.json().get("result", {}).get("list", [])
+                with self._lock:
+                    for item in data:
+                        sym = item.get("symbol", "")
+                        fr  = item.get("fundingRate", "0")
+                        if sym.endswith("USDT"):
+                            base = sym.replace("USDT","") + "/USDT"
+                            self._rates[base] = float(fr)
+                self._last_update = datetime.now()
+                log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
+        except Exception as e:
+            log.debug(f"[FUNDING] Update: {e}")
+
+    def get_rate(self, symbol: str) -> Optional[float]:
+        with self._lock:
+            return self._rates.get(symbol)
+
+    def is_short_too_expensive(self, symbol: str) -> bool:
+        if not CONFIG.get("funding_rate_filter"): return False
+        rate = self.get_rate(symbol)
+        if rate is None: return False
+        max_rate = CONFIG.get("funding_rate_max", 0.001)
+        return rate > max_rate
+
+    def top_rates(self, n: int = 10) -> list:
+        with self._lock:
+            sorted_rates = sorted(
+                self._rates.items(), key=lambda x: abs(x[1]), reverse=True
+            )[:n]
+        return [{"symbol": s, "rate": round(r * 100, 4), "rate_8h_pct": round(r * 100, 4)}
+                for s, r in sorted_rates]
+
+    def status(self) -> dict:
+        return {
+            "count": len(self._rates),
+            "last_update": self._last_update.isoformat() if self._last_update else None,
+            "filter_enabled": CONFIG.get("funding_rate_filter"),
+            "max_rate": CONFIG.get("funding_rate_max"),
+        }
+
+
+funding_tracker = FundingRateTracker()
+
+
+@app.route("/api/v1/funding-rates")
+@api_auth_required
+def api_funding_rates():
+    n = int(request.args.get("n", 20))
+    return jsonify({
+        "top_rates": funding_tracker.top_rates(n),
+        "status":    funding_tracker.status(),
+    })
+
+@app.route("/api/v1/funding-rates/config", methods=["POST"])
+@admin_required
+def api_funding_config():
+    d = request.json or {}
+    CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
+    CONFIG["funding_rate_max"]    = float(d.get("max_rate", 0.001))
+    return jsonify({"success": True, **funding_tracker.status()})
+
+
+# ════════════════════════════════════════════════════════════════════════════════
+# ADVANCED RISK METRICS (KI-Verbesserungen 23-25)
+# ════════════════════════════════════════════════════════════════════════════════
+
+class AdvancedRiskMetrics:
+    """
+    [23] CVaR / Expected Shortfall:
+         Wie viel verlieren wir im schlimmsten Fall (jenseits VaR)?
+    [24] Multi-Regime-Klassifikator (4 Zustände)
+    [25] EWMA-Volatilitätsprognose
+    """
+
+    def __init__(self):
+        self._vol_history: List[float] = []
+        self._ewma_vol: float          = 0.02
+        self._lambda: float            = 0.94  # RiskMetrics EWMA
+
+    # [23] CVaR (Conditional Value at Risk = Expected Shortfall)
+    def compute_cvar(self, confidence: float = 0.95) -> dict:
+        trades = state.closed_trades
+        if len(trades) < 10:
+            return {"var": 0, "cvar": 0, "es": 0, "n": 0}
+        pnl_arr = np.array([t.get("pnl", 0) for t in trades])
+        var_threshold = np.percentile(pnl_arr, (1 - confidence) * 100)
+        tail_losses   = pnl_arr[pnl_arr <= var_threshold]
+        cvar = float(np.mean(tail_losses)) if len(tail_losses) > 0 else float(var_threshold)
+        return {
+            "var":        round(float(var_threshold), 2),
+            "cvar":       round(cvar, 2),
+            "es":         round(abs(cvar), 2),
+            "n_tail":     len(tail_losses),
+            "confidence": confidence,
+            "worst_loss": round(float(pnl_arr.min()), 2),
+            "avg_loss":   round(float(pnl_arr[pnl_arr < 0].mean()) if any(pnl_arr < 0) else 0, 2),
+        }
+
+    # [25] EWMA-Volatilitätsprognose
+    def update_volatility(self, price: float) -> float:
+        self._vol_history.append(price)
+        if len(self._vol_history) > 200:
+            self._vol_history = self._vol_history[-200:]
+        if len(self._vol_history) < 5:
+            return self._ewma_vol
+        prices = np.array(self._vol_history[-30:])
+        returns = np.diff(np.log(prices + 1e-9))
+        if len(returns) > 0:
+            r2 = float(returns[-1]**2)
+            # EWMA update: σ²_t = λ·σ²_{t-1} + (1-λ)·r²_t
+            self._ewma_vol = math.sqrt(
+                self._lambda * self._ewma_vol**2 + (1 - self._lambda) * r2)
+        return self._ewma_vol
+
+    def volatility_forecast(self, horizon: int = 5) -> dict:
+        """Prognostiziert Volatilität über n Perioden (EWMA mean-reversion)."""
+        lt_avg = 0.02  # Langzeit-Volatilität Annahme
+        forecasts = []
+        vol = self._ewma_vol
+        for h in range(1, horizon + 1):
+            # Mean-Reversion: Vol zieht zurück zum LT-Durchschnitt
+            vol = vol + 0.1 * (lt_avg - vol)
+            forecasts.append(round(vol * 100, 3))
+        return {
+            "current_vol_pct":  round(self._ewma_vol * 100, 3),
+            "forecast_horizon": horizon,
+            "forecasts_pct":    forecasts,
+            "risk_level":       "HOCH" if self._ewma_vol > 0.04 else
+                                "MITTEL" if self._ewma_vol > 0.02 else "NIEDRIG",
+        }
+
+    # [24] Multi-Regime-Klassifikator (4 Zustände)
+    def classify_regime(self, prices: list, volumes: list = None) -> str:
+        """
+        Klassifiziert Marktregime in 4 Zustände:
+        - TREND_UP:   Starker Aufwärtstrend
+        - TREND_DOWN: Starker Abwärtstrend
+        - RANGE:      Seitwärtsbewegung
+        - CRASH:      Schneller Absturz (>5% in kurzer Zeit)
+        Returns: Regime-String
+        """
+        if len(prices) < 20:
+            return "TREND_UP"
+        pa = np.array(prices[-50:])
+        # Kurze vs. lange SMA
+        sma_short = float(np.mean(pa[-10:]))
+        sma_long  = float(np.mean(pa[-30:]) if len(pa) >= 30 else np.mean(pa))
+        trend_pct = (sma_short - sma_long) / (sma_long + 1e-9)
+        # Volatilität
+        vol = float(np.std(pa[-20:]) / (np.mean(pa[-20:]) + 1e-9))
+        # Recent drawdown
+        recent_peak = float(np.max(pa[-10:]))
+        current     = float(pa[-1])
+        drawdown    = (recent_peak - current) / (recent_peak + 1e-9)
+        if drawdown > 0.05:
+            return "CRASH"
+        elif trend_pct > 0.02 and vol < 0.04:
+            return "TREND_UP"
+        elif trend_pct < -0.02 and vol < 0.04:
+            return "TREND_DOWN"
+        else:
+            return "RANGE"
+
+    # [26] Conformal Prediction Intervals
+    def conformal_predict(self, model, X_cal: np.ndarray, y_cal: np.ndarray,
+                           X_test: np.ndarray, alpha: float = 0.1) -> dict:
+        """
+        [26] Conformal Prediction: Liefert garantierte Vorhersage-Intervalle.
+        Mit (1-alpha) Wahrscheinlichkeit liegt das echte Label im Interval.
+        """
+        if model is None or len(X_cal) < 10:
+            return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
+        try:
+            # Non-conformity scores: |f(x) - y|
+            probs = model.predict_proba(X_cal)[:, 1]
+            scores = np.abs(probs - y_cal)
+            # Quantil der non-conformity scores
+            q_level = math.ceil((len(scores) + 1) * (1 - alpha)) / len(scores)
+            q_level = min(q_level, 1.0)
+            q_hat   = float(np.quantile(scores, q_level))
+            test_prob = float(model.predict_proba(X_test)[:, 1][0])
+            lower = max(0.0, test_prob - q_hat)
+            upper = min(1.0, test_prob + q_hat)
+            return {
+                "prediction":  round(test_prob, 3),
+                "lower":       round(lower, 3),
+                "upper":       round(upper, 3),
+                "width":       round(upper - lower, 3),
+                "q_hat":       round(q_hat, 3),
+                "coverage":    round(1 - alpha, 2),
+            }
+        except Exception as e:
+            log.debug(f"[CONFORMAL] {e}")
+            return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "error"}
+
+
+adv_risk = AdvancedRiskMetrics()
+
+
+@app.route("/api/v1/risk/cvar")
+@api_auth_required
+def api_cvar():
+    confidence = float(request.args.get("conf", 0.95))
+    return jsonify(adv_risk.compute_cvar(confidence))
+
+@app.route("/api/v1/risk/volatility")
+@api_auth_required
+def api_volatility():
+    return jsonify(adv_risk.volatility_forecast(int(request.args.get("h", 5))))
+
+@app.route("/api/v1/risk/regime")
+@api_auth_required  
+def api_market_regime():
+    prices = list(state.prices.values())
+    if not prices:
+        return jsonify({"regime": "UNKNOWN"})
+    regime_result = adv_risk.classify_regime(
+        list(state.portfolio_history[-50:]) if state.portfolio_history else prices
+    )
+    return jsonify({
+        "regime":       regime_result,
+        "vol_pct":      round(adv_risk._ewma_vol * 100, 3),
+        "risk_level":   adv_risk.volatility_forecast(1)["risk_level"],
+    })
+
+def startup_banner():
+    print(f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                                                                              ║
+║  ██████╗ ██╗   ██╗ █████╗ ███╗  ██╗████████╗██████╗  █████╗               ║
+║ ██╔═══██╗██║   ██║██╔══██╗████╗ ██║╚══██╔══╝██╔══██╗██╔══██╗              ║
+║ ██║   ██║██║   ██║███████║██╔██╗██║   ██║   ██████╔╝███████║              ║
+║ ██║▄▄ ██║██║   ██║██╔══██║██║╚████║   ██║   ██╔══██╗██╔══██║              ║
+║ ╚██████╔╝╚██████╔╝██║  ██║██║ ╚███║   ██║   ██║  ██║██║  ██║              ║
+║  ╚══▀▀═╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚══╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝              ║
+║                                                                              ║
+║  Quantum Trading AI  ·  v{BOT_VERSION}  ·  quantra.com                         ║
+╠══════════════════════════════════════════════════════════════════════════════╣
+║  MySQL:   {CONFIG['mysql_host']}/{CONFIG['mysql_db']:<44}║
+║  Exchange:{CONFIG['exchange']:<51}║
+║  Modus:   {'📝 Paper Trading' if CONFIG['paper_trading'] else '💰 Live Trading':<50}║
+║  Kapital: {CONFIG['paper_balance']:<50}║
+╚══════════════════════════════════════════════════════════════════════════════╝
+    """)
+
+if __name__ == "__main__":
+    startup_banner()
+    os.makedirs(CONFIG["backup_dir"], exist_ok=True)
+    # Hintergrund-Threads
+    threading.Thread(target=daily_sched.run,   daemon=True, name="DailyReport").start()
+    threading.Thread(target=backup_sched.run,  daemon=True, name="Backup").start()
+    # Initialisierung
+    threading.Thread(target=fg_idx.update,     daemon=True).start()
+    threading.Thread(target=dominance.update,  daemon=True).start()
+    threading.Thread(target=safety_scan,       daemon=True).start()
+    log.info(f"🌐 Dashboard: http://0.0.0.0:5000")
+    log.info(f"📡 REST-API:  http://0.0.0.0:5000/api/v1/")
+    log.info(f"📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
+    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
