@@ -7,6 +7,20 @@ Versionierung folgt [Semantic Versioning](https://semver.org/lang/de/) — `MAJO
 
 ---
 
+## [1.0.2] – 2026-03-02
+
+### Behoben
+- **Fehlender Docker-Healthcheck-Endpunkt** — `/api/v1/update/status` und `/api/v1/status` existierten nicht; Docker-Container blieb dauerhaft "unhealthy" und wurde nie gestartet
+- **`ta` Library Build-Fehler** — `ta>=0.11.0` in `requirements.txt` schlug beim `docker build` fehl; Paket wird im Code gar nicht verwendet und wurde entfernt
+- **Log-Datei im falschen Verzeichnis** — `nexus.log` wurde im Working Directory abgelegt; jetzt wird `logs/trevlix.log` verwendet, das mit dem Docker-Volume `./logs:/app/logs` gemountet ist
+- **`send_file` mit relativem Pfad** — `dashboard.html` wird jetzt mit absolutem Pfad (`os.path.abspath(__file__)`) geladen, um CWD-unabhängig zu funktionieren
+
+### Hinzugefügt
+- **Healthcheck-Endpunkt** — `GET /api/v1/status` und `GET /api/v1/update/status` geben `{"status": "ok", "version": "...", "running": bool}` zurück
+- **API-Docs** — Neue Endpunkte in `/api/v1/docs` dokumentiert
+
+---
+
 ## [1.0.1] – 2026-03-02
 
 ### Behoben

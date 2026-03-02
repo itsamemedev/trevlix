@@ -8,7 +8,7 @@
 ║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
 ║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
 ║                                                                              ║
-║    Neural Exchange Unified System  ·  v1.0.1                                ║
+║    Neural Exchange Unified System  ·  v1.0.2                                ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -18,7 +18,7 @@
 ║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
 ║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
 ║                                                                              ║
-║  NEU IN v1.0.1                                                               ║
+║  NEU IN v1.0.2                                                               ║
 ║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
@@ -157,7 +157,7 @@ except ImportError:
 load_dotenv()
 
 BOT_NAME    = "NEXUS"
-BOT_VERSION = "1.0.1"
+BOT_VERSION = "1.0.2"
 BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -169,10 +169,13 @@ CORS(app)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading",
                     logger=False, engineio_logger=False)
 
+_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(_log_dir, exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler("nexus.log", encoding="utf-8"), logging.StreamHandler()]
+    handlers=[logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8"),
+              logging.StreamHandler()]
 )
 log = logging.getLogger("NEXUS")
 
@@ -3524,11 +3527,13 @@ def bot_loop():
 # ═══════════════════════════════════════════════════════════════════════════════
 # FLASK ROUTES — DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
 @app.route("/")
 def index():
     if not session.get("user_id"):
         return redirect("/login")
-    return send_file("dashboard.html")
+    return send_file(os.path.join(_APP_DIR, "dashboard.html"))
 
 @app.route("/login", methods=["GET","POST"])
 def login():
@@ -3563,7 +3568,7 @@ button:hover{transform:translateY(-1px)}
   <div class="logo">
     <div class="logo-icon">⚡</div>
     <div class="logo-name">QUAN<span>TRA</span></div>
-    <div class="logo-sub">Quantum Trading AI · v1.0.1</div>
+    <div class="logo-sub">Quantum Trading AI · v1.0.2</div>
   </div>
   <form method="POST" action="/login">
     <div id="err" class="err">Falsches Passwort</div>
@@ -3849,6 +3854,8 @@ def api_docs():
         "version": BOT_VERSION,
         "website": "https://quantra.com",
         "endpoints": {
+            "GET /api/v1/status":     "Healthcheck (öffentlich, kein Auth)",
+            "GET /api/v1/update/status": "Healthcheck alias (Docker HEALTHCHECK)",
             "GET /api/v1/state":      "Bot-Status (Auth: Bearer Token)",
             "GET /api/v1/trades":     "Trade-Liste (?limit=&symbol=&year=)",
             "GET /api/v1/portfolio":  "Portfolio-Snapshot",
@@ -3868,6 +3875,18 @@ def api_docs():
             "GET /api/v1/admin/users":"Alle User (Admin)",
             "POST /api/v1/admin/users":"User anlegen (Admin)",
         }
+    })
+
+# ── Health / Status ──────────────────────────────────────────────────────────
+@app.route("/api/v1/status")
+@app.route("/api/v1/update/status")
+def api_health():
+    """Healthcheck – verwendet von Docker HEALTHCHECK und Monitoring-Tools."""
+    return jsonify({
+        "status":  "ok",
+        "version": BOT_VERSION,
+        "running": state.running,
+        "uptime":  round(time.time() - state._start_time, 1) if hasattr(state, "_start_time") else 0,
     })
 
 # ═══════════════════════════════════════════════════════════════════════════════

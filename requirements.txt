@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.0 – Python Dependencies                       ║
+# ║  TREVLIX v1.0.2 – Python Dependencies                       ║
 # ║  Installieren: pip install -r requirements.txt               ║
 # ╚══════════════════════════════════════════════════════════════╝
 
@@ -24,9 +24,6 @@ requests>=2.31.0
 # ── Machine Learning ───────────────────────────────────────────
 scikit-learn>=1.3.0
 xgboost>=2.0.0
-
-# ── Technical Analysis ─────────────────────────────────────────
-ta>=0.11.0
 
 # ── Auth & Security ────────────────────────────────────────────
 PyJWT>=2.8.0
