@@ -1,7 +1,7 @@
 version: "3.9"
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.0 – Docker Compose                            ║
+# ║  TREVLIX v1.0.2 – Docker Compose                            ║
 # ║  Start: docker compose up -d                                 ║
 # ║  Logs:  docker compose logs -f trevlix                       ║
 # ╚══════════════════════════════════════════════════════════════╝

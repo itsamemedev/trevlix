@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.0 – Dockerfile                                ║
+# ║  TREVLIX v1.0.2 – Dockerfile                                ║
 # ║  Build:  docker build -t trevlix .                           ║
 # ║  Run:    docker run -p 5000:5000 --env-file .env trevlix     ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -25,6 +25,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application files
 COPY server.py .
+COPY ai_engine.py .
 COPY trevlix_i18n.py .
 COPY trevlix_translations.js .
 COPY dashboard.html .
