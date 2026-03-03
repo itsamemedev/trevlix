@@ -351,6 +351,7 @@ CONFIG: Dict[str, Any] = {
     "jwt_secret":         os.getenv("JWT_SECRET", secrets.token_hex(32)),
     "jwt_expiry_hours":   24,
     "multi_user":         True,
+    "allow_registration": os.getenv("ALLOW_REGISTRATION","false").lower() in ("true","1","yes"),
     # MySQL
     "mysql_host":  os.getenv("MYSQL_HOST",  "localhost"),
     "mysql_port":  int(os.getenv("MYSQL_PORT",  "3306")),
@@ -1193,20 +1194,7 @@ class NewsSentimentAnalyzer:
                     headline = posts[0].get("title","—")[:200] if posts else "—"
             except Exception as e:
                 log.debug(f"CryptoPanic {coin}: {e}")
-        else:
-            # Fallback: Einfache Keyword-Suche ohne Token über Public API
-            try:
-                url = f"https://cryptopanic.com/api/v1/posts/?currencies={coin.upper()}&public=true"
-                r = requests.get(url, timeout=6)
-                posts = r.json().get("results",[])[:5]
-                count = len(posts)
-                if posts:
-                    title = posts[0].get("title","").lower()
-                    kw_score = sum(0.1 for w in self.BULLISH_WORDS if w in title)
-                    kw_score -= sum(0.1 for w in self.BEARISH_WORDS if w in title)
-                    score = float(np.clip(kw_score, -1, 1))
-                    headline = posts[0].get("title","—")[:200]
-            except Exception: pass
+        # No token → news feature disabled, return neutral score
 
         db.save_news(symbol, score, headline, count)
         return score, headline, count
@@ -3699,13 +3687,9 @@ def index():
         return redirect("/login")
     return send_file(os.path.join(_APP_DIR, "dashboard.html"))
 
-@app.route("/login", methods=["GET","POST"])
-@limiter.limit("10 per minute")
-def login():
-    if request.method == "GET":
-        return """<!DOCTYPE html><html><head><meta charset="UTF-8">
+_AUTH_PAGE_CSS = """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>QUANTRA Login</title>
+<title>TREVLIX %(page_title)s</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:'Segoe UI',sans-serif;background:#060912;color:#ccd6f6;
@@ -3723,31 +3707,51 @@ input{width:100%;background:#0f1628;border:1px solid rgba(255,255,255,.08);
   border-radius:10px;padding:13px 14px;color:#ccd6f6;font-size:14px;outline:none;
   margin-bottom:14px;transition:.2s}
 input:focus{border-color:rgba(0,212,255,.4)}
-.err{color:#ff3d71;font-size:12px;margin-bottom:12px;display:none}
-button{width:100%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
+.msg{font-size:12px;margin-bottom:12px;padding:8px 10px;border-radius:8px;display:%(msg_display)s;text-align:center}
+.msg-err{background:rgba(255,61,113,.12);color:#ff3d71;border:1px solid rgba(255,61,113,.25)}
+.msg-ok{background:rgba(0,212,255,.1);color:#00d4ff;border:1px solid rgba(0,212,255,.2)}
+button{width:100%%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
   color:#000;font-size:15px;font-weight:800;border:none;cursor:pointer;transition:.15s}
 button:hover{transform:translateY(-1px)}
 .ver{text-align:center;margin-top:20px;font-size:10px;color:#3a4a6a}
+.alt-link{text-align:center;margin-top:14px;font-size:12px;color:#5a7090}
+.alt-link a{color:#00d4ff;text-decoration:none}
 </style></head><body>
 <div class="box">
   <div class="logo">
-    <div class="logo-icon">⚡</div>
-    <div class="logo-name">QUAN<span>TRA</span></div>
-    <div class="logo-sub">Quantum Trading AI · v1.0.2</div>
+    <div class="logo-icon">&#9889;</div>
+    <div class="logo-name">TREV<span>LIX</span></div>
+    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.0.4</div>
   </div>
-  <form method="POST" action="/login">
-    <div id="err" class="err">Falsches Passwort</div>
-    <label>Benutzername</label>
-    <input type="text" name="username" value="admin" required>
-    <label>Passwort</label>
-    <input type="password" name="password" required autofocus>
-    <button type="submit">Anmelden →</button>
-  </form>
-  <div class="ver">quantra.com · Neural Exchange Unified System</div>
+  %(body)s
+  <div class="ver">TREVLIX &middot; Open-Source Trading Bot</div>
 </div>
 </body></html>"""
-    username = request.form.get("username","admin")
+
+
+@app.route("/login", methods=["GET","POST"])
+@limiter.limit("10 per minute")
+def login():
+    allow_reg = CONFIG.get("allow_registration", False)
+    reg_link = '<div class="alt-link">Noch kein Konto? <a href="/register">Registrieren</a></div>' if allow_reg else ""
+    if request.method == "GET":
+        err = request.args.get("err","")
+        msg_cls = "msg msg-err" if err else "msg msg-err"
+        msg_txt = "Falsches Passwort oder Benutzer nicht gefunden" if err else ""
+        body = f"""  <form method="POST" action="/login">
+    <div class="{msg_cls}" style="display:{'block' if err else 'none'}">{msg_txt}</div>
+    <label>Benutzername</label>
+    <input type="text" name="username" required autocomplete="username">
+    <label>Passwort</label>
+    <input type="password" name="password" required autofocus autocomplete="current-password">
+    <button type="submit">Anmelden &rarr;</button>
+  </form>
+  {reg_link}"""
+        return _AUTH_PAGE_CSS % {"page_title": "Login", "msg_display": "none", "body": body}
+    username = request.form.get("username","").strip()
     password = request.form.get("password","")
+    if not username or not password:
+        return redirect("/login?err=1")
     user = db.get_user(username)
     if user and db.verify_password(user["password_hash"], password):
         session["user_id"]   = user["id"]
@@ -3757,6 +3761,52 @@ button:hover{transform:translateY(-1px)}
         db_audit(user["id"], "login", f"Login · {request.remote_addr}")
         return redirect("/")
     return redirect("/login?err=1")
+
+
+@app.route("/register", methods=["GET","POST"])
+@limiter.limit("5 per minute")
+def register():
+    if not CONFIG.get("allow_registration", False):
+        body = """  <div class="msg msg-err" style="display:block">
+    Registrierung ist deaktiviert. Bitte wende dich an den Administrator.
+  </div>
+  <div class="alt-link" style="margin-top:20px"><a href="/login">&larr; Zur Anmeldung</a></div>"""
+        return _AUTH_PAGE_CSS % {"page_title": "Registrierung", "msg_display": "none", "body": body}, 403
+    if request.method == "GET":
+        err = request.args.get("err","")
+        ok  = request.args.get("ok","")
+        if err == "exists":   msg_txt, msg_cls, show = "Benutzername bereits vergeben.", "msg msg-err", "block"
+        elif err == "short":  msg_txt, msg_cls, show = "Passwort muss mindestens 8 Zeichen haben.", "msg msg-err", "block"
+        elif err == "match":  msg_txt, msg_cls, show = "Passw\u00f6rter stimmen nicht \u00fcberein.", "msg msg-err", "block"
+        elif ok:              msg_txt, msg_cls, show = "Konto erstellt! Du kannst dich jetzt anmelden.", "msg msg-ok", "block"
+        else:                 msg_txt, msg_cls, show = "", "msg msg-err", "none"
+        body = f"""  <form method="POST" action="/register">
+    <div class="{msg_cls}" style="display:{show}">{msg_txt}</div>
+    <label>Benutzername</label>
+    <input type="text" name="username" required autocomplete="username" minlength="3" maxlength="32">
+    <label>Passwort</label>
+    <input type="password" name="password" required autocomplete="new-password" minlength="8">
+    <label>Passwort best&auml;tigen</label>
+    <input type="password" name="password2" required autocomplete="new-password" minlength="8">
+    <button type="submit">Konto erstellen &rarr;</button>
+  </form>
+  <div class="alt-link"><a href="/login">&larr; Zur Anmeldung</a></div>"""
+        return _AUTH_PAGE_CSS % {"page_title": "Registrierung", "msg_display": "none", "body": body}
+    username  = request.form.get("username","").strip()[:32]
+    password  = request.form.get("password","")
+    password2 = request.form.get("password2","")
+    if len(password) < 8:
+        return redirect("/register?err=short")
+    if password != password2:
+        return redirect("/register?err=match")
+    if db.get_user(username):
+        return redirect("/register?err=exists")
+    ok = db.create_user(username, password, role="user")
+    if ok:
+        db_audit(0, "register", f"Neues Konto: {username} · {request.remote_addr}")
+        return redirect("/register?ok=1")
+    return redirect("/register?err=exists")
+
 
 @app.route("/logout")
 def logout():
