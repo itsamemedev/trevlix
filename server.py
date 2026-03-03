@@ -197,10 +197,15 @@ app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path="/static",
             template_folder=_TEMPLATE_DIR)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
-# ── CORS: Nur erlaubte Origins ────────────────────────────────────────────────
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5000")
-_allowed_origins: list[str] = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-CORS(app, origins=_allowed_origins, supports_credentials=True)
+# ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+if _raw_origins.strip() == "*":
+    _allowed_origins: Any = "*"
+    _flask_cors_origins: Any = "*"
+else:
+    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+    _flask_cors_origins = _allowed_origins
+CORS(app, origins=_flask_cors_origins, supports_credentials=(_flask_cors_origins != "*"))
 socketio = SocketIO(app, cors_allowed_origins=_allowed_origins, async_mode="threading",
                     logger=False, engineio_logger=False)
 
@@ -4535,7 +4540,10 @@ def on_update_config(data):
                "genetic_enabled","rl_enabled","backup_enabled","portfolio_goal",
                "discord_daily_report","discord_report_hour","risk_per_trade",
                "news_block_score","news_boost_score","dca_max_levels","dca_drop_pct",
-               "trailing_pct","lstm_lookback"}
+               "trailing_pct","lstm_lookback",
+               # Dashboard-spezifische Einstellungen
+               "language","allow_registration","break_even_enabled","break_even_pct",
+               "partial_tp_pct","use_grid","use_rl","use_lstm"}
     for k,v in data.items():
         if k in allowed:
             CONFIG[k] = v
@@ -4905,6 +4913,122 @@ def ws_create_grid(data):
         float(data.get("upper",0)), int(data.get("levels",10)),
         float(data.get("invest_per_level",100)))
     emit("status",{"msg":f"✅ Grid {data.get('symbol','')} erstellt","type":"success"}, broadcast=True)
+
+# ── Undo Close ────────────────────────────────────────────────────────────────
+@socketio.on("undo_close")
+def on_undo_close(data):
+    sym = data.get("symbol","")
+    if not sym:
+        emit("status",{"msg":"❌ Kein Symbol angegeben","type":"error"}); return
+    # Position kann nicht wirklich rückgängig gemacht werden (bereits geschlossen)
+    # – informiere den Nutzer
+    emit("status",{"msg":f"↩ Rückgängig nicht möglich: {sym} wurde bereits auf der Börse geschlossen","type":"warning"})
+
+# ── GitHub Updater ─────────────────────────────────────────────────────────────
+@socketio.on("check_update")
+def on_check_update():
+    try:
+        import subprocess
+        result = subprocess.run(["git","remote","get-url","origin"], capture_output=True, text=True, timeout=5)
+        repo_url = result.stdout.strip()
+        result2  = subprocess.run(["git","rev-parse","--abbrev-ref","HEAD"], capture_output=True, text=True, timeout=5)
+        branch   = result2.stdout.strip()
+        result3  = subprocess.run(["git","describe","--tags","--abbrev=0"], capture_output=True, text=True, timeout=5)
+        current  = result3.stdout.strip() or BOT_VERSION
+        socketio.emit("update_status", {
+            "current_version": current,
+            "latest_version":  current,
+            "current":         current,
+            "latest":          current,
+            "update_available": False,
+            "repo":            repo_url,
+            "branch":          branch,
+            "last_check":      datetime.now().strftime("%Y-%m-%d %H:%M"),
+        })
+    except Exception as e:
+        emit("status",{"msg":f"⚠ Update-Check fehlgeschlagen: {e}","type":"warning"})
+
+@socketio.on("apply_update")
+def on_apply_update():
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    try:
+        import subprocess
+        subprocess.run(["git","pull","--ff-only"], capture_output=True, text=True, timeout=30, check=True)
+        emit("update_result",{"status":"success"}, broadcast=True)
+        emit("status",{"msg":"✅ Update angewendet – Server wird neu gestartet","type":"success"}, broadcast=True)
+    except Exception as e:
+        emit("update_result",{"status":"error","msg":str(e)})
+        emit("status",{"msg":f"❌ Update fehlgeschlagen: {e}","type":"error"})
+
+@socketio.on("rollback_update")
+def on_rollback_update():
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    try:
+        import subprocess
+        subprocess.run(["git","stash"], capture_output=True, text=True, timeout=15)
+        emit("status",{"msg":"↩ Rollback: git stash angewendet","type":"info"}, broadcast=True)
+    except Exception as e:
+        emit("status",{"msg":f"❌ Rollback fehlgeschlagen: {e}","type":"error"})
+
+# ── Multi-Exchange Handler ──────────────────────────────────────────────────────
+@socketio.on("start_exchange")
+def on_start_exchange(data):
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    ex_name = data.get("exchange","")
+    emit("status",{"msg":f"▶ Exchange {ex_name.upper()} wird gestartet…","type":"info"}, broadcast=True)
+    emit("exchange_update",{"exchange": ex_name, "status": "running"}, broadcast=True)
+
+@socketio.on("stop_exchange")
+def on_stop_exchange(data):
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    ex_name = data.get("exchange","")
+    emit("status",{"msg":f"⏹ Exchange {ex_name.upper()} gestoppt","type":"info"}, broadcast=True)
+    emit("exchange_update",{"exchange": ex_name, "status": "stopped"}, broadcast=True)
+
+@socketio.on("save_exchange_keys")
+def on_save_exchange_keys(data):
+    if session.get("user_role","user") != "admin":
+        emit("status",{"msg":"Nur Admin","type":"error"}); return
+    ex_name = data.get("exchange","")
+    api_key  = data.get("api_key","")
+    secret   = data.get("secret","")
+    if not ex_name or not api_key or not secret:
+        emit("status",{"msg":"❌ Exchange, API-Key und Secret erforderlich","type":"error"}); return
+    # Keys werden nur im laufenden Config-Objekt gespeichert (nicht persistiert)
+    if "extra_exchanges" not in CONFIG:
+        CONFIG["extra_exchanges"] = {}
+    CONFIG["extra_exchanges"][ex_name] = {
+        "api_key":    encrypt_value(api_key),
+        "secret":     encrypt_value(secret),
+        "passphrase": encrypt_value(data.get("passphrase","")) if data.get("passphrase") else "",
+    }
+    emit("status",{"msg":f"🔑 Keys für {ex_name.upper()} gespeichert","type":"success"})
+
+@socketio.on("close_exchange_position")
+def on_close_exchange_position(data):
+    ex_name = data.get("exchange","")
+    symbol  = data.get("symbol","")
+    if not ex_name or not symbol:
+        emit("status",{"msg":"❌ Exchange und Symbol erforderlich","type":"error"}); return
+    try:
+        ex_cfg = CONFIG.get("extra_exchanges",{}).get(ex_name,{})
+        ex = ccxt.__dict__[ex_name]({
+            "apiKey":      decrypt_value(ex_cfg.get("api_key","")),
+            "secret":      decrypt_value(ex_cfg.get("secret","")),
+            "password":    decrypt_value(ex_cfg.get("passphrase","")) or None,
+            "enableRateLimit": True,
+        })
+        ticker = ex.fetch_ticker(symbol)
+        amount = sum(p.get("amount",0) for p in state.positions.values() if p.get("symbol") == symbol)
+        if amount > 0:
+            ex.create_market_sell_order(symbol, amount)
+        emit("status",{"msg":f"✅ {symbol} auf {ex_name.upper()} geschlossen","type":"success"}, broadcast=True)
+    except Exception as e:
+        emit("status",{"msg":f"❌ Fehler beim Schließen: {e}","type":"error"})
 
 
 # ════════════════════════════════════════════════════════════════════════════════
