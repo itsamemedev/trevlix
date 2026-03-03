@@ -29,18 +29,19 @@
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-import math
 import logging
+import math
 import threading
-import numpy as np
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple, Any
+from typing import Any
+
+import numpy as np
 
 try:
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.preprocessing import StandardScaler
-    from sklearn.model_selection import cross_val_score
     from sklearn.calibration import CalibratedClassifierCV
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.model_selection import cross_val_score
+    from sklearn.preprocessing import StandardScaler
     ML_AVAILABLE = True
 except ImportError:
     ML_AVAILABLE = False
@@ -84,7 +85,7 @@ FEATURE_NAMES = STRATEGY_NAMES + [
 class AIEngine:
     """
     Selbstlernende KI-Engine für maximierte Gewinnquote.
-    
+
     Lernt kontinuierlich aus jedem Trade und verbessert:
     - Vorhersagegenauigkeit (welche Signale führen wirklich zu Gewinnen)
     - Strategie-Gewichtung (welche der 7 Strategien ist gerade zuverlässig)
@@ -98,7 +99,7 @@ class AIEngine:
         self._lock     = threading.Lock()
 
         # ── Modell ──────────────────────────────────────────────
-        self.model:  Optional[Any] = None
+        self.model:  Any | None = None
         self.scaler  = StandardScaler() if ML_AVAILABLE else None
         self.is_trained = False
         self.accuracy   = 0.0
@@ -110,16 +111,16 @@ class AIEngine:
         self.training_version = 0
 
         # ── Trainingsdaten ──────────────────────────────────────
-        self.X_raw: List[np.ndarray] = []   # Feature-Vektoren
-        self.y_raw: List[int]        = []   # Labels: 1=Gewinn, 0=Verlust
+        self.X_raw: list[np.ndarray] = []   # Feature-Vektoren
+        self.y_raw: list[int]        = []   # Labels: 1=Gewinn, 0=Verlust
         # Zugehörige Feature-Vektoren zu noch offenen Positionen
-        self._pending_features: Dict[str, np.ndarray] = {}
+        self._pending_features: dict[str, np.ndarray] = {}
 
         # ── Strategie-Gewichte ──────────────────────────────────
         # Starten alle bei 1.0 (gleichwertig)
         # Werden nach Training auf [0.3, 3.0] skaliert
-        self.strategy_weights: Dict[str, float] = {n: 1.0 for n in STRATEGY_NAMES}
-        self.strategy_win_rates: Dict[str, float] = {n: 0.0 for n in STRATEGY_NAMES}
+        self.strategy_weights: dict[str, float] = {n: 1.0 for n in STRATEGY_NAMES}
+        self.strategy_win_rates: dict[str, float] = {n: 0.0 for n in STRATEGY_NAMES}
 
         # ── Vorhersage-Tracking ─────────────────────────────────
         self.predictions_made    = 0
@@ -129,11 +130,11 @@ class AIEngine:
         self.optimize_every          = 15   # Optimierung alle N Trades
         self.trades_since_optimize   = 0
         self.last_optimization       = None
-        self.optimization_log: List[dict] = []
+        self.optimization_log: list[dict] = []
 
         # ── KI-Status für Dashboard ─────────────────────────────
         self.status_msg   = "Sammle Trainingsdaten..."
-        self.ai_decisions: List[dict] = []  # Log aller KI-Entscheidungen
+        self.ai_decisions: list[dict] = []  # Log aller KI-Entscheidungen
 
     # ═══════════════════════════════════════════════════════════
     # FEATURE EXTRAKTION
@@ -380,7 +381,7 @@ class AIEngine:
             log.debug(f"Vorhersage-Fehler: {e}")
             return 0.5
 
-    def should_buy(self, features: np.ndarray, confidence: float) -> Tuple[bool, float, str]:
+    def should_buy(self, features: np.ndarray, confidence: float) -> tuple[bool, float, str]:
         """
         Entscheidet ob ein Kauf stattfinden soll.
         Returns: (erlaubt, ai_score, grund)
@@ -420,7 +421,7 @@ class AIEngine:
     # GEWICHTETES VOTING
     # ═══════════════════════════════════════════════════════════
 
-    def weighted_vote(self, votes: dict, threshold: float) -> Tuple[int, float]:
+    def weighted_vote(self, votes: dict, threshold: float) -> tuple[int, float]:
         """
         Führt gewichtetes Voting durch.
         Strategien die historisch besser abschneiden haben mehr Einfluss.
@@ -431,8 +432,10 @@ class AIEngine:
             v = votes.get(name, 0)
             w = self.strategy_weights.get(name, 1.0)
             total_w += w
-            if v == 1:    weighted_buy  += w
-            elif v == -1: weighted_sell += w
+            if v == 1:
+                weighted_buy  += w
+            elif v == -1:
+                weighted_sell += w
 
         if total_w == 0:
             return 0, 0.0
@@ -440,8 +443,10 @@ class AIEngine:
         buy_score  = weighted_buy  / total_w
         sell_score = weighted_sell / total_w
 
-        if buy_score  >= threshold: return  1, round(buy_score, 3)
-        if sell_score >= threshold: return -1, round(sell_score, 3)
+        if buy_score  >= threshold:
+            return  1, round(buy_score, 3)
+        if sell_score >= threshold:
+            return -1, round(sell_score, 3)
         return 0, round(max(buy_score, sell_score), 3)
 
     # ═══════════════════════════════════════════════════════════

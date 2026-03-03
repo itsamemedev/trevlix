@@ -24,11 +24,9 @@ Verwendung:
             c.execute(...)
 """
 
-import time
 import logging
 import threading
 from contextlib import contextmanager
-from typing import Optional
 
 log = logging.getLogger("DBPool")
 

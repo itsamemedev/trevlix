@@ -6,7 +6,6 @@
 Führe aus mit:  pytest tests/test_encryption.py -v
 """
 
-import pytest
 import os
 import sys
 
@@ -18,7 +17,7 @@ class TestEncryption:
 
     def test_encrypt_decrypt_roundtrip(self):
         """Verschlüsseln und Entschlüsseln ergibt den Original-Wert."""
-        from services.encryption import encrypt_value, decrypt_value
+        from services.encryption import decrypt_value, encrypt_value
         original = "my-secret-api-key-12345"
         encrypted = encrypt_value(original)
         decrypted = decrypt_value(encrypted)
@@ -33,7 +32,7 @@ class TestEncryption:
 
     def test_empty_string_passthrough(self):
         """Leerer String wird unverändert durchgegeben."""
-        from services.encryption import encrypt_value, decrypt_value
+        from services.encryption import decrypt_value, encrypt_value
         assert encrypt_value("") == ""
         assert decrypt_value("") == ""
 
@@ -58,7 +57,7 @@ class TestEncryption:
 
     def test_encrypt_with_special_characters(self):
         """Sonderzeichen und lange Strings werden korrekt ver-/entschlüsselt."""
-        from services.encryption import encrypt_value, decrypt_value
+        from services.encryption import decrypt_value, encrypt_value
         special = "abc!@#$%^&*()_+-=[]{}|;':\",./<>?äöü€"
         assert decrypt_value(encrypt_value(special)) == special
 
@@ -79,6 +78,7 @@ class TestEncryption:
 
         # Nach env-Änderung neu importieren
         import importlib
+
         import services.encryption as enc_module
         importlib.reload(enc_module)
 
