@@ -1,7 +1,7 @@
 version: "3.9"
 
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.4 – Docker Compose                            ║
+# ║  TREVLIX v1.1.0 – Docker Compose                            ║
 # ║  Start:       docker compose up -d                           ║
 # ║  Prod (HTTPS): docker compose --profile production up -d     ║
 # ║  Logs:        docker compose logs -f trevlix                 ║
@@ -43,6 +43,7 @@ services:
       - TELEGRAM_TOKEN=${TELEGRAM_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
       - CRYPTOPANIC_TOKEN=${CRYPTOPANIC_TOKEN:-}
+      - CRYPTOPANIC_API_PLAN=${CRYPTOPANIC_API_PLAN:-free}
       - BLOCKNATIVE_KEY=${BLOCKNATIVE_KEY:-}
       - GITHUB_REPO=${GITHUB_REPO:-}
       - GITHUB_BRANCH=${GITHUB_BRANCH:-main}

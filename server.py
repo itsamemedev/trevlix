@@ -57,6 +57,7 @@ from functools import wraps
 from services.encryption import encrypt_value, decrypt_value, is_encrypted
 from services.indicator_cache import get_cached as _ind_get, set_cached as _ind_set
 from services.db_pool import ConnectionPool
+from services.cryptopanic import CryptoPanicClient
 
 import numpy as np
 import pandas as pd
@@ -167,14 +168,19 @@ except ImportError:
 
 load_dotenv()
 
-BOT_NAME    = "NEXUS"
-BOT_VERSION = "1.0.2"
-BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Neural Exchange Unified System"
+BOT_NAME    = "TREVLIX"
+BOT_VERSION = "1.1.0"
+BOT_FULL    = f"{BOT_NAME} v{BOT_VERSION} · Algorithmic Crypto Trading Bot"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # APP
 # ═══════════════════════════════════════════════════════════════════════════════
-app = Flask(__name__)
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+_TEMPLATE_DIR = os.path.join(_BASE_DIR, "templates")
+_STATIC_DIR = os.path.join(_BASE_DIR, "static")
+
+app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path="/static",
+            template_folder=_TEMPLATE_DIR)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
 # ── CORS: Nur erlaubte Origins ────────────────────────────────────────────────
@@ -275,9 +281,10 @@ CONFIG: Dict[str, Any] = {
     "lstm_min_samples":   50,
     # Sentiment (CoinGecko)
     "use_sentiment":      True,
-    # News Sentiment
+    # News Sentiment (CryptoPanic API v2)
     "use_news":           True,
     "cryptopanic_token":  os.getenv("CRYPTOPANIC_TOKEN", ""),
+    "cryptopanic_plan":   os.getenv("CRYPTOPANIC_API_PLAN", "free"),
     # Telegram
     "telegram_token":     os.getenv("TELEGRAM_TOKEN", ""),
     "telegram_chat_id":   os.getenv("TELEGRAM_CHAT_ID", ""),
@@ -1148,56 +1155,23 @@ class FearGreedIndex:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# NEWS SENTIMENT (CryptoPanic)
+# NEWS SENTIMENT (CryptoPanic API v2)
 # ═══════════════════════════════════════════════════════════════════════════════
 class NewsSentimentAnalyzer:
     """
-    Analysiert Crypto-Nachrichten von CryptoPanic.
+    Wrapper für den CryptoPanic API v2 Service.
+    Delegiert an services.cryptopanic.CryptoPanicClient.
     Score -1 bis +1: negativ=schlecht, positiv=bullish
     """
-    BULLISH_WORDS = ["surge","rally","bull","breakout","all-time high","adoption",
-                     "partnership","launch","upgrade","integration","bullish","buy",
-                     "moon","pump","growth","record","positive","gains","rise","soar"]
-    BEARISH_WORDS = ["crash","bear","hack","scam","ban","lawsuit","fraud","dump",
-                     "sell","plunge","collapse","regulation","fear","warning",
-                     "risk","attack","breach","loss","decline","fall","drop"]
+
+    def __init__(self):
+        token = CONFIG.get("cryptopanic_token", "")
+        plan = CONFIG.get("cryptopanic_plan", "free")
+        self._client = CryptoPanicClient(token=token, plan=plan)
 
     def get_score(self, symbol: str) -> Tuple[float, str, int]:
         """Returns (score, headline, article_count)"""
-        cached = db.get_news(symbol)
-        if cached: return float(cached["score"]), cached["headline"], cached["article_count"]
-
-        coin = symbol.replace("/USDT","").lower()
-        token = CONFIG.get("cryptopanic_token","")
-        score = 0.0; headline = "—"; count = 0
-
-        if token:
-            try:
-                url = f"https://cryptopanic.com/api/v1/posts/?auth_token={token}&currencies={coin.upper()}&filter=hot&public=true"
-                r = requests.get(url, timeout=8)
-                posts = r.json().get("results",[])
-                count = len(posts)
-                scores = []
-                for p in posts[:10]:
-                    title = p.get("title","").lower()
-                    votes = p.get("votes",{})
-                    pos = votes.get("positive",0) or 0
-                    neg = votes.get("negative",0) or 0
-                    # Vote-based score
-                    vote_score = (pos - neg) / max(pos + neg, 1) * 0.5
-                    # Keyword-based score
-                    kw_score = sum(0.1 for w in self.BULLISH_WORDS if w in title)
-                    kw_score -= sum(0.1 for w in self.BEARISH_WORDS if w in title)
-                    scores.append(float(np.clip(vote_score + kw_score, -1, 1)))
-                if scores:
-                    score = float(np.clip(np.mean(scores), -1, 1))
-                    headline = posts[0].get("title","—")[:200] if posts else "—"
-            except Exception as e:
-                log.debug(f"CryptoPanic {coin}: {e}")
-        # No token → news feature disabled, return neutral score
-
-        db.save_news(symbol, score, headline, count)
-        return score, headline, count
+        return self._client.get_score(symbol, db=db)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3679,13 +3653,11 @@ def bot_loop():
 # ═══════════════════════════════════════════════════════════════════════════════
 # FLASK ROUTES — DASHBOARD
 # ═══════════════════════════════════════════════════════════════════════════════
-_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-
 @app.route("/")
 def index():
     if not session.get("user_id"):
         return redirect("/login")
-    return send_file(os.path.join(_APP_DIR, "dashboard.html"))
+    return send_file(os.path.join(_TEMPLATE_DIR, "dashboard.html"))
 
 _AUTH_PAGE_CSS = """<!DOCTYPE html><html><head><meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
