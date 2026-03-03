@@ -19,14 +19,14 @@ Umgebungsvariable:
         python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 """
 
-import os
-import logging
 import base64
+import logging
+import os
 
 log = logging.getLogger("Encryption")
 
 try:
-    from cryptography.fernet import Fernet, InvalidToken
+    from cryptography.fernet import Fernet
     _FERNET_AVAILABLE = True
 except ImportError:
     _FERNET_AVAILABLE = False

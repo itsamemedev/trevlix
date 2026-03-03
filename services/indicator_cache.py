@@ -9,24 +9,24 @@ Wird die letzte Kerze nicht aktualisiert, wird das Cache-Ergebnis
 zurückgegeben statt neu zu berechnen.
 """
 
+import logging
 import threading
 import time
-import logging
-from typing import Optional, Dict, Any
+from typing import Any
 
 import pandas as pd
 
 log = logging.getLogger("IndicatorCache")
 
 # Cache-Eintrag: {"df": pd.DataFrame, "last_ts": str, "created": float}
-_cache: Dict[str, Dict[str, Any]] = {}
+_cache: dict[str, dict[str, Any]] = {}
 _lock = threading.Lock()
 
 # Cache-Lebensdauer in Sekunden – nach dieser Zeit wird immer neu berechnet
 CACHE_TTL_SECONDS = 55  # Etwas unter dem Standard-Scan-Interval von 60s
 
 
-def get_cached(symbol: str, last_timestamp: Any) -> Optional[pd.DataFrame]:
+def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
     """
     Gibt gecachte Indikatoren zurück, falls vorhanden und noch aktuell.
 
@@ -73,7 +73,7 @@ def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
         }
 
 
-def invalidate(symbol: Optional[str] = None) -> None:
+def invalidate(symbol: str | None = None) -> None:
     """
     Leert den Cache für ein Symbol oder den gesamten Cache.
 
@@ -87,7 +87,7 @@ def invalidate(symbol: Optional[str] = None) -> None:
             _cache.clear()
 
 
-def cache_stats() -> Dict[str, Any]:
+def cache_stats() -> dict[str, Any]:
     """Gibt Cache-Statistiken zurück (für Dashboard/Debugging)."""
     with _lock:
         now = time.monotonic()

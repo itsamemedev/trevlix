@@ -9,12 +9,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from services.cryptopanic import (
+    _API_V2_URL,
     BEARISH_WORDS,
     BULLISH_WORDS,
     CryptoPanicClient,
-    _API_V2_URL,
 )
-
 
 # ── Client Initialisierung ───────────────────────────────────────────────────
 

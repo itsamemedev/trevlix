@@ -11,7 +11,6 @@ Unterstützte Plans: free, pro, developer
 
 import logging
 import time
-from typing import List, Tuple
 
 import numpy as np
 import requests
@@ -19,13 +18,13 @@ import requests
 log = logging.getLogger("trevlix.cryptopanic")
 
 # ── Sentiment-Wortlisten ─────────────────────────────────────────────────────
-BULLISH_WORDS: List[str] = [
+BULLISH_WORDS: list[str] = [
     "surge", "rally", "bull", "breakout", "all-time high", "adoption",
     "partnership", "launch", "upgrade", "integration", "bullish", "buy",
     "moon", "pump", "growth", "record", "positive", "gains", "rise", "soar",
 ]
 
-BEARISH_WORDS: List[str] = [
+BEARISH_WORDS: list[str] = [
     "crash", "bear", "hack", "scam", "ban", "lawsuit", "fraud", "dump",
     "sell", "plunge", "collapse", "regulation", "fear", "warning",
     "risk", "attack", "breach", "loss", "decline", "fall", "drop",
@@ -110,7 +109,7 @@ class CryptoPanicClient:
             log.debug("CryptoPanic API v2 Parse-Fehler für %s: %s", currency, e)
             return []
 
-    def analyze_sentiment(self, posts: list) -> Tuple[float, str, int]:
+    def analyze_sentiment(self, posts: list) -> tuple[float, str, int]:
         """
         Analysiert die Sentiment-Werte einer Liste von Posts.
 
@@ -155,7 +154,7 @@ class CryptoPanicClient:
 
         return score, headline, count
 
-    def get_score(self, symbol: str, db=None) -> Tuple[float, str, int]:
+    def get_score(self, symbol: str, db=None) -> tuple[float, str, int]:
         """
         Holt den Sentiment-Score für ein Symbol.
 

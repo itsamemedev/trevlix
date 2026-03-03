@@ -6,11 +6,11 @@
 Führe aus mit:  pytest tests/test_indicators.py -v
 """
 
-import pytest
+import os
+import sys
+
 import numpy as np
 import pandas as pd
-import sys
-import os
 
 # Server-Modul im Pfad
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -156,7 +156,7 @@ class TestIndicatorCache:
         assert result is None
 
     def test_cache_stores_and_retrieves(self):
-        from services.indicator_cache import get_cached, set_cached, invalidate
+        from services.indicator_cache import get_cached, invalidate, set_cached
         invalidate()
         df = make_ohlcv(200)
         ts = "2024-01-01 12:00:00"
@@ -166,7 +166,7 @@ class TestIndicatorCache:
         assert len(result) == len(df)
 
     def test_cache_miss_on_different_timestamp(self):
-        from services.indicator_cache import get_cached, set_cached, invalidate
+        from services.indicator_cache import get_cached, invalidate, set_cached
         invalidate()
         df = make_ohlcv(200)
         set_cached("BTC/USDT", "2024-01-01 12:00:00", df)
@@ -174,7 +174,7 @@ class TestIndicatorCache:
         assert result is None
 
     def test_cache_invalidate_specific(self):
-        from services.indicator_cache import get_cached, set_cached, invalidate
+        from services.indicator_cache import get_cached, invalidate, set_cached
         invalidate()
         df = make_ohlcv(200)
         ts = "2024-01-01 12:00:00"
@@ -185,7 +185,7 @@ class TestIndicatorCache:
         assert get_cached("ETH/USDT", ts) is not None
 
     def test_cache_stats(self):
-        from services.indicator_cache import set_cached, cache_stats, invalidate
+        from services.indicator_cache import cache_stats, invalidate, set_cached
         invalidate()
         df = make_ohlcv(200)
         set_cached("SOL/USDT", "ts1", df)

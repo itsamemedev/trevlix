@@ -9,9 +9,10 @@ Verwendung in Tests:
 """
 
 import os
-import pytest
-import pandas as pd
+
 import numpy as np
+import pandas as pd
+import pytest
 
 
 # ── Umgebungsvariablen für Tests ───────────────────────────────────────────────

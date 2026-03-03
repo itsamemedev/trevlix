@@ -6,10 +6,8 @@
 Führe aus mit:  pytest tests/test_risk.py -v
 """
 
-import pytest
-import sys
 import os
-from datetime import datetime, timedelta
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -84,7 +82,7 @@ class TestRiskManager:
     def test_consecutive_losses_counter(self):
         """Verlust-Zähler zählt korrekt hoch."""
         rm = self._make_risk()
-        for i in range(2):
+        for _i in range(2):
             rm.record_result(False)
         assert rm.consecutive_losses == 2
 
@@ -162,7 +160,7 @@ class TestPositionSizing:
         """DCA beachtet maximale Level-Anzahl."""
         max_levels = 3
         levels_used = 0
-        for level in range(max_levels + 5):  # Versuche mehr als erlaubt
+        for _level in range(max_levels + 5):  # Versuche mehr als erlaubt
             if levels_used >= max_levels:
                 break
             levels_used += 1
