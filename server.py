@@ -5022,7 +5022,6 @@ def on_close_exchange_position(data):
             "password":    decrypt_value(ex_cfg.get("passphrase","")) or None,
             "enableRateLimit": True,
         })
-        ticker = ex.fetch_ticker(symbol)
         amount = sum(p.get("amount",0) for p in state.positions.values() if p.get("symbol") == symbol)
         if amount > 0:
             ex.create_market_sell_order(symbol, amount)
