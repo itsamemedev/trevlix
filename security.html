@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TREVLIX Sicherheitsleitfaden — Best Practices fuer sichere Konfiguration.">
+<meta property="og:title" content="TREVLIX — Sicherheit">
+<meta property="og:description" content="Sicherheits-Best-Practices fuer den TREVLIX Trading Bot.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#020507">
+<title>TREVLIX v1.0.4 — Sicherheitsleitfaden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared-nav.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
+.wrap{max-width:860px;margin:0 auto;padding:40px 24px 60px}
+h1{font-family:var(--fc);font-weight:900;font-size:36px;color:var(--white);margin-bottom:8px}
+h2{font-family:var(--fc);font-weight:900;font-size:22px;color:var(--white);margin:44px 0 16px;padding-bottom:10px;border-bottom:1px solid var(--muted)}
+h3{font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:24px 0 10px}
+p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
+a{color:var(--jade);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
+pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:16px 20px;overflow-x:auto;margin:12px 0;font-family:var(--fm);font-size:12px;line-height:1.8}
+.subtitle{font-size:15px;color:var(--dim);margin-bottom:36px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
+
+.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:14px 0}
+.card.critical{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.04)}
+.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
+.card.ok{border-color:rgba(0,255,136,.15);background:rgba(0,255,136,.03)}
+.card-label{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;font-weight:700}
+.card.critical .card-label{color:var(--red)}
+.card.warn .card-label{color:var(--amber)}
+.card.ok .card-label{color:var(--jade)}
+
+.checklist{list-style:none;display:flex;flex-direction:column;gap:8px}
+.checklist li{font-size:13px;color:var(--dim);padding-left:24px;position:relative;line-height:1.6}
+.checklist li::before{content:'';position:absolute;left:2px;top:6px;width:12px;height:12px;border:1px solid var(--muted);border-radius:3px}
+.c-str{color:#f59e0b}.c-cmt{color:#2a4a5a}.c-cmd{color:#00ff88}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+
+<nav class="site-nav" id="siteNav">
+  <a class="site-nav-logo" href="index.html">
+    <div class="site-nav-logo-mark">&#9889;</div>
+    <div><div class="site-nav-logo-txt">TREV<em>LIX</em></div><div class="site-nav-logo-sub">TREVLIX.DEV</div></div>
+  </a>
+  <div class="site-nav-center">
+    <a href="index.html">Home</a>
+    <a href="index.html#features">Features</a>
+    <a href="strategies.html">Strategien</a>
+    <a href="api-docs.html">API</a>
+    <a href="INSTALLATION.html">Installation</a>
+    <a href="faq.html">FAQ</a>
+    <a href="dashboard.html">Dashboard</a>
+  </div>
+  <div class="site-nav-right">
+    <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
+  </div>
+</nav>
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API</a>
+  <a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html" class="active">Sicherheit</a>
+  <a href="changelog.html">Changelog</a><a href="dashboard.html">Dashboard</a>
+  <hr><a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
+</div>
+
+<div class="wrap" id="main-content">
+
+<div class="breadcrumbs">
+  <a href="index.html">Home</a> <span class="sep">/</span> <span>Sicherheit</span>
+</div>
+
+<h1>Sicherheitsleitfaden</h1>
+<p class="subtitle">Best Practices fuer die sichere Konfiguration und den Betrieb von TREVLIX</p>
+
+<div class="card critical">
+  <div class="card-label">Wichtig</div>
+  <p style="margin:0">TREVLIX handelt mit echtem Geld. Sicherheitsluecken koennen zum Verlust von Kryptowaehrungen fuehren. Befolge diesen Leitfaden sorgfaeltig!</p>
+</div>
+
+<!-- Environment Secrets -->
+<h2>1. Environment-Secrets</h2>
+<p>Alle sensiblen Daten werden in der <code>.env</code>-Datei gespeichert. Diese Datei darf <strong>niemals</strong> ins Git-Repository committed werden.</p>
+
+<h3>Sichere Schluessel generieren</h3>
+<pre><span class="c-cmt"># 32-Byte Hex Keys generieren</span>
+<span class="c-cmd">python3</span> -c "import secrets; print(secrets.token_hex(32))"
+
+<span class="c-cmt"># Fernet Encryption Key generieren</span>
+<span class="c-cmd">python3</span> -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+<span class="c-cmt"># Oder per Makefile:</span>
+<span class="c-cmd">make keys</span></pre>
+
+<div class="card ok">
+  <div class="card-label">Checkliste</div>
+  <ul class="checklist">
+    <li><code>ADMIN_PASSWORD</code> &mdash; Mindestens 12 Zeichen, Gross-/Kleinbuchstaben, Zahlen, Sonderzeichen</li>
+    <li><code>JWT_SECRET</code> &mdash; Einzigartiger 32-Byte Hex String</li>
+    <li><code>DASHBOARD_SECRET</code> &mdash; Einzigartiger 32-Byte Hex String</li>
+    <li><code>SECRET_KEY</code> &mdash; Einzigartiger 32-Byte Hex String (Flask Sessions)</li>
+    <li><code>ENCRYPTION_KEY</code> &mdash; Fernet Key (fuer API-Key-Verschluesselung)</li>
+    <li><code>.env</code> in <code>.gitignore</code> eintragen</li>
+    <li>Keine Secrets in Logs ausgeben</li>
+  </ul>
+</div>
+
+<!-- Exchange API Keys -->
+<h2>2. Exchange API-Keys</h2>
+<p>API-Keys sind der sensibelste Teil der Konfiguration. Ein kompromittierter Key kann zum Verlust aller Mittel fuehren.</p>
+
+<div class="card warn">
+  <div class="card-label">Best Practices</div>
+  <ul class="checklist">
+    <li><strong>IP-Whitelisting</strong> &mdash; Beschraenke den API-Zugriff auf die Server-IP</li>
+    <li><strong>Minimale Berechtigungen</strong> &mdash; Nur &laquo;Trading&raquo; aktivieren, <strong>niemals &laquo;Withdrawal&raquo;</strong></li>
+    <li><strong>Sub-Account</strong> &mdash; Erstelle einen separaten Sub-Account fuer den Bot</li>
+    <li><strong>Regelmaessige Rotation</strong> &mdash; Erstelle alle 90 Tage neue API-Keys</li>
+    <li><strong>Ueberwachung</strong> &mdash; Pruefe regelmaessig die API-Log deiner Exchange</li>
+  </ul>
+</div>
+
+<!-- Network Security -->
+<h2>3. Netzwerk-Sicherheit</h2>
+
+<h3>HTTPS mit Nginx</h3>
+<p>Fuer den Produktivbetrieb ist HTTPS <strong>zwingend erforderlich</strong>. TREVLIX liefert eine vorkonfigurierte Nginx-Konfiguration mit.</p>
+
+<pre><span class="c-cmt"># Let's Encrypt Zertifikat einrichten</span>
+<span class="c-cmd">sudo apt install certbot python3-certbot-nginx</span>
+<span class="c-cmd">sudo certbot --nginx -d deine-domain.de</span>
+
+<span class="c-cmt"># Docker mit Nginx starten</span>
+<span class="c-cmd">docker compose --profile production up -d</span></pre>
+
+<h3>CORS konfigurieren</h3>
+<pre><span class="c-cmt"># .env — NUR eigene Domain erlauben!</span>
+<span class="c-str">ALLOWED_ORIGINS</span>=https://deine-domain.de
+
+<span class="c-cmt"># NIEMALS Wildcard verwenden:</span>
+<span class="c-cmt"># ALLOWED_ORIGINS=*  ← UNSICHER!</span></pre>
+
+<h3>Firewall</h3>
+<pre><span class="c-cmt"># Nur noetige Ports oeffnen</span>
+<span class="c-cmd">sudo ufw allow 22/tcp</span>    <span class="c-cmt"># SSH</span>
+<span class="c-cmd">sudo ufw allow 80/tcp</span>    <span class="c-cmt"># HTTP (Redirect)</span>
+<span class="c-cmd">sudo ufw allow 443/tcp</span>   <span class="c-cmt"># HTTPS</span>
+<span class="c-cmd">sudo ufw enable</span></pre>
+
+<!-- Authentication -->
+<h2>4. Authentifizierung</h2>
+
+<h3>2FA aktivieren (TOTP)</h3>
+<p>Aktiviere Zwei-Faktor-Authentifizierung im Dashboard unter Einstellungen. TREVLIX unterstuetzt TOTP (Google Authenticator, Authy, etc.).</p>
+
+<h3>Session-Konfiguration</h3>
+<pre><span class="c-cmt"># .env — Kurze Session-Timeouts setzen</span>
+<span class="c-str">SESSION_TIMEOUT_MIN</span>=15     <span class="c-cmt"># Empfohlen: 15 Minuten</span></pre>
+
+<!-- Database -->
+<h2>5. Datenbank</h2>
+
+<div class="card ok">
+  <div class="card-label">MySQL Hardening</div>
+  <ul class="checklist">
+    <li>MySQL nur auf <code>localhost</code> / Docker-Netzwerk binden</li>
+    <li>Root-Passwort setzen und <code>mysql_secure_installation</code> ausfuehren</li>
+    <li>Separaten DB-User mit minimalen Rechten erstellen</li>
+    <li>Taegliche Backups einrichten: <code>make backup</code></li>
+    <li>Backup-Dateien verschluesselt und off-site speichern</li>
+  </ul>
+</div>
+
+<!-- Monitoring -->
+<h2>6. Ueberwachung & Alerting</h2>
+
+<h3>Discord Heartbeat</h3>
+<pre><span class="c-cmt"># .env — Discord Webhook fuer Alerts</span>
+<span class="c-str">DISCORD_WEBHOOK</span>=https://discord.com/api/webhooks/...</pre>
+
+<h3>Audit-Log</h3>
+<p>Alle sicherheitsrelevanten Aktionen (Login, Logout, Einstellungsaenderungen, API-Key-Aenderungen) werden im Audit-Log protokolliert. Pruefe das Log regelmaessig unter <code>/api/v1/admin/audit</code>.</p>
+
+<!-- Vulnerability Reporting -->
+<h2>7. Sicherheitsluecken melden</h2>
+<p>Wenn du eine Sicherheitsluecke in TREVLIX findest, melde sie bitte verantwortungsvoll:</p>
+<div class="card">
+  <ul class="checklist">
+    <li>Nutze <a href="https://github.com/itsamemedev/Trevlix/security/advisories" target="_blank" rel="noopener">GitHub Security Advisories</a></li>
+    <li>Erstelle <strong>kein</strong> oeffentliches Issue fuer Sicherheitsprobleme</li>
+    <li>Wir antworten innerhalb von 48 Stunden</li>
+    <li>Nach dem Fix wird ein Sicherheits-Advisory veroeffentlicht</li>
+  </ul>
+</div>
+
+</div>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div class="site-footer-brand">
+      <div class="footer-logo">TREV<em>LIX</em></div>
+      <p class="footer-desc">Algorithmic Trading Intelligence</p>
+      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+    </div>
+    <div class="site-footer-links">
+      <div><h4>Produkt</h4><a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html">Dashboard</a></div>
+      <div><h4>Ressourcen</h4><a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
+    </div>
+    <div class="site-footer-right">
+      <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+  <div class="site-footer-bottom">
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
+    <span>Paper Trading empfohlen</span>
+  </div>
+</footer>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&uarr;</button>
+
+<script>
+const sn=document.getElementById('siteNav');
+window.addEventListener('scroll',()=>{sn.classList.toggle('scrolled',window.scrollY>60)});
+function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');mn.style.display=mn.style.display==='flex'?'none':'flex'}
+const btt=document.getElementById('backToTop');
+window.addEventListener('scroll',()=>{btt.classList.toggle('visible',window.scrollY>400)});
+</script>
+</body>
+</html>

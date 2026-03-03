@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://trevlix.dev/sitemap.xml
+
+# Dashboard requires authentication
+Disallow: /api/
+Disallow: /logout
+Disallow: /login
+Disallow: /register

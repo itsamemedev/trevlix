@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#020507">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
-<title>TREVLIX v1.0.0 – Algorithmic Trading Intelligence</title>
+<title>TREVLIX v1.0.4 – Algorithmic Trading Intelligence</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
@@ -417,7 +417,7 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
     <div class="wizard-step active" id="wz0">
       <div style="font-size:44px;margin-bottom:12px">⚡</div>
       <div style="font-size:22px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_welcome_title">Willkommen bei</span> <span style="color:var(--cyan)">TREVLIX</span>!</div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.0.0 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.0.4 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
       <button class="save-btn" onclick="wizNext()">→ Los geht's!</button>
     </div>
     <div class="wizard-step" id="wz1">
@@ -464,7 +464,7 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
     <div class="h-logo-icon">⚡</div>
     <div>
       <div class="h-title">TREV<span style="color:var(--jade)">LIX</span></div>
-      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.0.0</div>
+      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.0.4</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:7px">
@@ -473,7 +473,9 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
   <button class="theme-btn" onclick="requestPushPermission()" id="pushBtn" title="Browser-Benachrichtigungen">🔔</button>
   <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Dark/Light Mode">🌙</button>
   <div class="lang-switcher" id="langSwitcher"></div>
-    <a href="/logout" style="font-size:17px;text-decoration:none;opacity:.35" title="Abmelden">🚪</a>
+    <a href="index.html" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Zur Website">WEB</a>
+    <a href="INSTALLATION.html" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Dokumentation">DOCS</a>
+    <a href="/logout" style="font-size:17px;text-decoration:none;opacity:.35" title="Abmelden">&#128682;</a>
   </div>
 </header>
 <div id="toasts"></div>

@@ -3,8 +3,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TREVLIX v1.0.0 — Installation Guide</title>
+<title>TREVLIX v1.0.4 — Installation Guide</title>
+<meta name="description" content="TREVLIX Installationsanleitung — Schritt fuer Schritt Setup Guide.">
+<meta property="og:title" content="TREVLIX — Installation Guide">
+<meta property="og:description" content="Installiere den TREVLIX Trading Bot in wenigen Minuten.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#020507">
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared-nav.css">
 <script src="trevlix_translations.js"></script>
 <style>
 :root{--ink:#020507;--ink1:#060c12;--ink2:#091017;--jade:#00ff88;--blue:#0ea5e9;--amber:#f59e0b;--red:#ef4444;--muted:#1e3344;--sub:#3a5568;--dim:#7a9ab0;--txt:#b8d0e4;--white:#e8f4ff;--fw:"Barlow",sans-serif;--fc:"Barlow Condensed",sans-serif;--fm:"Fira Code",monospace}
@@ -105,25 +112,56 @@ footer a{color:var(--jade)}
   padding:4px 9px;transition:.2s; }
 .lang-btn:hover { border-color:#00ff88;color:#00ff88; }
 .lang-btn.active { border-color:#00ff88;color:#00ff88;background:rgba(0,255,136,.07); }
-body { padding-top:60px; }
+body { padding-top:62px; }
 </style>
 
 </head>
 <body>
 
-<div class="lang-bar">
-  <div class="brand">TREV<span>LIX</span> <span style="font-size:11px;color:#3a5568;font-family:'Fira Code',monospace;font-weight:400;letter-spacing:2px">INSTALLATION GUIDE</span></div>
-  <div class="lang-switcher" id="langSwitcher"></div>
+<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+
+<nav class="site-nav" id="siteNav">
+  <a class="site-nav-logo" href="index.html">
+    <div class="site-nav-logo-mark">&#9889;</div>
+    <div><div class="site-nav-logo-txt">TREV<em>LIX</em></div><div class="site-nav-logo-sub">TREVLIX.DEV</div></div>
+  </a>
+  <div class="site-nav-center">
+    <a href="index.html">Home</a>
+    <a href="index.html#features">Features</a>
+    <a href="strategies.html">Strategien</a>
+    <a href="api-docs.html">API</a>
+    <a href="INSTALLATION.html" class="active">Installation</a>
+    <a href="faq.html">FAQ</a>
+    <a href="dashboard.html">Dashboard</a>
+  </div>
+  <div class="site-nav-right">
+    <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="site-nav-cta" href="#install">Download</a>
+    <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
+  </div>
+</nav>
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API</a>
+  <a href="INSTALLATION.html" class="active">Installation</a><a href="faq.html">FAQ</a>
+  <a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="dashboard.html">Dashboard</a>
+  <hr><a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
 </div>
 
-<div class="wrap">
+<div class="wrap" id="main-content">
+
+<div class="breadcrumbs">
+  <a href="index.html">Home</a> <span class="sep">/</span> <span>Installation</span>
+</div>
 
 <!-- ══ HERO ════════════════════════════════════════════════════════ -->
 <div class="hero">
   <div class="logo-row">
     <div class="logo-mark">⚡</div>
     <div class="logo-txt">TREV<em>LIX</em></div>
-    <span class="version-badge">v1.0.0</span>
+    <span class="version-badge">v1.0.4</span>
   </div>
   <div class="hero-sub" data-i18n="inst_subtitle">Algorithmic Trading Intelligence — Installations-Anleitung</div>
   <div class="lang-row">
@@ -640,9 +678,28 @@ GITHUB_BRANCH=<span class="c-var">main</span></pre>
 </div>
 
 <!-- ══ FOOTER ══════════════════════════════════════════════════════ -->
-<footer>
-  <p>TREVLIX v1.0.0 &nbsp;·&nbsp; <a href="index.html" data-i18n="inst_footer_web">Website</a> &nbsp;·&nbsp; <a href="dashboard.html" data-i18n="inst_footer_dash">Dashboard</a> &nbsp;·&nbsp; <a href="https://github.com" target="_blank" rel="noopener">GitHub</a></p>
-  <p style="margin-top:8px;font-size:11px" data-i18n="inst_footer_copy">© 2024 TREVLIX — Open Source, MIT Lizenz</p>
+<footer class="site-footer" style="border-top:1px solid var(--muted);margin-top:60px;padding:40px 5vw 24px;background:var(--ink1,#060c12)">
+  <div class="site-footer-inner" style="max-width:1200px;margin:0 auto;display:grid;grid-template-columns:1fr 2fr 1fr;gap:40px">
+    <div class="site-footer-brand">
+      <div class="footer-logo" style="font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white)">TREV<em style="font-style:normal;color:var(--jade)">LIX</em></div>
+      <p style="font-size:13px;color:var(--sub);margin-top:8px">Algorithmic Trading Intelligence</p>
+      <div style="font-family:var(--fm);font-size:10px;color:var(--muted,#1e3344);margin-top:8px">v1.0.4 &middot; MIT License</div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
+      <div><h4 style="font-family:var(--fc);font-size:13px;font-weight:800;color:var(--white);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Produkt</h4><a href="index.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Home</a><a href="strategies.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Strategien</a><a href="api-docs.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">API Docs</a><a href="dashboard.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Dashboard</a></div>
+      <div><h4 style="font-family:var(--fc);font-size:13px;font-weight:800;color:var(--white);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Ressourcen</h4><a href="INSTALLATION.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Installation</a><a href="faq.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">FAQ</a><a href="security.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Sicherheit</a><a href="changelog.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Changelog</a><a href="roadmap.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Roadmap</a><a href="about.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">About</a></div>
+    </div>
+    <div style="text-align:right">
+      <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border:1px solid var(--muted);border-radius:8px;color:var(--dim);text-decoration:none;font-size:13px;font-weight:600">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+  <div style="max-width:1200px;margin:24px auto 0;padding-top:20px;border-top:1px solid rgba(255,255,255,.04);display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px;font-size:12px;color:var(--muted);font-family:var(--fm)">
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
+    <span>Paper Trading empfohlen</span>
+  </div>
 </footer>
 
 </div>
@@ -864,6 +921,17 @@ document.addEventListener('DOMContentLoaded', () => {
   renderLangSwitcher();
   applyLang(currentLang);
 });
+</script>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&uarr;</button>
+<script>
+// Site nav
+const sn=document.getElementById('siteNav');
+if(sn) window.addEventListener('scroll',()=>{sn.classList.toggle('scrolled',window.scrollY>60)});
+function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');if(mn) mn.style.display=mn.style.display==='flex'?'none':'flex'}
+// Back to top
+const btt=document.getElementById('backToTop');
+if(btt) window.addEventListener('scroll',()=>{btt.classList.toggle('visible',window.scrollY>400)});
 </script>
 
 </body>
