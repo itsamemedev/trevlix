@@ -3,6 +3,25 @@
 # ║  Projektmetadaten & Tool-Konfiguration                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
+[project]
+name = "trevlix"
+version = "1.1.0"
+description = "Algorithmic Cryptocurrency Trading Bot with ML-powered strategies"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+keywords = ["crypto", "trading", "bot", "ml", "algorithmic-trading"]
+
+[project.urls]
+Homepage = "https://github.com/itsamemedev/Trevlix"
+Repository = "https://github.com/itsamemedev/Trevlix"
+Issues = "https://github.com/itsamemedev/Trevlix/issues"
+Changelog = "https://github.com/itsamemedev/Trevlix/blob/main/CHANGELOG.md"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [tool.pytest.ini_options]
 testpaths     = ["tests"]
 python_files  = ["test_*.py"]
@@ -21,6 +40,8 @@ omit    = [
     ".venv/*",
     "tests/*",
     "*/site-packages/*",
+    "static/*",
+    "templates/*",
 ]
 
 [tool.coverage.report]

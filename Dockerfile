@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.4 – Dockerfile                                ║
+# ║  TREVLIX v1.1.0 – Dockerfile                                ║
 # ║  Build:  docker build -t trevlix .                           ║
 # ║  Run:    docker run -p 5000:5000 --env-file .env trevlix     ║
 # ╚══════════════════════════════════════════════════════════════╝
@@ -40,12 +40,10 @@ COPY --from=builder /install /usr/local
 COPY server.py .
 COPY ai_engine.py .
 COPY trevlix_i18n.py .
-COPY trevlix_translations.js .
-COPY dashboard.html .
-COPY index.html .
-COPY INSTALLATION.html .
 COPY services/ ./services/
 COPY routes/ ./routes/
+COPY templates/ ./templates/
+COPY static/ ./static/
 
 # Verzeichnisse anlegen und Berechtigungen setzen
 RUN mkdir -p /app/backups /app/logs \
