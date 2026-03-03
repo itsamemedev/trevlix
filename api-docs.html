@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TREVLIX REST API Dokumentation — Alle Endpunkte, Authentifizierung und Beispiele.">
+<meta property="og:title" content="TREVLIX — API Dokumentation">
+<meta property="og:description" content="Vollständige REST API Referenz für den TREVLIX Trading Bot.">
+<meta property="og:url" content="https://trevlix.dev/api-docs">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#020507">
+<title>TREVLIX v1.0.4 — API Dokumentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared-nav.css">
+<script src="trevlix_translations.js" defer></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
+.wrap{max-width:960px;margin:0 auto;padding:40px 24px 60px}
+h1{font-family:var(--fc);font-weight:900;font-size:36px;color:var(--white);margin-bottom:8px}
+h2{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);margin:48px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--muted);display:flex;align-items:center;gap:10px}
+h3{font-family:var(--fc);font-size:17px;font-weight:800;color:var(--white);margin:28px 0 12px}
+p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
+a{color:var(--jade);text-decoration:none}
+a:hover{text-decoration:underline}
+pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:18px 20px;overflow-x:auto;margin:12px 0;font-family:var(--fm);font-size:12px;line-height:1.9;position:relative}
+code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
+.c-cmd{color:#00ff88}.c-cmt{color:#2a4a5a}.c-kw{color:#0ea5e9}.c-str{color:#f59e0b}
+.subtitle{font-size:15px;color:var(--dim);margin-bottom:32px}
+.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:12px 0}
+.card.info{border-color:rgba(14,165,233,.2);background:rgba(14,165,233,.04)}
+.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
+.ep-grid{display:grid;grid-template-columns:80px 1fr 1fr;gap:1px;background:var(--muted);border-radius:10px;overflow:hidden;margin:12px 0}
+.ep-cell{background:var(--ink1);padding:10px 14px;font-size:12px}
+.ep-method{font-family:var(--fm);font-weight:700}
+.ep-path{font-family:var(--fm);color:var(--txt)}
+.ep-desc{color:var(--dim)}
+.ep-head{background:var(--ink2);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--sub);font-family:var(--fm)}
+.m-get{color:#00ff88}.m-post{color:#0ea5e9}.m-put{color:#f59e0b}.m-del{color:#ef4444}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid var(--muted);border-radius:10px;overflow:hidden}
+th{background:var(--ink2);padding:10px 14px;text-align:left;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;font-family:var(--fm)}
+td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--dim)}
+td:first-child{font-family:var(--fm);color:var(--jade);font-size:12px}
+tr:last-child td{border-bottom:none}
+.tag{font-family:var(--fm);font-size:10px;padding:3px 9px;border-radius:3px;background:rgba(255,255,255,.04);border:1px solid var(--muted);color:var(--sub);display:inline-block;margin:2px}
+.tag.jade{border-color:rgba(0,255,136,.25);color:var(--jade);background:rgba(0,255,136,.05)}
+.tag.blue{border-color:rgba(14,165,233,.25);color:var(--blue);background:rgba(14,165,233,.05)}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
+@media(max-width:640px){.ep-grid{grid-template-columns:60px 1fr}}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+
+<!-- Site Navigation -->
+<nav class="site-nav" id="siteNav">
+  <a class="site-nav-logo" href="index.html">
+    <div class="site-nav-logo-mark">&#9889;</div>
+    <div>
+      <div class="site-nav-logo-txt">TREV<em>LIX</em></div>
+      <div class="site-nav-logo-sub">TREVLIX.DEV</div>
+    </div>
+  </a>
+  <div class="site-nav-center">
+    <a href="index.html">Home</a>
+    <a href="index.html#features">Features</a>
+    <a href="strategies.html">Strategien</a>
+    <a href="api-docs.html" class="active">API</a>
+    <a href="INSTALLATION.html">Installation</a>
+    <a href="faq.html">FAQ</a>
+    <a href="dashboard.html">Dashboard</a>
+  </div>
+  <div class="site-nav-right">
+    <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
+  </div>
+</nav>
+
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="index.html">Home</a>
+  <a href="index.html#features">Features</a>
+  <a href="strategies.html">Strategien</a>
+  <a href="api-docs.html" class="active">API Docs</a>
+  <a href="INSTALLATION.html">Installation</a>
+  <a href="faq.html">FAQ</a>
+  <a href="security.html">Sicherheit</a>
+  <a href="changelog.html">Changelog</a>
+  <a href="dashboard.html">Dashboard</a>
+  <hr>
+  <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
+</div>
+
+<div class="wrap" id="main-content">
+
+<!-- Breadcrumbs -->
+<div class="breadcrumbs">
+  <a href="index.html">Home</a> <span class="sep">/</span> <span>API Dokumentation</span>
+</div>
+
+<h1>REST API Dokumentation</h1>
+<p class="subtitle">Vollständige Referenz aller TREVLIX API-Endpunkte &mdash; v1.0.4</p>
+
+<div class="card info">
+  <p><strong>Base-URL:</strong> <code>http://localhost:5000/api/v1</code></p>
+  <p style="margin:0">Alle Endpunkte erfordern einen <code>Authorization: Bearer &lt;JWT&gt;</code> Header, sofern nicht anders angegeben.</p>
+</div>
+
+<!-- ── Authentifizierung ── -->
+<h2 id="auth">&#128274; Authentifizierung</h2>
+<p>TREVLIX nutzt JWT (JSON Web Tokens) zur Authentifizierung. Nach dem Login erhalten Sie einen Token, der bei jedem API-Request im Header mitgesendet wird.</p>
+
+<h3>Login</h3>
+<pre><span class="c-kw">POST</span> /api/v1/login
+
+<span class="c-cmt">// Request Body:</span>
+{
+  <span class="c-str">"username"</span>: <span class="c-str">"admin"</span>,
+  <span class="c-str">"password"</span>: <span class="c-str">"your_password"</span>,
+  <span class="c-str">"totp"</span>: <span class="c-str">"123456"</span>  <span class="c-cmt">// optional, wenn 2FA aktiviert</span>
+}
+
+<span class="c-cmt">// Response:</span>
+{
+  <span class="c-str">"token"</span>: <span class="c-str">"eyJhbGci..."</span>,
+  <span class="c-str">"role"</span>: <span class="c-str">"admin"</span>,
+  <span class="c-str">"expires_in"</span>: <span class="c-cmd">1800</span>
+}</pre>
+
+<h3>Token erneuern</h3>
+<pre><span class="c-kw">POST</span> /api/v1/token
+Authorization: Bearer &lt;JWT&gt;
+
+<span class="c-cmt">// Response:</span>
+{
+  <span class="c-str">"token"</span>: <span class="c-str">"eyJhbGci..."</span>,
+  <span class="c-str">"label"</span>: <span class="c-str">"dashboard"</span>
+}</pre>
+
+<!-- ── Status & System ── -->
+<h2 id="status">&#128200; Status & System</h2>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/status</div><div class="ep-cell ep-desc">Bot-Status, Version, Uptime</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/start</div><div class="ep-cell ep-desc">Bot starten</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/stop</div><div class="ep-cell ep-desc">Bot stoppen</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/health</div><div class="ep-cell ep-desc">Health Check (DB, Exchange)</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/version</div><div class="ep-cell ep-desc">Aktuelle Version</div>
+</div>
+
+<!-- ── Trading ── -->
+<h2 id="trading">&#128176; Trading</h2>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/portfolio</div><div class="ep-cell ep-desc">Aktuelles Portfolio mit Bilanz</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/positions</div><div class="ep-cell ep-desc">Offene Positionen</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/trades</div><div class="ep-cell ep-desc">Trade-Historie (paginiert)</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/order</div><div class="ep-cell ep-desc">Manuellen Trade platzieren</div>
+  <div class="ep-cell ep-method m-del">DELETE</div><div class="ep-cell ep-path">/api/v1/order/:id</div><div class="ep-cell ep-desc">Order stornieren</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/close/:symbol</div><div class="ep-cell ep-desc">Position schliessen</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/close-all</div><div class="ep-cell ep-desc">Alle Positionen schliessen</div>
+</div>
+
+<h3>Order-Beispiel</h3>
+<pre><span class="c-kw">POST</span> /api/v1/order
+Authorization: Bearer &lt;JWT&gt;
+
+{
+  <span class="c-str">"symbol"</span>: <span class="c-str">"BTC/USDT"</span>,
+  <span class="c-str">"side"</span>: <span class="c-str">"buy"</span>,
+  <span class="c-str">"amount"</span>: <span class="c-cmd">0.001</span>,
+  <span class="c-str">"type"</span>: <span class="c-str">"limit"</span>,
+  <span class="c-str">"price"</span>: <span class="c-cmd">92000</span>
+}</pre>
+
+<!-- ── KI & Analyse ── -->
+<h2 id="ai">&#129504; KI & Analyse</h2>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/ai/status</div><div class="ep-cell ep-desc">KI-Modell Status & Accuracy</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/ai/retrain</div><div class="ep-cell ep-desc">KI-Modell neu trainieren</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/ai/features</div><div class="ep-cell ep-desc">Feature Importance</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/signals</div><div class="ep-cell ep-desc">Aktuelle Trading-Signale</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/backtest</div><div class="ep-cell ep-desc">Backtest starten</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/indicators/:sym</div><div class="ep-cell ep-desc">Technische Indikatoren</div>
+</div>
+
+<!-- ── Marktdaten ── -->
+<h2 id="market">&#127758; Marktdaten</h2>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/market/fear-greed</div><div class="ep-cell ep-desc">Fear & Greed Index</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/market/dominance</div><div class="ep-cell ep-desc">BTC/USDT Dominanz</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/market/news</div><div class="ep-cell ep-desc">News-Sentiment (CryptoPanic)</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/market/onchain</div><div class="ep-cell ep-desc">On-Chain Daten (CoinGecko)</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/market/heatmap</div><div class="ep-cell ep-desc">Markt-Heatmap</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/arbitrage</div><div class="ep-cell ep-desc">Arbitrage-Chancen (Cross-Exchange)</div>
+</div>
+
+<!-- ── Konfiguration ── -->
+<h2 id="config">&#9881; Konfiguration</h2>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/settings</div><div class="ep-cell ep-desc">Aktuelle Bot-Einstellungen</div>
+  <div class="ep-cell ep-method m-put">PUT</div><div class="ep-cell ep-path">/api/v1/settings</div><div class="ep-cell ep-desc">Einstellungen aktualisieren</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/exchanges</div><div class="ep-cell ep-desc">Konfigurierte Exchanges</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/exchanges</div><div class="ep-cell ep-desc">Exchange hinzufuegen</div>
+</div>
+
+<!-- ── Admin ── -->
+<h2 id="admin">&#128736; Admin</h2>
+
+<div class="card warn">
+  <p style="margin:0"><strong>Hinweis:</strong> Admin-Endpunkte erfordern die Rolle <code>admin</code>. Normale User haben keinen Zugriff.</p>
+</div>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/admin/users</div><div class="ep-cell ep-desc">Alle User auflisten</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/admin/users</div><div class="ep-cell ep-desc">Neuen User anlegen</div>
+  <div class="ep-cell ep-method m-del">DELETE</div><div class="ep-cell ep-path">/api/v1/admin/users/:id</div><div class="ep-cell ep-desc">User loeschen</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/admin/audit</div><div class="ep-cell ep-desc">Audit-Log</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/admin/backup</div><div class="ep-cell ep-desc">Datenbank-Backup erstellen</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/admin/update</div><div class="ep-cell ep-desc">GitHub Auto-Update ausloesen</div>
+</div>
+
+<!-- ── WebSocket ── -->
+<h2 id="websocket">&#128225; WebSocket Events</h2>
+<p>TREVLIX nutzt Socket.IO fuer Echtzeit-Updates im Dashboard. Verbinde dich mit <code>io('http://localhost:5000')</code>.</p>
+
+<table>
+  <tr><th>Event</th><th>Richtung</th><th>Beschreibung</th></tr>
+  <tr><td>connect</td><td>Client &rarr; Server</td><td>Verbindung herstellen</td></tr>
+  <tr><td>status_update</td><td>Server &rarr; Client</td><td>Bot-Status (Running/Stopped/Paused)</td></tr>
+  <tr><td>portfolio_update</td><td>Server &rarr; Client</td><td>Portfolio-Daten mit Balance</td></tr>
+  <tr><td>trade_update</td><td>Server &rarr; Client</td><td>Neuer Trade ausgefuehrt</td></tr>
+  <tr><td>signal_update</td><td>Server &rarr; Client</td><td>Neues Trading-Signal</td></tr>
+  <tr><td>ai_update</td><td>Server &rarr; Client</td><td>KI-Modell Status-Update</td></tr>
+  <tr><td>error</td><td>Server &rarr; Client</td><td>Fehlermeldung</td></tr>
+</table>
+
+<h3>WebSocket Beispiel</h3>
+<pre><span class="c-kw">const</span> socket = io(<span class="c-str">'http://localhost:5000'</span>, {
+  auth: { token: <span class="c-str">'eyJhbGci...'</span> }
+});
+
+socket.on(<span class="c-str">'portfolio_update'</span>, (data) => {
+  console.log(<span class="c-str">'Balance:'</span>, data.total_balance);
+  console.log(<span class="c-str">'P&L:'</span>, data.pnl_percent + <span class="c-str">'%'</span>);
+});
+
+socket.on(<span class="c-str">'trade_update'</span>, (trade) => {
+  console.log(<span class="c-str">'Neuer Trade:'</span>, trade.symbol, trade.side, trade.amount);
+});</pre>
+
+<!-- ── Rate Limits ── -->
+<h2 id="limits">&#9889; Rate Limits</h2>
+
+<table>
+  <tr><th>Endpunkt-Gruppe</th><th>Limit</th><th>Fenster</th></tr>
+  <tr><td>Login / Register</td><td>5 Requests</td><td>pro Minute</td></tr>
+  <tr><td>Trading (Order/Close)</td><td>30 Requests</td><td>pro Minute</td></tr>
+  <tr><td>Allgemeine API</td><td>60 Requests</td><td>pro Minute</td></tr>
+  <tr><td>Admin-Endpunkte</td><td>30 Requests</td><td>pro Minute</td></tr>
+</table>
+
+<div class="card info">
+  <p style="margin:0">Bei Ueberschreitung erhalten Sie einen <code>429 Too Many Requests</code> Status. Warten Sie das Zeitfenster ab oder erhoehen Sie das Limit in der <code>.env</code>-Datei.</p>
+</div>
+
+<!-- ── Fehlercodes ── -->
+<h2 id="errors">&#128683; Fehlercodes</h2>
+
+<table>
+  <tr><th>Code</th><th>Bedeutung</th><th>Loesung</th></tr>
+  <tr><td>401</td><td>Nicht authentifiziert</td><td>JWT Token erneuern oder neu einloggen</td></tr>
+  <tr><td>403</td><td>Keine Berechtigung</td><td>Admin-Rolle erforderlich</td></tr>
+  <tr><td>404</td><td>Nicht gefunden</td><td>Endpunkt oder Ressource pruefen</td></tr>
+  <tr><td>422</td><td>Validierungsfehler</td><td>Request-Body pruefen</td></tr>
+  <tr><td>429</td><td>Rate Limit</td><td>Weniger Requests senden</td></tr>
+  <tr><td>500</td><td>Server-Fehler</td><td>Logs pruefen, ggf. GitHub Issue erstellen</td></tr>
+  <tr><td>503</td><td>Exchange nicht erreichbar</td><td>Exchange-API Status pruefen</td></tr>
+</table>
+
+</div>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div class="site-footer-brand">
+      <div class="footer-logo">TREV<em>LIX</em></div>
+      <p class="footer-desc">Algorithmic Trading Intelligence &mdash; Open Source Crypto Trading Bot</p>
+      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+    </div>
+    <div class="site-footer-links">
+      <div>
+        <h4>Produkt</h4>
+        <a href="index.html">Home</a>
+        <a href="index.html#features">Features</a>
+        <a href="strategies.html">Strategien</a>
+        <a href="api-docs.html">API Docs</a>
+        <a href="dashboard.html">Dashboard</a>
+      </div>
+      <div>
+        <h4>Ressourcen</h4>
+        <a href="INSTALLATION.html">Installation</a>
+        <a href="faq.html">FAQ</a>
+        <a href="security.html">Sicherheit</a>
+        <a href="changelog.html">Changelog</a>
+        <a href="roadmap.html">Roadmap</a>
+        <a href="about.html">About</a>
+      </div>
+    </div>
+    <div class="site-footer-right">
+      <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+  <div class="site-footer-bottom">
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
+    <span>Paper Trading empfohlen</span>
+  </div>
+</footer>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&uarr;</button>
+
+<script>
+// Nav scroll effect
+const sn = document.getElementById('siteNav');
+window.addEventListener('scroll', () => { sn.classList.toggle('scrolled', window.scrollY > 60); });
+
+// Mobile nav toggle
+function toggleSiteNav(){
+  const mn = document.getElementById('siteMobileNav');
+  mn.style.display = mn.style.display==='flex' ? 'none' : 'flex';
+}
+
+// Back to top
+const btt = document.getElementById('backToTop');
+window.addEventListener('scroll', () => { btt.classList.toggle('visible', window.scrollY > 400); });
+</script>
+</body>
+</html>

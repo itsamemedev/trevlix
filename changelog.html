@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TREVLIX Changelog — Alle Versionen, neue Features und Bugfixes.">
+<meta property="og:title" content="TREVLIX — Changelog">
+<meta property="og:description" content="Release-Verlauf und Versionshistorie des TREVLIX Trading Bots.">
+<meta property="og:url" content="https://trevlix.dev/changelog">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#020507">
+<title>TREVLIX v1.0.4 — Changelog</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared-nav.css">
+<script src="trevlix_translations.js" defer></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
+.wrap{max-width:800px;margin:0 auto;padding:40px 24px 60px}
+h1{font-family:var(--fc);font-weight:900;font-size:36px;color:var(--white);margin-bottom:8px}
+.subtitle{font-size:15px;color:var(--dim);margin-bottom:40px}
+a{color:var(--jade);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
+
+/* Timeline */
+.timeline{position:relative;padding-left:32px}
+.timeline::before{content:'';position:absolute;left:11px;top:0;bottom:0;width:2px;background:var(--muted)}
+.release{position:relative;margin-bottom:48px}
+.release-dot{position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;border:2px solid var(--jade);background:var(--ink);display:flex;align-items:center;justify-content:center}
+.release-dot.latest{background:var(--jade);border-color:var(--jade)}
+.release-dot.latest::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--ink)}
+.release-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.release-version{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white)}
+.release-date{font-family:var(--fm);font-size:11px;color:var(--sub);border:1px solid var(--muted);padding:3px 10px;border-radius:4px}
+.release-tag{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;font-weight:700}
+.tag-latest{background:rgba(0,255,136,.1);color:var(--jade);border:1px solid rgba(0,255,136,.25)}
+.tag-stable{background:rgba(14,165,233,.1);color:var(--blue);border:1px solid rgba(14,165,233,.25)}
+
+.change-group{margin-bottom:16px}
+.change-group h4{font-family:var(--fm);font-size:11px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+.change-group h4.added{color:var(--jade)}
+.change-group h4.fixed{color:var(--blue)}
+.change-group h4.changed{color:var(--amber)}
+.change-group h4.removed{color:var(--red)}
+.change-group ul{list-style:none;display:flex;flex-direction:column;gap:6px}
+.change-group li{font-size:13px;color:var(--dim);padding-left:18px;position:relative;line-height:1.6}
+.change-group li::before{content:'';position:absolute;left:0;top:8px;width:6px;height:6px;border-radius:50%}
+.change-group h4.added + ul li::before{background:var(--jade)}
+.change-group h4.fixed + ul li::before{background:var(--blue)}
+.change-group h4.changed + ul li::before{background:var(--amber)}
+.change-group h4.removed + ul li::before{background:var(--red)}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+
+<nav class="site-nav" id="siteNav">
+  <a class="site-nav-logo" href="index.html">
+    <div class="site-nav-logo-mark">&#9889;</div>
+    <div><div class="site-nav-logo-txt">TREV<em>LIX</em></div><div class="site-nav-logo-sub">TREVLIX.DEV</div></div>
+  </a>
+  <div class="site-nav-center">
+    <a href="index.html">Home</a>
+    <a href="index.html#features">Features</a>
+    <a href="strategies.html">Strategien</a>
+    <a href="api-docs.html">API</a>
+    <a href="INSTALLATION.html">Installation</a>
+    <a href="faq.html">FAQ</a>
+    <a href="dashboard.html">Dashboard</a>
+  </div>
+  <div class="site-nav-right">
+    <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
+  </div>
+</nav>
+
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a>
+  <a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="changelog.html" class="active">Changelog</a>
+  <a href="dashboard.html">Dashboard</a>
+  <hr>
+  <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
+</div>
+
+<div class="wrap" id="main-content">
+
+<div class="breadcrumbs">
+  <a href="index.html">Home</a> <span class="sep">/</span> <span>Changelog</span>
+</div>
+
+<h1>Changelog</h1>
+<p class="subtitle">Alle Releases und Versionen im Ueberblick</p>
+
+<div class="timeline">
+
+  <!-- v1.0.4 -->
+  <div class="release">
+    <div class="release-dot latest"></div>
+    <div class="release-header">
+      <span class="release-version">v1.0.4</span>
+      <span class="release-date">2026-03-02</span>
+      <span class="release-tag tag-latest">Latest</span>
+    </div>
+    <div class="change-group"><h4 class="added">Hinzugefuegt</h4>
+      <ul>
+        <li>Website-Seiten uebergreifend verlinkt (Navigation auf allen Seiten)</li>
+        <li>7 neue Dokumentationsseiten: API Docs, Changelog, Strategien, FAQ, Sicherheit, Roadmap, About</li>
+        <li>Shared Navigation CSS fuer konsistentes Design</li>
+        <li>Back-to-Top Button auf allen Seiten</li>
+        <li>Breadcrumb-Navigation auf Unterseiten</li>
+        <li>Skip-to-Content Accessibility-Link</li>
+        <li>JSON-LD Structured Data auf der Startseite</li>
+        <li>sitemap.xml und robots.txt fuer SEO</li>
+        <li>404 Fehlerseite mit Navigation</li>
+        <li>Print-Stylesheet fuer Dokumentationsseiten</li>
+        <li>Meta-Tags (OpenGraph, Twitter Card) auf allen Seiten</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="fixed">Behoben</h4>
+      <ul>
+        <li>Versionsnummern auf allen Seiten konsistent auf v1.0.4 aktualisiert</li>
+        <li>README.md mit vollstaendiger Website-Struktur aktualisiert</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.0.3 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
+      <span class="release-version">v1.0.3</span>
+      <span class="release-date">2026-02-17</span>
+      <span class="release-tag tag-stable">Stable</span>
+    </div>
+    <div class="change-group"><h4 class="added">Hinzugefuegt</h4>
+      <ul>
+        <li>Grid-Trading Modul fuer automatisierte Grid-Strategien</li>
+        <li>Monte-Carlo Risiko-Analyse fuer VaR-Berechnung</li>
+        <li>PineScript-Export fuer TradingView-Integration</li>
+        <li>Copy-Trading Funktionalitaet</li>
+        <li>Keyboard Shortcuts im Dashboard</li>
+        <li>Dark/Light Mode Toggle</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="fixed">Behoben</h4>
+      <ul>
+        <li>WebSocket-Reconnect Stabilitaet verbessert</li>
+        <li>Memory-Leak in Indikator-Cache behoben</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.0.2 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
+      <span class="release-version">v1.0.2</span>
+      <span class="release-date">2026-01-30</span>
+      <span class="release-tag tag-stable">Stable</span>
+    </div>
+    <div class="change-group"><h4 class="added">Hinzugefuegt</h4>
+      <ul>
+        <li>Multi-User System mit getrennten API-Keys</li>
+        <li>Rollenbasierte Zugriffskontrolle (Admin/User)</li>
+        <li>Steuer-Report Generator</li>
+        <li>Risiko-Dashboard mit Circuit Breaker Visualisierung</li>
+        <li>Backtest-Sektion im Dashboard</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="changed">Geaendert</h4>
+      <ul>
+        <li>Dashboard auf Mobile-First Design umgestellt</li>
+        <li>Indikator-Berechnung mit Caching optimiert</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.0.1 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
+      <span class="release-version">v1.0.1</span>
+      <span class="release-date">2026-01-15</span>
+      <span class="release-tag tag-stable">Stable</span>
+    </div>
+    <div class="change-group"><h4 class="added">Hinzugefuegt</h4>
+      <ul>
+        <li>LSTM Neural Network als 4. Modell im Ensemble</li>
+        <li>Genetic Algorithm fuer Parameter-Optimierung</li>
+        <li>Isolation Forest Anomalie-Erkennung</li>
+        <li>Discord Webhook-Integration</li>
+        <li>Telegram Benachrichtigungen</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="fixed">Behoben</h4>
+      <ul>
+        <li>API-Key Verschluesselung auf Fernet umgestellt</li>
+        <li>Rate-Limiting fuer Login-Endpunkt hinzugefuegt</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.0.0 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
+      <span class="release-version">v1.0.0</span>
+      <span class="release-date">2025-12-20</span>
+      <span class="release-tag tag-stable">Initial Release</span>
+    </div>
+    <div class="change-group"><h4 class="added">Hinzugefuegt</h4>
+      <ul>
+        <li>Erster oeffentlicher Release</li>
+        <li>Flask Backend mit WebSocket Dashboard</li>
+        <li>5 Exchange-Integrationen (Crypto.com, Binance, Bybit, OKX, KuCoin)</li>
+        <li>9 Voting-Strategien (EMA, RSI, MACD, Bollinger, Volume, OBV, ROC, Ichimoku, VWAP)</li>
+        <li>3-Modell KI-Ensemble (Global, Bull, Bear)</li>
+        <li>Paper Trading Mode</li>
+        <li>JWT-Authentifizierung mit 2FA</li>
+        <li>Docker-Deployment mit MySQL und Nginx</li>
+        <li>5-Sprachen Internationalisierung (DE/EN/ES/RU/PT)</li>
+        <li>One-Click Installer (install.sh)</li>
+      </ul>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div class="site-footer-brand">
+      <div class="footer-logo">TREV<em>LIX</em></div>
+      <p class="footer-desc">Algorithmic Trading Intelligence</p>
+      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+    </div>
+    <div class="site-footer-links">
+      <div><h4>Produkt</h4><a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html">Dashboard</a></div>
+      <div><h4>Ressourcen</h4><a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
+    </div>
+    <div class="site-footer-right">
+      <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+  <div class="site-footer-bottom">
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
+    <span>Paper Trading empfohlen</span>
+  </div>
+</footer>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&uarr;</button>
+
+<script>
+const sn=document.getElementById('siteNav');
+window.addEventListener('scroll',()=>{sn.classList.toggle('scrolled',window.scrollY>60)});
+function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');mn.style.display=mn.style.display==='flex'?'none':'flex'}
+const btt=document.getElementById('backToTop');
+window.addEventListener('scroll',()=>{btt.classList.toggle('visible',window.scrollY>400)});
+</script>
+</body>
+</html>

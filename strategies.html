@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="de" id="htmlRoot">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="TREVLIX Trading-Strategien — 9 Voting-Strategien im Detail erklaert.">
+<meta property="og:title" content="TREVLIX — Trading-Strategien">
+<meta property="og:description" content="Detaillierte Erklaerung aller 9 Trading-Strategien des TREVLIX Bots.">
+<meta name="twitter:card" content="summary">
+<meta name="theme-color" content="#020507">
+<title>TREVLIX v1.0.4 — Trading-Strategien</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="shared-nav.css">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
+.wrap{max-width:960px;margin:0 auto;padding:40px 24px 60px}
+h1{font-family:var(--fc);font-weight:900;font-size:36px;color:var(--white);margin-bottom:8px}
+h2{font-family:var(--fc);font-weight:900;font-size:22px;color:var(--white);margin:40px 0 16px;display:flex;align-items:center;gap:10px}
+h3{font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 8px}
+p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
+a{color:var(--jade);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
+.subtitle{font-size:15px;color:var(--dim);margin-bottom:36px}
+body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
+::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
+
+.strat-card{background:var(--ink1);border:1px solid var(--muted);border-radius:14px;padding:28px;margin:16px 0;transition:border-color .3s}
+.strat-card:hover{border-color:rgba(0,255,136,.15)}
+.strat-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:14px}
+.strat-num{font-family:var(--fm);font-size:11px;color:var(--sub);border:1px solid var(--muted);padding:3px 10px;border-radius:4px}
+.strat-badge{font-family:var(--fm);font-size:10px;padding:4px 12px;border-radius:20px;font-weight:700;letter-spacing:.5px}
+.badge-trend{background:rgba(0,255,136,.08);color:var(--jade);border:1px solid rgba(0,255,136,.2)}
+.badge-momentum{background:rgba(14,165,233,.08);color:var(--blue);border:1px solid rgba(14,165,233,.2)}
+.badge-volatility{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
+.badge-volume{background:rgba(139,92,246,.08);color:#8b5cf6;border:1px solid rgba(139,92,246,.2)}
+
+.strat-indicators{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.strat-indicators span{font-family:var(--fm);font-size:10px;padding:3px 9px;border-radius:4px;background:rgba(255,255,255,.04);border:1px solid var(--muted);color:var(--sub)}
+
+.vote-logic{background:var(--ink2);border-radius:8px;padding:16px;margin:12px 0;font-size:13px}
+.vote-logic .vote-row{display:flex;align-items:center;gap:12px;padding:4px 0;color:var(--dim)}
+.vote-row .v-signal{font-family:var(--fm);font-size:11px;padding:2px 8px;border-radius:3px;min-width:50px;text-align:center}
+.v-buy{background:rgba(0,255,136,.1);color:var(--jade);border:1px solid rgba(0,255,136,.2)}
+.v-sell{background:rgba(239,68,68,.1);color:var(--red);border:1px solid rgba(239,68,68,.2)}
+.v-hold{background:rgba(255,255,255,.05);color:var(--sub);border:1px solid var(--muted)}
+
+.ensemble-box{background:linear-gradient(145deg,#060e0a,#030a07);border:1px solid rgba(0,255,136,.12);border-radius:14px;padding:28px;margin:24px 0}
+.ensemble-box h3{color:var(--jade);margin-top:0}
+
+.weight-bar{height:6px;border-radius:3px;background:var(--ink2);margin:6px 0 12px;overflow:hidden}
+.weight-bar-fill{height:100%;border-radius:3px;transition:width .6s ease}
+
+@media(max-width:640px){.strat-card{padding:18px}.strat-header{flex-direction:column;align-items:flex-start}}
+</style>
+</head>
+<body>
+
+<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+
+<nav class="site-nav" id="siteNav">
+  <a class="site-nav-logo" href="index.html">
+    <div class="site-nav-logo-mark">&#9889;</div>
+    <div><div class="site-nav-logo-txt">TREV<em>LIX</em></div><div class="site-nav-logo-sub">TREVLIX.DEV</div></div>
+  </a>
+  <div class="site-nav-center">
+    <a href="index.html">Home</a>
+    <a href="index.html#features">Features</a>
+    <a href="strategies.html" class="active">Strategien</a>
+    <a href="api-docs.html">API</a>
+    <a href="INSTALLATION.html">Installation</a>
+    <a href="faq.html">FAQ</a>
+    <a href="dashboard.html">Dashboard</a>
+  </div>
+  <div class="site-nav-right">
+    <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+      GitHub
+    </a>
+    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
+  </div>
+</nav>
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="index.html">Home</a><a href="strategies.html" class="active">Strategien</a><a href="api-docs.html">API</a>
+  <a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="changelog.html">Changelog</a>
+  <a href="dashboard.html">Dashboard</a>
+  <hr><a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
+</div>
+
+<div class="wrap" id="main-content">
+
+<div class="breadcrumbs">
+  <a href="index.html">Home</a> <span class="sep">/</span> <span>Trading-Strategien</span>
+</div>
+
+<h1>Trading-Strategien</h1>
+<p class="subtitle">TREVLIX nutzt 9 Voting-Strategien, die gemeinsam ueber Trades abstimmen. Jede Strategie gibt ein Signal: <strong style="color:var(--jade)">BUY</strong>, <strong style="color:var(--red)">SELL</strong> oder <strong style="color:var(--sub)">HOLD</strong>.</p>
+
+<!-- Ensemble Erklaerung -->
+<div class="ensemble-box">
+  <h3>Voting-Ensemble System</h3>
+  <p>Alle 9 Strategien stimmen gleichzeitig ab. Ueberwiegen die BUY-Stimmen den konfigurierbaren Schwellenwert (Standard: 5 von 9), wird ein Kauf-Signal erzeugt. Die KI gewichtet die Stimmen dynamisch basierend auf der historischen Trefferquote jeder Strategie.</p>
+  <p style="margin:0;color:var(--txt)">Beispiel: Wenn 6 Strategien <strong style="color:var(--jade)">BUY</strong> signalisieren und 3 <strong style="color:var(--sub)">HOLD</strong> &mdash; wird ein Trade ausgefuehrt.</p>
+</div>
+
+<!-- Strategy 1: EMA Trend -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#1</span>
+      <h2 style="margin:8px 0 0;display:inline">EMA Trend Following</h2>
+    </div>
+    <span class="strat-badge badge-trend">TREND</span>
+  </div>
+  <p>Analysiert die Beziehung zwischen schnellen und langsamen Exponential Moving Averages (EMA). Ein bullisches Signal entsteht, wenn die schnelle EMA die langsame kreuzt (Golden Cross).</p>
+  <div class="strat-indicators"><span>EMA 8</span><span>EMA 21</span><span>EMA 50</span><span>EMA 200</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> EMA8 &gt; EMA21 &gt; EMA50 (Aufwaertstrend bestaetigt)</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> EMA8 &lt; EMA21 &lt; EMA50 (Abwaertstrend bestaetigt)</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> EMAs sind nicht eindeutig ausgerichtet</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~14% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:14%;background:var(--jade)"></div></div>
+</div>
+
+<!-- Strategy 2: RSI + Stochastic -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#2</span>
+      <h2 style="margin:8px 0 0;display:inline">RSI + Stochastic RSI</h2>
+    </div>
+    <span class="strat-badge badge-momentum">MOMENTUM</span>
+  </div>
+  <p>Kombiniert den klassischen RSI mit dem Stochastic RSI, um ueberkaufte/ueberverkaufte Zonen zu identifizieren. Besonders effektiv in Seitwaertsmaerkten.</p>
+  <div class="strat-indicators"><span>RSI 14</span><span>Stochastic RSI K</span><span>Stochastic RSI D</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> RSI &lt; 35 UND Stoch-RSI &lt; 20 (ueberverkauft)</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> RSI &gt; 70 UND Stoch-RSI &gt; 80 (ueberkauft)</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> RSI zwischen 35 und 70</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~12% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:12%;background:var(--blue)"></div></div>
+</div>
+
+<!-- Strategy 3: MACD -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#3</span>
+      <h2 style="margin:8px 0 0;display:inline">MACD Divergence</h2>
+    </div>
+    <span class="strat-badge badge-momentum">MOMENTUM</span>
+  </div>
+  <p>Moving Average Convergence Divergence &mdash; erkennt Momentumwechsel anhand der Kreuzung von MACD-Linie und Signal-Linie. Das Histogramm zeigt die Staerke des Signals.</p>
+  <div class="strat-indicators"><span>MACD Line</span><span>Signal Line</span><span>Histogramm</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> MACD kreuzt Signal von unten + Histogramm steigend</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> MACD kreuzt Signal von oben + Histogramm fallend</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> Kein klares Kreuzungssignal</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~13% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:13%;background:var(--blue)"></div></div>
+</div>
+
+<!-- Strategy 4: Bollinger Bands -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#4</span>
+      <h2 style="margin:8px 0 0;display:inline">Bollinger Bands Mean Reversion</h2>
+    </div>
+    <span class="strat-badge badge-volatility">VOLATILITAET</span>
+  </div>
+  <p>Nutzt Bollinger Baender (20-Perioden SMA &plusmn; 2 Standardabweichungen) fuer Mean-Reversion Signale. Besonders effektiv bei hoher Volatilitaet.</p>
+  <div class="strat-indicators"><span>BB Upper</span><span>BB Middle</span><span>BB Lower</span><span>BB %B</span><span>BB Width</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> Preis beruehrt unteres Band (%B &lt; 0.1)</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> Preis beruehrt oberes Band (%B &gt; 0.9)</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> Preis im mittleren Bereich der Baender</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~10% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:10%;background:var(--amber)"></div></div>
+</div>
+
+<!-- Strategy 5: Volume Breakout -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#5</span>
+      <h2 style="margin:8px 0 0;display:inline">Volume Breakout</h2>
+    </div>
+    <span class="strat-badge badge-volume">VOLUME</span>
+  </div>
+  <p>Erkennt ungewoehnliche Volumen-Spitzen als Vorboten von Preisbewegungen. Ein Volumen-Ratio ueber 2.0 in Kombination mit Preisbewegung signalisiert einen Breakout.</p>
+  <div class="strat-indicators"><span>Volume Ratio</span><span>Volume SMA 20</span><span>Price Change %</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> Volume Ratio &gt; 2.0 + Preis steigt &gt; 1%</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> Volume Ratio &gt; 2.0 + Preis faellt &gt; 1%</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> Volumen im normalen Bereich</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~9% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:9%;background:#8b5cf6"></div></div>
+</div>
+
+<!-- Strategy 6: OBV -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#6</span>
+      <h2 style="margin:8px 0 0;display:inline">On-Balance Volume (OBV)</h2>
+    </div>
+    <span class="strat-badge badge-volume">VOLUME</span>
+  </div>
+  <p>OBV kumuliert das Volumen basierend auf der Preisrichtung. Divergenzen zwischen OBV-Trend und Preistrend zeigen bevorstehende Trendwechsel an.</p>
+  <div class="strat-indicators"><span>OBV</span><span>OBV EMA 21</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> OBV steigt waehrend Preis seitwaerts/faellt (bullische Divergenz)</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> OBV faellt waehrend Preis steigt (baerische Divergenz)</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> OBV und Preis bewegen sich gleichgerichtet</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~8% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:8%;background:#8b5cf6"></div></div>
+</div>
+
+<!-- Strategy 7: ROC -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#7</span>
+      <h2 style="margin:8px 0 0;display:inline">Rate of Change (ROC)</h2>
+    </div>
+    <span class="strat-badge badge-momentum">MOMENTUM</span>
+  </div>
+  <p>Misst die prozentuale Preisveraenderung ueber N Perioden. Extreme Werte deuten auf Umkehrpunkte hin, moderate Werte bestaetigen den Trend.</p>
+  <div class="strat-indicators"><span>ROC 10</span><span>ROC 21</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> ROC positiv und steigend (beschleunigender Aufwaertstrend)</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> ROC negativ und fallend (beschleunigender Abwaertstrend)</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> ROC nahe Null oder unentschlossen</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~9% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:9%;background:var(--blue)"></div></div>
+</div>
+
+<!-- Strategy 8: Ichimoku -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#8</span>
+      <h2 style="margin:8px 0 0;display:inline">Ichimoku Cloud</h2>
+    </div>
+    <span class="strat-badge badge-trend">TREND</span>
+  </div>
+  <p>Das Ichimoku-System liefert auf einen Blick Informationen ueber Trend, Momentum, Support und Resistance. Die &bdquo;Cloud&ldquo; (Kumo) definiert die Trendrichtung.</p>
+  <div class="strat-indicators"><span>Tenkan-sen (9)</span><span>Kijun-sen (26)</span><span>Senkou Span A</span><span>Senkou Span B</span><span>Chikou Span</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> Preis ueber der Cloud + Tenkan &gt; Kijun</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> Preis unter der Cloud + Tenkan &lt; Kijun</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> Preis innerhalb der Cloud (Unsicherheit)</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~13% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:13%;background:var(--jade)"></div></div>
+</div>
+
+<!-- Strategy 9: VWAP -->
+<div class="strat-card">
+  <div class="strat-header">
+    <div>
+      <span class="strat-num">#9</span>
+      <h2 style="margin:8px 0 0;display:inline">VWAP (Volume Weighted Average Price)</h2>
+    </div>
+    <span class="strat-badge badge-trend">TREND</span>
+  </div>
+  <p>Der volumengewichtete Durchschnittspreis zeigt den &bdquo;fairen&ldquo; Preis basierend auf Volumen und Preis. Institutionelle Trader nutzen VWAP als Referenzpunkt.</p>
+  <div class="strat-indicators"><span>VWAP</span><span>VWAP Upper Band</span><span>VWAP Lower Band</span></div>
+  <div class="vote-logic">
+    <div class="vote-row"><span class="v-signal v-buy">BUY</span> Preis kreuzt VWAP von unten nach oben</div>
+    <div class="vote-row"><span class="v-signal v-sell">SELL</span> Preis kreuzt VWAP von oben nach unten</div>
+    <div class="vote-row"><span class="v-signal v-hold">HOLD</span> Preis nahe am VWAP (&plusmn;0.5%)</div>
+  </div>
+  <p style="margin:0"><strong>Gewichtung:</strong> ~12% im KI-Ensemble</p>
+  <div class="weight-bar"><div class="weight-bar-fill" style="width:12%;background:var(--jade)"></div></div>
+</div>
+
+</div>
+
+<!-- Footer -->
+<footer class="site-footer">
+  <div class="site-footer-inner">
+    <div class="site-footer-brand">
+      <div class="footer-logo">TREV<em>LIX</em></div>
+      <p class="footer-desc">Algorithmic Trading Intelligence</p>
+      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+    </div>
+    <div class="site-footer-links">
+      <div><h4>Produkt</h4><a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html">Dashboard</a></div>
+      <div><h4>Ressourcen</h4><a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
+    </div>
+    <div class="site-footer-right">
+      <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
+        Star on GitHub
+      </a>
+    </div>
+  </div>
+  <div class="site-footer-bottom">
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
+    <span>Paper Trading empfohlen</span>
+  </div>
+</footer>
+
+<button class="back-to-top" id="backToTop" onclick="window.scrollTo({top:0,behavior:'smooth'})">&uarr;</button>
+
+<script>
+const sn=document.getElementById('siteNav');
+window.addEventListener('scroll',()=>{sn.classList.toggle('scrolled',window.scrollY>60)});
+function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');mn.style.display=mn.style.display==='flex'?'none':'flex'}
+const btt=document.getElementById('backToTop');
+window.addEventListener('scroll',()=>{btt.classList.toggle('visible',window.scrollY>400)});
+</script>
+</body>
+</html>
