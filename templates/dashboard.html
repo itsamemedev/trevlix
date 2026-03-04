@@ -478,7 +478,7 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
     <a href="/logout" style="font-size:17px;text-decoration:none;opacity:.35" title="Abmelden">&#128682;</a>
   </div>
 </header>
-<div id="toasts"></div>
+<div id="toasts" aria-live="polite" aria-atomic="false" role="status"></div>
 <main>
 
 <!-- ══ HOME ══ -->
@@ -1367,8 +1367,11 @@ const clr=n=>n>=0?'var(--green)':'var(--red)';
 // ── Toast ────────────────────────────────────────────────────────────
 function toast(msg, type='info'){
   const c=document.getElementById('toasts');
+  /* [Verbesserung #39] Max 5 Toasts gleichzeitig anzeigen */
+  while(c.children.length >= 5){ c.removeChild(c.firstChild); }
   const t=document.createElement('div');
   t.className='toast '+type; t.textContent=msg;
+  t.setAttribute('role','alert');
   c.appendChild(t); setTimeout(()=>t.remove(),3700);
 }
 
