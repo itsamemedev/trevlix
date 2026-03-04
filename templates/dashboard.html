@@ -444,11 +444,11 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
       <div style="font-size:36px;margin-bottom:10px">⚙️</div>
       <div style="font-size:18px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_risk_profile">Risiko-Profil</span></div>
       <div style="display:grid;gap:8px;margin-bottom:14px">
-        <button onclick="wizPreset('conservative',this)" class="btn btn-teal"   style="padding:13px;justify-content:flex-start;gap:12px">🛡️ Konservativ – Wenig Risiko</button>
-        <button onclick="wizPreset('balanced',this)"     class="btn btn-info"   style="padding:13px;justify-content:flex-start;gap:12px">⚖️ Ausgewogen – Empfohlen</button>
-        <button onclick="wizPreset('aggressive',this)"   class="btn btn-purple" style="padding:13px;justify-content:flex-start;gap:12px">🚀 Aggressiv – Hohes Risiko</button>
+        <button onclick="wizPreset('conservative',this)" class="btn btn-teal"   style="padding:13px;justify-content:flex-start;gap:12px" data-i18n="wiz_conservative">🛡️ Konservativ – Wenig Risiko</button>
+        <button onclick="wizPreset('balanced',this)"     class="btn btn-info"   style="padding:13px;justify-content:flex-start;gap:12px" data-i18n="wiz_balanced">⚖️ Ausgewogen – Empfohlen</button>
+        <button onclick="wizPreset('aggressive',this)"   class="btn btn-purple" style="padding:13px;justify-content:flex-start;gap:12px" data-i18n="wiz_aggressive">🚀 Aggressiv – Hohes Risiko</button>
       </div>
-      <button class="save-btn" onclick="wizNext()">→ Weiter</button>
+      <button class="save-btn" onclick="wizNext()" data-i18n="wiz_next">→ Weiter</button>
     </div>
     <div class="wizard-step" id="wz4">
       <div style="font-size:44px;margin-bottom:12px">🎉</div>
@@ -1136,7 +1136,7 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
               </label>
             </div>
           </div>
-          <button class="btn btn-red" style="width:100%;padding:10px;font-size:13px" onclick="if(confirm('Bot wirklich stoppen?')) socket.emit('stop_bot')">🛑 Bot stoppen</button>
+          <button class="btn btn-red" style="width:100%;padding:10px;font-size:13px" onclick="if(confirm(QI18n.t('confirm_stop_bot'))) socket.emit('stop_bot')">🛑 <span data-i18n="btn_stop">Bot stoppen</span></button>
         </div>
       </div>
       <div class="card">
@@ -1519,7 +1519,7 @@ function updateFG(fg){
   const pct=v/100;
   document.getElementById('fgRing').style.background=`conic-gradient(${c} ${pct}turn,var(--bg3) ${pct}turn)`;
   document.getElementById('fgBar').style.cssText=`width:${v}%;background:${c}`;
-  document.getElementById('fgSub').textContent=fg.ok_to_buy?'✅ Kaufen erlaubt':'🚫 Kauf blockiert';
+  document.getElementById('fgSub').textContent=fg.ok_to_buy?'✅ '+QI18n.t('buy_allowed_label'):'🚫 '+QI18n.t('buy_blocked_label');
   document.getElementById('fgSub').style.color=fg.ok_to_buy?'var(--green)':'var(--red)';
 }
 function updateCB(cb){
@@ -1566,7 +1566,7 @@ function updateGenetic(gen){
 
 function updatePositions(positions){
   const el=document.getElementById('posList');
-  if(!positions.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div>Keine offenen Positionen</div>';return;}
+  if(!positions.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div>'+QI18n.t('no_open_positions')+'</div>';return;}
   el.innerHTML=positions.map(p=>{
     const pos=p.pnl>=0,c=clr(p.pnl),isShort=p.trade_type==='short';
     const dcaBadge=p.dca_level>0?`<span class="badge-pill badge-dca">DCA lv${p.dca_level}</span>`:'';
@@ -1583,9 +1583,9 @@ function updatePositions(positions){
         <div style="text-align:right">
           <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${c}">${pos?'+':''}${fmt(p.pnl)}</div>
           <div style="font-size:11px;font-family:var(--mono);color:${c}">${fmtPct(p.pnl_pct||0)}</div>
-          <button onclick="closePos('${p.symbol}')" style="font-size:11px;padding:7px 10px">✕ Schließen</button>
+          <button onclick="closePos('${p.symbol}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
               <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${p.symbol}',${p.entry})">🎯 SL</button>
-              <button class="btn btn-teal" style="font-size:11px;padding:7px 10px;display:none"  style="margin-top:5px;padding:3px 9px;border-radius:5px;background:rgba(255,61,113,.15);border:1px solid rgba(255,61,113,.3);color:var(--red);font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font)">✕ Schließen</button>
+              <button class="btn btn-teal" style="font-size:11px;padding:7px 10px;display:none"  style="margin-top:5px;padding:3px 9px;border-radius:5px;background:rgba(255,61,113,.15);border:1px solid rgba(255,61,113,.3);color:var(--red);font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font)">✕ ${QI18n.t('close_label')}</button>
         </div>
       </div>
       <div class="pos-bot"><span>SL: ${(p.sl||0).toFixed(4)}</span><span>TP: ${(p.tp||0).toFixed(4)}</span><span>${fmt(p.invested||0,0)} USDT</span></div>
@@ -1605,7 +1605,7 @@ function renderTrades(trades,filter){
   if(filter==='short') fl=trades.filter(t=>t.trade_type==='short');
   if(filter==='dca')   fl=trades.filter(t=>t.dca_level>0);
   const el=document.getElementById('tradeLog');
-  if(!fl.length){el.innerHTML='<div class="empty"><div class="empty-ico">📋</div>Keine Trades</div>';return;}
+  if(!fl.length){el.innerHTML='<div class="empty"><div class="empty-ico">📋</div>'+QI18n.t('no_trades_yet')+'</div>';return;}
   el.innerHTML=fl.slice(0,80).map(t=>{
     const won=(t.pnl||0)>0,c=clr(t.pnl||0),isShort=t.trade_type==='short';
     const ns=t.news_score!==0?` 📰${(t.news_score||0)>=0?'+':''}${(t.news_score||0).toFixed(2)}`:'';
@@ -1703,7 +1703,7 @@ function updateAI(ai){
 
 function updateSignals(sigs){
   const el=document.getElementById('sigList');
-  if(!sigs.length){el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>Warte auf Signale...</div>';return;}
+  if(!sigs.length){el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>'+QI18n.t('waiting_for_signals')+'</div>';return;}
   document.getElementById('sigCount').textContent=sigs.length;
   el.innerHTML=sigs.slice(0,25).map(s=>{
     const nc=s.news_score>0.2?'var(--green)':s.news_score<-0.2?'var(--red)':'var(--sub)';
@@ -1916,7 +1916,7 @@ let _lastClosedSymbol = null;
 let _undoTimeout = null;
 
 function closePos(sym){
-  if(!confirm('Position '+sym+' schließen?')) return;
+  if(!confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) return;
   _lastClosedSymbol = sym;
   socket.emit('close_position',{symbol:sym});
   showUndoBar(sym);
@@ -1925,7 +1925,7 @@ function closePos(sym){
 function showUndoBar(sym){
   const bar = document.getElementById('undoBar');
   const msg = document.getElementById('undoMsg');
-  msg.textContent = sym + ' geschlossen';
+  msg.textContent = sym + ' closed';
   bar.style.display = 'flex';
   clearTimeout(_undoTimeout);
   _undoTimeout = setTimeout(()=>{ bar.style.display='none'; _lastClosedSymbol=null; }, 8000);
@@ -1937,14 +1937,14 @@ function undoClose(){
   document.getElementById('undoBar').style.display = 'none';
   clearTimeout(_undoTimeout);
   _lastClosedSymbol = null;
-  toast('↩ Schließen rückgängig — wird versucht','info');
+  toast('↩ Undo close — attempting','info');
 }
 // old closePos replaced above
-function _closePos_orig(sym){if(confirm(sym+' schließen?')) socket.emit('close_position',{symbol:sym});}
+function _closePos_orig(sym){if(confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) socket.emit('close_position',{symbol:sym});}
 function forceTrain(){socket.emit('force_train');toast('🧠 '+QI18n.t('ai_training')+'...','info');}
-function forceOptimize(){socket.emit('force_optimize');toast('🔬 Optimierung läuft...','info');}
-function forceGenetic(){socket.emit('force_genetic');toast('🧬 Genetischer Optimizer läuft...','info');}
-function resetAI(){if(confirm('KI-Daten zurücksetzen?')) socket.emit('reset_ai');}
+function forceOptimize(){socket.emit('force_optimize');toast('🔬 '+QI18n.t('toast_optimize'),'info');}
+function forceGenetic(){socket.emit('force_genetic');toast('🧬 '+QI18n.t('toast_genetic'),'info');}
+function resetAI(){if(confirm(QI18n.t('confirm_reset_ai'))) socket.emit('reset_ai');}
 function manualBackup(){socket.emit('manual_backup');}
 function sendReport(){socket.emit('send_daily_report');}
 function resetCB(){socket.emit('reset_circuit_breaker');}
@@ -2038,11 +2038,11 @@ function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).cl
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>b.style.borderColor='rgba(0,255,136,.2)');el.style.borderColor='var(--cyan)';wizEx=ex;document.getElementById('sExchange').value=ex;}
 function wizSaveKeys(){socket.emit('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
-function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();toast('🎉 TREVLIX ist bereit!','success');}
+function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();toast(QI18n.t('wiz_ready'),'success');}
 
 // ── Socket events ────────────────────────────────────────────────────
-socket.on('connect',()=>{addLog('Dashboard verbunden','success','system');toast('✅ '+QI18n.t('status_running'),'success');});
-socket.on('disconnect',()=>{addLog('Verbindung getrennt','error','system');toast('⚠️ '+QI18n.t('status_stopped'),'warning');});
+socket.on('connect',()=>{addLog(QI18n.t('dashboard_connected'),'success','system');toast('✅ '+QI18n.t('status_running'),'success');});
+socket.on('disconnect',()=>{addLog(QI18n.t('dashboard_disconnected'),'error','system');toast('⚠️ '+QI18n.t('status_stopped'),'warning');});
 socket.on('update', d=>{updateUI(d);});
 socket.on('ai_update', ai=>{updateAI(ai);});
 socket.on('genetic_update', g=>{
@@ -2055,14 +2055,14 @@ socket.on('status', d=>{
 });
 socket.on('trade', d=>{
   const won=(d.pnl||0)>=0;
-  const msg=d.type==='buy'?`🟢 Kauf ${d.symbol} @ ${d.price}`:
-    `${won?'✅':'❌'} Verkauf ${d.symbol} | ${fmtS(d.pnl||0)} USDT`;
+  const msg=d.type==='buy'?`🟢 ${QI18n.t('trade_buy')} ${d.symbol} @ ${d.price}`:
+    `${won?'✅':'❌'} ${QI18n.t('trade_sell')} ${d.symbol} | ${fmtS(d.pnl||0)} USDT`;
   addLog(msg, d.type==='buy'?'success':(won?'success':'error'), 'trade');
   toast(msg, d.type==='buy'?'success':(won?'success':'warning'));
 });
 socket.on('price_alert', d=>{
   toast(`🔔 Alert: ${d.symbol} @ ${d.price}`,'warning');
-  addLog(`🔔 Alert ausgelöst: ${d.symbol}`,'warning','system');
+  addLog(`🔔 ${QI18n.t('alert_triggered')}: ${d.symbol}`,'warning','system');
 });
 socket.on('backtest_result', d=>{
   document.getElementById('btBtn').disabled=false;
@@ -2089,16 +2089,16 @@ socket.on('backtest_result', d=>{
 
 // ── GitHub Updater ───────────────────────────────────────────────────
 function checkUpdate(){
-  toast('🔍 Prüfe GitHub...','info');
+  toast('🔍 '+QI18n.t('checking_github'),'info');
   socket.emit('check_update');
 }
 function applyUpdate(){
-  if(!confirm('Update installieren? Bot wird danach neu gestartet.')) return;
-  toast('⬆ Update wird installiert...','info');
+  if(!confirm(QI18n.t('confirm_install_update'))) return;
+  toast('⬆ '+QI18n.t('installing_update'),'info');
   socket.emit('apply_update');
 }
 function rollbackUpdate(){
-  if(!confirm('Rollback auf .bak Dateien?')) return;
+  if(!confirm(QI18n.t('confirm_rollback'))) return;
   socket.emit('rollback_update');
 }
 function renderUpdateStatus(d){
@@ -2403,7 +2403,7 @@ async function syncSharedModel() {
 }
 
 async function adminTrainGlobal() {
-  if (!confirm('Globales Training mit allen Nutzer-Samples starten?\nDas kann einige Minuten dauern.')) return;
+  if (!confirm(QI18n.t('confirm_global_train'))) return;
   try {
     const r = await fetch('/api/v1/ai/shared/train', {
       method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
@@ -2411,7 +2411,7 @@ async function adminTrainGlobal() {
     if (d.started) {
       toast(`🧠 Training gestartet: ${d.samples_total} Samples (${d.new_samples} neu)`, 'success');
     } else {
-      toast(d.error || 'Fehler', 'error');
+      toast(d.error || QI18n.t('toast_error'), 'error');
     }
   } catch(e) { toast('Training-Fehler', 'error'); }
 }
@@ -2566,7 +2566,7 @@ async function loadGrids() {
   } catch(e) { if(el) el.innerHTML = '<div style="font-size:12px;color:var(--red)">Fehler</div>'; }
 }
 async function deleteGrid(symbol) {
-  if (!confirm(`Grid ${symbol} löschen?`)) return;
+  if (!confirm(QI18n.t('confirm_delete_grid').replace('{sym}',symbol))) return;
   await fetch('/api/v1/grid/'+symbol, {
     method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
   loadGrids(); toast(`Grid ${symbol} gelöscht`, 'info');
@@ -2593,7 +2593,7 @@ async function saveTelegram() {
 async function saveIpWhitelist() {
   const raw = document.getElementById('ipWhitelist')?.value || '';
   const ips = raw.split('\n').map(l=>l.trim()).filter(Boolean);
-  if (!confirm(`${ips.length} IPs setzen? Falsche IPs können dich aussperren!`)) return;
+  if (!confirm(QI18n.t('confirm_set_ips').replace('{n}',ips.length))) return;
   const r = await fetch('/api/v1/admin/ip-whitelist', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({ips})
@@ -2623,7 +2623,7 @@ async function saveNewsFilter() {
     body: JSON.stringify({min_score: minScore, block_score: blockScore, require_positive: requirePositive})
   });
   const d = await r.json();
-  toast(d.success ? '✅ News-Filter gespeichert' : 'Fehler', d.success?'success':'error');
+  toast(d.success ? '✅ '+QI18n.t('toast_news_saved') : QI18n.t('toast_error'), d.success?'success':'error');
 }
 async function loadNewsFilter() {
   try {
@@ -2875,7 +2875,7 @@ async function adjustSL(symbol, entryPrice){
 // ── Web Push Notifications ──────────────────────────────────────────────────
 let _pushSub = null;
 async function requestPushPermission(){
-  if(!('Notification' in window)){ toast('Push nicht unterstützt','warning'); return; }
+  if(!('Notification' in window)){ toast(QI18n.t('toast_push_unsupported'),'warning'); return; }
   const perm = await Notification.requestPermission();
   if(perm === 'granted'){
     toast('🔔 Browser-Benachrichtigungen aktiviert','success');
@@ -3079,7 +3079,7 @@ function mexSaveKeys() {
 }
 
 function mexClosePos(exchange, symbol) {
-  if (!confirm(`Position ${symbol} auf ${exchange.toUpperCase()} schließen?`)) return;
+  if (!confirm(QI18n.t('confirm_close_exchange_pos').replace('{sym}',symbol).replace('{exc}',exchange.toUpperCase()))) return;
   socket.emit('close_exchange_position', {exchange, symbol});
 }
 
