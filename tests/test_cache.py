@@ -6,7 +6,6 @@ Tests für TTL, LRU-Eviction, Cache-Stats.
 
 import os
 import sys
-import time
 
 import numpy as np
 import pandas as pd
@@ -16,9 +15,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # Direkt laden ohne services/__init__.py (vermeidet cryptography-Abhängigkeit)
 import importlib.util
+
 _spec = importlib.util.spec_from_file_location(
     "indicator_cache",
-    os.path.join(os.path.dirname(__file__), "..", "services", "indicator_cache.py"))
+    os.path.join(os.path.dirname(__file__), "..", "services", "indicator_cache.py"),
+)
 _mod = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)  # type: ignore[union-attr]
 MAX_CACHE_SIZE = _mod.MAX_CACHE_SIZE

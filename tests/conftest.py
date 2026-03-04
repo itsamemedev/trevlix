@@ -35,21 +35,23 @@ def sample_ohlcv() -> pd.DataFrame:
 
     # Simulierter Preisverlauf (Random Walk)
     close = 30000 + np.cumsum(np.random.randn(n) * 100)
-    high  = close + np.abs(np.random.randn(n) * 50)
-    low   = close - np.abs(np.random.randn(n) * 50)
+    high = close + np.abs(np.random.randn(n) * 50)
+    low = close - np.abs(np.random.randn(n) * 50)
     open_ = close + np.random.randn(n) * 30
     volume = np.abs(np.random.randn(n) * 1000) + 500
 
     timestamps = pd.date_range("2025-01-01", periods=n, freq="1h")
 
-    return pd.DataFrame({
-        "timestamp": timestamps,
-        "open":   open_,
-        "high":   high,
-        "low":    low,
-        "close":  close,
-        "volume": volume,
-    })
+    return pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+        }
+    )
 
 
 @pytest.fixture
@@ -76,16 +78,16 @@ def sample_api_key() -> str:
 def sample_trade() -> dict:
     """Beispiel-Trade-Daten."""
     return {
-        "symbol":     "BTC/USDT",
-        "entry":      30000.0,
+        "symbol": "BTC/USDT",
+        "entry": 30000.0,
         "exit_price": 31500.0,
-        "qty":        0.1,
-        "pnl":        150.0,
-        "pnl_pct":    5.0,
-        "reason":     "EMA-Trend",
+        "qty": 0.1,
+        "pnl": 150.0,
+        "pnl_pct": 5.0,
+        "reason": "EMA-Trend",
         "confidence": 0.75,
-        "win_prob":   0.68,
-        "regime":     "bull",
+        "win_prob": 0.68,
+        "regime": "bull",
         "trade_type": "long",
     }
 

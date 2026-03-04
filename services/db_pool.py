@@ -33,6 +33,7 @@ log = logging.getLogger("DBPool")
 try:
     import pymysql
     import pymysql.cursors
+
     _PYMYSQL_AVAILABLE = True
 except ImportError:
     _PYMYSQL_AVAILABLE = False
@@ -93,17 +94,28 @@ class ConnectionPool:
         timeout:     Sekunden bis Timeout beim Warten auf Verbindung (Standard: 10)
     """
 
-    def __init__(self, host: str, port: int, user: str, password: str,
-                 database: str, pool_size: int = 5, timeout: int = 10):
+    def __init__(
+        self,
+        host: str,
+        port: int,
+        user: str,
+        password: str,
+        database: str,
+        pool_size: int = 5,
+        timeout: int = 10,
+    ):
         self._config = {
-            "host": host, "port": port, "user": user,
-            "password": password, "database": database,
+            "host": host,
+            "port": port,
+            "user": user,
+            "password": password,
+            "database": database,
             "charset": "utf8mb4",
             "cursorclass": pymysql.cursors.DictCursor if _PYMYSQL_AVAILABLE else None,
             "autocommit": True,
             "connect_timeout": 10,
-            "read_timeout": 30,       # [Verbesserung #23] Query-Timeout
-            "write_timeout": 30,      # [Verbesserung #23] Query-Timeout
+            "read_timeout": 30,  # [Verbesserung #23] Query-Timeout
+            "write_timeout": 30,  # [Verbesserung #23] Query-Timeout
         }
         self._pool_size = pool_size
         self._timeout = timeout
@@ -164,6 +176,7 @@ class ConnectionPool:
                 last_err = e
                 if attempt < retries:
                     import time as _time
+
                     _time.sleep(0.5 * (attempt + 1))  # Backoff: 0.5s, 1.0s
                     log.debug(f"Pool acquire retry {attempt + 1}/{retries}: {e}")
         raise last_err  # type: ignore[misc]

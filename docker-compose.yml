@@ -17,7 +17,7 @@ services:
     container_name: trevlix
     restart: unless-stopped
     ports:
-      - "${PORT:-5000}:5000"
+      - "127.0.0.1:${PORT:-5000}:5000"
     environment:
       # Exchange
       - EXCHANGE=${EXCHANGE:-cryptocom}
@@ -35,7 +35,7 @@ services:
       - JWT_SECRET=${JWT_SECRET:?JWT_SECRET muss in .env gesetzt sein}
       - SECRET_KEY=${SECRET_KEY:?SECRET_KEY muss in .env gesetzt sein}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:?ENCRYPTION_KEY muss in .env gesetzt sein}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:5000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://app.trevlix.dev}
       - SESSION_TIMEOUT_MIN=${SESSION_TIMEOUT_MIN:-30}
       # Features
       - PAPER_TRADING=${PAPER_TRADING:-true}

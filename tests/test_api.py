@@ -4,7 +4,6 @@ TREVLIX – Integration Tests für REST-API (Verbesserung #42)
 Tests für API-Endpunkte, Auth-Decorators, Health-Check.
 """
 
-import json
 import os
 import sys
 
@@ -25,6 +24,7 @@ def app_client():
 
     try:
         from server import app
+
         app.config["TESTING"] = True
         with app.test_client() as client:
             yield client
@@ -58,10 +58,14 @@ class TestAuthEndpoints:
         assert b"Anmelden" in resp.data or b"Login" in resp.data
 
     def test_login_post_invalid(self, app_client):
-        resp = app_client.post("/login", data={
-            "username": "nonexistent",
-            "password": "wrongpassword",
-        }, follow_redirects=False)
+        resp = app_client.post(
+            "/login",
+            data={
+                "username": "nonexistent",
+                "password": "wrongpassword",
+            },
+            follow_redirects=False,
+        )
         # Sollte zurück zu /login?err=1 redirecten
         assert resp.status_code in (302, 303)
 
@@ -84,8 +88,7 @@ class TestAPIAuth:
 
     def test_invalid_token_returns_401(self, app_client):
         """Ungültiger Bearer Token sollte 401 zurückgeben."""
-        resp = app_client.get("/api/v1/state",
-                              headers={"Authorization": "Bearer invalid-token"})
+        resp = app_client.get("/api/v1/state", headers={"Authorization": "Bearer invalid-token"})
         assert resp.status_code == 401
 
 
@@ -133,13 +136,18 @@ class TestPasswordPolicy:
         # Setze ALLOW_REGISTRATION temporär
         try:
             from server import CONFIG
+
             old_val = CONFIG.get("allow_registration", False)
             CONFIG["allow_registration"] = True
-            resp = app_client.post("/register", data={
-                "username": "testuser",
-                "password": "Short1",
-                "password2": "Short1",
-            }, follow_redirects=False)
+            resp = app_client.post(
+                "/register",
+                data={
+                    "username": "testuser",
+                    "password": "Short1",
+                    "password2": "Short1",
+                },
+                follow_redirects=False,
+            )
             assert resp.status_code in (302, 303)
             assert "err=" in resp.headers.get("Location", "")
             CONFIG["allow_registration"] = old_val

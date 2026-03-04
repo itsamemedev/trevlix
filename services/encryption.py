@@ -27,6 +27,7 @@ log = logging.getLogger("Encryption")
 
 try:
     from cryptography.fernet import Fernet
+
     _FERNET_AVAILABLE = True
 except ImportError:
     _FERNET_AVAILABLE = False
@@ -44,7 +45,7 @@ def _get_fernet() -> "Fernet | None":
         log.warning(
             "ENCRYPTION_KEY nicht gesetzt! Generiere temporären Key für diese Sitzung. "
             "Setze ENCRYPTION_KEY in .env für Produktion: "
-            "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
         # Temporärer Key (wird bei Neustart gewechselt → alte verschlüsselte Werte lesbar solange Session läuft)
         _get_fernet._temp_key = getattr(_get_fernet, "_temp_key", Fernet.generate_key())
@@ -56,6 +57,7 @@ def _get_fernet() -> "Fernet | None":
     except Exception:
         # Falls der Key kein gültiger Fernet-Key ist, versuche ihn zu hashen
         import hashlib
+
         derived = base64.urlsafe_b64encode(hashlib.sha256(key_str.encode()).digest())
         return Fernet(derived)
 
