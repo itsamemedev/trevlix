@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
+<script src="../static/js/page_i18n.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
@@ -42,7 +43,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </head>
 <body>
 
-<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+<a class="skip-link" href="#main-content" data-i18n="skip_to_content">Zum Inhalt springen</a>
 
 <nav class="site-nav" id="siteNav">
   <a class="site-nav-logo" href="index.html">
@@ -52,18 +53,18 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="site-nav-center">
     <a href="index.html">Home</a>
     <a href="index.html#features">Features</a>
-    <a href="strategies.html">Strategien</a>
-    <a href="api-docs.html">API</a>
-    <a href="INSTALLATION.html">Installation</a>
-    <a href="faq.html">FAQ</a>
-    <a href="dashboard.html">Dashboard</a>
+    <a href="strategies.html" data-i18n="nav_strategies">Strategien</a>
+    <a href="api-docs.html" data-i18n="nav_api">API</a>
+    <a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a>
+    <a href="faq.html" data-i18n="nav_faq">FAQ</a>
+    <a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a>
   </div>
   <div class="site-nav-right">
     <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       GitHub
     </a>
-    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <a class="site-nav-cta" href="INSTALLATION.html" data-i18n="nav_download">Download</a>
     <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
   </div>
 </nav>
@@ -80,28 +81,28 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <a href="index.html">Home</a> <span class="sep">/</span> <span>About</span>
 </div>
 
-<h1>Ueber TREVLIX</h1>
-<p class="subtitle">Open Source Algorithmic Trading Intelligence &mdash; von der Community, fuer die Community</p>
+<h1 data-i18n="about_h1">Über TREVLIX</h1>
+<p class="subtitle" data-i18n="about_subtitle">Open Source Algorithmic Trading Intelligence &mdash; von der Community, für die Community</p>
 
 <!-- Mission -->
-<h2>Mission</h2>
-<p>TREVLIX wurde entwickelt, um professionelle Krypto-Trading-Technologie fuer jeden zugaenglich zu machen. Waehrend kommerzielle Bots hunderte Euro pro Monat kosten, ist TREVLIX vollstaendig Open Source und kostenlos. Unser Ziel: Die beste selbst-gehostete Trading-KI, die staendig dazulernt.</p>
+<h2 data-i18n="about_mission">Mission</h2>
+<p data-i18n="about_mission_txt">TREVLIX wurde entwickelt, um professionelle Krypto-Trading-Technologie für jeden zugänglich zu machen. Während kommerzielle Bots hunderte Euro pro Monat kosten, ist TREVLIX vollständig Open Source und kostenlos. Unser Ziel: Die beste selbst-gehostete Trading-KI, die ständig dazulernt.</p>
 
 <!-- Stats -->
 <div class="stat-grid">
-  <div class="stat-box"><div class="stat-val">14</div><div class="stat-label">Module</div></div>
-  <div class="stat-box"><div class="stat-val">9</div><div class="stat-label">Strategien</div></div>
-  <div class="stat-box"><div class="stat-val">5</div><div class="stat-label">Exchanges</div></div>
-  <div class="stat-box"><div class="stat-val">31</div><div class="stat-label">KI-Features</div></div>
-  <div class="stat-box"><div class="stat-val">5</div><div class="stat-label">Sprachen</div></div>
-  <div class="stat-box"><div class="stat-val">100%</div><div class="stat-label">Open Source</div></div>
+  <div class="stat-box"><div class="stat-val">14</div><div class="stat-label" data-i18n="stat_modules">Module</div></div>
+  <div class="stat-box"><div class="stat-val">9</div><div class="stat-label" data-i18n="stat_strategies">Strategien</div></div>
+  <div class="stat-box"><div class="stat-val">5</div><div class="stat-label" data-i18n="stat_exchanges">Exchanges</div></div>
+  <div class="stat-box"><div class="stat-val">31</div><div class="stat-label" data-i18n="stat_ai_features">KI-Features</div></div>
+  <div class="stat-box"><div class="stat-val">5</div><div class="stat-label" data-i18n="stat_languages">Sprachen</div></div>
+  <div class="stat-box"><div class="stat-val">100%</div><div class="stat-label" data-i18n="stat_open_source">Open Source</div></div>
 </div>
 
 <!-- Tech Stack -->
-<h2>Technologie-Stack</h2>
-<p>TREVLIX nutzt moderne, bewaehrte Technologien fuer maximale Performance und Zuverlaessigkeit.</p>
+<h2 data-i18n="about_tech_stack">Technologie-Stack</h2>
+<p data-i18n="about_tech_desc">TREVLIX nutzt moderne, bewährte Technologien für maximale Performance und Zuverlässigkeit.</p>
 
-<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px">Backend</h3>
+<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px" data-i18n="about_backend">Backend</h3>
 <div class="tech-grid">
   <div class="tech-tag">Python 3.11</div>
   <div class="tech-tag">Flask 3.x</div>
@@ -113,7 +114,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="tech-tag">bcrypt</div>
 </div>
 
-<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px">KI / Machine Learning</h3>
+<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px" data-i18n="about_ai_ml">KI / Machine Learning</h3>
 <div class="tech-grid">
   <div class="tech-tag">scikit-learn</div>
   <div class="tech-tag">XGBoost</div>
@@ -125,7 +126,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="tech-tag">NumPy</div>
 </div>
 
-<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px">Infrastructure</h3>
+<h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:20px 0 10px" data-i18n="about_infra">Infrastructure</h3>
 <div class="tech-grid">
   <div class="tech-tag">Docker</div>
   <div class="tech-tag">Nginx</div>
@@ -134,32 +135,32 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </div>
 
 <!-- Contributing -->
-<h2>Mitmachen (Contributing)</h2>
-<p>TREVLIX lebt von der Community. Jeder Beitrag — ob Code, Dokumentation, Bugfixes oder Feature-Requests — ist willkommen!</p>
+<h2 data-i18n="about_contribute">Mitmachen (Contributing)</h2>
+<p data-i18n="about_contribute_txt">TREVLIX lebt von der Community. Jeder Beitrag — ob Code, Dokumentation, Bugfixes oder Feature-Requests — ist willkommen!</p>
 
 <div class="card">
-  <h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:0 0 12px">So kannst du beitragen:</h3>
+  <h3 style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin:0 0 12px" data-i18n="about_how_contribute">So kannst du beitragen:</h3>
   <ol style="padding-left:20px;display:flex;flex-direction:column;gap:6px">
-    <li style="font-size:13px;color:var(--dim)">Forke das Repository auf GitHub</li>
-    <li style="font-size:13px;color:var(--dim)">Erstelle einen Feature-Branch: <code>git checkout -b feat/mein-feature</code></li>
-    <li style="font-size:13px;color:var(--dim)">Schreibe Tests fuer deine Aenderungen</li>
-    <li style="font-size:13px;color:var(--dim)">Stelle sicher, dass <code>make test</code> und <code>make lint</code> bestehen</li>
-    <li style="font-size:13px;color:var(--dim)">Erstelle einen Pull Request mit ausfuehrlicher Beschreibung</li>
+    <li style="font-size:13px;color:var(--dim)" data-i18n="about_step1">Forke das Repository auf GitHub</li>
+    <li style="font-size:13px;color:var(--dim)" data-i18n-html="about_step2">Erstelle einen Feature-Branch: <code>git checkout -b feat/mein-feature</code></li>
+    <li style="font-size:13px;color:var(--dim)" data-i18n="about_step3">Schreibe Tests für deine Änderungen</li>
+    <li style="font-size:13px;color:var(--dim)" data-i18n-html="about_step4">Stelle sicher, dass <code>make test</code> und <code>make lint</code> bestehen</li>
+    <li style="font-size:13px;color:var(--dim)" data-i18n="about_step5">Erstelle einen Pull Request mit ausführlicher Beschreibung</li>
   </ol>
 </div>
 
-<pre><span class="c-cmt"># Repository klonen und einrichten</span>
+<pre><span class="c-cmt" data-i18n="about_comment_clone"># Repository klonen und einrichten</span>
 <span class="c-cmd">git clone</span> https://github.com/itsamemedev/Trevlix.git
 <span class="c-cmd">cd</span> Trevlix
 <span class="c-cmd">make install</span>
 <span class="c-cmd">make test</span></pre>
 
 <!-- License -->
-<h2>Lizenz</h2>
-<p>TREVLIX ist lizenziert unter der <strong>MIT License</strong>. Du darfst die Software frei nutzen, kopieren, modifizieren, zusammenfuegen, veroeffentlichen, verteilen, unterlizenzieren und/oder verkaufen &mdash; unter Beibehaltung des Copyright-Hinweises.</p>
+<h2 data-i18n="about_license">Lizenz</h2>
+<p data-i18n-html="about_license_txt">TREVLIX ist lizenziert unter der <strong>MIT License</strong>. Du darfst die Software frei nutzen, kopieren, modifizieren, zusammenfügen, veröffentlichen, verteilen, unterlizenzieren und/oder verkaufen &mdash; unter Beibehaltung des Copyright-Hinweises.</p>
 
 <!-- Links -->
-<h2>Links</h2>
+<h2 data-i18n="about_links">Links</h2>
 <div class="card">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
     <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="padding:8px 0;font-size:14px">GitHub Repository</a>
@@ -182,8 +183,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
       <div class="footer-version">v1.0.4 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
-      <div><h4>Produkt</h4><a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html">Dashboard</a></div>
-      <div><h4>Ressourcen</h4><a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
+      <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html" data-i18n="nav_home">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>
+      <div><h4 data-i18n="footer_resources">Ressourcen</h4><a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a><a href="faq.html" data-i18n="nav_faq">FAQ</a><a href="security.html" data-i18n="footer_security">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
     </div>
     <div class="site-footer-right">
       <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
@@ -193,8 +194,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     </div>
   </div>
   <div class="site-footer-bottom">
-    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
-    <span>Paper Trading empfohlen</span>
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; <span data-i18n="footer_copyright">Open Source, MIT Lizenz</span></span>
+    <span data-i18n="footer_paper">Paper Trading empfohlen</span>
   </div>
 </footer>
 

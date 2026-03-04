@@ -14,6 +14,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
 <script src="../static/js/trevlix_translations.js" defer></script>
+<script src="../static/js/page_i18n.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
@@ -53,7 +54,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </head>
 <body>
 
-<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+<a class="skip-link" href="#main-content" data-i18n="skip_to_content">Zum Inhalt springen</a>
 
 <!-- Site Navigation -->
 <nav class="site-nav" id="siteNav">
@@ -67,18 +68,18 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="site-nav-center">
     <a href="index.html">Home</a>
     <a href="index.html#features">Features</a>
-    <a href="strategies.html">Strategien</a>
-    <a href="api-docs.html" class="active">API</a>
-    <a href="INSTALLATION.html">Installation</a>
-    <a href="faq.html">FAQ</a>
-    <a href="dashboard.html">Dashboard</a>
+    <a href="strategies.html" data-i18n="nav_strategies">Strategien</a>
+    <a href="api-docs.html" class="active" data-i18n="nav_api">API</a>
+    <a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a>
+    <a href="faq.html" data-i18n="nav_faq">FAQ</a>
+    <a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a>
   </div>
   <div class="site-nav-right">
     <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       GitHub
     </a>
-    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <a class="site-nav-cta" href="INSTALLATION.html" data-i18n="nav_download">Download</a>
     <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
   </div>
 </nav>
@@ -104,8 +105,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <a href="index.html">Home</a> <span class="sep">/</span> <span>API Dokumentation</span>
 </div>
 
-<h1>REST API Dokumentation</h1>
-<p class="subtitle">Vollständige Referenz aller TREVLIX API-Endpunkte &mdash; v1.0.4</p>
+<h1 data-i18n="api_h1">API Dokumentation</h1>
+<p class="subtitle" data-i18n="api_subtitle">Vollständige REST API Referenz für TREVLIX v1.0.4. Alle Endpunkte erfordern JWT-Authentifizierung.</p>
 
 <div class="card info">
   <p><strong>Base-URL:</strong> <code>http://localhost:5000/api/v1</code></p>
@@ -305,18 +306,18 @@ socket.on(<span class="c-str">'trade_update'</span>, (trade) => {
     </div>
     <div class="site-footer-links">
       <div>
-        <h4>Produkt</h4>
-        <a href="index.html">Home</a>
-        <a href="index.html#features">Features</a>
-        <a href="strategies.html">Strategien</a>
+        <h4 data-i18n="footer_product">Produkt</h4>
+        <a href="index.html" data-i18n="nav_home">Home</a>
+        <a href="index.html#features" data-i18n="nav_features">Features</a>
+        <a href="strategies.html" data-i18n="nav_strategies">Strategien</a>
         <a href="api-docs.html">API Docs</a>
-        <a href="dashboard.html">Dashboard</a>
+        <a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a>
       </div>
       <div>
-        <h4>Ressourcen</h4>
-        <a href="INSTALLATION.html">Installation</a>
-        <a href="faq.html">FAQ</a>
-        <a href="security.html">Sicherheit</a>
+        <h4 data-i18n="footer_resources">Ressourcen</h4>
+        <a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a>
+        <a href="faq.html" data-i18n="nav_faq">FAQ</a>
+        <a href="security.html" data-i18n="footer_security">Sicherheit</a>
         <a href="changelog.html">Changelog</a>
         <a href="roadmap.html">Roadmap</a>
         <a href="about.html">About</a>
@@ -330,8 +331,8 @@ socket.on(<span class="c-str">'trade_update'</span>, (trade) => {
     </div>
   </div>
   <div class="site-footer-bottom">
-    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
-    <span>Paper Trading empfohlen</span>
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; <span data-i18n="footer_copyright">Open Source, MIT Lizenz</span></span>
+    <span data-i18n="footer_paper">Paper Trading empfohlen</span>
   </div>
 </footer>
 
