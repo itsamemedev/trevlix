@@ -12,6 +12,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
+<script src="../static/js/page_i18n.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
@@ -40,7 +41,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </head>
 <body>
 
-<a class="skip-link" href="#main-content">Zum Inhalt springen</a>
+<a class="skip-link" href="#main-content" data-i18n="skip_to_content">Zum Inhalt springen</a>
 
 <nav class="site-nav" id="siteNav">
   <a class="site-nav-logo" href="index.html">
@@ -50,18 +51,18 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="site-nav-center">
     <a href="index.html">Home</a>
     <a href="index.html#features">Features</a>
-    <a href="strategies.html">Strategien</a>
-    <a href="api-docs.html">API</a>
-    <a href="INSTALLATION.html">Installation</a>
-    <a href="faq.html" class="active">FAQ</a>
-    <a href="dashboard.html">Dashboard</a>
+    <a href="strategies.html" data-i18n="nav_strategies">Strategien</a>
+    <a href="api-docs.html" data-i18n="nav_api">API</a>
+    <a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a>
+    <a href="faq.html" class="active" data-i18n="nav_faq">FAQ</a>
+    <a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a>
   </div>
   <div class="site-nav-right">
     <a class="site-nav-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z"/></svg>
       GitHub
     </a>
-    <a class="site-nav-cta" href="INSTALLATION.html">Download</a>
+    <a class="site-nav-cta" href="INSTALLATION.html" data-i18n="nav_download">Download</a>
     <button class="site-nav-mobile-btn" onclick="toggleSiteNav()">&#9776;</button>
   </div>
 </nav>
@@ -78,108 +79,108 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <a href="index.html">Home</a> <span class="sep">/</span> <span>FAQ</span>
 </div>
 
-<h1>Haeufig gestellte Fragen</h1>
-<p class="subtitle">Antworten auf die wichtigsten Fragen rund um TREVLIX</p>
-<div class="faq-count">18 Fragen &middot; Klicke auf eine Frage zum Aufklappen</div>
+<h1 data-i18n="faq_h1">Häufig gestellte Fragen</h1>
+<p class="subtitle" data-i18n="faq_subtitle">Antworten auf die wichtigsten Fragen rund um TREVLIX</p>
+<div class="faq-count" data-i18n-html="faq_count">18 Fragen &middot; Klicke auf eine Frage zum Aufklappen</div>
 
-<h2>Allgemein</h2>
+<h2 data-i18n="faq_cat_general">Allgemein</h2>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Was ist TREVLIX? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>TREVLIX ist ein Open-Source Algorithmic Trading Bot fuer Kryptowaehrungen. Er nutzt ein 4-Modell KI-Ensemble mit 9 Voting-Strategien, um automatisch Kauf- und Verkaufsentscheidungen zu treffen.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q1">Was ist TREVLIX?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a1">TREVLIX ist ein Open-Source Algorithmic Trading Bot für Kryptowährungen. Er nutzt ein 4-Modell KI-Ensemble mit 9 Voting-Strategien, um automatisch Kauf- und Verkaufsentscheidungen zu treffen.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Ist TREVLIX kostenlos? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Ja, TREVLIX ist vollstaendig Open Source unter der MIT-Lizenz. Du kannst es kostenlos nutzen, modifizieren und weiterverbreiten. Es gibt keine versteckten Kosten oder Premium-Versionen.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q2">Ist TREVLIX kostenlos?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a2">Ja, TREVLIX ist vollständig Open Source unter der MIT-Lizenz. Du kannst es kostenlos nutzen, modifizieren und weiterverbreiten. Es gibt keine versteckten Kosten oder Premium-Versionen.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Welche Exchanges werden unterstuetzt? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Aktuell werden 5 Exchanges unterstuetzt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong> und <strong>KuCoin</strong>. Die Integration erfolgt ueber die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefuegt werden koennen.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q3">Welche Exchanges werden unterstützt?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a3">Aktuell werden 5 Exchanges unterstützt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong> und <strong>KuCoin</strong>. Die Integration erfolgt über die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefügt werden können.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Kann ich TREVLIX auf einem Raspberry Pi betreiben? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Ja! TREVLIX laeuft auf Raspberry Pi 4 (4GB+ RAM empfohlen). Die LSTM/TensorFlow-Komponente ist optional und kann bei begrenztem RAM deaktiviert werden. Das 3-Modell-Ensemble (ohne LSTM) laeuft problemlos auf dem Pi.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q4">Kann ich TREVLIX auf einem Raspberry Pi betreiben?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a4">Ja! TREVLIX läuft auf Raspberry Pi 4 (4GB+ RAM empfohlen). Die LSTM/TensorFlow-Komponente ist optional und kann bei begrenztem RAM deaktiviert werden. Das 3-Modell-Ensemble (ohne LSTM) läuft problemlos auf dem Pi.</p></div>
 </div>
 
-<h2>Trading & Strategie</h2>
+<h2 data-i18n="faq_cat_trading">Trading &amp; Strategie</h2>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wie funktioniert das Voting-System? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>9 technische Strategien (EMA, RSI, MACD, Bollinger, Volume, OBV, ROC, Ichimoku, VWAP) stimmen gleichzeitig ab. Jede gibt BUY, SELL oder HOLD. Ueberwiegt ein Signal den konfigurierbaren Schwellenwert (Standard: 5/9), wird ein Trade ausgefuehrt. Die KI gewichtet die Stimmen dynamisch basierend auf historischer Performance.</p></div>
-</div>
-
-<div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Was ist Paper Trading? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Paper Trading ist ein Simulationsmodus, der echten Handel nachahmt, aber kein echtes Geld einsetzt. Es ist <strong>dringend empfohlen</strong>, mindestens 30 Tage im Paper Trading Modus zu testen, bevor man mit echtem Geld handelt. Setze <code>PAPER_TRADING=true</code> in der <code>.env</code>-Datei.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q5">Wie funktioniert das Voting-System?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a5">9 technische Strategien stimmen gleichzeitig ab. Die KI gewichtet die Stimmen dynamisch basierend auf historischer Performance.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Kann TREVLIX auch Short-Selling? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Ja, auf Exchanges die Futures/Margin unterstuetzen (Binance Futures, Bybit). Der Bear-Regime KI-Modell ist speziell fuer Short-Positionen optimiert. Short-Selling wird nur aktiviert, wenn der Markt in einem Abwaertstrend ist und die KI eine hohe Konfidenz hat.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q6">Was ist Paper Trading?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a6">Paper Trading ist ein Simulationsmodus, der echten Handel nachahmt, aber kein echtes Geld einsetzt. Es ist <strong>dringend empfohlen</strong>, mindestens 30 Tage im Paper Trading Modus zu testen.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wie hoch ist die erwartete Rendite? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Renditen haengen stark von Marktbedingungen, Konfiguration und Exchange ab. TREVLIX gibt keine Renditeversprechen. In Backtests zeigen die Strategien typischerweise Win-Rates von 55-65%. <strong>Vergangene Performance garantiert keine zukuenftigen Ergebnisse.</strong> Starte immer mit Paper Trading!</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q7">Kann TREVLIX auch Short-Selling?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a7">Ja, auf Exchanges die Futures/Margin unterstützen (Binance Futures, Bybit). Der Bear-Regime KI-Modell ist speziell für Short-Positionen optimiert.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Was ist der Circuit Breaker? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Der Circuit Breaker ist ein Sicherheitsmechanismus, der den Handel automatisch pausiert, wenn zu viele aufeinanderfolgende Verluste auftreten oder das taegliche Verlustlimit erreicht wird. Er schuetzt vor unkontrollierten Verlusten in volatilen Maerkten und kann in den Einstellungen konfiguriert werden.</p></div>
-</div>
-
-<h2>KI & Machine Learning</h2>
-
-<div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wie lernt die KI? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Die KI lernt aus vergangenen Trades. Nach 30+ Trades beginnt das Training, danach wird nach jedem 5. Trade neu trainiert. Das System nutzt Walk-Forward Validation, um Overfitting zu vermeiden. Vier Modelle (Global, Bull-Regime, Bear-Regime, LSTM) bilden ein Ensemble fuer robustere Vorhersagen.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q8">Wie hoch ist die erwartete Rendite?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a8">Renditen hängen stark von Marktbedingungen, Konfiguration und Exchange ab. TREVLIX gibt keine Renditeversprechen. In Backtests zeigen die Strategien typischerweise Win-Rates von 55–65%. <strong>Vergangene Performance garantiert keine zukünftigen Ergebnisse.</strong> Starte immer mit Paper Trading!</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Brauche ich eine GPU fuer die KI? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Nein, die Modelle (Random Forest, XGBoost, LightGBM, CatBoost) laufen effizient auf CPU. Das optionale LSTM-Modell profitiert von einer GPU, ist aber auch ohne GPU nutzbar. Fuer die meisten Nutzer reicht ein Standard-Server oder Raspberry Pi 4.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q9">Was ist der Circuit Breaker?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a9">Der Circuit Breaker ist ein Sicherheitsmechanismus, der den Handel automatisch pausiert, wenn zu viele aufeinanderfolgende Verluste auftreten oder das tägliche Verlustlimit erreicht wird.</p></div>
+</div>
+
+<h2 data-i18n="faq_cat_ai">KI &amp; Machine Learning</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q10">Wie lernt die KI?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a10">Die KI lernt aus vergangenen Trades. Nach 30+ Trades beginnt das Training, danach wird nach jedem 5. Trade neu trainiert.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Was sind die 31 Features des ML-Modells? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Die Features umfassen: 7 Strategie-Votes, RSI normalisiert, Stochastic RSI, Bollinger %B und Width, MACD-Histogramm (Vorzeichen + Steigung), Volume Ratio, ATR%, EMA-Alignment, Preis vs. EMA21, ROC-10, Bull/Bear-Flag, Stunde (Sinus/Cosinus-codiert), Vote-Konsensus und die juengste Win-Rate der letzten 10 Trades.</p></div>
-</div>
-
-<h2>Installation & Betrieb</h2>
-
-<div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Welche Systemvoraussetzungen hat TREVLIX? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Python 3.9+ (empfohlen 3.11), MySQL 8.0+, 2 GB RAM (4 GB mit LSTM), Ubuntu 20.04+/Debian 11+/macOS/Windows (WSL). Docker wird fuer die einfachste Installation empfohlen.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q11">Brauche ich eine GPU für die KI?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a11">Nein, die Modelle (Random Forest, XGBoost, LightGBM, CatBoost) laufen effizient auf CPU. Das optionale LSTM-Modell profitiert von einer GPU, ist aber auch ohne GPU nutzbar.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wie update ich TREVLIX? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>TREVLIX hat ein eingebautes GitHub Auto-Update System. Im Dashboard kann ein Update mit einem Klick gestartet werden. Alternativ: <code>cd trevlix && git pull origin main</code>. Bei Docker: <code>docker compose pull && docker compose up -d</code>.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q12">Was sind die 31 Features des ML-Modells?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a12">Die Features umfassen: 7 Strategie-Votes, RSI normalisiert, Stochastic RSI, Bollinger %B und Width, MACD-Histogramm, Volume Ratio, ATR%, EMA-Alignment, Preis vs. EMA21, ROC-10, Bull/Bear-Flag und mehr.</p></div>
+</div>
+
+<h2 data-i18n="faq_cat_install">Installation &amp; Betrieb</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q13">Welche Systemvoraussetzungen hat TREVLIX?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a13">Python 3.9+ (empfohlen 3.11), MySQL 8.0+, 2 GB RAM (4 GB mit LSTM), Ubuntu 20.04+/Debian 11+/macOS/Windows (WSL). Docker wird für die einfachste Installation empfohlen.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wie sichere ich meine API-Keys? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>API-Keys werden automatisch mit Fernet-Verschluesselung in der Datenbank gespeichert. Setze <code>ENCRYPTION_KEY</code> in der <code>.env</code>-Datei (wird beim Setup generiert). Nutze IP-Whitelisting bei deiner Exchange und beschraenke die API-Berechtigungen auf das Minimum (nur Trading, kein Withdrawal).</p></div>
-</div>
-
-<h2>Sicherheit & Risiko</h2>
-
-<div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Ist TREVLIX sicher? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>TREVLIX implementiert umfangreiche Sicherheitsmassnahmen: JWT-Authentifizierung, 2FA/TOTP, bcrypt-Passwort-Hashing, Fernet-API-Key-Verschluesselung, Rate-Limiting, CORS-Schutz und IP-Whitelisting. Alle Aktionen werden im Audit-Log protokolliert. Fuer maximale Sicherheit nutze HTTPS via Nginx.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q14">Wie update ich TREVLIX?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a14">TREVLIX hat ein eingebautes GitHub Auto-Update System. Im Dashboard kann ein Update mit einem Klick gestartet werden.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Kann ich Geld verlieren? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p><strong>Ja.</strong> Krypto-Trading birgt immer Verlustrisiken. TREVLIX minimiert Risiken durch Circuit Breaker, Stop-Loss, und taegliche Verlustlimits — aber kein System kann Verluste vollstaendig verhindern. Investiere nur, was du dir leisten kannst zu verlieren. Starte immer mit Paper Trading!</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q15">Wie sichere ich meine API-Keys?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a15">API-Keys werden automatisch mit Fernet-Verschlüsselung in der Datenbank gespeichert.</p></div>
+</div>
+
+<h2 data-i18n="faq_cat_security">Sicherheit &amp; Risiko</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q16">Ist TREVLIX sicher?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n="faq_a16">TREVLIX implementiert umfangreiche Sicherheitsmaßnahmen: JWT-Authentifizierung, 2FA/TOTP, bcrypt-Passwort-Hashing, Fernet-API-Key-Verschlüsselung, Rate-Limiting, CORS-Schutz und IP-Whitelisting.</p></div>
 </div>
 
 <div class="faq-item">
-  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')">Wo bekomme ich Hilfe? <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>Bei Problemen oder Fragen: (1) Pruefe die <a href="INSTALLATION.html">Installationsanleitung</a>, (2) Erstelle ein <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a>, (3) Tritt dem Discord-Server bei. Fuer Sicherheitsprobleme nutze die verantwortungsvolle Offenlegung ueber GitHub Security Advisories.</p></div>
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q17">Kann ich Geld verlieren?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a17"><strong>Ja.</strong> Krypto-Trading birgt immer Verlustrisiken. TREVLIX minimiert Risiken durch Circuit Breaker, Stop-Loss, und tägliche Verlustlimits — aber kein System kann Verluste vollständig verhindern. Investiere nur, was du dir leisten kannst zu verlieren. Starte immer mit Paper Trading!</p></div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q18">Wo bekomme ich Hilfe?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p data-i18n-html="faq_a18">Bei Problemen oder Fragen: (1) Prüfe die <a href="INSTALLATION.html">Installationsanleitung</a>, (2) Erstelle ein <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a>, (3) Tritt dem Discord-Server bei.</p></div>
 </div>
 
 </div>
@@ -193,8 +194,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
       <div class="footer-version">v1.0.4 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
-      <div><h4>Produkt</h4><a href="index.html">Home</a><a href="strategies.html">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html">Dashboard</a></div>
-      <div><h4>Ressourcen</h4><a href="INSTALLATION.html">Installation</a><a href="faq.html">FAQ</a><a href="security.html">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
+      <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html" data-i18n="nav_home">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>
+      <div><h4 data-i18n="footer_resources">Ressourcen</h4><a href="INSTALLATION.html" data-i18n="nav_installation">Installation</a><a href="faq.html" data-i18n="nav_faq">FAQ</a><a href="security.html" data-i18n="footer_security">Sicherheit</a><a href="changelog.html">Changelog</a><a href="roadmap.html">Roadmap</a><a href="about.html">About</a></div>
     </div>
     <div class="site-footer-right">
       <a class="footer-gh" href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener">
@@ -204,8 +205,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     </div>
   </div>
   <div class="site-footer-bottom">
-    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; Open Source, MIT Lizenz</span>
-    <span>Paper Trading empfohlen</span>
+    <span>&copy; 2024&ndash;2026 TREVLIX &mdash; <span data-i18n="footer_copyright">Open Source, MIT Lizenz</span></span>
+    <span data-i18n="footer_paper">Paper Trading empfohlen</span>
   </div>
 </footer>
 
