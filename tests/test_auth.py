@@ -8,7 +8,6 @@ CSRF-Token, Security Headers.
 import os
 import re
 import sys
-import time
 
 import pytest
 
@@ -53,7 +52,7 @@ class TestBruteForceProtection:
     def test_rate_limit_function(self):
         """Login-Rate-Limiter blockiert nach 5 Versuchen."""
         try:
-            from server import _check_login_rate, _record_login_attempt, _login_attempts
+            from server import _check_login_rate, _login_attempts, _record_login_attempt
         except ImportError:
             pytest.skip("Server nicht importierbar")
 
@@ -79,9 +78,10 @@ class TestCSRFToken:
         """CSRF-Token wird pro Session generiert."""
         try:
             from server import app
+
             with app.test_request_context():
-                from flask import session
                 from server import _generate_csrf_token
+
                 token = _generate_csrf_token()
                 assert token is not None
                 assert len(token) == 64  # 32 bytes hex = 64 chars
@@ -98,6 +98,7 @@ class TestSessionTimeout:
         """Session-Timeout-Konfiguration existiert."""
         try:
             from server import _SESSION_TIMEOUT_MIN
+
             assert isinstance(_SESSION_TIMEOUT_MIN, int)
             assert _SESSION_TIMEOUT_MIN > 0
         except ImportError:
@@ -111,6 +112,7 @@ class TestSecureCookies:
         """SESSION_COOKIE_HTTPONLY ist gesetzt."""
         try:
             from server import app
+
             assert app.config.get("SESSION_COOKIE_HTTPONLY") is True
         except ImportError:
             pytest.skip("Server nicht importierbar")
@@ -119,6 +121,7 @@ class TestSecureCookies:
         """SESSION_COOKIE_SAMESITE ist auf Lax gesetzt."""
         try:
             from server import app
+
             assert app.config.get("SESSION_COOKIE_SAMESITE") == "Lax"
         except ImportError:
             pytest.skip("Server nicht importierbar")
@@ -129,10 +132,19 @@ class TestConfigSecurity:
 
     def test_sensitive_keys_excluded_from_backup(self):
         """Sensible Schlüssel werden nicht im Backup gespeichert."""
-        sensitive_keys = {"api_key", "secret", "mysql_pass", "admin_password",
-                          "jwt_secret", "short_api_key", "short_secret", "cryptopanic_token"}
+        sensitive_keys = {
+            "api_key",
+            "secret",
+            "mysql_pass",
+            "admin_password",
+            "jwt_secret",
+            "short_api_key",
+            "short_secret",
+            "cryptopanic_token",
+        }
         try:
             from server import CONFIG
+
             for key in sensitive_keys:
                 # Prüfe dass der Key in CONFIG existiert (wird im Backup ausgeschlossen)
                 assert key in CONFIG or True  # Einige können optional sein

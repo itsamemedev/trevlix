@@ -99,8 +99,7 @@ def cache_stats() -> dict[str, Any]:
     with _lock:
         now = time.monotonic()
         entries = len(_cache)
-        fresh = sum(1 for e in _cache.values()
-                    if (now - e["created"]) < CACHE_TTL_SECONDS)
+        fresh = sum(1 for e in _cache.values() if (now - e["created"]) < CACHE_TTL_SECONDS)
         return {
             "total_entries": entries,
             "fresh_entries": fresh,

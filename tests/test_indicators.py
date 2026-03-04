@@ -21,15 +21,21 @@ def make_ohlcv(n: int = 200, seed: int = 42) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     close = 100 + np.cumsum(rng.normal(0, 1, n))
     close = np.clip(close, 1, None)
-    high  = close * (1 + rng.uniform(0, 0.02, n))
-    low   = close * (1 - rng.uniform(0, 0.02, n))
+    high = close * (1 + rng.uniform(0, 0.02, n))
+    low = close * (1 - rng.uniform(0, 0.02, n))
     open_ = close * (1 + rng.normal(0, 0.005, n))
-    vol   = rng.uniform(1_000_000, 5_000_000, n)
+    vol = rng.uniform(1_000_000, 5_000_000, n)
     ts = pd.date_range("2024-01-01", periods=n, freq="1h")
-    return pd.DataFrame({
-        "open": open_, "high": high, "low": low,
-        "close": close, "volume": vol,
-    }, index=ts)
+    return pd.DataFrame(
+        {
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": vol,
+        },
+        index=ts,
+    )
 
 
 class TestComputeIndicators:
@@ -38,6 +44,7 @@ class TestComputeIndicators:
     def test_returns_dataframe(self):
         """compute_indicators soll einen DataFrame zurückgeben."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -46,6 +53,7 @@ class TestComputeIndicators:
     def test_requires_minimum_rows(self):
         """Weniger als 80 Zeilen → None."""
         from server import compute_indicators
+
         df = make_ohlcv(50)
         result = compute_indicators(df.copy())
         assert result is None
@@ -53,6 +61,7 @@ class TestComputeIndicators:
     def test_ema_columns_exist(self):
         """EMA-Spalten müssen vorhanden sein."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -62,6 +71,7 @@ class TestComputeIndicators:
     def test_rsi_in_range(self):
         """RSI muss zwischen 0 und 100 liegen."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -72,6 +82,7 @@ class TestComputeIndicators:
     def test_macd_columns_exist(self):
         """MACD-Spalten müssen vorhanden sein."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -81,6 +92,7 @@ class TestComputeIndicators:
     def test_bollinger_bands_consistent(self):
         """Bollinger Bands: upper >= sma20 >= lower."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -90,6 +102,7 @@ class TestComputeIndicators:
     def test_atr_positive(self):
         """ATR muss positiv sein."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -98,6 +111,7 @@ class TestComputeIndicators:
     def test_volume_ratio_positive(self):
         """Volumen-Verhältnis muss positiv sein."""
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -110,6 +124,7 @@ class TestStrategies:
 
     def _get_rows(self):
         from server import compute_indicators
+
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
         assert result is not None
@@ -117,30 +132,35 @@ class TestStrategies:
 
     def test_ema_trend_returns_valid_signal(self):
         from server import strat_ema_trend
+
         row, prev = self._get_rows()
         sig = strat_ema_trend(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_rsi_stoch_returns_valid_signal(self):
         from server import strat_rsi_stoch
+
         row, prev = self._get_rows()
         sig = strat_rsi_stoch(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_macd_returns_valid_signal(self):
         from server import strat_macd
+
         row, prev = self._get_rows()
         sig = strat_macd(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_bollinger_returns_valid_signal(self):
         from server import strat_boll
+
         row, prev = self._get_rows()
         sig = strat_boll(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_roc_returns_valid_signal(self):
         from server import strat_roc
+
         row, prev = self._get_rows()
         sig = strat_roc(row, prev)
         assert sig in (-1, 0, 1)
@@ -151,12 +171,14 @@ class TestIndicatorCache:
 
     def test_cache_miss_returns_none(self):
         from services.indicator_cache import get_cached, invalidate
+
         invalidate()
         result = get_cached("BTC/USDT", "2024-01-01 00:00:00")
         assert result is None
 
     def test_cache_stores_and_retrieves(self):
         from services.indicator_cache import get_cached, invalidate, set_cached
+
         invalidate()
         df = make_ohlcv(200)
         ts = "2024-01-01 12:00:00"
@@ -167,6 +189,7 @@ class TestIndicatorCache:
 
     def test_cache_miss_on_different_timestamp(self):
         from services.indicator_cache import get_cached, invalidate, set_cached
+
         invalidate()
         df = make_ohlcv(200)
         set_cached("BTC/USDT", "2024-01-01 12:00:00", df)
@@ -175,6 +198,7 @@ class TestIndicatorCache:
 
     def test_cache_invalidate_specific(self):
         from services.indicator_cache import get_cached, invalidate, set_cached
+
         invalidate()
         df = make_ohlcv(200)
         ts = "2024-01-01 12:00:00"
@@ -186,6 +210,7 @@ class TestIndicatorCache:
 
     def test_cache_stats(self):
         from services.indicator_cache import cache_stats, invalidate, set_cached
+
         invalidate()
         df = make_ohlcv(200)
         set_cached("SOL/USDT", "ts1", df)

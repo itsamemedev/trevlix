@@ -89,37 +89,45 @@ class TestSentimentAnalysis:
         assert count == 0
 
     def test_bullish_post_positive_score(self, client):
-        posts = [{
-            "title": "Bitcoin surge and rally to all-time high",
-            "votes": {"positive": 10, "negative": 1},
-        }]
+        posts = [
+            {
+                "title": "Bitcoin surge and rally to all-time high",
+                "votes": {"positive": 10, "negative": 1},
+            }
+        ]
         score, headline, count = client.analyze_sentiment(posts)
         assert score > 0
         assert count == 1
         assert "surge" in headline.lower()
 
     def test_bearish_post_negative_score(self, client):
-        posts = [{
-            "title": "Bitcoin crash and bear market collapse",
-            "votes": {"positive": 1, "negative": 10},
-        }]
+        posts = [
+            {
+                "title": "Bitcoin crash and bear market collapse",
+                "votes": {"positive": 1, "negative": 10},
+            }
+        ]
         score, headline, count = client.analyze_sentiment(posts)
         assert score < 0
         assert count == 1
 
     def test_neutral_post(self, client):
-        posts = [{
-            "title": "Bitcoin price update today",
-            "votes": {"positive": 5, "negative": 5},
-        }]
+        posts = [
+            {
+                "title": "Bitcoin price update today",
+                "votes": {"positive": 5, "negative": 5},
+            }
+        ]
         score, headline, count = client.analyze_sentiment(posts)
         assert -0.3 <= score <= 0.3
 
     def test_score_clamped_to_range(self, client):
-        posts = [{
-            "title": " ".join(BULLISH_WORDS),
-            "votes": {"positive": 100, "negative": 0},
-        }]
+        posts = [
+            {
+                "title": " ".join(BULLISH_WORDS),
+                "votes": {"positive": 100, "negative": 0},
+            }
+        ]
         score, _, _ = client.analyze_sentiment(posts)
         assert -1.0 <= score <= 1.0
 
@@ -134,10 +142,7 @@ class TestSentimentAnalysis:
         assert -0.5 <= score <= 0.5
 
     def test_max_10_posts_analyzed(self, client):
-        posts = [
-            {"title": f"Post {i}", "votes": {"positive": 1, "negative": 0}}
-            for i in range(20)
-        ]
+        posts = [{"title": f"Post {i}", "votes": {"positive": 1, "negative": 0}} for i in range(20)]
         # Should still work (only first 10 analyzed)
         score, _, count = client.analyze_sentiment(posts)
         assert count == 20  # Count is total posts
@@ -231,6 +236,7 @@ class TestFetchPosts:
     @patch("services.cryptopanic.requests.get")
     def test_fetch_posts_network_error(self, mock_get):
         import requests as req
+
         mock_get.side_effect = req.exceptions.ConnectionError("Network error")
 
         client = CryptoPanicClient(token="test-token")
@@ -248,7 +254,9 @@ class TestGetScore:
     def test_get_score_with_db_cache(self, mock_get):
         db_mock = MagicMock()
         db_mock.get_news.return_value = {
-            "score": 0.5, "headline": "Cached headline", "article_count": 3
+            "score": 0.5,
+            "headline": "Cached headline",
+            "article_count": 3,
         }
 
         client = CryptoPanicClient(token="test-token")

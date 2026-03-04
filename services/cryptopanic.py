@@ -19,15 +19,50 @@ log = logging.getLogger("trevlix.cryptopanic")
 
 # ── Sentiment-Wortlisten ─────────────────────────────────────────────────────
 BULLISH_WORDS: list[str] = [
-    "surge", "rally", "bull", "breakout", "all-time high", "adoption",
-    "partnership", "launch", "upgrade", "integration", "bullish", "buy",
-    "moon", "pump", "growth", "record", "positive", "gains", "rise", "soar",
+    "surge",
+    "rally",
+    "bull",
+    "breakout",
+    "all-time high",
+    "adoption",
+    "partnership",
+    "launch",
+    "upgrade",
+    "integration",
+    "bullish",
+    "buy",
+    "moon",
+    "pump",
+    "growth",
+    "record",
+    "positive",
+    "gains",
+    "rise",
+    "soar",
 ]
 
 BEARISH_WORDS: list[str] = [
-    "crash", "bear", "hack", "scam", "ban", "lawsuit", "fraud", "dump",
-    "sell", "plunge", "collapse", "regulation", "fear", "warning",
-    "risk", "attack", "breach", "loss", "decline", "fall", "drop",
+    "crash",
+    "bear",
+    "hack",
+    "scam",
+    "ban",
+    "lawsuit",
+    "fraud",
+    "dump",
+    "sell",
+    "plunge",
+    "collapse",
+    "regulation",
+    "fear",
+    "warning",
+    "risk",
+    "attack",
+    "breach",
+    "loss",
+    "decline",
+    "fall",
+    "drop",
 ]
 
 # CryptoPanic API v2 Basis-URL
@@ -69,8 +104,9 @@ class CryptoPanicClient:
             return False
         return (time.time() - self._cache[symbol]["ts"]) < CACHE_TTL
 
-    def fetch_posts(self, currency: str, filter_type: str = "hot",
-                    kind: str = "news", regions: str = "en") -> list:
+    def fetch_posts(
+        self, currency: str, filter_type: str = "hot", kind: str = "news", regions: str = "en"
+    ) -> list:
         """
         Holt Posts von der CryptoPanic API v2.
 
@@ -189,7 +225,10 @@ class CryptoPanicClient:
 
         # Caches aktualisieren
         self._cache[symbol] = {
-            "score": score, "headline": headline, "count": count, "ts": time.time()
+            "score": score,
+            "headline": headline,
+            "count": count,
+            "ts": time.time(),
         }
 
         if db:

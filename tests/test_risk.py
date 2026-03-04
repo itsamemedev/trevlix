@@ -18,6 +18,7 @@ class TestRiskManager:
     def _make_risk(self):
         """Erstellt RiskManager-Instanz mit Test-CONFIG."""
         import server
+
         # CONFIG für Tests anpassen
         server.CONFIG["max_daily_loss_pct"] = 0.05
         server.CONFIG["circuit_breaker_losses"] = 3
@@ -152,7 +153,7 @@ class TestPositionSizing:
         """DCA vergrößert Position jedes Level."""
         base_invest = 100.0
         dca_mult = 1.5
-        levels = [base_invest * (dca_mult ** i) for i in range(4)]
+        levels = [base_invest * (dca_mult**i) for i in range(4)]
         for i in range(len(levels) - 1):
             assert levels[i + 1] > levels[i], "DCA-Größe muss wachsen"
 

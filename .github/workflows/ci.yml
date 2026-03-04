@@ -43,8 +43,7 @@ jobs:
           SECRET_KEY: "test-flask-secret-key"
           ENCRYPTION_KEY: "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtb25seS0xMjM0"
           LANGUAGE: "de"
-        run: |
-          pytest tests/ -v --tb=short -x 2>&1 || true
+        run: pytest tests/ -v --tb=short -x
 
   coverage:
     name: Coverage
@@ -65,8 +64,7 @@ jobs:
           SECRET_KEY: "test-flask-secret-key"
           ENCRYPTION_KEY: "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtb25seS0xMjM0"
           LANGUAGE: "de"
-        run: |
-          pytest tests/ --cov=. --cov-report=term-missing --tb=short 2>&1 || true
+        run: pytest tests/ --cov=. --cov-report=term-missing --tb=short
 
   docker:
     name: Docker Build
