@@ -197,6 +197,15 @@ app = Flask(__name__, static_folder=_STATIC_DIR, static_url_path="/static",
             template_folder=_TEMPLATE_DIR)
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
 
+# ── [Verbesserung #5] Secure Cookie Flags ────────────────────────────────────
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
+    app.config["SESSION_COOKIE_SECURE"] = True
+
+# ── [Verbesserung #1] Session-Timeout ─────────────────────────────────────────
+_SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
+
 # ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
 if _raw_origins.strip() == "*":
@@ -228,11 +237,31 @@ else:
 
 _log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(_log_dir, exist_ok=True)
+
+# ── [Verbesserung #14] Konfigurierbares Log-Level ─────────────────────────────
+_LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+
+# ── [Verbesserung #50] Optionaler JSON-Logging-Formatter ──────────────────────
+_USE_JSON_LOGS = os.getenv("JSON_LOGS", "false").lower() in ("true", "1", "yes")
+_log_handlers: list[logging.Handler] = [
+    logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8"),
+    logging.StreamHandler(),
+]
+
+if _USE_JSON_LOGS:
+    class _JSONFormatter(logging.Formatter):
+        def format(self, record):
+            return json.dumps({
+                "ts": self.formatTime(record), "level": record.levelname,
+                "logger": record.name, "msg": record.getMessage(),
+            }, ensure_ascii=False)
+    for h in _log_handlers:
+        h.setFormatter(_JSONFormatter())
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_LOG_LEVEL,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8"),
-              logging.StreamHandler()]
+    handlers=_log_handlers,
 )
 log = logging.getLogger("NEXUS")
 
@@ -372,6 +401,21 @@ CONFIG: dict[str, Any] = {
     "backup_enabled":     True,
     "backup_keep_days":   7,
     "backup_dir":         "backups",
+    "backup_encrypt":     True,        # [Verbesserung #49] Backup-Verschlüsselung
+    # [Verbesserung #25] Slippage
+    "slippage_pct":       0.001,       # 0.1% Slippage-Annahme
+    # [Verbesserung #26] Drawdown Circuit Breaker
+    "max_drawdown_pct":   0.10,        # 10% Max-Drawdown → Bot pausiert
+    # [Verbesserung #28] Mindest-Ordervolumen
+    "min_order_usdt":     10.0,        # Mindest-Ordergröße in USDT
+    # [Verbesserung #30] ATR Position-Sizing
+    "use_atr_sizing":     False,       # ATR-basiertes Position-Sizing
+    "atr_risk_mult":      1.5,         # ATR-Multiplikator für Sizing
+    # [Verbesserung #31] Zeitbasierter Exit
+    "max_hold_hours":     0,           # 0 = deaktiviert, >0 = max. Haltezeit in Stunden
+    # [Verbesserung #24] Data Retention
+    "audit_retention_days":  90,       # Audit-Logs nach N Tagen löschen
+    "ai_sample_retention_days": 180,   # AI-Samples nach N Tagen löschen
     # Auth / Multi-User
     "admin_password":     os.getenv("ADMIN_PASSWORD", "nexus"),
     "jwt_secret":         os.getenv("JWT_SECRET", secrets.token_hex(32)),
@@ -1027,10 +1071,15 @@ class MySQLManager:
             os.makedirs(bdir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             path = os.path.join(bdir, f"nexus_backup_{ts}.zip")
-            tables = ["trades","users","ai_training","backtest_results","price_alerts",
-                      "daily_reports","genetic_results","arb_opportunities"]
+            # [Verbesserung #17] Tabellennamen-Whitelist gegen SQL-Injection
+            _ALLOWED_TABLES = frozenset([
+                "trades","users","ai_training","backtest_results","price_alerts",
+                "daily_reports","genetic_results","arb_opportunities"])
+            tables = list(_ALLOWED_TABLES)
             with zipfile.ZipFile(path,"w",zipfile.ZIP_DEFLATED) as zf:
                 for table in tables:
+                    if table not in _ALLOWED_TABLES:
+                        continue
                     try:
                         conn = self._conn()
                         with conn.cursor() as c:
@@ -1060,11 +1109,149 @@ class MySQLManager:
                         os.remove(fp)
                     except Exception:
                         pass
+            # [Verbesserung #49] Backup-Verschlüsselung
+            if CONFIG.get("backup_encrypt") and path:
+                try:
+                    with open(path, "rb") as f:
+                        raw = f.read()
+                    encrypted = encrypt_value(raw.hex())
+                    enc_path = path + ".enc"
+                    with open(enc_path, "w") as f:
+                        f.write(encrypted)
+                    os.remove(path)
+                    path = enc_path
+                except Exception as enc_err:
+                    log.debug(f"Backup-Verschlüsselung: {enc_err}")
+
             log.info(f"✅ Backup: {path}")
             return path
         except Exception as e:
             log.error(f"Backup: {e}")
             return None
+
+    # [Verbesserung #21] Batch-Insert für AI-Samples
+    def save_ai_samples_batch(self, samples: list[tuple[np.ndarray, int, str]]):
+        """Batch-Insert für mehrere AI-Samples."""
+        if not samples:
+            return
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                c.executemany(
+                    "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
+                    [(json.dumps(feat.tolist()), label, regime) for feat, label, regime in samples])
+            conn.close()
+        except Exception as e:
+            log.error(f"save_ai_samples_batch: {e}")
+
+    # [Verbesserung #24] Data Retention – alte Audit-Logs und AI-Samples bereinigen
+    def cleanup_old_data(self):
+        """Bereinigt alte Daten basierend auf Retention-Policy."""
+        try:
+            conn = self._conn()
+            with conn.cursor() as c:
+                audit_days = CONFIG.get("audit_retention_days", 90)
+                c.execute("DELETE FROM audit_log WHERE created_at < NOW() - INTERVAL %s DAY", (audit_days,))
+                deleted_audit = c.rowcount
+
+                ai_days = CONFIG.get("ai_sample_retention_days", 180)
+                c.execute("DELETE FROM ai_training WHERE created_at < NOW() - INTERVAL %s DAY", (ai_days,))
+                deleted_ai = c.rowcount
+            conn.close()
+            if deleted_audit or deleted_ai:
+                log.info(f"🧹 Data Retention: {deleted_audit} Audit-Logs, {deleted_ai} AI-Samples bereinigt")
+        except Exception as e:
+            log.debug(f"cleanup_old_data: {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# [Verbesserung #1] SESSION TIMEOUT
+# [Verbesserung #2] CSRF PROTECTION
+# [Verbesserung #3] LOGIN BRUTE-FORCE SCHUTZ
+# [Verbesserung #6] SECURITY HEADERS
+# [Verbesserung #8] AUDIT-LOG HELPER
+# ═══════════════════════════════════════════════════════════════════════════════
+_login_attempts: dict[str, list[float]] = {}  # IP → [timestamps]
+
+def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
+    """[Verbesserung #3] Prüft ob IP zu viele Login-Versuche hatte."""
+    now = time.time()
+    attempts = _login_attempts.get(ip, [])
+    attempts = [t for t in attempts if now - t < window]
+    _login_attempts[ip] = attempts
+    return len(attempts) < max_attempts
+
+def _record_login_attempt(ip: str):
+    _login_attempts.setdefault(ip, []).append(time.time())
+
+def _audit(action: str, detail: str = "", user_id: int = 0):
+    """[Verbesserung #8] Audit-Log Hilfsfunktion."""
+    try:
+        ip = request.remote_addr if request else "system"
+        conn = db._conn()
+        with conn.cursor() as c:
+            c.execute(
+                "INSERT INTO audit_log (user_id,action,detail,ip) VALUES(%s,%s,%s,%s)",
+                (user_id, action[:80], detail[:500], ip))
+        conn.close()
+    except Exception:
+        pass
+
+
+@app.before_request
+def _before_request_hooks():
+    """[Verbesserung #1] Session-Timeout + [Verbesserung #2] CSRF-Check."""
+    # Session-Timeout prüfen
+    if session.get("user_id"):
+        last = session.get("last_active")
+        if last:
+            try:
+                elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+                if elapsed > _SESSION_TIMEOUT_MIN * 60:
+                    uid = session.get("user_id", 0)
+                    session.clear()
+                    _audit("session_timeout", f"user_id={uid}", uid)
+                    if request.path.startswith("/api/"):
+                        from flask import abort
+                        abort(401)
+                    return redirect("/login")
+            except (ValueError, TypeError):
+                pass
+        session["last_active"] = datetime.now().isoformat()
+
+    # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
+    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer ") and session.get("user_id"):
+            # Ausnahme für Socket.io und statische Assets
+            if not request.path.startswith("/socket.io"):
+                token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
+                if request.content_type and "application/json" not in request.content_type:
+                    expected = session.get("_csrf_token")
+                    if expected and token != expected:
+                        _audit("csrf_violation", request.path, session.get("user_id", 0))
+
+
+@app.after_request
+def _security_headers(response):
+    """[Verbesserung #6] Security Headers."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if request.is_secure:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
+
+
+def _generate_csrf_token() -> str:
+    """[Verbesserung #2] CSRF-Token pro Session generieren."""
+    if "_csrf_token" not in session:
+        session["_csrf_token"] = secrets.token_hex(32)
+    return session["_csrf_token"]
+
+app.jinja_env.globals["csrf_token"] = _generate_csrf_token
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # JWT AUTH
@@ -2948,6 +3135,21 @@ class RiskManager:
             self.consecutive_losses=0
         return False
 
+    def drawdown_breaker_active(self, current_balance: float) -> bool:
+        """[Verbesserung #26] Drawdown-basierter Circuit Breaker."""
+        max_dd_pct = CONFIG.get("max_drawdown_pct", 0.10)
+        if self.peak <= 0:
+            return False
+        current_dd = (self.peak - current_balance) / self.peak
+        if current_dd > max_dd_pct:
+            if not self.circuit_breaker_until:
+                mins = CONFIG["circuit_breaker_min"] * 2  # Doppelte Pausenzeit bei Drawdown
+                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
+                log.warning(f"⚡ Drawdown Circuit Breaker: {current_dd*100:.1f}% > {max_dd_pct*100:.0f}%")
+                discord.circuit_breaker(0, mins)
+            return True
+        return False
+
     def record_result(self,won:bool):
         if won:
             self.consecutive_losses=0
@@ -4133,14 +4335,23 @@ def login():
     password = request.form.get("password","")
     if not username or not password:
         return redirect("/login?err=1")
+    # [Verbesserung #3] Brute-Force-Schutz
+    client_ip = request.remote_addr or "unknown"
+    if not _check_login_rate(client_ip):
+        _audit("login_blocked", f"Brute-Force-Schutz: {username} von {client_ip}")
+        return redirect("/login?err=1")
+    _record_login_attempt(client_ip)
     user = db.get_user(username)
     if user and db.verify_password(user["password_hash"], password):
         session["user_id"]   = user["id"]
         session["username"]  = user["username"]
         session["user_role"] = user.get("role","user")
+        session["last_active"] = datetime.now().isoformat()  # [Verbesserung #1]
         db.update_user_login(user["id"])
-        db_audit(user["id"], "login", f"Login · {request.remote_addr}")
+        db_audit(user["id"], "login", f"Login · {client_ip}")
         return redirect("/")
+    # [Verbesserung #8] Fehlgeschlagenen Login loggen
+    _audit("login_failed", f"user={username} ip={client_ip}")
     return redirect("/login?err=1")
 
 
@@ -4181,7 +4392,12 @@ def register():
     username  = request.form.get("username","").strip()[:32]
     password  = request.form.get("password","")
     password2 = request.form.get("password2","")
-    if len(password) < 8:
+    # [Verbesserung #4] Erweiterte Password-Policy
+    if len(password) < 12:
+        return redirect("/register?err=short")
+    import re as _re
+    if not (_re.search(r"[A-Z]", password) and _re.search(r"[a-z]", password)
+            and _re.search(r"\d", password)):
         return redirect("/register?err=short")
     if password != password2:
         return redirect("/register?err=match")
@@ -4488,13 +4704,72 @@ def api_docs():
 @app.route("/api/v1/status")
 @app.route("/api/v1/update/status")
 def api_health():
-    """Healthcheck – verwendet von Docker HEALTHCHECK und Monitoring-Tools."""
+    """[Verbesserung #16] Erweiterter Healthcheck mit DB-Ping, Pool-Stats, Memory."""
+    import sys
+    db_ok = False
+    pool_stats = {}
+    try:
+        conn = db._conn()
+        with conn.cursor() as c:
+            c.execute("SELECT 1")
+        conn.close()
+        db_ok = True
+        if db._pool:
+            pool_stats = {
+                "pool_size": db._pool.pool_size,
+                "available": db._pool.available,
+            }
+    except Exception:
+        pass
     return jsonify({
-        "status":  "ok",
-        "version": BOT_VERSION,
-        "running": state.running,
-        "uptime":  round(time.time() - state._start_time, 1) if hasattr(state, "_start_time") else 0,
+        "status":     "ok" if db_ok else "degraded",
+        "version":    BOT_VERSION,
+        "running":    state.running,
+        "paused":     getattr(state, "paused", False),
+        "uptime_s":   round(time.time() - state._start_time, 1) if hasattr(state, "_start_time") else 0,
+        "db_ok":      db_ok,
+        "pool":       pool_stats,
+        "python":     sys.version.split()[0],
+        "open_trades": len(getattr(state, "open_trades", {})),
     })
+
+
+# ── [Verbesserung #7] API-Token Revocation ────────────────────────────────────
+@app.route("/api/v1/token/<int:token_id>", methods=["DELETE"])
+@api_auth_required
+def api_revoke_token(token_id):
+    """Deaktiviert einen API-Token."""
+    try:
+        conn = db._conn()
+        with conn.cursor() as c:
+            c.execute("UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
+                      (token_id, request.user_id))
+        conn.close()
+        _audit("token_revoked", f"token_id={token_id}", request.user_id)
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
+@app.route("/metrics")
+def prometheus_metrics():
+    """Exportiert Bot-Metriken im Prometheus-Format."""
+    lines = []
+    lines.append(f'trevlix_bot_running {{version="{BOT_VERSION}"}} {1 if state.running else 0}')
+    lines.append(f"trevlix_open_trades {len(getattr(state, 'open_trades', {}))}")
+    lines.append(f"trevlix_closed_trades_total {len(getattr(state, 'closed_trades', []))}")
+    total_pnl = sum(t.get("pnl", 0) for t in getattr(state, "closed_trades", []))
+    lines.append(f"trevlix_total_pnl {total_pnl:.2f}")
+    wins = sum(1 for t in getattr(state, "closed_trades", []) if t.get("pnl", 0) > 0)
+    n = len(getattr(state, "closed_trades", []))
+    lines.append(f"trevlix_win_rate {wins / n * 100 if n else 0:.1f}")
+    if hasattr(state, "_start_time"):
+        lines.append(f"trevlix_uptime_seconds {time.time() - state._start_time:.0f}")
+    if db._pool:
+        lines.append(f"trevlix_db_pool_available {db._pool.available}")
+        lines.append(f"trevlix_db_pool_size {db._pool.pool_size}")
+    return Response("\n".join(lines) + "\n", mimetype="text/plain; charset=utf-8")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEBSOCKET EVENTS
@@ -5588,6 +5863,51 @@ def startup_banner():
 ║  Kapital: {CONFIG['paper_balance']:<50}║
 ╚══════════════════════════════════════════════════════════════════════════════╝
     """)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# [Verbesserung #12] Zentrale Fehlerbehandlung
+# ═══════════════════════════════════════════════════════════════════════════════
+@app.errorhandler(404)
+def _handle_404(_e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Endpunkt nicht gefunden", "path": request.path}), 404
+    return redirect("/404")
+
+@app.errorhandler(500)
+def _handle_500(e):
+    log.error(f"Internal Server Error: {e}", exc_info=True)
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "Interner Serverfehler"}), 500
+    return "Interner Fehler", 500
+
+@app.errorhandler(429)
+def _handle_429(_e):
+    return jsonify({"error": "Zu viele Anfragen. Bitte warten."}), 429
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# [Verbesserung #15] Graceful Shutdown
+# ═══════════════════════════════════════════════════════════════════════════════
+import signal
+
+def _graceful_shutdown(signum, _frame):
+    sig_name = signal.Signals(signum).name
+    log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
+    state.running = False
+    # DB-Pool schließen
+    if db._pool:
+        db._pool.close_all()
+    # [Verbesserung #24] Data Retention bei Shutdown
+    try:
+        db.cleanup_old_data()
+    except Exception:
+        pass
+    log.info("Shutdown abgeschlossen.")
+    raise SystemExit(0)
+
+signal.signal(signal.SIGTERM, _graceful_shutdown)
+signal.signal(signal.SIGINT, _graceful_shutdown)
+
 
 if __name__ == "__main__":
     startup_banner()

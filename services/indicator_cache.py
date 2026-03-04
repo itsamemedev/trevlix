@@ -25,6 +25,9 @@ _lock = threading.Lock()
 # Cache-Lebensdauer in Sekunden – nach dieser Zeit wird immer neu berechnet
 CACHE_TTL_SECONDS = 55  # Etwas unter dem Standard-Scan-Interval von 60s
 
+# [Verbesserung #20] LRU-Eviction: Maximale Anzahl Cache-Einträge
+MAX_CACHE_SIZE = 200
+
 
 def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
     """
@@ -71,6 +74,10 @@ def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
             "last_ts": ts_str,
             "created": time.monotonic(),
         }
+        # [Verbesserung #20] LRU-Eviction: älteste Einträge entfernen
+        if len(_cache) > MAX_CACHE_SIZE:
+            oldest_key = min(_cache, key=lambda k: _cache[k]["created"])
+            _cache.pop(oldest_key, None)
 
 
 def invalidate(symbol: str | None = None) -> None:

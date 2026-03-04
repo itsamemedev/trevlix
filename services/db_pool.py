@@ -102,6 +102,8 @@ class ConnectionPool:
             "cursorclass": pymysql.cursors.DictCursor if _PYMYSQL_AVAILABLE else None,
             "autocommit": True,
             "connect_timeout": 10,
+            "read_timeout": 30,       # [Verbesserung #23] Query-Timeout
+            "write_timeout": 30,      # [Verbesserung #23] Query-Timeout
         }
         self._pool_size = pool_size
         self._timeout = timeout
@@ -132,29 +134,39 @@ class ConnectionPool:
         except Exception:
             return False
 
-    def acquire(self) -> "_PooledConnection":
+    def acquire(self, retries: int = 2) -> "_PooledConnection":
         """
         Gibt eine Verbindung aus dem Pool zurück, eingewickelt in _PooledConnection.
         Wartet bis zu self._timeout Sekunden auf eine freie Verbindung.
         Durch _PooledConnection wird conn.close() transparent an release() geleitet.
+        [Verbesserung #22] Retry-Logic mit Backoff.
         """
-        if not self._semaphore.acquire(timeout=self._timeout):
-            raise TimeoutError("Kein freier DB-Connection-Slot im Timeout")
+        last_err = None
+        for attempt in range(retries + 1):
+            try:
+                if not self._semaphore.acquire(timeout=self._timeout):
+                    raise TimeoutError("Kein freier DB-Connection-Slot im Timeout")
 
-        with self._lock:
-            # Gesunde Verbindung aus Pool nehmen
-            while self._pool:
-                conn = self._pool.pop()
-                if self._is_alive(conn):
+                with self._lock:
+                    while self._pool:
+                        conn = self._pool.pop()
+                        if self._is_alive(conn):
+                            return _PooledConnection(conn, self)
+
+                # Pool leer → neue Verbindung erstellen
+                try:
+                    conn = self._create_connection()
                     return _PooledConnection(conn, self)
-
-        # Pool leer → neue Verbindung erstellen
-        try:
-            conn = self._create_connection()
-            return _PooledConnection(conn, self)
-        except Exception as e:
-            self._semaphore.release()
-            raise e
+                except Exception as e:
+                    self._semaphore.release()
+                    raise e
+            except Exception as e:
+                last_err = e
+                if attempt < retries:
+                    import time as _time
+                    _time.sleep(0.5 * (attempt + 1))  # Backoff: 0.5s, 1.0s
+                    log.debug(f"Pool acquire retry {attempt + 1}/{retries}: {e}")
+        raise last_err  # type: ignore[misc]
 
     def release(self, conn) -> None:
         """Gibt eine Verbindung zurück in den Pool."""
