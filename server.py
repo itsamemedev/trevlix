@@ -222,7 +222,7 @@ if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
 _SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
 
 # ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
+_raw_origins = os.getenv("ALLOWED_ORIGINS", "https://app.trevlix.dev")
 if _raw_origins.strip() == "*":
     _allowed_origins: Any = "*"
     _flask_cors_origins: Any = "*"
@@ -446,7 +446,7 @@ CONFIG: dict[str, Any] = {
     "audit_retention_days": 90,  # Audit-Logs nach N Tagen löschen
     "ai_sample_retention_days": 180,  # AI-Samples nach N Tagen löschen
     # Auth / Multi-User
-    "admin_password": os.getenv("ADMIN_PASSWORD", "nexus"),
+    "admin_password": os.getenv("ADMIN_PASSWORD", ""),
     "jwt_secret": os.getenv("JWT_SECRET", secrets.token_hex(32)),
     "jwt_expiry_hours": 24,
     "multi_user": True,
