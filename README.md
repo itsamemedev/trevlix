@@ -9,11 +9,13 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Trading Intelligence — v1.0.4**
+**Algorithmic Trading Intelligence — v1.0.5**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
+[![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.5-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -24,15 +26,25 @@
 - **Multi-Exchange Support** — Crypto.com, Binance, Bybit, OKX, KuCoin simultaneously
 - **14+ AI Modules** — XGBoost, LightGBM, CatBoost, LSTM, Transformer, Random Forest
 - **9 Voting Strategies** — EMA Trend, RSI+Stochastic, MACD, Bollinger, Volume, OBV, ROC, Ichimoku, VWAP
+- **Real-time Dashboard** — WebSocket-powered live UI with Socket.io
 - **Grid Trading** — Automated grid strategies with configurable levels
 - **Monte-Carlo Risk Analysis** — Portfolio simulations with VaR calculation
 - **Circuit Breaker** — Automatic trading pause after consecutive losses
+- **Telegram Notifications** — Real-time alerts for all trades
+- **Discord Integration** — Webhooks with daily reports
+- **Audit Log** — Full action history with timestamps
+- **Break-Even Stop-Loss** — Automatic SL adjustment after profit
+- **Symbol Cooldown** — Locks symbols after a loss
+- **IP Whitelist** — Access control by IP address
+- **News Sentiment Filter** — Blocks trades on negative news
+- **Funding Rate Filter** — Avoids expensive short positions
 - **Paper Trading** — Risk-free testing without real capital
 - **Copy Trading** — Followers receive all signals in real time
 - **Multi-User System** — Multiple portfolios on a single instance, each with their own API keys
 - **2FA** — Two-factor authentication (TOTP)
 - **5 Languages** — DE, EN, ES, RU, PT
 - **Full REST API** — JWT-authenticated API with WebSocket real-time updates
+- **GitHub Updater** — In-dashboard one-click update & rollback
 
 ---
 
@@ -79,17 +91,23 @@ EXCHANGE=cryptocom
 API_KEY=your_api_key
 API_SECRET=your_secret
 
-# Multi-Exchange (optional)
-BINANCE_ENABLED=true
-BINANCE_API_KEY=...
-BINANCE_SECRET=...
-
 # Security
-ADMIN_PASSWORD=secure_password
-JWT_SECRET=random_string
+ADMIN_PASSWORD=secure_password_min_12_chars
+JWT_SECRET=random_hex_string_32chars
+SECRET_KEY=random_hex_string_32chars
+ENCRYPTION_KEY=fernet_key  # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# CORS (optional — default allows all origins)
+# For production, restrict to your domain:
+# ALLOWED_ORIGINS=https://yourdomain.com,http://localhost:5000
 
 # Trading
 PAPER_TRADING=true   # Always start in paper mode first!
+
+# Notifications (optional)
+DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
+TELEGRAM_TOKEN=your_bot_token
+TELEGRAM_CHAT_ID=your_chat_id
 ```
 
 Full guide: [INSTALLATION.html](INSTALLATION.html)
@@ -111,7 +129,7 @@ TREVLIX comes with a complete documentation website. All pages are interlinked w
 | **API Docs** | `api-docs.html` | Complete REST API reference with examples |
 | **FAQ** | `faq.html` | 18 frequently asked questions with answers |
 | **Security** | `security.html` | Security hardening guide and best practices |
-| **Changelog** | `changelog.html` | Visual release history (v1.0.0 — v1.0.4) |
+| **Changelog** | `changelog.html` | Visual release history (v1.0.0 — v1.0.5) |
 | **Roadmap** | `roadmap.html` | Planned features and development phases |
 | **About** | `about.html` | Project info, tech stack, and contributing guide |
 | **404** | `404.html` | Custom error page with navigation |
@@ -143,7 +161,7 @@ TREVLIX comes with a complete documentation website. All pages are interlinked w
 
 ```
 trevlix/
-├── server.py                  # Flask + WebSocket Backend (5000+ lines)
+├── server.py                  # Flask + WebSocket Backend (6200+ lines)
 ├── ai_engine.py               # AI Engine (XGBoost, LSTM, ...)
 ├── trevlix_i18n.py            # Internationalization (Python)
 ├── trevlix_translations.js    # Internationalization (JS)
@@ -201,9 +219,45 @@ trevlix/
 
 ---
 
+## WebSocket / Dashboard API
+
+The dashboard communicates with the server exclusively via Socket.io. All commands are sent as events:
+
+| Event | Direction | Description |
+|-------|-----------|-------------|
+| `start_bot` / `stop_bot` / `pause_bot` | Client → Server | Bot control |
+| `update_config` | Client → Server | Save settings |
+| `save_api_keys` | Client → Server | Store encrypted exchange keys |
+| `close_position` | Client → Server | Manually close a trade |
+| `run_backtest` | Client → Server | Start backtest |
+| `force_train` / `force_optimize` | Client → Server | Trigger AI training |
+| `check_update` / `apply_update` / `rollback_update` | Client → Server | GitHub updater |
+| `start_exchange` / `stop_exchange` | Client → Server | Multi-exchange control |
+| `save_exchange_keys` | Client → Server | Save per-exchange API keys |
+| `scan_arbitrage` | Client → Server | Find price spreads |
+| `create_grid` | Client → Server | Create grid strategy |
+| `update` | Server → Client | Full state snapshot |
+| `status` | Server → Client | Toast notification |
+| `trade` | Server → Client | Trade executed |
+| `ai_update` | Server → Client | AI model update |
+| `backtest_result` | Server → Client | Backtest completed |
+| `price_alert` | Server → Client | Price alert triggered |
+| `update_status` | Server → Client | GitHub update info |
+
+---
+
 ## Multi-User & API Keys
 
 Each registered user stores their own exchange API keys in the database (Fernet-encrypted). The bot runs trades for each user using their personal credentials — no shared keys, full separation. An admin can manage users and global bot configuration via the admin panel.
+
+---
+
+## Security Notes
+
+- **CORS**: By default `ALLOWED_ORIGINS=*` (all origins allowed) for easy local setup. **Set a specific origin in production** via `.env`.
+- **Session auth**: Dashboard requires login. WebSocket connections are rejected if not authenticated.
+- **Admin-only**: Sensitive actions (apply update, manage users, exchange keys) require `role=admin`.
+- **Encryption**: All API keys are Fernet-encrypted before storage.
 
 ---
 

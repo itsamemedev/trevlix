@@ -8,7 +8,7 @@ flask>=3.0.0,<4.0.0
 flask-socketio>=5.3.6,<6.0.0
 flask-cors>=4.0.0,<5.0.0
 flask-limiter>=3.5.0,<4.0.0
-eventlet>=0.35.0,<1.0.0
+# eventlet entfernt: Server nutzt async_mode="threading" + Werkzeug (allow_unsafe_werkzeug=True)
 
 # ── Exchange Connectivity ──────────────────────────────────────
 ccxt>=4.2.0,<5.0.0
