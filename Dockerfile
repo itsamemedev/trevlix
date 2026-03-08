@@ -40,6 +40,7 @@ COPY --from=builder /install /usr/local
 COPY server.py .
 COPY ai_engine.py .
 COPY trevlix_i18n.py .
+COPY validate_env.py .
 COPY services/ ./services/
 COPY routes/ ./routes/
 COPY templates/ ./templates/
@@ -59,5 +60,5 @@ EXPOSE 5000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
     CMD curl -f http://localhost:5000/api/v1/status || exit 1
 
-# Bot starten
-CMD ["python", "server.py"]
+# Bot starten – [Verbesserung #10] validate_env.py prüft Umgebungsvariablen vor Start
+CMD ["sh", "-c", "python validate_env.py && python server.py"]

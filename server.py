@@ -66,6 +66,7 @@ from functools import wraps
 from typing import Any
 
 import ccxt
+import httpx
 import numpy as np
 import pandas as pd
 import requests
@@ -236,6 +237,11 @@ socketio = SocketIO(
     async_mode="threading",
     logger=False,
     engineio_logger=False,
+    # [Socket.io Fix] Stabilere Verbindung durch längere Timeouts
+    ping_timeout=60,
+    ping_interval=25,
+    # Session-Verwaltung aktiv halten
+    manage_session=True,
 )
 
 # ── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -294,14 +300,37 @@ logging.basicConfig(
 )
 log = logging.getLogger("NEXUS")
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# [Verbesserung #2] SecretStr – maskiert Secrets in Logs / Tracebacks
+# ═══════════════════════════════════════════════════════════════════════════════
+class SecretStr(str):
+    """String-Subklasse, die in __repr__ und __str__ maskiert wird."""
+
+    def __repr__(self) -> str:
+        return "SecretStr('***')"
+
+    def __str__(self) -> str:
+        return "***"
+
+    def reveal(self) -> str:
+        """Gibt den echten Wert zurück – explizit aufrufen."""
+        return str.__str__(self)
+
+
+def _secret(val: str) -> SecretStr:
+    """Erstellt ein SecretStr-Objekt aus einem normalen String."""
+    return SecretStr(val)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # KONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
 CONFIG: dict[str, Any] = {
     # Exchange
     "exchange": os.getenv("EXCHANGE", "cryptocom"),
-    "api_key": os.getenv("API_KEY", ""),
-    "secret": os.getenv("API_SECRET", ""),
+    "api_key": _secret(os.getenv("API_KEY", "")),
+    "secret": _secret(os.getenv("API_SECRET", "")),
     "quote_currency": "USDT",
     "min_volume_usdt": 1_000_000,
     "blacklist": ["USDC/USDT", "BUSD/USDT", "DAI/USDT", "TUSD/USDT", "FRAX/USDT", "USDP/USDT"],
@@ -397,8 +426,8 @@ CONFIG: dict[str, Any] = {
     # Short-Selling
     "use_shorts": False,
     "short_exchange": "bybit",
-    "short_api_key": os.getenv("SHORT_API_KEY", ""),
-    "short_secret": os.getenv("SHORT_SECRET", ""),
+    "short_api_key": _secret(os.getenv("SHORT_API_KEY", "")),
+    "short_secret": _secret(os.getenv("SHORT_SECRET", "")),
     "short_leverage": 2,
     # Arbitrage
     "use_arbitrage": True,
@@ -446,8 +475,8 @@ CONFIG: dict[str, Any] = {
     "audit_retention_days": 90,  # Audit-Logs nach N Tagen löschen
     "ai_sample_retention_days": 180,  # AI-Samples nach N Tagen löschen
     # Auth / Multi-User
-    "admin_password": os.getenv("ADMIN_PASSWORD", "nexus"),
-    "jwt_secret": os.getenv("JWT_SECRET", secrets.token_hex(32)),
+    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "nexus")),
+    "jwt_secret": _secret(os.getenv("JWT_SECRET", secrets.token_hex(32))),
     "jwt_expiry_hours": 24,
     "multi_user": True,
     "allow_registration": os.getenv("ALLOW_REGISTRATION", "false").lower() in ("true", "1", "yes"),
@@ -455,7 +484,7 @@ CONFIG: dict[str, Any] = {
     "mysql_host": os.getenv("MYSQL_HOST", "localhost"),
     "mysql_port": int(os.getenv("MYSQL_PORT", "3306")),
     "mysql_user": os.getenv("MYSQL_USER", "root"),
-    "mysql_pass": os.getenv("MYSQL_PASS", ""),
+    "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
     "mysql_db": os.getenv("MYSQL_DB", "nexus"),
 }
 
@@ -480,12 +509,49 @@ STRATEGY_NAMES = [
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# [Verbesserung #7] Konfigurationsvalidierung beim Start
+# ═══════════════════════════════════════════════════════════════════════════════
+def validate_config(cfg: dict) -> list[str]:
+    """
+    Validiert CONFIG-Werte und gibt eine Liste von Fehlermeldungen zurück.
+    Leere Liste = alles OK.
+    """
+    errors: list[str] = []
+
+    # Numerische Ranges
+    if not (0 < cfg.get("stop_loss_pct", 0.025) < 1):
+        errors.append("stop_loss_pct muss zwischen 0 und 1 liegen")
+    if not (0 < cfg.get("take_profit_pct", 0.06) < 1):
+        errors.append("take_profit_pct muss zwischen 0 und 1 liegen")
+    if cfg.get("take_profit_pct", 0.06) <= cfg.get("stop_loss_pct", 0.025):
+        errors.append("take_profit_pct muss größer als stop_loss_pct sein")
+    if cfg.get("scan_interval", 60) < 10:
+        errors.append("scan_interval muss mindestens 10 Sekunden betragen")
+    if cfg.get("max_open_trades", 5) < 1:
+        errors.append("max_open_trades muss mindestens 1 sein")
+    if not (0 < cfg.get("risk_per_trade", 0.015) <= 0.5):
+        errors.append("risk_per_trade muss zwischen 0 und 0.5 liegen")
+
+    # Pflicht-Felder
+    ex = cfg.get("exchange", "")
+    if ex not in EXCHANGE_MAP:
+        errors.append(f"exchange '{ex}' ist ungültig – erlaubt: {list(EXCHANGE_MAP.keys())}")
+
+    # Logische Abhängigkeiten
+    if cfg.get("use_shorts") and not (cfg.get("short_api_key") and cfg.get("short_secret")):
+        errors.append("use_shorts=True erfordert short_api_key und short_secret")
+
+    return errors
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MYSQL MANAGER (extended)
 # ═══════════════════════════════════════════════════════════════════════════════
 class MySQLManager:
     def __init__(self):
         self._lock = threading.Lock()
         self._pool: ConnectionPool | None = None
+        self.db_available = False  # [Verbesserung #3] Flag für Degraded-Mode
         self._init_db()
 
     def _build_pool(self) -> ConnectionPool | None:
@@ -539,11 +605,27 @@ class MySQLManager:
         return decrypt_value(value) if value else value
 
     def _init_db(self):
+        """[Verbesserung #3] DB-Init mit exponentiellem Backoff (bis zu 5 Versuche)."""
         if not MYSQL_AVAILABLE:
             log.error("PyMySQL fehlt – pip install PyMySQL")
             return
+        _delays = [2, 4, 8, 16, 32]
+        for attempt, delay in enumerate(_delays, 1):
+            try:
+                self._init_db_once()
+                self.db_available = True
+                return
+            except Exception as e:
+                log.warning(f"MySQL Init (Versuch {attempt}/5): {e}")
+                if attempt < len(_delays):
+                    log.info(f"Retry in {delay}s...")
+                    time.sleep(delay)
+        log.error("MySQL Init fehlgeschlagen – starte im Degraded-Mode (Paper-Trading only)")
+
+    def _init_db_once(self):
+        """Einmalige DB-Initialisierung – wird von _init_db() mit Retry aufgerufen."""
+        conn = self._conn()
         try:
-            conn = self._conn()
             with conn.cursor() as c:
                 # Trades
                 c.execute("""CREATE TABLE IF NOT EXISTS trades (
@@ -687,12 +769,14 @@ class MySQLManager:
                         "INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES('admin',%s,'admin',10000,10000)",
                         (h,),
                     )
-            conn.close()
-            log.info(f"✅ MySQL: {CONFIG['mysql_host']}/{CONFIG['mysql_db']}")
             # Pool NACH erfolgreicher Init erstellen
             self._pool = self._build_pool()
-        except Exception as e:
-            log.error(f"MySQL Init: {e}")
+            log.info(f"✅ MySQL: {CONFIG['mysql_host']}/{CONFIG['mysql_db']}")
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
     # ── Trades ──────────────────────────────────────────────────────────────
     def save_trade(self, trade: dict, user_id: int = 1):
@@ -1290,6 +1374,18 @@ class MySQLManager:
                         os.remove(fp)
                     except Exception:
                         pass
+            # [Verbesserung #9] SHA-256 Checksum vor Verschlüsselung
+            try:
+                with open(path, "rb") as f:
+                    raw_zip = f.read()
+                checksum = hashlib.sha256(raw_zip).hexdigest()
+                sha_path = path + ".sha256"
+                with open(sha_path, "w") as f:
+                    f.write(f"{checksum}  {os.path.basename(path)}\n")
+                log.debug(f"SHA-256 gespeichert: {sha_path}")
+            except Exception as sha_err:
+                log.debug(f"Backup-Checksum: {sha_err}")
+
             # [Verbesserung #49] Backup-Verschlüsselung
             if CONFIG.get("backup_encrypt") and path:
                 try:
@@ -1309,6 +1405,47 @@ class MySQLManager:
         except Exception as e:
             log.error(f"Backup: {e}")
             return None
+
+    def verify_backup(self, backup_path: str) -> dict:
+        """[Verbesserung #9] Prüft die Integrität eines Backups anhand der SHA-256-Checksum."""
+        result = {"ok": False, "error": None, "checksum": None, "path": backup_path}
+        try:
+            # Für .enc-Backups → Checksum der ursprünglichen ZIP-Datei
+            zip_path = backup_path.replace(".enc", "")
+            sha_path = zip_path + ".sha256"
+            if not os.path.exists(backup_path):
+                result["error"] = "Backup-Datei nicht gefunden"
+                return result
+            if not os.path.exists(sha_path):
+                result["error"] = "Keine .sha256-Datei vorhanden"
+                return result
+            # Checksum aus Datei lesen
+            with open(sha_path) as f:
+                stored = f.read().split()[0]
+            result["checksum"] = stored
+            # Bei verschlüsselten Backups: entschlüsseln und prüfen
+            if backup_path.endswith(".enc"):
+                try:
+                    from services.encryption import decrypt_value
+                    with open(backup_path) as f:
+                        enc_data = f.read()
+                    raw_hex = decrypt_value(enc_data)
+                    raw = bytes.fromhex(raw_hex)
+                    actual = hashlib.sha256(raw).hexdigest()
+                except Exception as dec_err:
+                    result["error"] = f"Entschlüsselung fehlgeschlagen: {dec_err}"
+                    return result
+            else:
+                with open(backup_path, "rb") as f:
+                    raw = f.read()
+                actual = hashlib.sha256(raw).hexdigest()
+            if actual == stored:
+                result["ok"] = True
+            else:
+                result["error"] = f"Checksum mismatch: {actual[:16]}... ≠ {stored[:16]}..."
+        except Exception as e:
+            result["error"] = str(e)
+        return result
 
     # [Verbesserung #21] Batch-Insert für AI-Samples
     def save_ai_samples_batch(self, samples: list[tuple[np.ndarray, int, str]]):
@@ -1533,7 +1670,7 @@ class DiscordNotifier:
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
                     for f in fields
                 ]
-            requests.post(url, json={"embeds": [embed]}, timeout=5)
+            httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:
             log.debug(f"Discord: {e}")
 
@@ -3973,6 +4110,7 @@ class BackupScheduler:
 class BotState:
     def __init__(self, db_ref):
         self.db = db_ref
+        self._lock = threading.RLock()  # [Verbesserung #4] Thread-Safety
         self.running = False
         self.paused = False
         self.balance = CONFIG["paper_balance"]
@@ -3983,9 +4121,11 @@ class BotState:
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
         self.portfolio_history: list[dict] = []
-        self.signal_log: list[dict] = []
-        self.activity_log: list[dict] = []
-        self.arb_log: list[dict] = []
+        # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
+        from collections import deque
+        self.signal_log: deque = deque(maxlen=50)
+        self.activity_log: deque = deque(maxlen=50)
+        self.arb_log: deque = deque(maxlen=20)
         self.iteration = 0
         self.last_scan = "—"
         self.next_scan = "—"
@@ -4035,21 +4175,19 @@ class BotState:
         return round(g / total_loss, 2) if total_loss > 0 else 0.0
 
     def add_activity(self, icon, title, detail, atype="info"):
-        self.activity_log.insert(
-            0,
+        # [Verbesserung #4] deque.appendleft ist thread-safe, kein Truncating nötig
+        self.activity_log.appendleft(
             {
                 "icon": icon,
                 "title": title,
                 "detail": detail,
                 "type": atype,
                 "time": datetime.now().strftime("%H:%M:%S"),
-            },
+            }
         )
-        self.activity_log = self.activity_log[:50]
 
     def add_signal(self, s):
-        self.signal_log.insert(0, s)
-        self.signal_log = self.signal_log[:50]
+        self.signal_log.appendleft(s)
 
     def snapshot(self) -> dict:
         pv = self.portfolio_value()
@@ -4166,9 +4304,9 @@ class BotState:
                 for t in self.closed_trades[:100]
             ],
             "portfolio_history": self.portfolio_history[-200:],
-            "signal_log": self.signal_log[:30],
-            "activity_log": self.activity_log[:20],
-            "arb_log": self.arb_log[:10],
+            "signal_log": list(self.signal_log)[:30],
+            "activity_log": list(self.activity_log)[:20],
+            "arb_log": list(self.arb_log)[:10],
             "last_scan": self.last_scan,
             "next_scan": self.next_scan,
             "ai": ai_engine.to_dict(),
@@ -4269,17 +4407,15 @@ class ArbitrageScanner:
                     db.save_arb(opp)
                     self.found_today += 1
                     discord.arb_found(sym, buy_ex, sell_ex, net_spread)
-                    state.arb_log.insert(
-                        0,
+                    state.arb_log.appendleft(
                         {
                             "time": datetime.now().strftime("%H:%M"),
                             "symbol": sym,
                             "buy": buy_ex,
                             "sell": sell_ex,
                             "spread": round(net_spread, 3),
-                        },
+                        }
                     )
-                    state.arb_log = state.arb_log[:20]
                     log.info(f"💹 ARB: {sym} {buy_ex}→{sell_ex} Spread:{net_spread:.2f}%")
         except Exception as e:
             log.debug(f"ARB scan: {e}")
@@ -4577,6 +4713,16 @@ def scan_symbol(ex, symbol) -> dict | None:
             ],
             "time": datetime.now().strftime("%H:%M:%S"),
         }
+    # [Verbesserung #5] Differenzierte ccxt-Exceptions in scan_symbol
+    except ccxt.RateLimitExceeded:
+        log.debug(f"Rate-Limit beim Scan von {symbol} – überspringe")
+        return None
+    except ccxt.NetworkError as e:
+        log.debug(f"Netzwerk beim Scan von {symbol}: {e}")
+        return None
+    except ccxt.ExchangeError as e:
+        log.debug(f"Exchange-Fehler beim Scan von {symbol}: {e}")
+        return None
     except Exception as e:
         log.debug(f"Scan {symbol}: {e}")
         return None
@@ -5102,10 +5248,23 @@ def bot_loop():
 
             emit_event("update", state.snapshot())
 
+        # [Verbesserung #5] Differenzierte ccxt-Fehlerbehandlung
+        except ccxt.RateLimitExceeded as e:
+            log.warning(f"Rate-Limit: {e} – warte 60s")
+            time.sleep(60)
+        except ccxt.ExchangeNotAvailable as e:
+            log.warning(f"Exchange nicht verfügbar: {e} – warte 120s, Circuit Breaker")
+            ex = None
+            risk.record_result(False)  # Zählt als Verlust für Circuit Breaker
+            time.sleep(120)
         except ccxt.NetworkError as e:
-            log.warning(f"Netzwerk: {e}")
+            log.warning(f"Netzwerkfehler: {e} – reconnect in 15s")
             ex = None
             time.sleep(15)
+        except ccxt.ExchangeError as e:
+            log.error(f"Exchange-Fehler: {e}")
+            discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
+            time.sleep(30)
         except Exception as e:
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
@@ -5603,6 +5762,26 @@ def api_backup_download():
     return jsonify({"error": "Backup fehlgeschlagen"}), 500
 
 
+@app.route("/api/v1/backup/verify")
+@dashboard_auth
+def api_backup_verify():
+    """[Verbesserung #9] Prüft das neueste Backup auf SHA-256-Integrität."""
+    bdir = CONFIG["backup_dir"]
+    try:
+        # Neuestes Backup finden
+        files = [
+            os.path.join(bdir, f) for f in os.listdir(bdir)
+            if f.endswith((".zip", ".enc"))
+        ]
+        if not files:
+            return jsonify({"error": "Keine Backups vorhanden"}), 404
+        latest = max(files, key=os.path.getmtime)
+        result = db.verify_backup(latest)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/v1/docs")
 def api_docs():
     return jsonify(
@@ -5660,7 +5839,7 @@ def api_health():
         pass
     return jsonify(
         {
-            "status": "ok" if db_ok else "degraded",
+            "status": "ok" if (db_ok and db.db_available) else "degraded",
             "version": BOT_VERSION,
             "running": state.running,
             "paused": getattr(state, "paused", False),
@@ -5717,31 +5896,73 @@ def prometheus_metrics():
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # WEBSOCKET EVENTS
+# [Verbesserung #8] In-Memory Rate-Limiting für kritische Socket-Events
 # ═══════════════════════════════════════════════════════════════════════════════
+_ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
+
+
+def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
+    """
+    Prüft ob ein Socket-Event zu schnell wiederholt wird.
+    Gibt False zurück wenn der Client warten muss.
+    """
+    sid = request.sid if hasattr(request, "sid") else "global"
+    key = f"{sid}:{action}"
+    now = time.time()
+    last = _ws_limits.get(key, 0)
+    if now - last < min_interval:
+        return False
+    _ws_limits[key] = now
+    # Cleanup alter Einträge (alle 5 Minuten)
+    if len(_ws_limits) > 1000:
+        cutoff = now - 300
+        for k in list(_ws_limits):
+            if _ws_limits[k] < cutoff:
+                del _ws_limits[k]
+    return True
+
+
 @socketio.on("connect")
 def on_connect():
     if not session.get("user_id"):
+        # [Socket.io Fix] Sende Fehler statt stumm abzulehnen
+        emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
     emit("update", state.snapshot())
     log.info(f"📱 Client verbunden: {session.get('username', '?')}")
 
 
+@socketio.on("request_state")
+def on_request_state():
+    """Ermöglicht dem Client, den aktuellen State explizit anzufragen (z.B. nach Reconnect)."""
+    if not session.get("user_id"):
+        emit("auth_error", {"msg": "Nicht authentifiziert"})
+        return
+    emit("update", state.snapshot())
+
+
 @socketio.on("start_bot")
 def on_start_bot():
+    if not _ws_rate_check("start_bot", min_interval=3.0):
+        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        return
     if state.running:
         return
     state.running = True
     state.paused = False
     threading.Thread(target=bot_loop, daemon=True).start()
-    emit("status", {"msg": "🤖 QUANTRA gestartet", "type": "success"}, broadcast=True)
+    emit("status", {"msg": "🤖 TREVLIX gestartet", "type": "success"}, broadcast=True)
     state.add_activity(
-        "🚀", "QUANTRA gestartet", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
+        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
     )
     log.info("🚀 Bot gestartet")
 
 
 @socketio.on("stop_bot")
 def on_stop_bot():
+    if not _ws_rate_check("stop_bot", min_interval=3.0):
+        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        return
     state.running = False
     state.paused = False
     emit("status", {"msg": "⏹ Bot gestoppt", "type": "info"}, broadcast=True)
@@ -5750,6 +5971,8 @@ def on_stop_bot():
 
 @socketio.on("pause_bot")
 def on_pause_bot():
+    if not _ws_rate_check("pause_bot", min_interval=2.0):
+        return
     state.paused = not state.paused
     msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
     emit("status", {"msg": msg, "type": "warning"}, broadcast=True)
@@ -5757,6 +5980,9 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
+    if not _ws_rate_check("update_config", min_interval=2.0):
+        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        return
     allowed = {
         "stop_loss_pct",
         "take_profit_pct",
@@ -5876,6 +6102,9 @@ def on_reset_ai():
 
 @socketio.on("close_position")
 def on_close_position(data):
+    if not _ws_rate_check("close_position", min_interval=2.0):
+        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        return
     sym = data.get("symbol", "")
     if sym in state.positions:
         try:
@@ -7078,6 +7307,12 @@ signal.signal(signal.SIGINT, _graceful_shutdown)
 
 if __name__ == "__main__":
     startup_banner()
+    # [Verbesserung #7] Konfigurationsvalidierung
+    _cfg_errors = validate_config(CONFIG)
+    if _cfg_errors:
+        for _err in _cfg_errors:
+            log.error(f"⚠️  CONFIG-Fehler: {_err}")
+        log.warning("⚠️  Konfigurationsfehler gefunden – bitte prüfen. Bot startet trotzdem.")
     os.makedirs(CONFIG["backup_dir"], exist_ok=True)
     # Hintergrund-Threads
     threading.Thread(target=daily_sched.run, daemon=True, name="DailyReport").start()

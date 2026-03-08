@@ -1342,7 +1342,22 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
 </nav>
 
 <script>
-const socket = io({transports:['websocket','polling']});
+// [Socket.io Fix] Initiale State-Abfrage per HTTP, bevor WS verbunden ist
+(async function _initState(){
+  try {
+    const r = await fetch('/api/v1/state', {credentials:'include'});
+    if(r.ok){ const d=await r.json(); if(d&&d.running!==undefined) updateUI(d); }
+  } catch(e){}
+})();
+
+const socket = io({
+  transports:['websocket','polling'],
+  reconnection: true,
+  reconnectionAttempts: 10,
+  reconnectionDelay: 2000,
+  reconnectionDelayMax: 10000,
+  timeout: 20000,
+});
 let portChart=null, hourChart=null, pnlChart=null, btChartInst=null;
 let lastData=null, allTrades=[], tradeFilter='all';
 let logEntries=[], logPaused=false, currentHmSort='change';
@@ -2041,8 +2056,24 @@ function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.
 function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();toast(QI18n.t('wiz_ready'),'success');}
 
 // ── Socket events ────────────────────────────────────────────────────
-socket.on('connect',()=>{addLog(QI18n.t('dashboard_connected'),'success','system');toast('✅ '+QI18n.t('status_running'),'success');});
-socket.on('disconnect',()=>{addLog(QI18n.t('dashboard_disconnected'),'error','system');toast('⚠️ '+QI18n.t('status_stopped'),'warning');});
+socket.on('connect',()=>{
+  addLog(QI18n.t('dashboard_connected'),'success','system');
+  toast('📡 Dashboard verbunden','success');
+  // Nach Verbindung sofort State anfragen (bei Reconnect)
+  socket.emit('request_state');
+});
+socket.on('connect_error',(err)=>{
+  addLog('Socket-Verbindungsfehler: '+err.message,'error','system');
+  toast('⚠️ Socket-Fehler – Verbindung wird wiederhergestellt...','warning');
+});
+socket.on('disconnect',(reason)=>{
+  addLog(QI18n.t('dashboard_disconnected')+' ('+reason+')','error','system');
+  toast('⚠️ '+QI18n.t('dashboard_disconnected'),'warning');
+});
+socket.on('auth_error',(d)=>{
+  addLog('Auth-Fehler: '+(d&&d.msg||'Nicht authentifiziert'),'error','system');
+  setTimeout(()=>location.href='/login',2000);
+});
 socket.on('update', d=>{updateUI(d);});
 socket.on('ai_update', ai=>{updateAI(ai);});
 socket.on('genetic_update', g=>{
