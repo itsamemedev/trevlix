@@ -9,7 +9,7 @@
 <meta property="og:url" content="https://trevlix.dev/changelog">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.0.4 — Changelog</title>
+<title>TREVLIX v1.1.0 — Changelog</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -28,15 +28,21 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 /* Timeline */
 .timeline{position:relative;padding-left:32px}
-.timeline::before{content:'';position:absolute;left:11px;top:0;bottom:0;width:2px;background:var(--muted)}
+.timeline::before{
+  content:'';position:absolute;left:11px;top:0;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--jade),rgba(0,255,136,.3),var(--muted));
+}
 .release{position:relative;margin-bottom:48px}
-.release-dot{position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;border:2px solid var(--jade);background:var(--ink);display:flex;align-items:center;justify-content:center}
-.release-dot.latest{background:var(--jade);border-color:var(--jade)}
+.release-dot{position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;border:2px solid rgba(0,255,136,.4);background:var(--ink);display:flex;align-items:center;justify-content:center}
+.release-dot.latest{
+  background:var(--jade);border-color:var(--jade);
+  box-shadow:0 0 12px rgba(0,255,136,.4);
+}
 .release-dot.latest::after{content:'';width:8px;height:8px;border-radius:50%;background:var(--ink)}
 .release-header{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .release-version{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white)}
-.release-date{font-family:var(--fm);font-size:11px;color:var(--sub);border:1px solid var(--muted);padding:3px 10px;border-radius:4px}
-.release-tag{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;font-weight:700}
+.release-date{font-family:var(--fm);font-size:11px;color:var(--sub);border:1px solid rgba(255,255,255,.08);padding:3px 10px;border-radius:5px;background:rgba(255,255,255,.02)}
+.release-tag{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:5px;font-weight:700}
 .tag-latest{background:rgba(0,255,136,.1);color:var(--jade);border:1px solid rgba(0,255,136,.25)}
 .tag-stable{background:rgba(14,165,233,.1);color:var(--blue);border:1px solid rgba(14,165,233,.25)}
 
@@ -102,12 +108,12 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 <div class="timeline">
 
-  <!-- v1.0.4 -->
+  <!-- v1.1.0 -->
   <div class="release">
     <div class="release-dot latest"></div>
     <div class="release-header">
-      <span class="release-version">v1.0.4</span>
-      <span class="release-date">2026-03-02</span>
+      <span class="release-version">v1.1.0</span>
+      <span class="release-date">2026-03-08</span>
       <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
     </div>
     <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
@@ -123,12 +129,22 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
         <li>404 Fehlerseite mit Navigation</li>
         <li>Print-Stylesheet fuer Dokumentationsseiten</li>
         <li>Meta-Tags (OpenGraph, Twitter Card) auf allen Seiten</li>
+        <li>Visuelles Upgrade aller HTML-Seiten: verbesserte Farbverlaeufe, Glassmorphism, Animationen</li>
+        <li>Verbesserte Typografie und Abstaende auf allen Seiten</li>
+        <li>Erweiterte Hover-Effekte und Glow-Animationen fuer interaktive Elemente</li>
       </ul>
     </div>
     <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
       <ul>
-        <li>Versionsnummern auf allen Seiten konsistent auf v1.0.4 aktualisiert</li>
+        <li>Versionsnummern auf allen Seiten konsistent auf v1.1.0 aktualisiert</li>
         <li>README.md mit vollstaendiger Website-Struktur aktualisiert</li>
+        <li>pyproject.toml, Dockerfile und docker-compose.yml auf v1.1.0 synchronisiert</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="changed" data-i18n="changelog_changed">Geändert</h4>
+      <ul>
+        <li>Dashboard-Header und Setup-Wizard auf neues visuelles Design aktualisiert</li>
+        <li>Alle Dokumentationsseiten mit verbessertem CSS-Design versehen</li>
       </ul>
     </div>
   </div>
@@ -242,7 +258,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+      <div class="footer-version">v1.1.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>

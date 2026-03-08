@@ -8,7 +8,7 @@
 ║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
 ║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
 ║                                                                              ║
-║    Neural Exchange Unified System  ·  v1.0.2                                ║
+║    Neural Exchange Unified System  ·  v1.1.0                                ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -18,7 +18,7 @@
 ║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
 ║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
 ║                                                                              ║
-║  NEU IN v1.0.2                                                               ║
+║  NEU IN v1.1.0                                                               ║
 ║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
