@@ -19,7 +19,8 @@ import pytest
 @pytest.fixture(autouse=True)
 def set_test_env(monkeypatch):
     """Setzt sichere Test-Umgebungsvariablen für alle Tests."""
-    monkeypatch.setenv("ENCRYPTION_KEY", "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtb25seS0xMjM0")
+    # Valider Fernet-Key: URL-safe base64, exakt 32 Bytes decoded (test-key-for-unit-tests-12345678)
+    monkeypatch.setenv("ENCRYPTION_KEY", "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtMTIzNDU2Nzg=")
     monkeypatch.setenv("JWT_SECRET", "test-jwt-secret-not-for-production")
     monkeypatch.setenv("SECRET_KEY", "test-flask-secret-not-for-production")
     monkeypatch.setenv("PAPER_TRADING", "true")

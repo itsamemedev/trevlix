@@ -214,20 +214,42 @@ else:
                 setattr(self, k, v)
 
         @classmethod
-        def from_env(cls) -> TrevlixConfig:
-            """Erstellt eine Config-Instanz aus Umgebungsvariablen."""
+        def from_env(cls) -> "TrevlixConfig":
+            """Erstellt eine Config-Instanz aus Umgebungsvariablen (Pydantic-Fallback)."""
             return cls(
                 exchange=os.getenv("EXCHANGE", "cryptocom"),
+                api_key=os.getenv("API_KEY", ""),
+                secret=os.getenv("API_SECRET", ""),
                 mysql_host=os.getenv("MYSQL_HOST", "localhost"),
+                mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
+                mysql_user=os.getenv("MYSQL_USER", "root"),
+                mysql_pass=os.getenv("MYSQL_PASS", ""),
+                mysql_db=os.getenv("MYSQL_DB", "nexus"),
+                admin_password=os.getenv("ADMIN_PASSWORD", "nexus"),
+                jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
+                paper_trading=os.getenv("PAPER_TRADING", "true").lower() in ("true", "1", "yes"),
+                cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
+                telegram_token=os.getenv("TELEGRAM_TOKEN", ""),
+                telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),
+                discord_webhook=os.getenv("DISCORD_WEBHOOK", ""),
             )
+
+        def validate_security(self) -> list[str]:
+            """Sicherheitsvalidierung (Fallback ohne Pydantic)."""
+            warnings = []
+            admin_pw = getattr(self, "admin_password", "")
+            if len(admin_pw) < 12:
+                warnings.append("ADMIN_PASSWORD sollte mind. 12 Zeichen haben")
+            jwt = getattr(self, "jwt_secret", "")
+            if len(jwt) < 32:
+                warnings.append("JWT_SECRET sollte mind. 32 Zeichen haben")
+            if not getattr(self, "mysql_pass", ""):
+                warnings.append("MYSQL_PASS ist leer - unsicher für Produktion!")
+            return warnings
 
         def to_dict(self) -> dict[str, Any]:
             """Konvertiert die Config in ein Dict."""
             return vars(self)
-
-        def validate_security(self) -> list[str]:
-            """Sicherheitsvalidierung (Fallback ohne Pydantic)."""
-            return []
 
 
 def load_config() -> TrevlixConfig:

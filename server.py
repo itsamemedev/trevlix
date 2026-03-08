@@ -62,7 +62,7 @@ import traceback
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any
 
@@ -495,6 +495,9 @@ EXCHANGE_MAP = {
     "bybit": "bybit",
     "okx": "okx",
     "kucoin": "kucoin",
+    "kraken": "kraken",
+    "huobi": "huobi",
+    "coinbase": "coinbaseadvanced",  # CCXT-Klassenname für Coinbase Advanced Trade
 }
 
 # [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
@@ -1047,8 +1050,10 @@ class MySQLManager:
     def verify_password(self, stored_hash: str, password: str) -> bool:
         try:
             pw = password.encode()
-            if BCRYPT_AVAILABLE:
+            if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
+                # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
+            # Fallback: SHA-256 (Legacy-Hashes oder bcrypt nicht installiert)
             return hashlib.sha256(pw).hexdigest() == stored_hash
         except Exception:
             return False
@@ -1076,8 +1081,8 @@ class MySQLManager:
         payload = {
             "sub": user_id,
             "label": label,
-            "exp": datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-            "iat": datetime.utcnow(),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+            "iat": datetime.now(timezone.utc),
         }
         token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
         try:
@@ -1089,7 +1094,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
                         ),
                     )
         except Exception as e:
@@ -1415,20 +1420,22 @@ class MySQLManager:
                         zf.writestr(f"{table}.json", json.dumps(data, ensure_ascii=False))
                     except Exception as te:
                         log.debug(f"Backup {table}: {te}")
+                _BACKUP_SENSITIVE_KEYS = frozenset({
+                    "api_key",
+                    "secret",
+                    "mysql_pass",
+                    "admin_password",
+                    "jwt_secret",
+                    "short_api_key",
+                    "short_secret",
+                    "cryptopanic_token",
+                    "telegram_token",   # Neu: sensibel
+                    "discord_webhook",  # Neu: sensibel
+                })
                 safe_cfg = {
                     k: v
                     for k, v in CONFIG.items()
-                    if k
-                    not in (
-                        "api_key",
-                        "secret",
-                        "mysql_pass",
-                        "admin_password",
-                        "jwt_secret",
-                        "short_api_key",
-                        "short_secret",
-                        "cryptopanic_token",
-                    )
+                    if k not in _BACKUP_SENSITIVE_KEYS
                 }
                 zf.writestr("config.json", json.dumps(safe_cfg, indent=2, ensure_ascii=False))
             # Alte löschen
@@ -1743,7 +1750,7 @@ class DiscordNotifier:
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {"text": f"{BOT_FULL} · {CONFIG['exchange'].upper()}"},
             }
             if fields:
