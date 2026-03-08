@@ -13,11 +13,11 @@ Verwendung in server.py (nach vollständiger Migration):
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 
-log = logging.getLogger("NEXUS.notifications")
+log = logging.getLogger("trevlix.notifications")
 
 
 class DiscordNotifier:
@@ -72,7 +72,7 @@ class DiscordNotifier:
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {"text": f"{self._bot_full} · {self._cfg('exchange', '?').upper()}"},
             }
             if fields:
