@@ -22,6 +22,7 @@ from typing import NamedTuple
 load_dotenv_available = False
 try:
     from dotenv import load_dotenv
+
     load_dotenv()
     load_dotenv_available = True
 except ImportError:
@@ -42,6 +43,7 @@ def _c(color: str, text: str) -> str:
 
 
 # ── Validierungsregeln ───────────────────────────────────────────────────────
+
 
 class Issue(NamedTuple):
     severity: str  # "critical" | "warning"
@@ -78,7 +80,9 @@ def _check_fernet_key(var: str) -> Issue | None:
         if len(decoded) != 32:
             return Issue("critical", var, f"ENCRYPTION_KEY muss 32 Bytes sein (hat {len(decoded)})")
     except Exception:
-        return Issue("critical", var, "ENCRYPTION_KEY ist kein gültiger Fernet-Key (base64url, 44 Zeichen)")
+        return Issue(
+            "critical", var, "ENCRYPTION_KEY ist kein gültiger Fernet-Key (base64url, 44 Zeichen)"
+        )
     return None
 
 
@@ -169,7 +173,7 @@ def main() -> int:
     criticals = [i for i in issues if i.severity == "critical"]
     warnings = [i for i in issues if i.severity == "warning"]
 
-    print(_c(_YEL, f"\n⚠️  TREVLIX Umgebungsvariablen-Validierung"))
+    print(_c(_YEL, "\n⚠️  TREVLIX Umgebungsvariablen-Validierung"))
     print("=" * 55)
 
     for issue in warnings:

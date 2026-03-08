@@ -17,13 +17,14 @@ import secrets
 from typing import Any
 
 try:
-    from pydantic import BaseModel, Field, field_validator, model_validator
+    from pydantic import Field, field_validator
     from pydantic_settings import BaseSettings, SettingsConfigDict
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     try:
-        from pydantic import BaseModel, Field, validator
-        from pydantic import BaseSettings
+        from pydantic import BaseSettings, Field  # noqa: F401
+
         PYDANTIC_AVAILABLE = True
     except ImportError:
         PYDANTIC_AVAILABLE = False
@@ -58,12 +59,16 @@ if PYDANTIC_AVAILABLE:
             admin_password: Passwort für den Admin-Account.
         """
 
-        model_config = SettingsConfigDict(
-            env_file=".env",
-            env_file_encoding="utf-8",
-            case_sensitive=False,
-            extra="ignore",
-        ) if hasattr(BaseSettings, 'model_config') else {}
+        model_config = (
+            SettingsConfigDict(
+                env_file=".env",
+                env_file_encoding="utf-8",
+                case_sensitive=False,
+                extra="ignore",
+            )
+            if hasattr(BaseSettings, "model_config")
+            else {}
+        )
 
         # Exchange
         exchange: str = Field(default="cryptocom", description="Name der primären Exchange")
@@ -136,7 +141,16 @@ if PYDANTIC_AVAILABLE:
         @classmethod
         def validate_exchange(cls, v: str) -> str:
             """Prüft ob der Exchange-Name unterstützt wird."""
-            supported = {"cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase"}
+            supported = {
+                "cryptocom",
+                "binance",
+                "bybit",
+                "okx",
+                "kucoin",
+                "kraken",
+                "huobi",
+                "coinbase",
+            }
             if v not in supported:
                 raise ValueError(f"Nicht unterstützte Exchange '{v}'. Erlaubt: {supported}")
             return v
@@ -150,7 +164,7 @@ if PYDANTIC_AVAILABLE:
             return self.model_dump() if hasattr(self, "model_dump") else self.dict()
 
         @classmethod
-        def from_env(cls) -> "TrevlixConfig":
+        def from_env(cls) -> TrevlixConfig:
             """Erstellt eine Config-Instanz aus Umgebungsvariablen.
 
             Returns:
@@ -200,7 +214,7 @@ else:
                 setattr(self, k, v)
 
         @classmethod
-        def from_env(cls) -> "TrevlixConfig":
+        def from_env(cls) -> TrevlixConfig:
             """Erstellt eine Config-Instanz aus Umgebungsvariablen."""
             return cls(
                 exchange=os.getenv("EXCHANGE", "cryptocom"),
@@ -230,11 +244,13 @@ def load_config() -> TrevlixConfig:
         warnings = cfg.validate_security()
         if warnings:
             import logging
+
             log = logging.getLogger(__name__)
             for w in warnings:
                 log.warning(f"[Config] {w}")
         return cfg
     except Exception as e:
         import logging
+
         logging.getLogger(__name__).error(f"Konfigurationsfehler: {e}")
         raise
