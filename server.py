@@ -61,6 +61,7 @@ import time
 import traceback
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import wraps
 from typing import Any
@@ -659,6 +660,30 @@ class MySQLManager:
             connect_timeout=10,
         )
 
+    @contextmanager
+    def _get_conn(self):
+        """Context-Manager für sichere Verbindungsverwaltung ohne Connection-Leak.
+
+        Stellt sicher dass die Verbindung IMMER zurückgegeben wird (Pool-Semaphore
+        wird freigegeben), auch wenn eine Exception auftritt. Verhindert Pool-Exhaustion
+        bei Datenbankfehlern.
+
+        Verwendung:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(...)
+        """
+        conn = None
+        try:
+            conn = self._conn()
+            yield conn
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
     # ── Encryption Helpers ───────────────────────────────────────────────────
     @staticmethod
     def _enc(value: str) -> str:
@@ -854,65 +879,63 @@ class MySQLManager:
     # ── Trades ──────────────────────────────────────────────────────────────
     def save_trade(self, trade: dict, user_id: int = 1):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO trades
-                    (user_id,symbol,entry,exit_price,qty,pnl,pnl_pct,reason,
-                     confidence,ai_score,win_prob,invested,opened,closed,exchange,
-                     regime,trade_type,partial_sold,dca_level,news_score,onchain_score)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (
-                        user_id,
-                        trade.get("symbol"),
-                        trade.get("entry"),
-                        trade.get("exit"),
-                        trade.get("qty"),
-                        trade.get("pnl"),
-                        trade.get("pnl_pct"),
-                        trade.get("reason"),
-                        trade.get("confidence"),
-                        trade.get("ai_score"),
-                        trade.get("win_prob"),
-                        trade.get("invested"),
-                        trade.get("opened"),
-                        trade.get("closed"),
-                        trade.get("exchange", CONFIG["exchange"]),
-                        trade.get("regime", "bull"),
-                        trade.get("trade_type", "long"),
-                        trade.get("partial_sold", 0),
-                        trade.get("dca_level", 0),
-                        trade.get("news_score", 0),
-                        trade.get("onchain_score", 0),
-                    ),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO trades
+                        (user_id,symbol,entry,exit_price,qty,pnl,pnl_pct,reason,
+                         confidence,ai_score,win_prob,invested,opened,closed,exchange,
+                         regime,trade_type,partial_sold,dca_level,news_score,onchain_score)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            user_id,
+                            trade.get("symbol"),
+                            trade.get("entry"),
+                            trade.get("exit"),
+                            trade.get("qty"),
+                            trade.get("pnl"),
+                            trade.get("pnl_pct"),
+                            trade.get("reason"),
+                            trade.get("confidence"),
+                            trade.get("ai_score"),
+                            trade.get("win_prob"),
+                            trade.get("invested"),
+                            trade.get("opened"),
+                            trade.get("closed"),
+                            trade.get("exchange", CONFIG["exchange"]),
+                            trade.get("regime", "bull"),
+                            trade.get("trade_type", "long"),
+                            trade.get("partial_sold", 0),
+                            trade.get("dca_level", 0),
+                            trade.get("news_score", 0),
+                            trade.get("onchain_score", 0),
+                        ),
+                    )
         except Exception as e:
             log.error(f"save_trade: {e}")
 
     def load_trades(self, limit=500, symbol=None, year=None, user_id=None) -> list[dict]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                q = "SELECT *, exit_price as `exit` FROM trades"
-                params = []
-                w = []
-                if user_id:
-                    w.append("user_id=%s")
-                    params.append(user_id)
-                if symbol:
-                    w.append("symbol=%s")
-                    params.append(symbol)
-                if year:
-                    w.append("YEAR(closed)=%s")
-                    params.append(year)
-                if w:
-                    q += " WHERE " + " AND ".join(w)
-                q += " ORDER BY closed DESC LIMIT %s"
-                params.append(limit)
-                c.execute(q, params)
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    q = "SELECT *, exit_price as `exit` FROM trades"
+                    params = []
+                    w = []
+                    if user_id:
+                        w.append("user_id=%s")
+                        params.append(user_id)
+                    if symbol:
+                        w.append("symbol=%s")
+                        params.append(symbol)
+                    if year:
+                        w.append("YEAR(closed)=%s")
+                        params.append(year)
+                    if w:
+                        q += " WHERE " + " AND ".join(w)
+                    q += " ORDER BY closed DESC LIMIT %s"
+                    params.append(limit)
+                    c.execute(q, params)
+                    rows = c.fetchall()
             result = []
             for r in rows:
                 d = dict(r)
@@ -928,23 +951,21 @@ class MySQLManager:
     # ── AI Samples ──────────────────────────────────────────────────────────
     def save_ai_sample(self, features: np.ndarray, label: int, regime: str = "bull"):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
-                    (json.dumps(features.tolist()), label, regime),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
+                        (json.dumps(features.tolist()), label, regime),
+                    )
         except Exception as e:
             log.error(f"save_ai_sample: {e}")
 
     def load_ai_samples(self) -> tuple[list, list, list]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT features,label,regime FROM ai_training")
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT features,label,regime FROM ai_training")
+                    rows = c.fetchall()
             X = [np.array(json.loads(r["features"]), dtype=np.float32) for r in rows]
             y = [r["label"] for r in rows]
             regimes = [r["regime"] for r in rows]
@@ -966,35 +987,32 @@ class MySQLManager:
 
     def get_user(self, username: str) -> dict | None:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT * FROM users WHERE username=%s", (username,))
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT * FROM users WHERE username=%s", (username,))
+                    row = c.fetchone()
             return self._decrypt_user_keys(dict(row)) if row else None
         except Exception:
             return None
 
     def get_user_by_id(self, uid: int) -> dict | None:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT * FROM users WHERE id=%s", (uid,))
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT * FROM users WHERE id=%s", (uid,))
+                    row = c.fetchone()
             return self._decrypt_user_keys(dict(row)) if row else None
         except Exception:
             return None
 
     def get_all_users(self) -> list[dict]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users"
-                )
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users"
+                    )
+                    rows = c.fetchall()
             result = []
             for r in rows:
                 d = dict(r)
@@ -1015,13 +1033,12 @@ class MySQLManager:
                 h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
             else:
                 h = hashlib.sha256(pw).hexdigest()
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES(%s,%s,%s,%s,%s)",
-                    (username, h, role, balance, balance),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES(%s,%s,%s,%s,%s)",
+                        (username, h, role, balance, balance),
+                    )
             return True
         except Exception as e:
             log.error(f"create_user: {e}")
@@ -1038,19 +1055,17 @@ class MySQLManager:
 
     def update_user_login(self, user_id: int):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
         except Exception:
             pass
 
     def update_user_balance(self, user_id: int, balance: float):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
         except Exception:
             pass
 
@@ -1066,18 +1081,17 @@ class MySQLManager:
         }
         token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO api_tokens (user_id,token,label,expires_at) VALUES(%s,%s,%s,%s)",
-                    (
-                        user_id,
-                        token[:500],
-                        label,
-                        datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-                    ),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "INSERT INTO api_tokens (user_id,token,label,expires_at) VALUES(%s,%s,%s,%s)",
+                        (
+                            user_id,
+                            token[:500],
+                            label,
+                            datetime.utcnow() + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                        ),
+                    )
         except Exception as e:
             log.error(f"create_token: {e}")
         return token
@@ -1094,51 +1108,48 @@ class MySQLManager:
     # ── Misc ────────────────────────────────────────────────────────────────
     def save_backtest(self, result: dict):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO backtest_results
-                    (symbol,timeframe,candles,total_trades,win_rate,total_pnl,profit_factor,max_drawdown,result_json)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (
-                        result.get("symbol"),
-                        result.get("timeframe"),
-                        result.get("candles"),
-                        result.get("total_trades"),
-                        result.get("win_rate"),
-                        result.get("total_pnl"),
-                        result.get("profit_factor"),
-                        result.get("max_drawdown"),
-                        json.dumps(result)[:65000],
-                    ),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO backtest_results
+                        (symbol,timeframe,candles,total_trades,win_rate,total_pnl,profit_factor,max_drawdown,result_json)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            result.get("symbol"),
+                            result.get("timeframe"),
+                            result.get("candles"),
+                            result.get("total_trades"),
+                            result.get("win_rate"),
+                            result.get("total_pnl"),
+                            result.get("profit_factor"),
+                            result.get("max_drawdown"),
+                            json.dumps(result)[:65000],
+                        ),
+                    )
         except Exception as e:
             log.error(f"save_backtest: {e}")
 
     def get_recent_backtests(self, limit=10) -> list[dict]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT %s", (limit,)
-                )
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT * FROM backtest_results ORDER BY created_at DESC LIMIT %s", (limit,)
+                    )
+                    rows = c.fetchall()
             return [dict(r) for r in rows]
         except Exception:
             return []
 
     def add_alert(self, symbol: str, target: float, direction: str, user_id: int = 1) -> int:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO price_alerts (user_id,symbol,target_price,direction) VALUES(%s,%s,%s,%s)",
-                    (user_id, symbol, target, direction),
-                )
-                aid = c.lastrowid
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "INSERT INTO price_alerts (user_id,symbol,target_price,direction) VALUES(%s,%s,%s,%s)",
+                        (user_id, symbol, target, direction),
+                    )
+                    aid = c.lastrowid
             return aid
         except Exception as e:
             log.error(f"add_alert: {e}")
@@ -1146,42 +1157,38 @@ class MySQLManager:
 
     def get_active_alerts(self) -> list[dict]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT * FROM price_alerts WHERE triggered=0")
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT * FROM price_alerts WHERE triggered=0")
+                    rows = c.fetchall()
             return [dict(r) for r in rows]
         except Exception:
             return []
 
     def trigger_alert(self, aid: int):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "UPDATE price_alerts SET triggered=1,triggered_at=NOW() WHERE id=%s", (aid,)
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "UPDATE price_alerts SET triggered=1,triggered_at=NOW() WHERE id=%s", (aid,)
+                    )
         except Exception:
             pass
 
     def delete_alert(self, aid: int):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
         except Exception:
             pass
 
     def get_all_alerts(self) -> list[dict]:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
-                rows = c.fetchall()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
+                    rows = c.fetchall()
             result = []
             for r in rows:
                 d = dict(r)
@@ -1195,82 +1202,76 @@ class MySQLManager:
 
     def save_daily_report(self, date_str: str, report: dict):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO daily_reports (report_date,report_json)
-                    VALUES(%s,%s) ON DUPLICATE KEY UPDATE report_json=%s,sent_at=NOW()""",
-                    (date_str, json.dumps(report), json.dumps(report)),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO daily_reports (report_date,report_json)
+                        VALUES(%s,%s) ON DUPLICATE KEY UPDATE report_json=%s,sent_at=NOW()""",
+                        (date_str, json.dumps(report), json.dumps(report)),
+                    )
         except Exception as e:
             log.error(f"save_daily_report: {e}")
 
     def report_sent_today(self) -> bool:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute("SELECT id FROM daily_reports WHERE report_date=CURDATE()")
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT id FROM daily_reports WHERE report_date=CURDATE()")
+                    row = c.fetchone()
             return row is not None
         except Exception:
             return False
 
     def save_sentiment(self, symbol: str, score: float, source: str):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO sentiment_cache (symbol,score,source,updated_at)
-                    VALUES(%s,%s,%s,NOW()) ON DUPLICATE KEY
-                    UPDATE score=%s,source=%s,updated_at=NOW()""",
-                    (symbol, score, source, score, source),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO sentiment_cache (symbol,score,source,updated_at)
+                        VALUES(%s,%s,%s,NOW()) ON DUPLICATE KEY
+                        UPDATE score=%s,source=%s,updated_at=NOW()""",
+                        (symbol, score, source, score, source),
+                    )
         except Exception:
             pass
 
     def get_sentiment(self, symbol: str) -> float | None:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """SELECT score FROM sentiment_cache
-                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 2 HOUR""",
-                    (symbol,),
-                )
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """SELECT score FROM sentiment_cache
+                        WHERE symbol=%s AND updated_at > NOW() - INTERVAL 2 HOUR""",
+                        (symbol,),
+                    )
+                    row = c.fetchone()
             return float(row["score"]) if row else None
         except Exception:
             return None
 
     def save_news(self, symbol: str, score: float, headline: str, count: int):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO news_cache (symbol,score,headline,article_count,updated_at)
-                    VALUES(%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
-                    UPDATE score=%s,headline=%s,article_count=%s,updated_at=NOW()""",
-                    (symbol, score, headline[:500], count, score, headline[:500], count),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO news_cache (symbol,score,headline,article_count,updated_at)
+                        VALUES(%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
+                        UPDATE score=%s,headline=%s,article_count=%s,updated_at=NOW()""",
+                        (symbol, score, headline[:500], count, score, headline[:500], count),
+                    )
         except Exception:
             pass
 
     def get_news(self, symbol: str) -> dict | None:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """SELECT score,headline,article_count FROM news_cache
-                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 30 MINUTE""",
-                    (symbol,),
-                )
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """SELECT score,headline,article_count FROM news_cache
+                        WHERE symbol=%s AND updated_at > NOW() - INTERVAL 30 MINUTE""",
+                        (symbol,),
+                    )
+                    row = c.fetchone()
             return dict(row) if row else None
         except Exception:
             return None
@@ -1278,75 +1279,71 @@ class MySQLManager:
     def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
         net = (whale_score + flow_score) / 2
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO onchain_cache (symbol,whale_score,flow_score,net_score,detail,updated_at)
-                    VALUES(%s,%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
-                    UPDATE whale_score=%s,flow_score=%s,net_score=%s,detail=%s,updated_at=NOW()""",
-                    (
-                        symbol,
-                        whale_score,
-                        flow_score,
-                        net,
-                        detail[:500],
-                        whale_score,
-                        flow_score,
-                        net,
-                        detail[:500],
-                    ),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO onchain_cache (symbol,whale_score,flow_score,net_score,detail,updated_at)
+                        VALUES(%s,%s,%s,%s,%s,NOW()) ON DUPLICATE KEY
+                        UPDATE whale_score=%s,flow_score=%s,net_score=%s,detail=%s,updated_at=NOW()""",
+                        (
+                            symbol,
+                            whale_score,
+                            flow_score,
+                            net,
+                            detail[:500],
+                            whale_score,
+                            flow_score,
+                            net,
+                            detail[:500],
+                        ),
+                    )
         except Exception:
             pass
 
     def get_onchain(self, symbol: str) -> dict | None:
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """SELECT whale_score,flow_score,net_score,detail FROM onchain_cache
-                    WHERE symbol=%s AND updated_at > NOW() - INTERVAL 1 HOUR""",
-                    (symbol,),
-                )
-                row = c.fetchone()
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """SELECT whale_score,flow_score,net_score,detail FROM onchain_cache
+                        WHERE symbol=%s AND updated_at > NOW() - INTERVAL 1 HOUR""",
+                        (symbol,),
+                    )
+                    row = c.fetchone()
             return dict(row) if row else None
         except Exception:
             return None
 
     def save_arb(self, arb: dict):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    """INSERT INTO arb_opportunities
-                    (symbol,exchange_buy,price_buy,exchange_sell,price_sell,spread_pct,executed,profit)
-                    VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
-                    (
-                        arb["symbol"],
-                        arb["exchange_buy"],
-                        arb["price_buy"],
-                        arb["exchange_sell"],
-                        arb["price_sell"],
-                        arb["spread_pct"],
-                        arb.get("executed", 0),
-                        arb.get("profit", 0),
-                    ),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO arb_opportunities
+                        (symbol,exchange_buy,price_buy,exchange_sell,price_sell,spread_pct,executed,profit)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            arb["symbol"],
+                            arb["exchange_buy"],
+                            arb["price_buy"],
+                            arb["exchange_sell"],
+                            arb["price_sell"],
+                            arb["spread_pct"],
+                            arb.get("executed", 0),
+                            arb.get("profit", 0),
+                        ),
+                    )
         except Exception:
             pass
 
     def save_genetic(self, generation: int, fitness: float, genome: dict):
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO genetic_results (generation,fitness,genome_json) VALUES(%s,%s,%s)",
-                    (generation, fitness, json.dumps(genome)),
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "INSERT INTO genetic_results (generation,fitness,genome_json) VALUES(%s,%s,%s)",
+                        (generation, fitness, json.dumps(genome)),
+                    )
         except Exception:
             pass
 
@@ -1401,17 +1398,13 @@ class MySQLManager:
                     "arb_opportunities",
                 ]
             )
-            tables = list(_ALLOWED_TABLES)
             with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for table in tables:
-                    if table not in _ALLOWED_TABLES:
-                        continue
+                for table in _ALLOWED_TABLES:
                     try:
-                        conn = self._conn()
-                        with conn.cursor() as c:
-                            c.execute(f"SELECT * FROM {table} LIMIT 100000")
-                            rows = c.fetchall()
-                        conn.close()
+                        with self._get_conn() as conn:
+                            with conn.cursor() as c:
+                                c.execute(f"SELECT * FROM {table} LIMIT 100000")
+                                rows = c.fetchall()
                         data = []
                         for r in rows:
                             d = dict(r)
@@ -1527,13 +1520,12 @@ class MySQLManager:
         if not samples:
             return
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                c.executemany(
-                    "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
-                    [(json.dumps(feat.tolist()), label, regime) for feat, label, regime in samples],
-                )
-            conn.close()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.executemany(
+                        "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
+                        [(json.dumps(feat.tolist()), label, regime) for feat, label, regime in samples],
+                    )
         except Exception as e:
             log.error(f"save_ai_samples_batch: {e}")
 
@@ -1541,21 +1533,20 @@ class MySQLManager:
     def cleanup_old_data(self):
         """Bereinigt alte Daten basierend auf Retention-Policy."""
         try:
-            conn = self._conn()
-            with conn.cursor() as c:
-                audit_days = CONFIG.get("audit_retention_days", 90)
-                c.execute(
-                    "DELETE FROM audit_log WHERE created_at < NOW() - INTERVAL %s DAY",
-                    (audit_days,),
-                )
-                deleted_audit = c.rowcount
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    audit_days = CONFIG.get("audit_retention_days", 90)
+                    c.execute(
+                        "DELETE FROM audit_log WHERE created_at < NOW() - INTERVAL %s DAY",
+                        (audit_days,),
+                    )
+                    deleted_audit = c.rowcount
 
-                ai_days = CONFIG.get("ai_sample_retention_days", 180)
-                c.execute(
-                    "DELETE FROM ai_training WHERE created_at < NOW() - INTERVAL %s DAY", (ai_days,)
-                )
-                deleted_ai = c.rowcount
-            conn.close()
+                    ai_days = CONFIG.get("ai_sample_retention_days", 180)
+                    c.execute(
+                        "DELETE FROM ai_training WHERE created_at < NOW() - INTERVAL %s DAY", (ai_days,)
+                    )
+                    deleted_ai = c.rowcount
             if deleted_audit or deleted_ai:
                 log.info(
                     f"🧹 Data Retention: {deleted_audit} Audit-Logs, {deleted_ai} AI-Samples bereinigt"
@@ -1579,25 +1570,34 @@ def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
     now = time.time()
     attempts = _login_attempts.get(ip, [])
     attempts = [t for t in attempts if now - t < window]
-    _login_attempts[ip] = attempts
+    if attempts:
+        _login_attempts[ip] = attempts
+    else:
+        # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
+        _login_attempts.pop(ip, None)
     return len(attempts) < max_attempts
 
 
 def _record_login_attempt(ip: str):
     _login_attempts.setdefault(ip, []).append(time.time())
+    # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
+    if len(_login_attempts) > 10_000:
+        cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
+        stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
+        for k in stale:
+            _login_attempts.pop(k, None)
 
 
 def _audit(action: str, detail: str = "", user_id: int = 0):
     """[Verbesserung #8] Audit-Log Hilfsfunktion."""
     try:
         ip = request.remote_addr if request else "system"
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute(
-                "INSERT INTO audit_log (user_id,action,detail,ip) VALUES(%s,%s,%s,%s)",
-                (user_id, action[:80], detail[:500], ip),
-            )
-        conn.close()
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "INSERT INTO audit_log (user_id,action,detail,ip) VALUES(%s,%s,%s,%s)",
+                    (user_id, action[:80], detail[:500], ip),
+                )
     except Exception:
         pass
 
@@ -1635,6 +1635,8 @@ def _before_request_hooks():
                     expected = session.get("_csrf_token")
                     if expected and token != expected:
                         _audit("csrf_violation", request.path, session.get("user_id", 0))
+                        from flask import abort
+                        abort(403)  # CSRF-Verletzung → Request ablehnen
 
 
 @app.after_request
@@ -2077,15 +2079,22 @@ class AnomalyDetector:
         try:
             with self._lock:
                 X = np.array(self._data[-500:], dtype=np.float32)
-            X_s = self.scaler.fit_transform(X)
-            self.model = IsolationForest(
+            # Training außerhalb des Locks (kann lange dauern)
+            # Verwende lokale Kopie des Scalers um Race-Condition zu vermeiden
+            local_scaler = StandardScaler()
+            X_s = local_scaler.fit_transform(X)
+            new_model = IsolationForest(
                 contamination=CONFIG["anomaly_contamination"],
                 n_estimators=100,
                 random_state=42,
                 n_jobs=-1,
             )
-            self.model.fit(X_s)
-            self._last_trained = datetime.now()
+            new_model.fit(X_s)
+            # Atomare Zuweisung unter Lock → kein Zustand zwischen altem und neuem Modell
+            with self._lock:
+                self.scaler = local_scaler
+                self.model = new_model
+                self._last_trained = datetime.now()
         except Exception as e:
             log.debug(f"Anomalie-Training: {e}")
 
@@ -2096,9 +2105,13 @@ class AnomalyDetector:
         if not CONFIG.get("use_anomaly") or self.model is None:
             return False, 0.0
         try:
+            # Modell + Scaler atomar lesen um Race-Condition mit _train() zu vermeiden
+            with self._lock:
+                model_snap = self.model
+                scaler_snap = self.scaler
             X = np.array([[price_chg, vol_ratio, rsi, atr_pct]], dtype=np.float32)
-            X_s = self.scaler.transform(X)
-            score = float(self.model.score_samples(X_s)[0])  # je negativer, desto anormaler
+            X_s = scaler_snap.transform(X)
+            score = float(model_snap.score_samples(X_s)[0])  # je negativer, desto anormaler
             is_anom = score < -0.6
             self.last_score = score
             if is_anom and not self.is_anomaly:
@@ -2732,9 +2745,15 @@ class AIEngine:
         )
 
     def _augment_data(self, X: np.ndarray, y: np.ndarray, noise_std: float = 0.02) -> tuple:
-        """[14] Noise Injection + Data Augmentation für robusteres Training."""
+        """[14] Noise Injection + Data Augmentation für robusteres Training.
+
+        Gibt immer ein 3-Tupel zurück: (X_aug, y_aug, y_smooth).
+        Wenn zu wenig Daten für Augmentierung: y_smooth = originales y (keine Smoothing).
+        """
         if len(X) < 20:
-            return X, y
+            # Konsistente 3-Tupel-Rückgabe auch ohne Augmentierung
+            y_smooth = np.where(y == 1, 0.95, 0.05)
+            return X, y, y_smooth
         # Gausssches Rauschen auf Eingabe
         X_noisy = X + np.random.normal(0, noise_std, X.shape).astype(np.float32)
         X_aug = np.vstack([X, X_noisy])
@@ -5744,7 +5763,7 @@ def api_tax_report():
         return Response(
             buf.getvalue(),
             mimetype="text/csv",
-            headers={"Content-Disposition": f"attachment;filename=quantra_tax_{year}.csv"},
+            headers={"Content-Disposition": f"attachment;filename=trevlix_tax_{year}.csv"},
         )
     return jsonify(report)
 
@@ -5755,7 +5774,7 @@ def api_export_csv():
     return Response(
         db.export_csv(),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=quantra_trades.csv"},
+        headers={"Content-Disposition": "attachment;filename=trevlix_trades.csv"},
     )
 
 
@@ -5766,7 +5785,7 @@ def api_export_json():
     return Response(
         json.dumps(trades, ensure_ascii=False),
         mimetype="application/json",
-        headers={"Content-Disposition": "attachment;filename=quantra_trades.json"},
+        headers={"Content-Disposition": "attachment;filename=trevlix_trades.json"},
     )
 
 
