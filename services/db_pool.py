@@ -235,7 +235,12 @@ class ConnectionPool:
         try:
             yield conn
         finally:
-            self.release(conn)
+            # conn ist ein _PooledConnection – dessen close() leitet korrekt
+            # an pool.release(raw_conn) weiter (inkl. Semaphore-Freigabe).
+            # NICHT self.release(conn) aufrufen: das würde den _PooledConnection-
+            # Wrapper in den Pool legen (falscher Typ) und bei vollem Pool die
+            # Semaphore doppelt freigeben.
+            conn.close()
 
     def close_all(self) -> None:
         """Schließt alle Verbindungen im Pool."""

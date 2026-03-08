@@ -2590,7 +2590,7 @@ STRATEGIES = [
 # AI ENGINE v4 – Regime + Walk-Forward + LSTM + RL-Integration
 # ═══════════════════════════════════════════════════════════════════════════════
 class AIEngine:
-    N_FEATURES = len(STRATEGY_NAMES) + 38  # 9 strat + 29 market + 9 spectral (Fourier/Wavelet/ACF)
+    N_FEATURES = len(STRATEGY_NAMES) + 39  # 9 strat + 30 market + 9 spectral (Fourier/Wavelet/ACF)
 
     def __init__(self, db_ref):
         self.db = db_ref
@@ -3438,15 +3438,23 @@ class AIEngine:
     def weighted_vote(self, votes, threshold) -> tuple[int, float]:
         total_w = 0.0
         buy_w = 0.0
+        sell_w = 0.0
         for nm, v in votes.items():
             w = self.weights.get(nm, 1.0)
             total_w += w
             if v == 1:
                 buy_w += w
+            elif v == -1:
+                sell_w += w
         if total_w == 0:
             return 0, 0.0
-        conf = buy_w / total_w
-        return (1 if conf >= threshold else 0), round(conf, 3)
+        buy_conf = buy_w / total_w
+        sell_conf = sell_w / total_w
+        if buy_conf >= threshold:
+            return 1, round(buy_conf, 3)
+        if sell_conf >= threshold:
+            return -1, round(sell_conf, 3)
+        return 0, round(max(buy_conf, sell_conf), 3)
 
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
         """[26] Erweitert mit Conformal Prediction Intervals."""
@@ -5186,14 +5194,36 @@ def manage_positions(ex):
         except Exception:
             continue
 
+        # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
+        if (
+            CONFIG.get("break_even_enabled")
+            and not pos.get("break_even_set")
+            and (price - pos["entry"]) / pos["entry"] >= CONFIG.get("break_even_trigger", 0.015)
+        ):
+            be_sl = pos["entry"] * (1 + CONFIG.get("break_even_buffer", 0.001))
+            if be_sl > pos["sl"]:  # Nur nach oben verschieben
+                pos["sl"] = be_sl
+                pos["break_even_set"] = True
+                log.info(
+                    f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
+                    f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
+                )
+
         # Trailing Stop
         if CONFIG["trailing_stop"] and price > pos.get("highest", price):
             pos["highest"] = price
-            pos["sl"] = price * (1 - CONFIG["trailing_pct"])
+            new_sl = price * (1 - CONFIG["trailing_pct"])
+            if new_sl > pos["sl"]:  # Trailing Stop nur nach oben verschieben
+                pos["sl"] = new_sl
 
-        # Partial Take-Profit
-        if CONFIG.get("use_partial_tp") and pos.get("partial_sold", 0) == 0:
-            for level in CONFIG.get("partial_tp_levels", []):
+        # Partial Take-Profit – pro Level separat prüfen, nicht nur Level 0
+        # Jedes Level hat einen eigenen Index. "partial_tp_done" speichert,
+        # wie viele Level bereits ausgeführt wurden (0 = noch keins).
+        if CONFIG.get("use_partial_tp"):
+            levels = CONFIG.get("partial_tp_levels", [])
+            levels_done = pos.get("partial_tp_done", 0)
+            if levels_done < len(levels):
+                level = levels[levels_done]
                 if (price - pos["entry"]) / pos["entry"] >= level["pct"]:
                     close_position(
                         ex,
@@ -5201,7 +5231,7 @@ def manage_positions(ex):
                         f"Partial-TP {level['pct'] * 100:.0f}%",
                         partial_ratio=level["sell_ratio"],
                     )
-                    break
+                    pos["partial_tp_done"] = levels_done + 1
 
         # SL / TP
         if price <= pos["sl"]:

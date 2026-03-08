@@ -1,6 +1,12 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║   CRYPTOBOT AI ENGINE  –  Selbstlernende Gewinnoptimierung       ║
+║   TREVLIX AI ENGINE  –  Selbstlernende Gewinnoptimierung         ║
+║                                                                  ║
+║  HINWEIS: Dieses Modul ist ein eigenständiges Referenz-Modul.   ║
+║  server.py importiert es NICHT – server.py hat eine eigene,     ║
+║  erweiterte AIEngine-Klasse mit 9 Strategien (inkl. Ichimoku    ║
+║  und VWAP), Fourier/Wavelet-Features und Bull/Bear-Regimen.     ║
+║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║
 ║  Wie es funktioniert:                                            ║
@@ -54,6 +60,10 @@ log = logging.getLogger("AIEngine")
 # FEATURE-NAMEN (muss mit extract_features übereinstimmen)
 # ═══════════════════════════════════════════════════════════════
 
+# WICHTIG: Diese Liste muss mit STRATEGY_NAMES in server.py übereinstimmen.
+# server.py ist die primäre Quelle. Diese Datei (ai_engine.py) wird von
+# server.py NICHT importiert – server.py definiert seine eigene AIEngine-Klasse.
+# ai_engine.py dient nur als eigenständiges Referenz-Modul.
 STRATEGY_NAMES = [
     "EMA-Trend",
     "RSI-Stochastic",
@@ -62,24 +72,26 @@ STRATEGY_NAMES = [
     "Volumen-Ausbruch",
     "OBV-Trend",
     "ROC-Momentum",
+    "Ichimoku",  # neu in v1.1.0
+    "VWAP",      # neu in v1.1.0
 ]
 
 FEATURE_NAMES = STRATEGY_NAMES + [
-    "rsi_norm",  # RSI / 100
-    "stoch_rsi_norm",  # Stochastic RSI / 100
-    "bb_pct",  # Position in Bollinger Band (0=unten, 1=oben)
-    "bb_width_norm",  # Bollinger Band Breite (normalisiert)
-    "macd_hist_sign",  # Vorzeichen MACD-Histogram
+    "rsi_norm",         # RSI / 100
+    "stoch_rsi_norm",   # Stochastic RSI / 100
+    "bb_pct",           # Position in Bollinger Band (0=unten, 1=oben)
+    "bb_width_norm",    # Bollinger Band Breite (normalisiert)
+    "macd_hist_sign",   # Vorzeichen MACD-Histogram
     "macd_hist_slope",  # Steigung MACD-Histogram
-    "vol_ratio_norm",  # Volumen-Verhältnis / 5
-    "atr_pct_norm",  # ATR als % / 10
-    "ema_alignment",  # 1=ema8>21>50>200, -1=umgekehrt, 0=neutral
-    "price_vs_ema21",  # (Preis - EMA21) / EMA21
-    "roc10_norm",  # Rate of Change / 10
-    "bull_market",  # 1=Bullish, 0=Bearish
-    "hour_sin",  # Tageszeit (Sinus-Kodierung)
-    "hour_cos",  # Tageszeit (Kosinus-Kodierung)
-    "vote_consensus",  # Anteil aller Strategien die gleich stimmen
+    "vol_ratio_norm",   # Volumen-Verhältnis / 5
+    "atr_pct_norm",     # ATR als % / 10
+    "ema_alignment",    # 1=ema8>21>50>200, -1=umgekehrt, 0=neutral
+    "price_vs_ema21",   # (Preis - EMA21) / EMA21
+    "roc10_norm",       # Rate of Change / 10
+    "bull_market",      # 1=Bullish, 0=Bearish
+    "hour_sin",         # Tageszeit (Sinus-Kodierung)
+    "hour_cos",         # Tageszeit (Kosinus-Kodierung)
+    "vote_consensus",   # Anteil aller Strategien die gleich stimmen
     "recent_win_rate",  # Win-Rate der letzten 10 Trades
 ]
 
