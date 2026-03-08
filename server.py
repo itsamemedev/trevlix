@@ -1644,8 +1644,13 @@ def _security_headers(response):
     """[Verbesserung #6] Security Headers."""
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
+    # X-XSS-Protection ist in modernen Browsern deprecated und entfernt; weglassen um
+    # potenzielle XSS-Auditor-Bypässe zu vermeiden. CSP ist der moderne Ersatz.
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Permissions-Policy: deaktiviert Browser-APIs die für Trading-Apps nicht benötigt werden
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+    )
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -1960,6 +1965,7 @@ class OnChainFetcher:
                 md = data.get("market_data", {})
                 # Exchange Netflow Proxy: Price change vs Volume change
                 price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
+                vol_ratio = 0.0  # Default initialisieren – verhindert NameError wenn Marktdaten fehlen
                 vol_chg = 0.0
                 if md.get("total_volume", {}).get("usd") and md.get("market_cap", {}).get("usd"):
                     vol_ratio = md["total_volume"]["usd"] / max(md["market_cap"]["usd"], 1)
@@ -2069,7 +2075,7 @@ class AnomalyDetector:
             if len(self._data) > 2000:
                 self._data = self._data[-2000:]
             if len(self._data) >= 200 and (
-                self._last_trained is None or (datetime.now() - self._last_trained).seconds > 3600
+                self._last_trained is None or (datetime.now() - self._last_trained).total_seconds() > 3600
             ):
                 threading.Thread(target=self._train, daemon=True).start()
 
@@ -3762,7 +3768,7 @@ class MultiTimeframeFilter:
             return True, "MTF deaktiv"
         with self._lock:
             c = self._cache.get(symbol)
-            if c and (datetime.now() - c["ts"]).seconds < 240:
+            if c and (datetime.now() - c["ts"]).total_seconds() < 240:
                 ok = c["trend"] >= 0
                 return ok, f"{'✅' if ok else '❌'} 4h cached"
         try:
@@ -4028,7 +4034,7 @@ class RiskManager:
         active = self.circuit_breaker_active()
         remaining = 0
         if active and self.circuit_breaker_until:
-            remaining = max(0, int((self.circuit_breaker_until - datetime.now()).seconds / 60))
+            remaining = max(0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60))
         return {
             "active": active,
             "losses": self.consecutive_losses,
@@ -5271,7 +5277,7 @@ _heatmap_ts: datetime | None = None
 
 def get_heatmap_data(ex) -> list[dict]:
     global _heatmap_cache, _heatmap_ts
-    if _heatmap_ts and (datetime.now() - _heatmap_ts).seconds < 90:
+    if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
         return _heatmap_cache
     try:
         syms = state.markets[:60] if state.markets else []
@@ -7074,7 +7080,7 @@ class FundingRateTracker:
 
     def update(self, ex=None):
         """Aktualisiert Funding Rates (alle 15 Min)."""
-        if self._last_update and (datetime.now() - self._last_update).seconds < 900:
+        if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
             return
         try:
             url = "https://api.bybit.com/v5/market/tickers?category=linear"

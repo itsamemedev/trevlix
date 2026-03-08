@@ -137,6 +137,18 @@ def validate() -> list[Issue]:
     add(_check_min_length("MYSQL_PASS", 16, "MYSQL_PASS"))
     add(_check_min_length("MYSQL_USER", 2, "MYSQL_USER"))
     add(_check_min_length("MYSQL_DB", 2, "MYSQL_DB"))
+    # MYSQL_HOST: Warnung wenn nicht gesetzt oder leer
+    mysql_host = os.getenv("MYSQL_HOST", "")
+    if not mysql_host:
+        issues.append(Issue("warning", "MYSQL_HOST", "MYSQL_HOST ist nicht gesetzt – verwendet 'localhost'"))
+    # MYSQL_PORT: Warnung wenn gesetzt aber kein gültiger Port
+    mysql_port_raw = os.getenv("MYSQL_PORT", "3306")
+    try:
+        mysql_port = int(mysql_port_raw)
+        if not (1 <= mysql_port <= 65535):
+            issues.append(Issue("critical", "MYSQL_PORT", f"MYSQL_PORT {mysql_port} liegt außerhalb 1-65535"))
+    except ValueError:
+        issues.append(Issue("critical", "MYSQL_PORT", f"MYSQL_PORT '{mysql_port_raw}' ist keine gültige Zahl"))
 
     # ── Security ─────────────────────────────────────────────────────────────
     add(_check_hex("JWT_SECRET", 32, "JWT_SECRET"))

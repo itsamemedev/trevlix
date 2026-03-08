@@ -124,8 +124,10 @@ class TestSecurityHeaders:
         resp = app_client.get("/api/v1/status")
         assert resp.headers.get("X-Content-Type-Options") == "nosniff"
         assert resp.headers.get("X-Frame-Options") == "SAMEORIGIN"
-        assert resp.headers.get("X-XSS-Protection") == "1; mode=block"
+        # X-XSS-Protection ist deprecated und wurde entfernt – kein Test mehr
         assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
+        # Permissions-Policy sollte gesetzt sein
+        assert "Permissions-Policy" in resp.headers
 
 
 class TestPasswordPolicy:
