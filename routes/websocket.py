@@ -15,15 +15,28 @@ Verwendung (nach vollständiger Migration):
 """
 
 import logging
-import threading
 
 log = logging.getLogger("NEXUS.websocket")
 
 
-def register_handlers(socketio, state, config: dict, db, discord, ai_engine,
-                      risk, regime, arb_scanner, short_engine, fg_idx,
-                      dominance, bot_loop_fn, backup_fn, daily_report_fn,
-                      _ws_limits: dict):
+def register_handlers(
+    socketio,
+    state,
+    config: dict,
+    db,
+    discord,
+    ai_engine,
+    risk,
+    regime,
+    arb_scanner,
+    short_engine,
+    fg_idx,
+    dominance,
+    bot_loop_fn,
+    backup_fn,
+    daily_report_fn,
+    _ws_limits: dict,
+):
     """
     Registriert alle SocketIO-Event-Handler.
 
@@ -45,8 +58,6 @@ def register_handlers(socketio, state, config: dict, db, discord, ai_engine,
         daily_report_fn: daily_report-Funktion
         _ws_limits:     Dict für Rate-Limiting (sid -> timestamp)
     """
-    from flask import session
-    from flask_socketio import emit
 
     # ── Rate-Limit-Hilfsfunktion ────────────────────────────────────────────
     def _ws_rate_check(sid: str, action: str, min_interval: float = 2.0) -> bool:
@@ -55,6 +66,7 @@ def register_handlers(socketio, state, config: dict, db, discord, ai_engine,
         Blockiert wenn min_interval seit letztem gleichen Event nicht vergangen.
         """
         import time
+
         key = f"{sid}:{action}"
         now = time.time()
         last = _ws_limits.get(key, 0)

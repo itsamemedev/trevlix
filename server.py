@@ -498,14 +498,14 @@ EXCHANGE_MAP = {
 
 # [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
 EXCHANGE_DEFAULT_FEES: dict[str, float] = {
-    "binance": 0.0010,    # 0.10% Standard (0.075% mit BNB)
-    "bybit": 0.0010,      # 0.10% Standard (0.06% Maker)
-    "okx": 0.0008,        # 0.08% Standard (0.06% Maker)
-    "kucoin": 0.0010,     # 0.10% Standard
+    "binance": 0.0010,  # 0.10% Standard (0.075% mit BNB)
+    "bybit": 0.0010,  # 0.10% Standard (0.06% Maker)
+    "okx": 0.0008,  # 0.08% Standard (0.06% Maker)
+    "kucoin": 0.0010,  # 0.10% Standard
     "cryptocom": 0.0004,  # 0.04% Standard
-    "kraken": 0.0016,     # 0.16% Standard
-    "huobi": 0.0020,      # 0.20% Standard
-    "coinbase": 0.0060,   # 0.60% Standard (Advanced Trade niedriger)
+    "kraken": 0.0016,  # 0.16% Standard
+    "huobi": 0.0020,  # 0.20% Standard
+    "coinbase": 0.0060,  # 0.60% Standard (Advanced Trade niedriger)
 }
 
 # Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
@@ -530,6 +530,7 @@ STRATEGY_NAMES = [
 # [#11] DEPENDENCY INJECTION FÜR DB-ZUGRIFF VIA FLASK g-OBJEKT
 # Statt globalem `db`-Objekt kann get_db() in Request-Kontext genutzt werden.
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def get_db():
     """Gibt eine DB-Verbindung aus dem Flask g-Objekt zurück.
@@ -1499,6 +1500,7 @@ class MySQLManager:
             if backup_path.endswith(".enc"):
                 try:
                     from services.encryption import decrypt_value
+
                     with open(backup_path) as f:
                         enc_data = f.read()
                     raw_hex = decrypt_value(enc_data)
@@ -3981,7 +3983,9 @@ class RiskManager:
                 try:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
                     if corr > CONFIG["max_corr"]:
-                        log.info(f"🔗 Korrelations-Block: {symbol}↔{s} corr={corr:.2f} > {CONFIG['max_corr']}")
+                        log.info(
+                            f"🔗 Korrelations-Block: {symbol}↔{s} corr={corr:.2f} > {CONFIG['max_corr']}"
+                        )
                         return True
                 except Exception:
                     pass
@@ -4214,6 +4218,7 @@ class BotState:
         self.portfolio_history: list[dict] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
         from collections import deque
+
         self.signal_log: deque = deque(maxlen=50)
         self.activity_log: deque = deque(maxlen=50)
         self.arb_log: deque = deque(maxlen=20)
@@ -4713,7 +4718,9 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
         if ex_cls:
             ex = ex_cls({"enableRateLimit": True})
             fee_info = ex.fetch_trading_fee(symbol)
-            rate = float(fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])))
+            rate = float(
+                fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"]))
+            )
             _fee_cache[ex_id] = {"rate": rate, "ts": now}
             return rate
     except Exception:
@@ -5405,6 +5412,7 @@ def bot_loop():
 # am Ende dieser Datei.
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API — JWT-gesichert
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5578,11 +5586,13 @@ def api_fees():
             "cached": _fee_cache.get(ex_id, {}).get("rate"),
             "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
         }
-    return jsonify({
-        "current_exchange": current_ex,
-        "current_fee_rate": get_exchange_fee_rate(),
-        "exchanges": fees,
-    })
+    return jsonify(
+        {
+            "current_exchange": current_ex,
+            "current_fee_rate": get_exchange_fee_rate(),
+            "exchanges": fees,
+        }
+    )
 
 
 @app.route("/api/v1/arb")
@@ -5752,10 +5762,7 @@ def api_backup_verify():
     bdir = CONFIG["backup_dir"]
     try:
         # Neuestes Backup finden
-        files = [
-            os.path.join(bdir, f) for f in os.listdir(bdir)
-            if f.endswith((".zip", ".enc"))
-        ]
+        files = [os.path.join(bdir, f) for f in os.listdir(bdir) if f.endswith((".zip", ".enc"))]
         if not files:
             return jsonify({"error": "Keine Backups vorhanden"}), 404
         latest = max(files, key=os.path.getmtime)
@@ -6226,11 +6233,13 @@ def fetch_aggregated_balance() -> dict:
         try:
             keys = CONFIG.get("arb_api_keys", {}).get(ex_id, {})
             ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id))
-            exchanges_to_check[ex_id] = ex_cls({
-                "apiKey": keys.get("apiKey", ""),
-                "secret": keys.get("secret", ""),
-                "enableRateLimit": True,
-            })
+            exchanges_to_check[ex_id] = ex_cls(
+                {
+                    "apiKey": keys.get("apiKey", ""),
+                    "secret": keys.get("secret", ""),
+                    "enableRateLimit": True,
+                }
+            )
         except Exception as e:
             result["errors"].append(f"{ex_id}: {e}")
 

@@ -12,8 +12,8 @@ Unterstützte Plans: free, pro, developer
 import logging
 import time
 
+import httpx
 import numpy as np
-import requests
 
 log = logging.getLogger("trevlix.cryptopanic")
 
@@ -132,13 +132,13 @@ class CryptoPanicClient:
         }
 
         try:
-            resp = requests.get(self._base_url, params=params, timeout=_REQUEST_TIMEOUT)
+            resp = httpx.get(self._base_url, params=params, timeout=_REQUEST_TIMEOUT)
             resp.raise_for_status()
             return resp.json().get("results", [])
-        except requests.exceptions.HTTPError as e:
+        except httpx.HTTPStatusError as e:
             log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)
             return []
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             log.debug("CryptoPanic API v2 Fehler für %s: %s", currency, e)
             return []
         except (ValueError, KeyError) as e:

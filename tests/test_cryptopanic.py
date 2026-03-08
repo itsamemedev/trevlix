@@ -175,7 +175,7 @@ class TestWordLists:
 class TestFetchPosts:
     """Tests für die API-Aufrufe (mit Mocking)."""
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_success(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -197,7 +197,7 @@ class TestFetchPosts:
         call_args = mock_get.call_args
         assert "free/v2/posts" in call_args[0][0]
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_with_pro_plan(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"results": []}
@@ -210,7 +210,7 @@ class TestFetchPosts:
         call_args = mock_get.call_args
         assert "pro/v2/posts" in call_args[0][0]
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_passes_parameters(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {"results": []}
@@ -233,11 +233,11 @@ class TestFetchPosts:
         posts = client.fetch_posts("BTC")
         assert posts == []
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_network_error(self, mock_get):
-        import requests as req
+        import httpx as hx
 
-        mock_get.side_effect = req.exceptions.ConnectionError("Network error")
+        mock_get.side_effect = hx.ConnectError("Network error")
 
         client = CryptoPanicClient(token="test-token")
         posts = client.fetch_posts("BTC")
@@ -250,7 +250,7 @@ class TestFetchPosts:
 class TestGetScore:
     """Tests für die get_score Methode mit DB-Mock."""
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_get_score_with_db_cache(self, mock_get):
         db_mock = MagicMock()
         db_mock.get_news.return_value = {
@@ -267,7 +267,7 @@ class TestGetScore:
         assert count == 3
         mock_get.assert_not_called()
 
-    @patch("services.cryptopanic.requests.get")
+    @patch("services.cryptopanic.httpx.get")
     def test_get_score_saves_to_db(self, mock_get):
         mock_resp = MagicMock()
         mock_resp.json.return_value = {

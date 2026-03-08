@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import logging
 import os
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from flask import Blueprint, redirect, request, send_file, session
 
@@ -141,7 +142,9 @@ def create_auth_blueprint(
 
         client_ip = request.remote_addr or "unknown"
         if not check_login_rate_fn(client_ip):
-            db_audit_fn(0, "login_blocked", f"Brute-Force-Schutz: {username} von {client_ip}", client_ip)
+            db_audit_fn(
+                0, "login_blocked", f"Brute-Force-Schutz: {username} von {client_ip}", client_ip
+            )
             return redirect("/login?err=1")
         record_login_attempt_fn(client_ip)
 
@@ -173,6 +176,7 @@ def create_auth_blueprint(
             Registrierungs-Seite (HTML) oder Redirect.
         """
         import re as _re
+
         if not config.get("allow_registration", False):
             body = """  <div class="msg msg-err" style="display:block">
     Registrierung ist deaktiviert. Bitte wende dich an den Administrator.
@@ -217,7 +221,11 @@ def create_auth_blueprint(
     <button type="submit">Konto erstellen &rarr;</button>
   </form>
   <div class="alt-link"><a href="/login">&larr; Zur Anmeldung</a></div>"""
-            return _AUTH_TEMPLATE % {"page_title": "Registrierung", "msg_display": "none", "body": body}
+            return _AUTH_TEMPLATE % {
+                "page_title": "Registrierung",
+                "msg_display": "none",
+                "body": body,
+            }
 
         username = request.form.get("username", "").strip()[:32]
         password = request.form.get("password", "")
@@ -235,7 +243,12 @@ def create_auth_blueprint(
             return redirect("/register?err=exists")
 
         if db.create_user(username, password, role="user"):
-            db_audit_fn(0, "register", f"Neues Konto: {username} · {request.remote_addr}", request.remote_addr or "")
+            db_audit_fn(
+                0,
+                "register",
+                f"Neues Konto: {username} · {request.remote_addr}",
+                request.remote_addr or "",
+            )
             return redirect("/register?ok=1")
         return redirect("/register?err=exists")
 

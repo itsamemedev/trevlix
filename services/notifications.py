@@ -58,6 +58,7 @@ class DiscordNotifier:
         # Lazy-Import für Backward-Compatibility
         try:
             import server
+
             return server.CONFIG.get(key, default)
         except Exception:
             return default
