@@ -71,7 +71,7 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from flask import Flask, Response, jsonify, redirect, request, send_file, session
+from flask import Flask, Response, g, jsonify, redirect, request, send_file, session
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
@@ -495,6 +495,21 @@ EXCHANGE_MAP = {
     "okx": "okx",
     "kucoin": "kucoin",
 }
+
+# [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
+EXCHANGE_DEFAULT_FEES: dict[str, float] = {
+    "binance": 0.0010,    # 0.10% Standard (0.075% mit BNB)
+    "bybit": 0.0010,      # 0.10% Standard (0.06% Maker)
+    "okx": 0.0008,        # 0.08% Standard (0.06% Maker)
+    "kucoin": 0.0010,     # 0.10% Standard
+    "cryptocom": 0.0004,  # 0.04% Standard
+    "kraken": 0.0016,     # 0.16% Standard
+    "huobi": 0.0020,      # 0.20% Standard
+    "coinbase": 0.0060,   # 0.60% Standard (Advanced Trade niedriger)
+}
+
+# Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
+_fee_cache: dict[str, dict] = {}
 STRATEGY_NAMES = [
     "EMA-Trend",
     "RSI-Stochastic",
@@ -511,10 +526,60 @@ STRATEGY_NAMES = [
 # ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #7] Konfigurationsvalidierung beim Start
 # ═══════════════════════════════════════════════════════════════════════════════
-def validate_config(cfg: dict) -> list[str]:
+# ═══════════════════════════════════════════════════════════════════════════════
+# [#11] DEPENDENCY INJECTION FÜR DB-ZUGRIFF VIA FLASK g-OBJEKT
+# Statt globalem `db`-Objekt kann get_db() in Request-Kontext genutzt werden.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_db():
+    """Gibt eine DB-Verbindung aus dem Flask g-Objekt zurück.
+
+    Im Request-Kontext wird die Verbindung einmalig erzeugt und am Ende
+    des Requests automatisch zurück in den Pool gegeben (via teardown).
+    Außerhalb von Requests wird direkt eine Pool-Verbindung zurückgegeben.
+
+    Returns:
+        Aktive Datenbankverbindung aus dem Connection-Pool.
+
+    Example:
+        @app.route('/api/data')
+        def my_route():
+            conn = get_db()
+            with conn.cursor() as c:
+                c.execute('SELECT 1')
     """
-    Validiert CONFIG-Werte und gibt eine Liste von Fehlermeldungen zurück.
-    Leere Liste = alles OK.
+    try:
+        if "db_conn" not in g:
+            g.db_conn = db._conn()  # type: ignore[attr-defined]
+        return g.db_conn
+    except RuntimeError:
+        # Außerhalb des Request-Kontexts
+        return db._conn()  # type: ignore[attr-defined]
+
+
+@app.teardown_appcontext
+def close_db_connection(exc: BaseException | None = None) -> None:
+    """Gibt die DB-Verbindung am Ende jedes Requests zurück in den Pool.
+
+    Args:
+        exc: Optionale Exception, die den Request beendet hat.
+    """
+    conn = g.pop("db_conn", None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def validate_config(cfg: dict) -> list[str]:
+    """Validiert CONFIG-Werte und gibt eine Liste von Fehlermeldungen zurück.
+
+    Args:
+        cfg: Konfigurations-Dictionary mit den zu prüfenden Werten.
+
+    Returns:
+        Liste mit Fehlermeldungen. Leere Liste = alles OK.
     """
     errors: list[str] = []
 
@@ -677,8 +742,15 @@ class MySQLManager:
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_user(user_id),
                     INDEX idx_action(action),
-                    INDEX idx_time(created_at)
+                    INDEX idx_time(created_at),
+                    INDEX idx_user_time(user_id, created_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # [#19] Composite-Index Migration für bestehende Installationen
+                try:
+                    c.execute("""ALTER TABLE audit_log
+                        ADD INDEX idx_user_time(user_id, created_at)""")
+                except Exception:
+                    pass  # Index existiert bereits
                 # Backtest results
                 c.execute("""CREATE TABLE IF NOT EXISTS backtest_results (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -3875,13 +3947,30 @@ class RiskManager:
                 self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
                 discord.circuit_breaker(self.consecutive_losses, mins)
 
-    def is_correlated(self, symbol, open_syms) -> bool:
+    def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
+        """[#27] Prüft ob ein Symbol mit offenen Positionen korreliert ist.
+
+        Verhindert zu konzentrierte Portfolios durch Korrelations-Limit.
+        Wird vor jedem Trade-Entry aufgerufen um systematisch alle offenen
+        Positionen zu prüfen.
+
+        Args:
+            symbol: Symbol das geprüft werden soll (z.B. 'ETH/USDT').
+            open_syms: Liste der Symbole mit aktuell offenen Positionen.
+
+        Returns:
+            True wenn Korrelation > ``CONFIG["max_corr"]`` zu mind. einem
+            offenen Symbol, False sonst. False auch wenn weniger als 20
+            Preisdatenpunkte für den Vergleich vorhanden sind.
+        """
         if not open_syms or CONFIG["max_corr"] >= 1.0:
             return False
         h1 = self._price_history.get(symbol, [])
         if len(h1) < 20:
             return False
         for s in open_syms:
+            if s == symbol:
+                continue
             h2 = self._price_history.get(s, [])
             if len(h2) < 20:
                 continue
@@ -3890,7 +3979,9 @@ class RiskManager:
             r2 = np.diff(h2[-n:])
             if len(r1) > 3 and len(r1) == len(r2):
                 try:
-                    if abs(float(np.corrcoef(r1, r2)[0, 1])) > CONFIG["max_corr"]:
+                    corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
+                    if corr > CONFIG["max_corr"]:
+                        log.info(f"🔗 Korrelations-Block: {symbol}↔{s} corr={corr:.2f} > {CONFIG['max_corr']}")
                         return True
                 except Exception:
                     pass
@@ -4485,7 +4576,7 @@ class ShortEngine:
             return
         price = state.prices.get(symbol, pos["entry"])
         pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
-        fee = pos["invested"] * CONFIG["fee_rate"] * 2
+        fee = pos["invested"] * get_exchange_fee_rate(CONFIG.get("short_exchange")) * 2  # [#29]
         pnl = pos["invested"] * (pnl_pct / 100) - fee
         if CONFIG["paper_trading"]:
             state.balance += pos["invested"] + pnl
@@ -4596,6 +4687,41 @@ def create_exchange():
             "options": {"defaultType": "spot"},
         }
     )
+
+
+def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USDT") -> float:
+    """Gibt die Taker-Fee für eine Exchange zurück.
+
+    Versucht zuerst, die Fee via CCXT abzurufen (gecacht für 1 Stunde).
+    Fällt auf Exchange-spezifische Defaults zurück, dann auf CONFIG["fee_rate"].
+
+    Args:
+        exchange_id: Exchange-Name (z.B. "binance"). None = aktuelle Exchange.
+        symbol: Trading-Pair für Fee-Abfrage.
+
+    Returns:
+        Fee-Rate als Dezimalzahl (z.B. 0.001 = 0.1%).
+    """
+    ex_id = exchange_id or CONFIG.get("exchange", "cryptocom")
+    now = time.time()
+    cached = _fee_cache.get(ex_id)
+    if cached and now - cached.get("ts", 0) < 3600:
+        return cached["rate"]
+    # Versuche CCXT-Fee-Abfrage
+    try:
+        ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
+        if ex_cls:
+            ex = ex_cls({"enableRateLimit": True})
+            fee_info = ex.fetch_trading_fee(symbol)
+            rate = float(fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])))
+            _fee_cache[ex_id] = {"rate": rate, "ts": now}
+            return rate
+    except Exception:
+        pass
+    # Fallback: Exchange-Default oder CONFIG
+    rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])
+    _fee_cache[ex_id] = {"rate": rate, "ts": now}
+    return rate
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4827,7 +4953,7 @@ def open_position(ex, scan: dict):
     if invest < 5:
         return
 
-    fee = invest * CONFIG["fee_rate"]
+    fee = invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     qty = (invest - fee) / price
     sl = price * (1 - CONFIG["stop_loss_pct"])
     tp = price * (1 + CONFIG["take_profit_pct"])
@@ -4892,7 +5018,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     close_qty = pos["qty"] * partial_ratio
     close_invest = pos["invested"] * partial_ratio
     pnl_pct = (price - pos["entry"]) / pos["entry"] * 100
-    fee = close_invest * CONFIG["fee_rate"]
+    fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
     if CONFIG["paper_trading"]:
@@ -5009,7 +5135,7 @@ def try_dca(ex, symbol):
     dca_invest = min(dca_invest, state.balance * 0.15)
     if dca_invest < 5:
         return
-    fee = dca_invest * CONFIG["fee_rate"]
+    fee = dca_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     add_qty = (dca_invest - fee) / price
     # Neuer Durchschnittspreis
     total_qty = pos["qty"] + add_qty
@@ -5273,184 +5399,11 @@ def bot_loop():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FLASK ROUTES — DASHBOARD
+# FLASK ROUTES — DASHBOARD & AUTH
+# [#9] Auth-Routen (/, /login, /register, /logout) wurden in routes/auth.py
+# als Flask Blueprint ausgelagert. Registrierung erfolgt via create_auth_blueprint()
+# am Ende dieser Datei.
 # ═══════════════════════════════════════════════════════════════════════════════
-@app.route("/")
-def index():
-    if not session.get("user_id"):
-        return redirect("/login")
-    return send_file(os.path.join(_TEMPLATE_DIR, "dashboard.html"))
-
-
-_AUTH_PAGE_CSS = """<!DOCTYPE html><html><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TREVLIX %(page_title)s</title>
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Segoe UI',sans-serif;background:#060912;color:#ccd6f6;
-  min-height:100vh;display:flex;align-items:center;justify-content:center}
-.box{background:#0a0f1e;border:1px solid rgba(255,255,255,.07);border-radius:20px;
-  padding:40px 36px;width:100%%;max-width:380px}
-.logo{text-align:center;margin-bottom:28px}
-.logo-icon{font-size:44px;margin-bottom:8px}
-.logo-name{font-size:26px;font-weight:900;letter-spacing:-1px}
-.logo-name span{color:#00d4ff}
-.logo-sub{font-size:11px;color:#3a4a6a;letter-spacing:2px;text-transform:uppercase;margin-top:2px}
-label{display:block;font-size:11px;font-weight:700;color:#5a7090;letter-spacing:.5px;
-  text-transform:uppercase;margin-bottom:5px}
-input{width:100%%;background:#0f1628;border:1px solid rgba(255,255,255,.08);
-  border-radius:10px;padding:13px 14px;color:#ccd6f6;font-size:14px;outline:none;
-  margin-bottom:14px;transition:.2s}
-input:focus{border-color:rgba(0,212,255,.4)}
-.msg{font-size:12px;margin-bottom:12px;padding:8px 10px;border-radius:8px;display:%(msg_display)s;text-align:center}
-.msg-err{background:rgba(255,61,113,.12);color:#ff3d71;border:1px solid rgba(255,61,113,.25)}
-.msg-ok{background:rgba(0,212,255,.1);color:#00d4ff;border:1px solid rgba(0,212,255,.2)}
-button{width:100%%;padding:15px;border-radius:12px;background:linear-gradient(135deg,#00d4ff,#0090b0);
-  color:#000;font-size:15px;font-weight:800;border:none;cursor:pointer;transition:.15s}
-button:hover{transform:translateY(-1px)}
-.ver{text-align:center;margin-top:20px;font-size:10px;color:#3a4a6a}
-.alt-link{text-align:center;margin-top:14px;font-size:12px;color:#5a7090}
-.alt-link a{color:#00d4ff;text-decoration:none}
-</style></head><body>
-<div class="box">
-  <div class="logo">
-    <div class="logo-icon">&#9889;</div>
-    <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.0.4</div>
-  </div>
-  %(body)s
-  <div class="ver">TREVLIX &middot; Open-Source Trading Bot</div>
-</div>
-</body></html>"""
-
-
-@app.route("/login", methods=["GET", "POST"])
-@limiter.limit("10 per minute")
-def login():
-    allow_reg = CONFIG.get("allow_registration", False)
-    reg_link = (
-        '<div class="alt-link">Noch kein Konto? <a href="/register">Registrieren</a></div>'
-        if allow_reg
-        else ""
-    )
-    if request.method == "GET":
-        err = request.args.get("err", "")
-        msg_cls = "msg msg-err" if err else "msg msg-err"
-        msg_txt = "Falsches Passwort oder Benutzer nicht gefunden" if err else ""
-        body = f"""  <form method="POST" action="/login">
-    <div class="{msg_cls}" style="display:{"block" if err else "none"}">{msg_txt}</div>
-    <label>Benutzername</label>
-    <input type="text" name="username" required autocomplete="username">
-    <label>Passwort</label>
-    <input type="password" name="password" required autofocus autocomplete="current-password">
-    <button type="submit">Anmelden &rarr;</button>
-  </form>
-  {reg_link}"""
-        return _AUTH_PAGE_CSS % {"page_title": "Login", "msg_display": "none", "body": body}
-    username = request.form.get("username", "").strip()
-    password = request.form.get("password", "")
-    if not username or not password:
-        return redirect("/login?err=1")
-    # [Verbesserung #3] Brute-Force-Schutz
-    client_ip = request.remote_addr or "unknown"
-    if not _check_login_rate(client_ip):
-        _audit("login_blocked", f"Brute-Force-Schutz: {username} von {client_ip}")
-        return redirect("/login?err=1")
-    _record_login_attempt(client_ip)
-    user = db.get_user(username)
-    if user and db.verify_password(user["password_hash"], password):
-        session["user_id"] = user["id"]
-        session["username"] = user["username"]
-        session["user_role"] = user.get("role", "user")
-        session["last_active"] = datetime.now().isoformat()  # [Verbesserung #1]
-        db.update_user_login(user["id"])
-        db_audit(user["id"], "login", f"Login · {client_ip}")
-        return redirect("/")
-    # [Verbesserung #8] Fehlgeschlagenen Login loggen
-    _audit("login_failed", f"user={username} ip={client_ip}")
-    return redirect("/login?err=1")
-
-
-@app.route("/register", methods=["GET", "POST"])
-@limiter.limit("5 per minute")
-def register():
-    if not CONFIG.get("allow_registration", False):
-        body = """  <div class="msg msg-err" style="display:block">
-    Registrierung ist deaktiviert. Bitte wende dich an den Administrator.
-  </div>
-  <div class="alt-link" style="margin-top:20px"><a href="/login">&larr; Zur Anmeldung</a></div>"""
-        return _AUTH_PAGE_CSS % {
-            "page_title": "Registrierung",
-            "msg_display": "none",
-            "body": body,
-        }, 403
-    if request.method == "GET":
-        err = request.args.get("err", "")
-        ok = request.args.get("ok", "")
-        if err == "exists":
-            msg_txt, msg_cls, show = "Benutzername bereits vergeben.", "msg msg-err", "block"
-        elif err == "short":
-            msg_txt, msg_cls, show = (
-                "Passwort muss mindestens 8 Zeichen haben.",
-                "msg msg-err",
-                "block",
-            )
-        elif err == "match":
-            msg_txt, msg_cls, show = (
-                "Passw\u00f6rter stimmen nicht \u00fcberein.",
-                "msg msg-err",
-                "block",
-            )
-        elif ok:
-            msg_txt, msg_cls, show = (
-                "Konto erstellt! Du kannst dich jetzt anmelden.",
-                "msg msg-ok",
-                "block",
-            )
-        else:
-            msg_txt, msg_cls, show = "", "msg msg-err", "none"
-        body = f"""  <form method="POST" action="/register">
-    <div class="{msg_cls}" style="display:{show}">{msg_txt}</div>
-    <label>Benutzername</label>
-    <input type="text" name="username" required autocomplete="username" minlength="3" maxlength="32">
-    <label>Passwort</label>
-    <input type="password" name="password" required autocomplete="new-password" minlength="8">
-    <label>Passwort best&auml;tigen</label>
-    <input type="password" name="password2" required autocomplete="new-password" minlength="8">
-    <button type="submit">Konto erstellen &rarr;</button>
-  </form>
-  <div class="alt-link"><a href="/login">&larr; Zur Anmeldung</a></div>"""
-        return _AUTH_PAGE_CSS % {"page_title": "Registrierung", "msg_display": "none", "body": body}
-    username = request.form.get("username", "").strip()[:32]
-    password = request.form.get("password", "")
-    password2 = request.form.get("password2", "")
-    # [Verbesserung #4] Erweiterte Password-Policy
-    if len(password) < 12:
-        return redirect("/register?err=short")
-    import re as _re
-
-    if not (
-        _re.search(r"[A-Z]", password)
-        and _re.search(r"[a-z]", password)
-        and _re.search(r"\d", password)
-    ):
-        return redirect("/register?err=short")
-    if password != password2:
-        return redirect("/register?err=match")
-    if db.get_user(username):
-        return redirect("/register?err=exists")
-    ok = db.create_user(username, password, role="user")
-    if ok:
-        db_audit(0, "register", f"Neues Konto: {username} · {request.remote_addr}")
-        return redirect("/register?ok=1")
-    return redirect("/register?err=exists")
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API — JWT-gesichert
@@ -5600,6 +5553,36 @@ def api_news(symbol):
 def api_onchain(symbol):
     score, detail = onchain.get_score(symbol)
     return jsonify({"symbol": symbol, "score": score, "detail": detail})
+
+
+@app.route("/api/v1/balance/all")
+@api_auth_required
+def api_balance_all():
+    """[#32] Aggregierte Balance über alle konfigurierten Exchanges."""
+    try:
+        data = fetch_aggregated_balance()
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/v1/fees")
+@api_auth_required
+def api_fees():
+    """[#29] Gibt Exchange-spezifische Fee-Rates zurück."""
+    current_ex = CONFIG.get("exchange", "cryptocom")
+    fees = {}
+    for ex_id in EXCHANGE_DEFAULT_FEES:
+        fees[ex_id] = {
+            "default": EXCHANGE_DEFAULT_FEES[ex_id],
+            "cached": _fee_cache.get(ex_id, {}).get("rate"),
+            "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
+        }
+    return jsonify({
+        "current_exchange": current_ex,
+        "current_fee_rate": get_exchange_fee_rate(),
+        "exchanges": fees,
+    })
 
 
 @app.route("/api/v1/arb")
@@ -6223,6 +6206,48 @@ def on_admin_create_user(data):
 # ═══════════════════════════════════════════════════════════════════════════════
 # STARTUP
 # ═══════════════════════════════════════════════════════════════════════════════
+def fetch_aggregated_balance() -> dict:
+    """[#32] Aggregiert Balance über alle konfigurierten Exchanges.
+
+    Verbindet sich mit der Haupt-Exchange sowie allen in ``arb_exchanges``
+    konfigurierten Exchanges und summiert USDT-Guthaben und Coin-Bestände.
+
+    Returns:
+        Dict mit ``total_usdt``, ``by_exchange`` und ``errors``.
+    """
+    result: dict = {"total_usdt": 0.0, "by_exchange": {}, "errors": []}
+    if CONFIG["paper_trading"]:
+        result["total_usdt"] = state.balance
+        result["by_exchange"]["paper"] = {"USDT": state.balance}
+        return result
+
+    exchanges_to_check = {CONFIG.get("exchange", "cryptocom"): create_exchange()}
+    for ex_id in CONFIG.get("arb_exchanges", []):
+        try:
+            keys = CONFIG.get("arb_api_keys", {}).get(ex_id, {})
+            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id))
+            exchanges_to_check[ex_id] = ex_cls({
+                "apiKey": keys.get("apiKey", ""),
+                "secret": keys.get("secret", ""),
+                "enableRateLimit": True,
+            })
+        except Exception as e:
+            result["errors"].append(f"{ex_id}: {e}")
+
+    for ex_id, ex in exchanges_to_check.items():
+        try:
+            bal = ex.fetch_balance()
+            totals = {k: float(v) for k, v in bal.get("total", {}).items() if float(v or 0) > 0}
+            result["by_exchange"][ex_id] = totals
+            # USDT direkt + Schätzung via last price für andere Coins
+            usdt = totals.get(CONFIG.get("quote_currency", "USDT"), 0.0)
+            result["total_usdt"] += usdt
+        except Exception as e:
+            result["errors"].append(f"{ex_id}: {e}")
+
+    return result
+
+
 def safety_scan():
     """Prüft beim Start ob unbekannte Positionen auf Exchange sind."""
     if CONFIG["paper_trading"]:
@@ -7303,6 +7328,39 @@ def _graceful_shutdown(signum, _frame):
 
 signal.signal(signal.SIGTERM, _graceful_shutdown)
 signal.signal(signal.SIGINT, _graceful_shutdown)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# [#9] BLUEPRINT-REGISTRIERUNG
+# Auth- und Dashboard-Routen über externe Blueprint-Module einbinden.
+# Erlaubt schrittweise Modularisierung von server.py.
+# ═══════════════════════════════════════════════════════════════════════════════
+try:
+    from routes.auth import create_auth_blueprint
+    from routes.dashboard import create_dashboard_blueprint
+
+    _auth_bp = create_auth_blueprint(
+        db=db,
+        config=CONFIG,
+        limiter=limiter,
+        db_audit_fn=db_audit,
+        check_login_rate_fn=_check_login_rate,
+        record_login_attempt_fn=_record_login_attempt,
+        audit_fn=_audit,
+        template_dir=_TEMPLATE_DIR,
+    )
+    _dashboard_bp = create_dashboard_blueprint(
+        template_dir=_TEMPLATE_DIR,
+        static_dir=_STATIC_DIR,
+        require_auth_fn=dashboard_auth,
+    )
+    # Blueprints mit Prefix-freiem URL-Raum registrieren
+    # (Routen mit gleichem Pfad wie bestehende werden vom Blueprint ignoriert)
+    app.register_blueprint(_auth_bp, name="auth_bp")
+    app.register_blueprint(_dashboard_bp, name="dashboard_bp")
+    log.info("✅ Blueprints registriert: auth, dashboard")
+except Exception as _bp_err:
+    log.warning(f"Blueprint-Registrierung übersprungen: {_bp_err}")
 
 
 if __name__ == "__main__":
