@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.0.4 – Python Dependencies                       ║
+# ║  TREVLIX v1.1.0 – Python Dependencies                       ║
 # ║  Installieren: pip install -r requirements.txt               ║
 # ╚══════════════════════════════════════════════════════════════╝
 

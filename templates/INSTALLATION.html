@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TREVLIX v1.0.4 — Installation Guide</title>
+<title>TREVLIX v1.1.0 — Installation Guide</title>
 <meta name="description" content="TREVLIX Installationsanleitung — Schritt fuer Schritt Setup Guide.">
 <meta property="og:title" content="TREVLIX — Installation Guide">
 <meta property="og:description" content="Installiere den TREVLIX Trading Bot in wenigen Minuten.">
@@ -21,7 +21,7 @@ body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-s
 /* Header */
 .hero{border-bottom:1px solid var(--muted);padding:48px 0 40px;margin-bottom:40px}
 .logo-row{display:flex;align-items:center;gap:14px;margin-bottom:16px;flex-wrap:wrap}
-.logo-mark{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--jade),#00aa55);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.logo-mark{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--jade) 0%,#00bb66 60%,#009944 100%);display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;box-shadow:0 0 20px rgba(0,255,136,.25)}
 .logo-txt{font-family:var(--fc);font-weight:900;font-size:32px;color:var(--white);letter-spacing:1px}
 .logo-txt em{font-style:normal;color:var(--jade)}
 .version-badge{font-family:var(--fm);font-size:10px;padding:3px 10px;border-radius:4px;background:rgba(0,255,136,.07);color:var(--jade);border:1px solid rgba(0,255,136,.2);margin-left:8px;vertical-align:middle}
@@ -35,7 +35,8 @@ body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-s
 .lang-btn{background:var(--ink1);border:1px solid var(--muted);border-radius:6px;color:var(--sub);cursor:pointer;font-family:var(--fm);font-size:11px;font-weight:700;padding:5px 10px;transition:.2s;display:flex;align-items:center;gap:5px}
 .lang-btn:hover,.lang-btn.active{border-color:var(--jade);color:var(--jade);background:rgba(0,255,136,.06)}
 /* Typography */
-h2{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);margin:48px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--muted);display:flex;align-items:center;gap:10px}
+h2{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);margin:48px 0 20px;padding-bottom:12px;border-bottom:none;display:flex;align-items:center;gap:10px;position:relative}
+h2::after{content:'';position:absolute;bottom:0;left:0;width:56px;height:2px;background:linear-gradient(90deg,var(--jade),var(--blue))}
 h3{font-family:var(--fc);font-size:17px;font-weight:800;color:var(--white);margin:28px 0 12px}
 p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
 a{color:var(--jade);text-decoration:none}
@@ -47,11 +48,11 @@ code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:v
 .copy-btn{position:absolute;top:10px;right:10px;font-family:var(--fm);font-size:10px;padding:4px 10px;background:rgba(255,255,255,.04);border:1px solid var(--muted);border-radius:5px;color:var(--sub);cursor:pointer;transition:.2s}
 .copy-btn:hover{border-color:var(--jade);color:var(--jade)}
 /* Cards */
-.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:12px 0}
-.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
+.card{background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px 24px;margin:12px 0;transition:border-color .3s}
+.card.warn{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.04)}
 .card.info{border-color:rgba(14,165,233,.2);background:rgba(14,165,233,.04)}
 .card.ok{border-color:rgba(0,255,136,.2);background:rgba(0,255,136,.04)}
-.card.danger{border-color:rgba(239,68,68,.25);background:rgba(239,68,68,.04)}
+.card.danger{border-color:rgba(239,68,68,.22);background:rgba(239,68,68,.04)}
 .card-title{font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:8px}
 .card-body{font-size:13px;color:var(--dim);line-height:1.75}
 /* Steps */
@@ -161,7 +162,7 @@ body { padding-top:62px; }
   <div class="logo-row">
     <div class="logo-mark">⚡</div>
     <div class="logo-txt">TREV<em>LIX</em></div>
-    <span class="version-badge">v1.0.4</span>
+    <span class="version-badge">v1.1.0</span>
   </div>
   <div class="hero-sub" data-i18n="inst_subtitle">Algorithmic Trading Intelligence — Installations-Anleitung</div>
   <div class="lang-row">
@@ -683,7 +684,7 @@ GITHUB_BRANCH=<span class="c-var">main</span></pre>
     <div class="site-footer-brand">
       <div class="footer-logo" style="font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white)">TREV<em style="font-style:normal;color:var(--jade)">LIX</em></div>
       <p style="font-size:13px;color:var(--sub);margin-top:8px">Algorithmic Trading Intelligence</p>
-      <div style="font-family:var(--fm);font-size:10px;color:var(--muted,#1e3344);margin-top:8px">v1.0.4 &middot; MIT License</div>
+      <div style="font-family:var(--fm);font-size:10px;color:var(--muted,#1e3344);margin-top:8px">v1.1.0 &middot; MIT License</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
       <div><h4 style="font-family:var(--fc);font-size:13px;font-weight:800;color:var(--white);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Produkt</h4><a href="index.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Home</a><a href="strategies.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Strategien</a><a href="api-docs.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">API Docs</a><a href="dashboard.html" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Dashboard</a></div>

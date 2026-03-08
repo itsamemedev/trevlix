@@ -8,7 +8,7 @@
 <meta property="og:description" content="Antworten auf die haeufigsten Fragen zum TREVLIX Trading Bot.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.0.4 — FAQ</title>
+<title>TREVLIX v1.1.0 — FAQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -26,17 +26,20 @@ code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:v
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
 
-.faq-item{border:1px solid var(--muted);border-radius:10px;margin:10px 0;overflow:hidden;transition:border-color .3s}
-.faq-item:hover{border-color:rgba(0,255,136,.12)}
+.faq-item{border:1px solid rgba(255,255,255,.06);border-radius:12px;margin:10px 0;overflow:hidden;transition:border-color .3s,box-shadow .3s}
+.faq-item:hover{border-color:rgba(0,255,136,.14);box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.faq-item.open{border-color:rgba(0,255,136,.2);box-shadow:0 4px 24px rgba(0,255,136,.06)}
 .faq-q{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:18px 20px;cursor:pointer;font-weight:600;font-size:15px;color:var(--white);background:var(--ink1);transition:background .2s}
 .faq-q:hover{background:var(--ink2)}
 .faq-q .arrow{font-size:12px;color:var(--sub);transition:transform .3s;flex-shrink:0}
 .faq-item.open .arrow{transform:rotate(180deg);color:var(--jade)}
-.faq-a{max-height:0;overflow:hidden;transition:max-height .4s ease,padding .3s;padding:0 20px;background:var(--ink1)}
+.faq-a{max-height:0;overflow:hidden;transition:max-height .4s cubic-bezier(.4,0,.2,1),padding .3s;padding:0 20px;background:linear-gradient(180deg,var(--ink1) 0%,var(--ink2) 100%)}
 .faq-item.open .faq-a{max-height:600px;padding:0 20px 20px}
 .faq-a p{margin:8px 0;font-size:14px;color:var(--dim)}
 .faq-a p:first-child{margin-top:0}
 .faq-count{font-family:var(--fm);font-size:11px;color:var(--sub);margin-bottom:24px}
+h2{border-bottom:none!important;position:relative;padding-bottom:12px}
+h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;background:linear-gradient(90deg,var(--jade),var(--blue))}
 </style>
 </head>
 <body>
@@ -191,7 +194,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+      <div class="footer-version">v1.1.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html" data-i18n="nav_home">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>

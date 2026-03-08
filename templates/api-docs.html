@@ -9,7 +9,7 @@
 <meta property="og:url" content="https://trevlix.dev/api-docs">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.0.4 — API Dokumentation</title>
+<title>TREVLIX v1.1.0 — API Dokumentation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -20,30 +20,39 @@
 body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
 .wrap{max-width:960px;margin:0 auto;padding:40px 24px 60px}
 h1{font-family:var(--fc);font-weight:900;font-size:36px;color:var(--white);margin-bottom:8px}
-h2{font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);margin:48px 0 20px;padding-bottom:10px;border-bottom:1px solid var(--muted);display:flex;align-items:center;gap:10px}
+h2{
+  font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white);
+  margin:48px 0 20px;padding-bottom:12px;
+  border-bottom:none;border-image:none;
+  display:flex;align-items:center;gap:10px;
+  position:relative;
+}
+h2::after{content:'';position:absolute;bottom:0;left:0;width:56px;height:2px;background:linear-gradient(90deg,var(--jade),var(--blue))}
 h3{font-family:var(--fc);font-size:17px;font-weight:800;color:var(--white);margin:28px 0 12px}
 p{color:var(--dim);font-size:14px;margin-bottom:12px;line-height:1.75}
 a{color:var(--jade);text-decoration:none}
 a:hover{text-decoration:underline}
-pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:10px;padding:18px 20px;overflow-x:auto;margin:12px 0;font-family:var(--fm);font-size:12px;line-height:1.9;position:relative}
+pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:12px;padding:18px 20px;overflow-x:auto;margin:12px 0;font-family:var(--fm);font-size:12px;line-height:1.9;position:relative}
 code{font-family:var(--fm);font-size:12px;background:rgba(0,255,136,.07);color:var(--jade);padding:2px 7px;border-radius:4px}
 .c-cmd{color:#00ff88}.c-cmt{color:#2a4a5a}.c-kw{color:#0ea5e9}.c-str{color:#f59e0b}
 .subtitle{font-size:15px;color:var(--dim);margin-bottom:32px}
-.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:12px 0}
+.card{background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:20px 24px;margin:12px 0;transition:border-color .3s}
 .card.info{border-color:rgba(14,165,233,.2);background:rgba(14,165,233,.04)}
-.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
-.ep-grid{display:grid;grid-template-columns:80px 1fr 1fr;gap:1px;background:var(--muted);border-radius:10px;overflow:hidden;margin:12px 0}
-.ep-cell{background:var(--ink1);padding:10px 14px;font-size:12px}
+.card.warn{border-color:rgba(245,158,11,.25);background:rgba(245,158,11,.04)}
+.ep-grid{display:grid;grid-template-columns:80px 1fr 1fr;gap:1px;background:rgba(255,255,255,.05);border-radius:12px;overflow:hidden;margin:12px 0;border:1px solid rgba(255,255,255,.06)}
+.ep-cell{background:var(--ink1);padding:10px 14px;font-size:12px;transition:background .2s}
+.ep-cell:hover{background:var(--ink2)}
 .ep-method{font-family:var(--fm);font-weight:700}
 .ep-path{font-family:var(--fm);color:var(--txt)}
 .ep-desc{color:var(--dim)}
 .ep-head{background:var(--ink2);font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--sub);font-family:var(--fm)}
 .m-get{color:#00ff88}.m-post{color:#0ea5e9}.m-put{color:#f59e0b}.m-del{color:#ef4444}
-table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid var(--muted);border-radius:10px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:12px 0;border:1px solid rgba(255,255,255,.06);border-radius:12px;overflow:hidden}
 th{background:var(--ink2);padding:10px 14px;text-align:left;font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.5px;font-family:var(--fm)}
 td{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.04);color:var(--dim)}
 td:first-child{font-family:var(--fm);color:var(--jade);font-size:12px}
 tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(0,255,136,.02)}
 .tag{font-family:var(--fm);font-size:10px;padding:3px 9px;border-radius:3px;background:rgba(255,255,255,.04);border:1px solid var(--muted);color:var(--sub);display:inline-block;margin:2px}
 .tag.jade{border-color:rgba(0,255,136,.25);color:var(--jade);background:rgba(0,255,136,.05)}
 .tag.blue{border-color:rgba(14,165,233,.25);color:var(--blue);background:rgba(14,165,233,.05)}
@@ -106,7 +115,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </div>
 
 <h1 data-i18n="api_h1">API Dokumentation</h1>
-<p class="subtitle" data-i18n="api_subtitle">Vollständige REST API Referenz für TREVLIX v1.0.4. Alle Endpunkte erfordern JWT-Authentifizierung.</p>
+<p class="subtitle" data-i18n="api_subtitle">Vollständige REST API Referenz für TREVLIX v1.1.0. Alle Endpunkte erfordern JWT-Authentifizierung.</p>
 
 <div class="card info">
   <p><strong>Base-URL:</strong> <code>http://localhost:5000/api/v1</code></p>
@@ -302,7 +311,7 @@ socket.on(<span class="c-str">'trade_update'</span>, (trade) => {
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence &mdash; Open Source Crypto Trading Bot</p>
-      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+      <div class="footer-version">v1.1.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div>

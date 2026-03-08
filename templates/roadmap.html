@@ -8,7 +8,7 @@
 <meta property="og:description" content="Geplante Features und die Zukunft des TREVLIX Trading Bots.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.0.4 — Roadmap</title>
+<title>TREVLIX v1.1.0 — Roadmap</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -25,12 +25,18 @@ a{color:var(--jade);text-decoration:none}a:hover{text-decoration:underline}
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
 
-.phase{background:var(--ink1);border:1px solid var(--muted);border-radius:14px;padding:28px;margin:16px 0;position:relative;overflow:hidden}
+.phase{
+  background:var(--ink1);border:1px solid rgba(255,255,255,.06);
+  border-radius:16px;padding:28px;margin:16px 0;position:relative;overflow:hidden;
+  transition:border-color .3s,box-shadow .3s;
+}
 .phase::before{content:'';position:absolute;top:0;left:0;width:4px;height:100%}
-.phase.done::before{background:var(--jade)}
-.phase.active::before{background:var(--blue)}
-.phase.planned::before{background:var(--amber)}
+.phase.done::before{background:linear-gradient(180deg,var(--jade),var(--jade2))}
+.phase.active::before{background:linear-gradient(180deg,var(--blue),#0077cc)}
+.phase.planned::before{background:linear-gradient(180deg,var(--amber),#cc7700)}
 .phase.future::before{background:var(--sub)}
+.phase.done:hover{border-color:rgba(0,255,136,.2);box-shadow:0 4px 24px rgba(0,255,136,.06)}
+.phase.active:hover{border-color:rgba(14,165,233,.2);box-shadow:0 4px 24px rgba(14,165,233,.06)}
 
 .phase-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:14px}
 .phase-title{font-family:var(--fc);font-weight:900;font-size:20px;color:var(--white)}
@@ -38,7 +44,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 .b-done{background:rgba(0,255,136,.08);color:var(--jade);border:1px solid rgba(0,255,136,.2)}
 .b-active{background:rgba(14,165,233,.08);color:var(--blue);border:1px solid rgba(14,165,233,.2)}
 .b-planned{background:rgba(245,158,11,.08);color:var(--amber);border:1px solid rgba(245,158,11,.2)}
-.b-future{background:rgba(255,255,255,.05);color:var(--sub);border:1px solid var(--muted)}
+.b-future{background:rgba(255,255,255,.04);color:var(--sub);border:1px solid rgba(255,255,255,.07)}
 
 .feature-list{list-style:none;display:flex;flex-direction:column;gap:8px}
 .feature-list li{font-size:13px;color:var(--dim);padding-left:28px;position:relative;line-height:1.6}
@@ -133,7 +139,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <li>Website mit vollstaendiger Dokumentation</li>
   </ul>
   <div class="progress-bar"><div class="progress-bar-fill" style="width:100%;background:var(--jade)"></div></div>
-  <div class="progress-label">100% &mdash; v1.0.1 bis v1.0.4</div>
+  <div class="progress-label">100% &mdash; v1.0.1 bis v1.1.0</div>
 </div>
 
 <!-- Phase 3: Active -->
@@ -151,8 +157,8 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <li>Erweiterte Backtest-Engine mit Walk-Forward Analyse</li>
     <li>Performance-Attribution nach Strategie</li>
   </ul>
-  <div class="progress-bar"><div class="progress-bar-fill" style="width:35%;background:var(--blue)"></div></div>
-  <div class="progress-label">~35% &mdash; v1.1.0 geplant</div>
+  <div class="progress-bar"><div class="progress-bar-fill" style="width:40%;background:var(--blue)"></div></div>
+  <div class="progress-label">~40% &mdash; v1.2.0 geplant</div>
 </div>
 
 <!-- Phase 4: Planned -->
@@ -203,7 +209,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+      <div class="footer-version">v1.1.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>

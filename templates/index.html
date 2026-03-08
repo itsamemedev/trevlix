@@ -13,7 +13,7 @@
 <meta name="twitter:description" content="Professioneller Open-Source Crypto Trading Bot mit KI, 9 Strategien, Arbitrage und mehr.">
 <title>TREVLIX — Algorithmic Trading Intelligence</title>
 <script type="application/ld+json">
-{"@context":"https://schema.org","@type":"SoftwareApplication","name":"TREVLIX","applicationCategory":"FinanceApplication","operatingSystem":"Linux, macOS, Windows (WSL)","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Open Source Algorithmic Crypto Trading Bot mit KI-Ensemble, 9 Voting-Strategien und 5 Exchange-Integrationen.","softwareVersion":"1.0.4","license":"https://opensource.org/licenses/MIT","url":"https://trevlix.dev","author":{"@type":"Organization","name":"TREVLIX","url":"https://github.com/itsamemedev/Trevlix"}}
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"TREVLIX","applicationCategory":"FinanceApplication","operatingSystem":"Linux, macOS, Windows (WSL)","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"description":"Open Source Algorithmic Crypto Trading Bot mit KI-Ensemble, 9 Voting-Strategien und 5 Exchange-Integrationen.","softwareVersion":"1.1.0","license":"https://opensource.org/licenses/MIT","url":"https://trevlix.dev","author":{"@type":"Organization","name":"TREVLIX","url":"https://github.com/itsamemedev/Trevlix"}}
 </script>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -127,11 +127,17 @@ nav.scrolled { background: rgba(2,5,7,.98); }
 .nav-gh-btn:hover { border-color:var(--jade); color:var(--jade); }
 .nav-cta {
   font-family:var(--fc); font-size:14px; font-weight:800;
-  background: var(--jade); color:var(--ink); text-decoration:none;
-  padding:9px 22px; border-radius:7px; letter-spacing:.5px;
-  transition:.2s; white-space:nowrap; text-transform:uppercase;
+  background: linear-gradient(135deg, var(--jade) 0%, #00dd77 100%);
+  color:var(--ink); text-decoration:none;
+  padding:9px 22px; border-radius:8px; letter-spacing:.5px;
+  transition: all .25s; white-space:nowrap; text-transform:uppercase;
+  box-shadow: 0 2px 12px rgba(0,255,136,.2);
 }
-.nav-cta:hover { background:#00e87a; box-shadow:0 0 32px rgba(0,255,136,.35); }
+.nav-cta:hover {
+  background: linear-gradient(135deg, #00ff99 0%, #00ee88 100%);
+  box-shadow:0 4px 24px rgba(0,255,136,.4);
+  transform: translateY(-1px);
+}
 .nav-auth-login {
   font-family:var(--fc); font-size:13px; font-weight:700;
   color:var(--dim); text-decoration:none; padding:7px 16px;
@@ -212,19 +218,29 @@ h1.hero-h1 .stroke {
 .btn-jade {
   font-family:var(--fc); font-size:16px; font-weight:800;
   text-transform:uppercase; letter-spacing:1px;
-  background:var(--jade); color:var(--ink); text-decoration:none;
-  padding:16px 36px; border-radius:6px; display:flex; align-items:center; gap:9px;
-  transition:.2s;
+  background: linear-gradient(135deg, var(--jade) 0%, #00dd77 100%);
+  color:var(--ink); text-decoration:none;
+  padding:16px 36px; border-radius:8px; display:flex; align-items:center; gap:9px;
+  transition: all .25s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 2px 16px rgba(0,255,136,.2);
 }
-.btn-jade:hover { transform:translateY(-2px); box-shadow:0 12px 48px rgba(0,255,136,.3); }
+.btn-jade:hover {
+  transform:translateY(-3px);
+  box-shadow:0 16px 48px rgba(0,255,136,.35);
+  background: linear-gradient(135deg, #00ff99 0%, #00ee88 100%);
+}
 .btn-ghost {
   font-family:var(--fc); font-size:16px; font-weight:700;
   text-transform:uppercase; letter-spacing:1px;
-  background:transparent; color:var(--txt); text-decoration:none;
-  padding:15px 36px; border-radius:6px; display:flex; align-items:center; gap:9px;
-  border:1px solid var(--muted); transition:.2s;
+  background: rgba(255,255,255,.03); color:var(--txt); text-decoration:none;
+  padding:15px 36px; border-radius:8px; display:flex; align-items:center; gap:9px;
+  border:1px solid var(--muted); transition: all .25s;
 }
-.btn-ghost:hover { border-color:rgba(255,255,255,.25); color:var(--white); }
+.btn-ghost:hover {
+  border-color:rgba(255,255,255,.25); color:var(--white);
+  background: rgba(255,255,255,.06);
+  transform:translateY(-2px);
+}
 
 /* hero numbers */
 .hero-numbers {
@@ -235,11 +251,18 @@ h1.hero-h1 .stroke {
 .hero-num-card {
   display:flex; align-items:center; gap:14px;
   padding:14px 20px;
-  background:rgba(255,255,255,.02);
-  border:1px solid rgba(255,255,255,.06);
-  border-radius:10px;
-  backdrop-filter: blur(12px);
+  background: rgba(255,255,255,.025);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  backdrop-filter: blur(16px) saturate(1.5);
+  -webkit-backdrop-filter: blur(16px) saturate(1.5);
   min-width:200px;
+  transition: background .25s, border-color .25s, box-shadow .25s;
+}
+.hero-num-card:hover {
+  background: rgba(0,255,136,.04);
+  border-color: rgba(0,255,136,.18);
+  box-shadow: 0 4px 20px rgba(0,255,136,.08);
 }
 .hn-val {
   font-family:var(--fm); font-size:26px; color:var(--white);
@@ -311,14 +334,16 @@ section { position:relative; z-index:1; }
 .proof-stat {
   padding:40px 24px; border-right:1px solid var(--muted); text-align:center;
   position:relative; overflow:hidden;
+  transition: background .3s;
 }
 .proof-stat:last-child { border-right:none; }
 .proof-stat::before {
   content:''; position:absolute; top:0; left:50%; transform:translateX(-50%);
-  width:0; height:2px; background:linear-gradient(90deg,transparent,var(--jade),transparent);
-  transition: width .6s ease;
+  width:0; height:2px; background:linear-gradient(90deg,transparent,var(--jade),var(--blue),transparent);
+  transition: width .8s cubic-bezier(.4,0,.2,1);
 }
 .proof-stat.visible::before { width:100%; }
+.proof-stat:hover { background: rgba(0,255,136,.02); }
 .proof-val {
   font-family:var(--fc); font-size:clamp(36px,4vw,56px); font-weight:900;
   color:var(--white); line-height:1;
@@ -338,19 +363,23 @@ section { position:relative; z-index:1; }
 }
 .feat-card {
   background:var(--ink1); padding:32px 28px;
-  transition:background .25s; position:relative;
+  transition: background .3s, box-shadow .3s; position:relative;
   overflow:hidden; display:flex; flex-direction:column; gap:12px;
 }
 .feat-card::before {
   content:''; position:absolute; top:0; left:0; right:0; height:2px;
   background:linear-gradient(90deg,var(--jade),var(--blue));
-  transform:scaleX(0); transform-origin:left; transition:.4s;
+  transform:scaleX(0); transform-origin:left; transition:.4s cubic-bezier(.4,0,.2,1);
 }
-.feat-card:hover { background:#0a141d; }
+.feat-card:hover {
+  background: linear-gradient(180deg, #0b161f 0%, #091017 100%);
+  box-shadow: inset 0 1px 0 rgba(0,255,136,.08);
+}
 .feat-card:hover::before { transform:scaleX(1); }
 .feat-card.featured {
-  background: linear-gradient(145deg, #0a1a12, #06110e);
+  background: linear-gradient(145deg, #0c1e14 0%, #07130e 100%);
   border-top:2px solid var(--jade);
+  box-shadow: inset 0 0 40px rgba(0,255,136,.04);
 }
 .feat-icon { font-size:28px; }
 .feat-title { font-family:var(--fc); font-size:18px; font-weight:800; color:var(--white); letter-spacing:.3px; }
@@ -377,7 +406,12 @@ section { position:relative; z-index:1; }
   width:44px; height:44px; border-radius:10px;
   border:1px solid var(--muted); display:flex; align-items:center; justify-content:center;
   font-family:var(--fm); font-size:15px; color:var(--sub);
-  transition:.3s; flex-shrink:0;
+  transition: all .3s; flex-shrink:0;
+  background: rgba(255,255,255,.02);
+}
+.step:hover .step-num {
+  background: rgba(0,255,136,.06);
+  box-shadow: 0 0 16px rgba(0,255,136,.12);
 }
 .step-title { font-family:var(--fc); font-size:20px; font-weight:800; color:var(--white); margin-bottom:6px; }
 .step-desc { font-size:14px; color:var(--dim); line-height:1.7; }
@@ -533,13 +567,19 @@ section { position:relative; z-index:1; }
 /* ══ OPEN SOURCE ════════════════════════════════════════════ */
 #opensource { background:var(--ink); }
 .oss-hero {
-  border:1px solid rgba(0,255,136,.12); border-radius:20px;
+  border:1px solid rgba(0,255,136,.14); border-radius:20px;
   padding:72px 64px; position:relative; overflow:hidden;
-  background:linear-gradient(135deg, rgba(0,255,136,.04), rgba(14,165,233,.02), transparent);
+  background: linear-gradient(135deg, rgba(0,255,136,.05) 0%, rgba(14,165,233,.025) 50%, rgba(0,255,136,.02) 100%);
+  box-shadow: 0 0 80px rgba(0,255,136,.04), inset 0 1px 0 rgba(0,255,136,.08);
 }
 .oss-hero::before {
-  content:''; position:absolute; top:-40%; right:-10%; width:50%; height:180%;
-  background:radial-gradient(ellipse, rgba(0,255,136,.05), transparent 60%);
+  content:''; position:absolute; top:-40%; right:-10%; width:60%; height:180%;
+  background:radial-gradient(ellipse, rgba(0,255,136,.07), transparent 60%);
+  pointer-events:none;
+}
+.oss-hero::after {
+  content:''; position:absolute; bottom:-30%; left:-5%; width:40%; height:120%;
+  background:radial-gradient(ellipse, rgba(14,165,233,.04), transparent 60%);
   pointer-events:none;
 }
 .oss-title {
@@ -594,7 +634,10 @@ section { position:relative; z-index:1; }
 }
 #cta::before {
   content:''; position:absolute; inset:0;
-  background:radial-gradient(ellipse 60% 60% at 50% 50%, rgba(0,255,136,.04), transparent 70%);
+  background:
+    radial-gradient(ellipse 60% 70% at 50% 50%, rgba(0,255,136,.05), transparent 65%),
+    radial-gradient(ellipse 30% 40% at 20% 80%, rgba(14,165,233,.03), transparent 60%),
+    radial-gradient(ellipse 25% 35% at 80% 20%, rgba(0,255,136,.03), transparent 55%);
   pointer-events:none;
 }
 .cta-eyebrow { justify-content:center; margin-bottom:20px; }
@@ -615,10 +658,16 @@ section { position:relative; z-index:1; }
 
 /* ══ FOOTER ═════════════════════════════════════════════════ */
 footer {
-  background:var(--ink1); border-top:1px solid var(--muted);
+  background: linear-gradient(180deg, var(--ink1) 0%, var(--ink) 100%);
+  border-top:1px solid rgba(0,255,136,.06);
   padding:48px 5vw; display:flex; align-items:center;
   justify-content:space-between; flex-wrap:wrap; gap:20px;
   position:relative; z-index:1;
+}
+footer::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(0,255,136,.2), rgba(14,165,233,.15), transparent);
 }
 .footer-logo { font-family:var(--fc); font-weight:900; font-size:20px; letter-spacing:.5px; color:var(--white); }
 .footer-logo em { font-style:normal; color:var(--jade); }
@@ -739,7 +788,7 @@ footer {
 <section id="hero">
   <div class="hero-bg"></div>
   <div class="hero-grid"></div>
-  <div class="hero-eyebrow" data-i18n="web_hero_eyebrow">v1.0.4 · trevlix.dev · Open Source</div>
+  <div class="hero-eyebrow" data-i18n="web_hero_eyebrow">v1.1.0 · trevlix.dev · Open Source</div>
   <h1 class="hero-h1">
     ALGORITHMIC<br>
     <span class="jade">TRADING</span>
@@ -1240,7 +1289,7 @@ footer {
         </div>
         <div class="term-body">
 <span class="t-s"># Aktuelle Situation</span>
-<span class="t-s">Installiert : </span><span class="t-c">v1.0.4</span>
+<span class="t-s">Installiert : </span><span class="t-c">v1.1.0</span>
 <span class="t-s">GitHub      : </span><span class="t-g">v1.1.0 ← NEU!</span>
 
 <span class="t-s">──────────────────────────────</span>
@@ -1342,14 +1391,14 @@ footer {
         </div>
         <div class="term-body">
 <span class="t-c">╔════════════════════════════════╗</span>
-<span class="t-c">║  ⚡ TREVLIX v1.0.4             ║</span>
+<span class="t-c">║  ⚡ TREVLIX v1.1.0             ║</span>
 <span class="t-c">║  Algorithmic Trading Intelligence ║</span>
 <span class="t-c">╚════════════════════════════════╝</span>
 
 <span class="t-s">MySQL    : localhost/trevlix ✓</span>
 <span class="t-s">Exchange : Crypto.com ✓</span>
 <span class="t-s">Modus    : 📝 Paper Trading</span>
-<span class="t-s">GitHub   : </span><span class="t-g">v1.0.4 (aktuell)</span>
+<span class="t-s">GitHub   : </span><span class="t-g">v1.1.0 (aktuell)</span>
 
 <span class="t-g">[OK]</span> <span class="t-s">Fear &amp; Greed: </span><span class="t-y">72 — Gier</span>
 <span class="t-g">[OK]</span> <span class="t-s">BTC Dom: </span><span class="t-c">52.3%</span> <span class="t-s">· USDT: </span><span class="t-c">6.1%</span>
@@ -1680,7 +1729,7 @@ footer {
 <footer>
   <div>
     <div class="footer-logo">TREV<em>LIX</em></div>
-    <div style="font-size:11px;color:var(--sub);margin-top:4px;font-family:var(--fm)">trevlix.dev &middot; v1.0.4 &middot; Algorithmic Trading Intelligence</div>
+    <div style="font-size:11px;color:var(--sub);margin-top:4px;font-family:var(--fm)">trevlix.dev &middot; v1.1.0 &middot; Algorithmic Trading Intelligence</div>
   </div>
   <div class="footer-links">
     <a href="#features">Features</a>

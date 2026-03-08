@@ -56,7 +56,7 @@ button:hover{transform:translateY(-1px)}
   <div class="logo">
     <div class="logo-icon">&#9889;</div>
     <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.0.4</div>
+    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.1.0</div>
   </div>
   %(body)s
   <div class="ver">TREVLIX &middot; Open-Source Trading Bot</div>

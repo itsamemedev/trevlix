@@ -8,7 +8,7 @@
 <meta property="og:description" content="Sicherheits-Best-Practices fuer den TREVLIX Trading Bot.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.0.4 — Sicherheitsleitfaden</title>
+<title>TREVLIX v1.1.0 — Sicherheitsleitfaden</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -28,10 +28,10 @@ pre{background:#010305;border:1px solid rgba(255,255,255,.07);border-radius:10px
 body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;opacity:.025;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");background-repeat:repeat;background-size:128px 128px}
 ::-webkit-scrollbar{width:4px;height:4px}::-webkit-scrollbar-thumb{background:var(--muted);border-radius:4px}
 
-.card{background:var(--ink1);border:1px solid var(--muted);border-radius:12px;padding:20px 24px;margin:14px 0}
-.card.critical{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.04)}
-.card.warn{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.04)}
-.card.ok{border-color:rgba(0,255,136,.15);background:rgba(0,255,136,.03)}
+.card{background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:20px 24px;margin:14px 0;transition:border-color .3s}
+.card.critical{border-color:rgba(239,68,68,.25);background:linear-gradient(135deg,rgba(239,68,68,.05),rgba(239,68,68,.02))}
+.card.warn{border-color:rgba(245,158,11,.25);background:linear-gradient(135deg,rgba(245,158,11,.05),rgba(245,158,11,.02))}
+.card.ok{border-color:rgba(0,255,136,.18);background:linear-gradient(135deg,rgba(0,255,136,.04),rgba(0,255,136,.01))}
 .card-label{font-family:var(--fm);font-size:10px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;font-weight:700}
 .card.critical .card-label{color:var(--red)}
 .card.warn .card-label{color:var(--amber)}
@@ -214,7 +214,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.0.4 &middot; MIT License</div>
+      <div class="footer-version">v1.1.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="index.html">Home</a><a href="strategies.html" data-i18n="nav_strategies">Strategien</a><a href="api-docs.html">API Docs</a><a href="dashboard.html" data-i18n="nav_dashboard">Dashboard</a></div>
