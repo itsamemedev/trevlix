@@ -85,13 +85,26 @@ class _PooledConnection:
 
 
 class ConnectionPool:
-    """
-    Einfacher thread-sicherer MySQL-Connection-Pool.
+    """Einfacher thread-sicherer MySQL-Connection-Pool.
+
+    Verwaltet einen Pool aus wiederverwendbaren Datenbankverbindungen und
+    verhindert so den Overhead beim Aufbau neuer Verbindungen pro Request.
 
     Args:
-        host, port, user, password, database: MySQL-Verbindungsparameter
-        pool_size:   Maximale Anzahl Verbindungen im Pool (Standard: 5)
-        timeout:     Sekunden bis Timeout beim Warten auf Verbindung (Standard: 10)
+        host: MySQL-Server-Hostname oder IP-Adresse.
+        port: MySQL-Server-Port (Standard: 3306).
+        user: MySQL-Benutzername.
+        password: MySQL-Passwort.
+        database: Name der MySQL-Datenbank.
+        pool_size: Maximale Anzahl Verbindungen im Pool. Defaults to 5.
+        timeout: Sekunden bis Timeout beim Warten auf freie Verbindung. Defaults to 10.
+
+    Example:
+        pool = ConnectionPool(host='localhost', port=3306, user='root',
+                              password='secret', database='mydb')
+        with pool.connection() as conn:
+            with conn.cursor() as c:
+                c.execute('SELECT 1')
     """
 
     def __init__(
@@ -147,11 +160,23 @@ class ConnectionPool:
             return False
 
     def acquire(self, retries: int = 2) -> "_PooledConnection":
-        """
-        Gibt eine Verbindung aus dem Pool zurück, eingewickelt in _PooledConnection.
-        Wartet bis zu self._timeout Sekunden auf eine freie Verbindung.
-        Durch _PooledConnection wird conn.close() transparent an release() geleitet.
-        [Verbesserung #22] Retry-Logic mit Backoff.
+        """Gibt eine Verbindung aus dem Pool zurück.
+
+        Wartet bis zu ``self._timeout`` Sekunden auf eine freie Verbindung.
+        Durch ``_PooledConnection`` wird ``conn.close()`` transparent an
+        ``release()`` weitergeleitet, so dass bestehende close()-Aufrufe
+        unverändert bleiben können.
+
+        Args:
+            retries: Anzahl der Wiederholungsversuche bei Fehlern. Defaults to 2.
+                     Backoff: 0.5s, 1.0s zwischen den Versuchen.
+
+        Returns:
+            Eine in ``_PooledConnection`` gewrappte Datenbankverbindung.
+
+        Raises:
+            TimeoutError: Wenn kein freier Verbindungsslot im Timeout verfügbar.
+            Exception: Wenn die Verbindungserstellung nach allen Retries fehlschlägt.
         """
         last_err = None
         for attempt in range(retries + 1):

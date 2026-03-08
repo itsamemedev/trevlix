@@ -108,6 +108,21 @@ def _check_set(var: str, allowed: set[str], label: str, default: str | None = No
 
 
 def validate() -> list[Issue]:
+    """Prüft alle Umgebungsvariablen auf Korrektheit und Sicherheit.
+
+    Prüft Mindestlängen, Hex-Formate, Fernet-Key-Format, Passwort-Policies
+    und bekannte schwache Werte für alle sicherheitsrelevanten Variablen.
+
+    Returns:
+        Liste von ``Issue``-Objekten mit Severity 'critical' oder 'warning'.
+        Leere Liste bedeutet keine Probleme gefunden.
+
+    Example:
+        issues = validate()
+        critical = [i for i in issues if i.severity == 'critical']
+        if critical:
+            sys.exit(1)
+    """
     issues: list[Issue] = []
 
     def add(result: Issue | None):

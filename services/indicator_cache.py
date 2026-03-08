@@ -30,15 +30,19 @@ MAX_CACHE_SIZE = 200
 
 
 def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
-    """
-    Gibt gecachte Indikatoren zurück, falls vorhanden und noch aktuell.
+    """Gibt gecachte Indikatoren zurück, falls vorhanden und noch aktuell.
+
+    Cache-Treffer nur wenn Timestamp identisch UND Eintrag innerhalb TTL.
+    Verhindert redundante Neuberechnung technischer Indikatoren bei
+    mehreren Aufrufen für dieselbe Kerze.
 
     Args:
-        symbol:         Handelspaar, z.B. "BTC/USDT"
-        last_timestamp: Zeitstempel der letzten Kerze im OHLCV-DataFrame
+        symbol: Handelspaar, z.B. 'BTC/USDT'.
+        last_timestamp: Zeitstempel der letzten Kerze im OHLCV-DataFrame.
+            Wird als String verglichen für stabilen Vergleich.
 
     Returns:
-        pd.DataFrame wenn Cache-Hit, sonst None
+        pd.DataFrame mit berechneten Indikatoren bei Cache-Hit, None sonst.
     """
     key = symbol
     ts_str = str(last_timestamp)
@@ -57,13 +61,16 @@ def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
 
 
 def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
-    """
-    Speichert berechnete Indikatoren im Cache.
+    """Speichert berechnete Indikatoren im Cache.
+
+    Überschreibt bestehende Einträge für dasselbe Symbol. Wenn der Cache
+    ``MAX_CACHE_SIZE`` überschreitet, wird der älteste Eintrag entfernt
+    (LRU-Eviction, Verbesserung #20).
 
     Args:
-        symbol:         Handelspaar, z.B. "BTC/USDT"
-        last_timestamp: Zeitstempel der letzten Kerze
-        df:             DataFrame mit berechneten Indikatoren
+        symbol: Handelspaar, z.B. 'BTC/USDT'.
+        last_timestamp: Zeitstempel der letzten Kerze im OHLCV-DataFrame.
+        df: DataFrame mit allen berechneten technischen Indikatoren.
     """
     key = symbol
     ts_str = str(last_timestamp)
@@ -81,11 +88,10 @@ def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
 
 
 def invalidate(symbol: str | None = None) -> None:
-    """
-    Leert den Cache für ein Symbol oder den gesamten Cache.
+    """Leert den Cache für ein Symbol oder den gesamten Cache.
 
     Args:
-        symbol: Symbol zum Leeren, oder None für alle
+        symbol: Symbol zum Leeren (z.B. 'ETH/USDT'), oder None für alle Einträge.
     """
     with _lock:
         if symbol:
@@ -95,7 +101,13 @@ def invalidate(symbol: str | None = None) -> None:
 
 
 def cache_stats() -> dict[str, Any]:
-    """Gibt Cache-Statistiken zurück (für Dashboard/Debugging)."""
+    """Gibt Cache-Statistiken zurück.
+
+    Returns:
+        Dict mit Feldern ``total_entries``, ``fresh_entries``,
+        ``stale_entries`` und ``ttl_seconds``. Nützlich für
+        Dashboard-Anzeige und Debugging.
+    """
     with _lock:
         now = time.monotonic()
         entries = len(_cache)
