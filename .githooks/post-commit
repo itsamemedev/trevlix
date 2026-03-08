@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX – post-commit Hook                                 ║
+# ║  Wird nach jedem lokalen Commit automatisch ausgeführt.     ║
+# ║  Aktivieren: make install-hooks                             ║
+# ╚══════════════════════════════════════════════════════════════╝
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+ENV_FILE="$REPO_ROOT/.env"
+
+# .env laden falls vorhanden
+if [ -f "$ENV_FILE" ]; then
+  # shellcheck disable=SC1090
+  set -o allexport
+  source "$ENV_FILE" 2>/dev/null || true
+  set +o allexport
+fi
+
+COMMIT_SHA="$(git rev-parse HEAD)"
+COMMIT_SHORT="${COMMIT_SHA:0:8}"
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+echo ""
+echo "  [TREVLIX] post-commit Hook – Commit $COMMIT_SHORT auf Branch '$BRANCH'"
+
+# ── 1. Lokalen Server per Webhook benachrichtigen ─────────────
+LOCAL_URL="${WEBHOOK_URL:-http://localhost:${PORT:-5000}/api/v1/webhook/github}"
+WEBHOOK_SECRET="${WEBHOOK_SECRET:-}"
+
+if [ -n "$WEBHOOK_SECRET" ] && command -v curl &>/dev/null; then
+  PAYLOAD=$(printf '{"ref":"refs/heads/%s","after":"%s","pusher":{"name":"local"},"repository":{"full_name":"local/trevlix"}}' \
+    "$BRANCH" "$COMMIT_SHA")
+  SIG="sha256=$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" 2>/dev/null | awk '{print $2}')"
+
+  HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST "$LOCAL_URL" \
+    -H "Content-Type: application/json" \
+    -H "X-GitHub-Event: push" \
+    -H "X-Hub-Signature-256: $SIG" \
+    --data "$PAYLOAD" \
+    --max-time 5 2>/dev/null || echo "000")
+
+  if [ "$HTTP" = "202" ]; then
+    echo "  ✅ Lokaler Server aktualisiert (HTTP 202)"
+  elif [ "$HTTP" = "000" ]; then
+    echo "  ℹ  Kein lokaler Server erreichbar – übersprungen"
+  else
+    echo "  ⚠  Server-Webhook HTTP $HTTP"
+  fi
+else
+  echo "  ℹ  WEBHOOK_SECRET nicht gesetzt – lokaler Webhook übersprungen"
+fi
+
+# ── 2. Sitemap & Changelog-Datum aktualisieren ────────────────
+TODAY="$(date +%Y-%m-%d)"
+SITEMAP="$REPO_ROOT/sitemap.xml"
+if [ -f "$SITEMAP" ]; then
+  if command -v sed &>/dev/null; then
+    sed -i "s|<lastmod>[0-9-]*</lastmod>|<lastmod>$TODAY</lastmod>|g" "$SITEMAP"
+    echo "  📄 sitemap.xml aktualisiert ($TODAY)"
+  fi
+fi
+
+echo ""

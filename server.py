@@ -48,6 +48,7 @@
 
 import csv
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -5875,6 +5876,201 @@ def prometheus_metrics():
         lines.append(f"trevlix_db_pool_available {db._pool.available}")
         lines.append(f"trevlix_db_pool_size {db._pool.pool_size}")
     return Response("\n".join(lines) + "\n", mimetype="text/plain; charset=utf-8")
+
+
+# ── [Auto-Deploy] GitHub Webhook ───────────────────────────────────────────────
+_auto_deploy_lock = threading.Lock()
+_auto_deploy_status: dict = {"last_deploy": None, "last_commit": None, "status": "idle"}
+
+
+def _verify_github_signature(payload: bytes, sig_header: str, secret: str) -> bool:
+    """Verifiziert HMAC-SHA256 Signatur von GitHub-Webhooks."""
+    if not sig_header or not sig_header.startswith("sha256="):
+        return False
+    expected = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
+    return secrets.compare_digest(expected, sig_header)
+
+
+def _run_git_pull() -> dict:
+    """Führt git pull aus und gibt Ergebnis zurück."""
+    import subprocess
+
+    # Arbeitsverzeichnis = Verzeichnis dieser Datei (funktioniert lokal + in Docker mit Volume-Mount)
+    work_dir = os.path.dirname(os.path.abspath(__file__))
+    # Umgebung: GIT_DIR explizit setzen falls .git nicht im CWD liegt
+    env = os.environ.copy()
+    git_dir = os.path.join(work_dir, ".git")
+    if os.path.isdir(git_dir):
+        env["GIT_DIR"] = git_dir
+        env["GIT_WORK_TREE"] = work_dir
+
+    result = subprocess.run(
+        ["git", "pull", "--ff-only"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        cwd=work_dir,
+        env=env,
+    )
+    return {
+        "returncode": result.returncode,
+        "stdout": result.stdout.strip(),
+        "stderr": result.stderr.strip(),
+    }
+
+
+def _clear_template_cache() -> None:
+    """Leert den Jinja2-Template-Cache für sofort aktive Website-Änderungen."""
+    try:
+        app.jinja_env.cache = {}
+    except Exception:
+        pass
+
+
+def _auto_deploy_worker(commit_sha: str, pusher: str) -> None:
+    """Hintergrund-Thread: git pull + Template-Cache leeren + WebSocket-Broadcast."""
+    with _auto_deploy_lock:
+        _auto_deploy_status["status"] = "deploying"
+        log.info(f"[AutoDeploy] Starte Deploy für Commit {commit_sha[:8]} von {pusher}")
+        try:
+            pull = _run_git_pull()
+            _clear_template_cache()
+            if pull["returncode"] == 0:
+                _auto_deploy_status.update(
+                    {
+                        "status": "success",
+                        "last_deploy": datetime.now().isoformat(),
+                        "last_commit": commit_sha,
+                    }
+                )
+                msg = f"✅ Auto-Deploy erfolgreich – Commit {commit_sha[:8]} von {pusher}"
+                log.info(f"[AutoDeploy] {msg}")
+                # Templates sofort neu laden
+                _clear_template_cache()
+                socketio.emit("status", {"msg": msg, "type": "success"}, namespace="/")
+                socketio.emit(
+                    "auto_deploy",
+                    {
+                        "status": "success",
+                        "commit": commit_sha[:8],
+                        "pusher": pusher,
+                        "ts": datetime.now().isoformat(),
+                        "output": pull["stdout"],
+                    },
+                    namespace="/",
+                )
+                # Optionale Benachrichtigung
+                _notify_deploy(msg)
+                # Prüfe ob Python-Dateien geändert wurden → Neustart nötig
+                changed = pull["stdout"]
+                py_changed = any(
+                    ext in changed for ext in [".py", "requirements.txt", "pyproject.toml"]
+                )
+                if py_changed and os.getenv("AUTO_RESTART", "true").lower() == "true":
+                    threading.Thread(target=_graceful_restart, daemon=False, name="AutoRestart").start()
+            else:
+                err = pull["stderr"] or pull["stdout"]
+                _auto_deploy_status["status"] = "error"
+                msg = f"❌ Auto-Deploy fehlgeschlagen: {err}"
+                log.error(f"[AutoDeploy] {msg}")
+                socketio.emit("status", {"msg": msg, "type": "error"}, namespace="/")
+        except Exception as exc:
+            _auto_deploy_status["status"] = "error"
+            log.exception(f"[AutoDeploy] Unerwarteter Fehler: {exc}")
+
+
+def _graceful_restart() -> None:
+    """Startet den Bot-Prozess neu (für Python-Code-Änderungen nach git pull)."""
+    import sys
+
+    log.info("[AutoDeploy] Graceful Restart wird in 3 Sekunden ausgeführt…")
+    socketio.emit(
+        "status",
+        {"msg": "♻ Bot-Neustart nach Update in 3 Sekunden…", "type": "info"},
+        namespace="/",
+    )
+    time.sleep(3)
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+
+def _notify_deploy(msg: str) -> None:
+    """Sendet optionale Deploy-Benachrichtigung via Discord/Telegram."""
+    try:
+        webhook = CONFIG.get("discord_webhook", "")
+        if webhook:
+            requests.post(webhook, json={"content": msg}, timeout=5)
+    except Exception:
+        pass
+    try:
+        token = CONFIG.get("telegram_token", "")
+        chat = CONFIG.get("telegram_chat_id", "")
+        if token and chat:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat, "text": msg},
+                timeout=5,
+            )
+    except Exception:
+        pass
+
+
+@app.route("/api/v1/webhook/github", methods=["POST"])
+def api_github_webhook():
+    """
+    [Auto-Deploy] GitHub Push-Webhook.
+    Verifiziert HMAC-SHA256, führt git pull aus und leert den Template-Cache.
+    Konfiguration: WEBHOOK_SECRET in .env setzen und GitHub-Webhook auf diese URL zeigen.
+    """
+    secret = os.getenv("WEBHOOK_SECRET", "")
+    if not secret:
+        log.warning("[AutoDeploy] WEBHOOK_SECRET nicht gesetzt – Webhook deaktiviert")
+        return jsonify({"error": "Webhook nicht konfiguriert"}), 503
+
+    payload = request.get_data()
+    sig = request.headers.get("X-Hub-Signature-256", "")
+    if not _verify_github_signature(payload, sig, secret):
+        log.warning(f"[AutoDeploy] Ungültige Webhook-Signatur von {request.remote_addr}")
+        return jsonify({"error": "Ungültige Signatur"}), 401
+
+    try:
+        data = request.get_json(force=True) or {}
+    except Exception:
+        data = {}
+
+    event = request.headers.get("X-GitHub-Event", "unknown")
+    if event == "ping":
+        return jsonify({"msg": "pong"}), 200
+
+    if event != "push":
+        return jsonify({"msg": f"Event '{event}' ignoriert"}), 200
+
+    commit_sha = data.get("after", "")[:40] or "unknown"
+    pusher = data.get("pusher", {}).get("name", "github-actions")
+    ref = data.get("ref", "")
+
+    # Nur den konfigurierten Branch deployen
+    target_branch = os.getenv("GITHUB_BRANCH", "main")
+    if ref and ref != f"refs/heads/{target_branch}":
+        return jsonify({"msg": f"Branch {ref} ignoriert (erwartet: {target_branch})"}), 200
+
+    _audit("auto_deploy", f"commit={commit_sha[:8]}, pusher={pusher}")
+    threading.Thread(
+        target=_auto_deploy_worker, args=(commit_sha, pusher), daemon=True, name="AutoDeploy"
+    ).start()
+    return jsonify({"msg": "Deploy gestartet", "commit": commit_sha[:8]}), 202
+
+
+@app.route("/api/v1/webhook/status")
+def api_webhook_status():
+    """Gibt den Status des letzten Auto-Deploys zurück."""
+    configured = bool(os.getenv("WEBHOOK_SECRET", ""))
+    return jsonify(
+        {
+            **_auto_deploy_status,
+            "webhook_configured": configured,
+            "webhook_url": "/api/v1/webhook/github",
+        }
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

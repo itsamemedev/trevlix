@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  TREVLIX – pre-push Hook                                    ║
+# ║  Führt Linting & Tests vor dem Push aus.                    ║
+# ║  Aktivieren: make install-hooks                             ║
+# ╚══════════════════════════════════════════════════════════════╝
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+# Venv-Python bestimmen
+PYTHON=""
+if [ -f ".venv/bin/python" ]; then
+  PYTHON=".venv/bin/python"
+elif command -v python3 &>/dev/null; then
+  PYTHON="python3"
+else
+  echo "  ⚠  Python nicht gefunden – pre-push Tests übersprungen"
+  exit 0
+fi
+
+RUFF=""
+if [ -f ".venv/bin/ruff" ]; then
+  RUFF=".venv/bin/ruff"
+elif command -v ruff &>/dev/null; then
+  RUFF="ruff"
+fi
+
+echo ""
+echo "  [TREVLIX] pre-push – Qualitätsprüfung vor dem Push…"
+
+# ── Lint ──────────────────────────────────────────────────────
+if [ -n "$RUFF" ]; then
+  echo "  → Ruff Lint…"
+  if ! "$RUFF" check . --quiet; then
+    echo "  ❌ Linting fehlgeschlagen – Push abgebrochen!"
+    echo "     Beheben mit: make format && make lint"
+    exit 1
+  fi
+  echo "  ✅ Lint OK"
+fi
+
+# ── Tests (optional – kann mit SKIP_TESTS=1 übersprungen werden) ──
+if [ "${SKIP_TESTS:-0}" = "1" ]; then
+  echo "  ℹ  Tests übersprungen (SKIP_TESTS=1)"
+else
+  echo "  → Pytest…"
+  if "$PYTHON" -m pytest tests/ -q --tb=short -x \
+      --no-header \
+      -p no:warnings 2>&1 | tail -5; then
+    echo "  ✅ Tests OK"
+  else
+    echo "  ❌ Tests fehlgeschlagen – Push abgebrochen!"
+    echo "     Überspringen mit: SKIP_TESTS=1 git push"
+    exit 1
+  fi
+fi
+
+echo ""

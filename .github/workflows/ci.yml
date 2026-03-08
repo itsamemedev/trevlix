@@ -1,9 +1,9 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX – CI/CD Pipeline (Verbesserung #44)               ║
-# ║  Lint → Test → Coverage → Docker Build                      ║
+# ║  TREVLIX – CI/CD Pipeline                                   ║
+# ║  Lint → Test → Coverage → Docker Build → Auto-Deploy        ║
 # ╚══════════════════════════════════════════════════════════════╝
 
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -76,3 +76,58 @@ jobs:
         run: docker build -t trevlix:test .
       - name: Verify image
         run: docker images trevlix:test
+
+  deploy:
+    name: Auto-Deploy
+    runs-on: ubuntu-latest
+    needs: [test, docker]
+    # Nur bei Push auf main – nicht bei Pull Requests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Webhook (Auto-Deploy)
+        # DEPLOY_URL und WEBHOOK_SECRET als Repository-Secret hinterlegen:
+        #   GitHub → Settings → Secrets → Actions → New repository secret
+        #   DEPLOY_URL  = https://deine-domain.com/api/v1/webhook/github
+        #   WEBHOOK_SECRET = <gleicher Wert wie in .env>
+        env:
+          DEPLOY_URL: ${{ secrets.DEPLOY_URL }}
+          WEBHOOK_SECRET: ${{ secrets.WEBHOOK_SECRET }}
+        run: |
+          if [ -z "$DEPLOY_URL" ] || [ -z "$WEBHOOK_SECRET" ]; then
+            echo "⚠  DEPLOY_URL oder WEBHOOK_SECRET nicht konfiguriert – Deploy übersprungen"
+            echo "   → GitHub → Settings → Secrets → Actions → DEPLOY_URL & WEBHOOK_SECRET setzen"
+            exit 0
+          fi
+
+          # GitHub-ähnliche Payload erstellen
+          PAYLOAD=$(cat <<EOF
+          {
+            "ref": "refs/heads/main",
+            "after": "${{ github.sha }}",
+            "pusher": {"name": "github-actions"},
+            "repository": {"full_name": "${{ github.repository }}"}
+          }
+          EOF
+          )
+
+          # HMAC-SHA256 Signatur berechnen
+          SIG="sha256=$(echo -n "$PAYLOAD" | openssl dgst -sha256 -hmac "$WEBHOOK_SECRET" | awk '{print $2}')"
+
+          # Webhook aufrufen
+          HTTP_CODE=$(curl -s -o /tmp/webhook_response.txt -w "%{http_code}" \
+            -X POST "$DEPLOY_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-GitHub-Event: push" \
+            -H "X-Hub-Signature-256: $SIG" \
+            --data "$PAYLOAD" \
+            --max-time 30)
+
+          echo "HTTP Status: $HTTP_CODE"
+          cat /tmp/webhook_response.txt
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "✅ Auto-Deploy erfolgreich ausgelöst"
+          else
+            echo "❌ Deploy-Webhook fehlgeschlagen (HTTP $HTTP_CODE)"
+            exit 1
+          fi

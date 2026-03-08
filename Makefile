@@ -4,7 +4,8 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 .PHONY: help install dev docker-up docker-down docker-logs docker-build \
-        test test-cov lint format clean backup keys
+        test test-cov lint format clean backup keys \
+        install-hooks deploy update
 
 # Standardziel
 .DEFAULT_GOAL := help
@@ -32,6 +33,9 @@ help:
 	@echo "  make clean        → Temporäre Dateien löschen"
 	@echo "  make keys         → Neue Sicherheitsschlüssel generieren"
 	@echo "  make backup       → Datenbank-Backup erstellen"
+	@echo "  make install-hooks → Git-Hooks aktivieren (post-commit, pre-push)"
+	@echo "  make deploy       → Lokalen Bot per Webhook aktualisieren"
+	@echo "  make update       → git pull + Abhängigkeiten aktualisieren"
 	@echo ""
 
 # ── Installation ───────────────────────────────────────────────────────────────
@@ -108,6 +112,43 @@ backup:
 	docker exec trevlix_mysql mysqldump -u trevlix -p$${MYSQL_PASS} trevlix \
 		> backups/trevlix_$${TIMESTAMP}.sql && \
 	echo "✓ Backup: backups/trevlix_$${TIMESTAMP}.sql"
+
+# ── Git-Hooks ──────────────────────────────────────────────────────────────────
+install-hooks:
+	@git config core.hooksPath .githooks
+	@chmod +x .githooks/post-commit .githooks/pre-push 2>/dev/null || true
+	@echo "✓ Git-Hooks aktiv (.githooks/): post-commit, pre-push"
+
+# ── Auto-Deploy ────────────────────────────────────────────────────────────────
+deploy:
+	@if [ -z "$(WEBHOOK_SECRET)" ] && [ -f .env ]; then \
+		export $$(grep -v '^#' .env | xargs); \
+	fi; \
+	URL=$${WEBHOOK_URL:-http://localhost:$${PORT:-5000}/api/v1/webhook/github}; \
+	SECRET=$${WEBHOOK_SECRET:-}; \
+	if [ -z "$$SECRET" ]; then \
+		echo "❌ WEBHOOK_SECRET nicht gesetzt. In .env eintragen."; exit 1; \
+	fi; \
+	COMMIT=$$(git rev-parse HEAD); \
+	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	PAYLOAD=$$(printf '{"ref":"refs/heads/%s","after":"%s","pusher":{"name":"make-deploy"},"repository":{"full_name":"local/trevlix"}}' "$$BRANCH" "$$COMMIT"); \
+	SIG="sha256=$$(printf '%s' "$$PAYLOAD" | openssl dgst -sha256 -hmac "$$SECRET" | awk '{print $$2}')"; \
+	HTTP=$$(curl -s -o /tmp/trevlix_deploy.txt -w "%{http_code}" \
+		-X POST "$$URL" \
+		-H "Content-Type: application/json" \
+		-H "X-GitHub-Event: push" \
+		-H "X-Hub-Signature-256: $$SIG" \
+		--data "$$PAYLOAD" --max-time 10); \
+	echo "HTTP $$HTTP: $$(cat /tmp/trevlix_deploy.txt)"
+
+update:
+	@echo "→ Aktualisiere Repository…"
+	git pull --ff-only
+	@if [ -f .venv/bin/pip ]; then \
+		echo "→ Aktualisiere Python-Abhängigkeiten…"; \
+		.venv/bin/pip install -r requirements.txt -q; \
+	fi
+	@echo "✓ Update abgeschlossen"
 
 # ── Aufräumen ──────────────────────────────────────────────────────────────────
 clean:

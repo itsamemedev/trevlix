@@ -45,12 +45,23 @@ services:
       - CRYPTOPANIC_TOKEN=${CRYPTOPANIC_TOKEN:-}
       - CRYPTOPANIC_API_PLAN=${CRYPTOPANIC_API_PLAN:-free}
       - BLOCKNATIVE_KEY=${BLOCKNATIVE_KEY:-}
-      - GITHUB_REPO=${GITHUB_REPO:-}
+      - GITHUB_REPO=${GITHUB_REPO:-itsamemedev/trevlix}
       - GITHUB_BRANCH=${GITHUB_BRANCH:-main}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET:-}
+      - AUTO_RESTART=${AUTO_RESTART:-true}
       - LANGUAGE=${LANGUAGE:-de}
     volumes:
       - ./backups:/app/backups
       - ./logs:/app/logs
+      # Auto-Deploy: Source-Code als Volumes → git pull aktualisiert sofort Website + Bot
+      - ./server.py:/app/server.py:rw
+      - ./ai_engine.py:/app/ai_engine.py:rw
+      - ./trevlix_i18n.py:/app/trevlix_i18n.py:rw
+      - ./services:/app/services:rw
+      - ./routes:/app/routes:rw
+      - ./templates:/app/templates:rw
+      - ./static:/app/static:rw
+      - ./.git:/app/.git:rw
     depends_on:
       mysql:
         condition: service_healthy
