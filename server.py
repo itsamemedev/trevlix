@@ -199,7 +199,7 @@ except ImportError:
 load_dotenv()
 
 BOT_NAME = "TREVLIX"
-BOT_VERSION = "1.1.0"
+BOT_VERSION = "1.1.1"
 BOT_FULL = f"{BOT_NAME} v{BOT_VERSION} · Algorithmic Crypto Trading Bot"
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4265,6 +4265,7 @@ class BotState:
         self.iteration = 0
         self.last_scan = "—"
         self.next_scan = "—"
+        self._start_time = time.time()  # für Uptime-Berechnung in /api/v1/status
         self._load_trades()
 
     def _load_trades(self):
@@ -4565,25 +4566,27 @@ class ArbitrageScanner:
 class ShortEngine:
     def __init__(self):
         self._ex = None
+        self._ex_lock = threading.Lock()
 
     def _get_ex(self):
-        if self._ex:
-            return self._ex
-        try:
-            name = CONFIG.get("short_exchange", "bybit")
-            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
-            self._ex = ex_cls(
-                {
-                    "apiKey": CONFIG.get("short_api_key", ""),
-                    "secret": CONFIG.get("short_secret", ""),
-                    "enableRateLimit": True,
-                    "options": {"defaultType": "swap"},
-                }
-            )
-            return self._ex
-        except Exception as e:
-            log.debug(f"Short Ex: {e}")
-            return None
+        with self._ex_lock:
+            if self._ex:
+                return self._ex
+            try:
+                name = CONFIG.get("short_exchange", "bybit")
+                ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
+                self._ex = ex_cls(
+                    {
+                        "apiKey": CONFIG.get("short_api_key", ""),
+                        "secret": CONFIG.get("short_secret", ""),
+                        "enableRateLimit": True,
+                        "options": {"defaultType": "swap"},
+                    }
+                )
+                return self._ex
+            except Exception as e:
+                log.debug(f"Short Ex: {e}")
+                return None
 
     def open_short(self, symbol: str, invest: float, price: float) -> bool:
         if not CONFIG.get("use_shorts"):
@@ -5339,6 +5342,7 @@ def bot_loop():
                 threading.Thread(target=fg_idx.update, daemon=True).start()
             if state.iteration % 60 == 1:
                 threading.Thread(target=dominance.update, daemon=True).start()
+                threading.Thread(target=lambda: funding_tracker.update(ex), daemon=True).start()
 
             # Positionen verwalten (Long + Short)
             manage_positions(ex)
@@ -5661,11 +5665,10 @@ def api_fees():
 @api_auth_required
 def api_arb():
     try:
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute("SELECT * FROM arb_opportunities ORDER BY found_at DESC LIMIT 20")
-            rows = c.fetchall()
-        conn.close()
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT * FROM arb_opportunities ORDER BY found_at DESC LIMIT 20")
+                rows = c.fetchall()
         result = []
         for r in rows:
             d = dict(r)
@@ -5901,7 +5904,7 @@ def api_health():
             "db_ok": db_ok,
             "pool": pool_stats,
             "python": sys.version.split()[0],
-            "open_trades": len(getattr(state, "open_trades", {})),
+            "open_trades": len(state.positions),
         }
     )
 
@@ -5912,13 +5915,12 @@ def api_health():
 def api_revoke_token(token_id):
     """Deaktiviert einen API-Token."""
     try:
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute(
-                "UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
-                (token_id, request.user_id),
-            )
-        conn.close()
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
+                    (token_id, request.user_id),
+                )
         _audit("token_revoked", f"token_id={token_id}", request.user_id)
         return jsonify({"success": True})
     except Exception as e:
@@ -5931,7 +5933,7 @@ def prometheus_metrics():
     """Exportiert Bot-Metriken im Prometheus-Format."""
     lines = []
     lines.append(f'trevlix_bot_running {{version="{BOT_VERSION}"}} {1 if state.running else 0}')
-    lines.append(f"trevlix_open_trades {len(getattr(state, 'open_trades', {}))}")
+    lines.append(f"trevlix_open_trades {len(state.positions)}")
     lines.append(f"trevlix_closed_trades_total {len(getattr(state, 'closed_trades', []))}")
     total_pnl = sum(t.get("pnl", 0) for t in getattr(state, "closed_trades", []))
     lines.append(f"trevlix_total_pnl {total_pnl:.2f}")
@@ -6355,41 +6357,40 @@ def db_audit(user_id: int, action: str, detail: str = "", ip: str = ""):
         except RuntimeError:
             ip = "system"
     try:
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute(
-                """INSERT INTO audit_log (user_id, action, detail, ip)
-                         VALUES (%s, %s, %s, %s)""",
-                (user_id, str(action)[:80], str(detail)[:500], str(ip)[:45]),
-            )
-            conn.commit()
-        conn.close()
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    """INSERT INTO audit_log (user_id, action, detail, ip)
+                             VALUES (%s, %s, %s, %s)""",
+                    (user_id, str(action)[:80], str(detail)[:500], str(ip)[:45]),
+                )
+                conn.commit()
     except Exception as e:
         log.debug(f"audit_log: {e}")
 
 
 @app.route("/api/v1/admin/audit-log")
+@api_auth_required
 @admin_required
 def api_audit_log():
     """Gibt die letzten 200 Audit-Log-Einträge zurück."""
     try:
         action_filter = request.args.get("action", "")
-        conn = db._conn()
-        with conn.cursor() as c:
-            if action_filter:
-                c.execute(
-                    """SELECT al.*, u.username FROM audit_log al
-                             LEFT JOIN users u ON al.user_id = u.id
-                             WHERE al.action LIKE %s
-                             ORDER BY al.created_at DESC LIMIT 200""",
-                    (f"%{action_filter}%",),
-                )
-            else:
-                c.execute("""SELECT al.*, u.username FROM audit_log al
-                             LEFT JOIN users u ON al.user_id = u.id
-                             ORDER BY al.created_at DESC LIMIT 200""")
-            rows = c.fetchall()
-        conn.close()
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                if action_filter:
+                    c.execute(
+                        """SELECT al.*, u.username FROM audit_log al
+                                 LEFT JOIN users u ON al.user_id = u.id
+                                 WHERE al.action LIKE %s
+                                 ORDER BY al.created_at DESC LIMIT 200""",
+                        (f"%{action_filter}%",),
+                    )
+                else:
+                    c.execute("""SELECT al.*, u.username FROM audit_log al
+                                 LEFT JOIN users u ON al.user_id = u.id
+                                 ORDER BY al.created_at DESC LIMIT 200""")
+                rows = c.fetchall()
         return jsonify({"logs": [dict(r) for r in rows]})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -6720,7 +6721,11 @@ def on_close_exchange_position(data):
         return
     try:
         ex_cfg = CONFIG.get("extra_exchanges", {}).get(ex_name, {})
-        ex = ccxt.__dict__[ex_name](
+        ex_cls = getattr(ccxt, ex_name, None)
+        if ex_cls is None:
+            emit("status", {"msg": f"❌ Unbekannte Exchange: {ex_name}", "type": "error"})
+            return
+        ex = ex_cls(
             {
                 "apiKey": decrypt_value(ex_cfg.get("api_key", "")),
                 "secret": decrypt_value(ex_cfg.get("secret", "")),
