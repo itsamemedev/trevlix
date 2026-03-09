@@ -73,6 +73,14 @@ def register_handlers(
         if now - last < min_interval:
             return False
         _ws_limits[key] = now
+
+        # Alte Einträge bereinigen um Memory-Leak zu vermeiden (max 1000 Einträge)
+        if len(_ws_limits) > 1000:
+            cutoff = now - 300  # Einträge älter als 5 Minuten entfernen
+            stale = [k for k, v in _ws_limits.items() if v < cutoff]
+            for k in stale:
+                _ws_limits.pop(k, None)
+
         return True
 
     # Die eigentliche Handler-Registrierung erfolgt noch in server.py.
