@@ -47,20 +47,27 @@ class _PooledConnection:
     Dadurch können alle bestehenden conn.close()-Aufrufe unverändert bleiben.
     """
 
-    __slots__ = ("_conn", "_pool")
+    __slots__ = ("_conn", "_pool", "_released")
 
     def __init__(self, conn, pool: "ConnectionPool"):
         object.__setattr__(self, "_conn", conn)
         object.__setattr__(self, "_pool", pool)
+        object.__setattr__(self, "_released", False)
 
     def __getattr__(self, name: str):
         return getattr(object.__getattribute__(self, "_conn"), name)
 
     def __setattr__(self, name: str, value):
+        if name == "_released":
+            object.__setattr__(self, name, value)
+            return
         setattr(object.__getattribute__(self, "_conn"), name, value)
 
     def close(self) -> None:
         """Gibt die Verbindung zurück in den Pool statt sie zu schließen."""
+        if object.__getattribute__(self, "_released"):
+            return
+        object.__setattr__(self, "_released", True)
         pool = object.__getattribute__(self, "_pool")
         conn = object.__getattribute__(self, "_conn")
         pool.release(conn)

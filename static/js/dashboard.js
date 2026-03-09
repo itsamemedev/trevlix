@@ -1,3 +1,6 @@
+// ── HTML-Escaping für sichere innerHTML-Nutzung ──────────────────────
+function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
 // [Socket.io Fix] Initiale State-Abfrage per HTTP, bevor WS verbunden ist
 (async function _initState(){
   try {
@@ -63,7 +66,7 @@ function renderLog(){
     el.innerHTML=entries.slice(0,120).map(e=>`<div class="log-row ${e.type}">
       <span class="log-time">${e.time}</span>
       <span style="flex-shrink:0;width:14px;text-align:center">${icons[e.cat]||'·'}</span>
-      <span class="log-msg">${e.msg}</span></div>`).join('')||'<div class="empty" style="padding:12px">Leer</div>';
+      <span class="log-msg">${esc(e.msg)}</span></div>`).join('')||'<div class="empty" style="padding:12px">Leer</div>';
   }
 }
 function switchLog(tab,el){
@@ -256,7 +259,6 @@ function updatePositions(positions){
           <div style="font-size:11px;font-family:var(--mono);color:${c}">${fmtPct(p.pnl_pct||0)}</div>
           <button onclick="closePos('${p.symbol}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
               <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${p.symbol}',${p.entry})">🎯 SL</button>
-              <button class="btn btn-teal" style="font-size:11px;padding:7px 10px;display:none"  style="margin-top:5px;padding:3px 9px;border-radius:5px;background:rgba(255,61,113,.15);border:1px solid rgba(255,61,113,.3);color:var(--red);font-size:10px;font-weight:700;cursor:pointer;font-family:var(--font)">✕ ${QI18n.t('close_label')}</button>
         </div>
       </div>
       <div class="pos-bot"><span>SL: ${(p.sl||0).toFixed(4)}</span><span>TP: ${(p.tp||0).toFixed(4)}</span><span>${fmt(p.invested||0,0)} USDT</span></div>
@@ -384,7 +386,7 @@ function updateSignals(sigs){
         <span style="font-size:10px;font-family:var(--mono);color:var(--sub)">${s.time||'—'}</span>
       </div>
       <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">RSI:${s.rsi||'—'} · Conf:${s.confidence?Math.round(s.confidence*100):0}% · ${s.mtf_desc||''}</div>
-      ${s.news_headline?`<div style="font-size:10px;color:${nc};margin-top:3px;font-style:italic">${s.news_headline.slice(0,80)}</div>`:''}
+      ${s.news_headline?`<div style="font-size:10px;color:${nc};margin-top:3px;font-style:italic">${esc(s.news_headline.slice(0,80))}</div>`:''}
     </div>`;
   }).join('');
 }
@@ -395,8 +397,8 @@ function updateActivity(acts){
   el.innerHTML=acts.slice(0,12).map(a=>{
     const c={success:'var(--green)',error:'var(--red)',warning:'var(--yellow)',info:'var(--cyan)'}[a.type]||'var(--sub)';
     return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
-      <div style="font-size:18px;flex-shrink:0">${a.icon}</div>
-      <div style="flex:1"><div style="font-size:12px;font-weight:700;color:${c}">${a.title}</div>
+      <div style="font-size:18px;flex-shrink:0">${esc(a.icon)}</div>
+      <div style="flex:1"><div style="font-size:12px;font-weight:700;color:${c}">${esc(a.title)}</div>
         <div style="font-size:10px;color:var(--sub);margin-top:1px">${a.detail}</div></div>
       <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${a.time}</div>
     </div>`;
@@ -438,7 +440,7 @@ async function loadHeatmap(sortBy){
   document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
   try{
     const data=await(await fetch('/api/heatmap')).json();
-    if(data.error){document.getElementById('heatmapGrid').innerHTML=`<div class="empty" style="grid-column:span 5">${data.error}</div>`;return;}
+    if(data.error){document.getElementById('heatmapGrid').innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error)}</div>`;return;}
     const sorted=[...data].sort((a,b)=>sortBy==='volume'?b.volume-a.volume:sortBy==='news'?b.news_score-a.news_score:b.change-a.change);
     document.getElementById('heatmapGrid').innerHTML=sorted.slice(0,40).map(coin=>{
       const pct=coin.change, int=Math.min(1,Math.abs(pct)/10);
@@ -464,7 +466,7 @@ async function loadChart(){
   chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--sub);font-size:12px">⏳ Lade Chart...</div>';
   try{
     const data=await(await fetch(`/api/ohlcv/${sym.replace('/','-')}?tf=${tf}&limit=200`)).json();
-    if(data.error){chartEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">${data.error}</div>`;return;}
+    if(data.error){chartEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">${esc(data.error)}</div>`;return;}
     renderTVChart(data, chartEl);
     // News
     try{
