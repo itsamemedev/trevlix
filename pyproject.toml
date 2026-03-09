@@ -5,7 +5,7 @@
 
 [project]
 name = "trevlix"
-version = "1.1.0"
+version = "1.1.1"
 description = "Algorithmic Cryptocurrency Trading Bot with ML-powered strategies"
 readme = "README.md"
 license = {text = "MIT"}
@@ -13,7 +13,7 @@ requires-python = ">=3.11"
 keywords = ["crypto", "trading", "bot", "ml", "algorithmic-trading"]
 
 [project.urls]
-Homepage = "https://github.com/itsamemedev/Trevlix"
+Homepage = "https://trevlix.dev"
 Repository = "https://github.com/itsamemedev/Trevlix"
 Issues = "https://github.com/itsamemedev/Trevlix/issues"
 Changelog = "https://github.com/itsamemedev/Trevlix/blob/main/CHANGELOG.md"
