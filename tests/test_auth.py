@@ -208,7 +208,9 @@ class TestValidateEnv:
 
         issues = validate()
         port_issues = [i for i in issues if i.var == "MYSQL_PORT" and i.severity == "critical"]
-        assert len(port_issues) > 0, "Nicht-numerischer MYSQL_PORT sollte als critical erkannt werden"
+        assert len(port_issues) > 0, (
+            "Nicht-numerischer MYSQL_PORT sollte als critical erkannt werden"
+        )
 
     def test_valid_fernet_key_no_issue(self, monkeypatch):
         """Ein gültiger Fernet-Key erzeugt keinen ENCRYPTION_KEY-Issue."""
@@ -220,4 +222,6 @@ class TestValidateEnv:
 
         issues = validate()
         enc_issues = [i for i in issues if i.var == "ENCRYPTION_KEY"]
-        assert len(enc_issues) == 0, f"Gültiger ENCRYPTION_KEY sollte keinen Fehler erzeugen: {enc_issues}"
+        assert len(enc_issues) == 0, (
+            f"Gültiger ENCRYPTION_KEY sollte keinen Fehler erzeugen: {enc_issues}"
+        )

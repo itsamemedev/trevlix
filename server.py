@@ -62,7 +62,7 @@ import traceback
 import zipfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from functools import wraps
 from typing import Any
 
@@ -1081,8 +1081,8 @@ class MySQLManager:
         payload = {
             "sub": user_id,
             "label": label,
-            "exp": datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-            "iat": datetime.now(timezone.utc),
+            "exp": datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+            "iat": datetime.now(UTC),
         }
         token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
         try:
@@ -1094,7 +1094,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
                         ),
                     )
         except Exception as e:
@@ -1420,23 +1420,21 @@ class MySQLManager:
                         zf.writestr(f"{table}.json", json.dumps(data, ensure_ascii=False))
                     except Exception as te:
                         log.debug(f"Backup {table}: {te}")
-                _BACKUP_SENSITIVE_KEYS = frozenset({
-                    "api_key",
-                    "secret",
-                    "mysql_pass",
-                    "admin_password",
-                    "jwt_secret",
-                    "short_api_key",
-                    "short_secret",
-                    "cryptopanic_token",
-                    "telegram_token",   # Neu: sensibel
-                    "discord_webhook",  # Neu: sensibel
-                })
-                safe_cfg = {
-                    k: v
-                    for k, v in CONFIG.items()
-                    if k not in _BACKUP_SENSITIVE_KEYS
-                }
+                _BACKUP_SENSITIVE_KEYS = frozenset(
+                    {
+                        "api_key",
+                        "secret",
+                        "mysql_pass",
+                        "admin_password",
+                        "jwt_secret",
+                        "short_api_key",
+                        "short_secret",
+                        "cryptopanic_token",
+                        "telegram_token",  # Neu: sensibel
+                        "discord_webhook",  # Neu: sensibel
+                    }
+                )
+                safe_cfg = {k: v for k, v in CONFIG.items() if k not in _BACKUP_SENSITIVE_KEYS}
                 zf.writestr("config.json", json.dumps(safe_cfg, indent=2, ensure_ascii=False))
             # Alte löschen
             cutoff = datetime.now() - timedelta(days=CONFIG["backup_keep_days"])
@@ -1531,7 +1529,10 @@ class MySQLManager:
                 with conn.cursor() as c:
                     c.executemany(
                         "INSERT INTO ai_training (features,label,regime) VALUES(%s,%s,%s)",
-                        [(json.dumps(feat.tolist()), label, regime) for feat, label, regime in samples],
+                        [
+                            (json.dumps(feat.tolist()), label, regime)
+                            for feat, label, regime in samples
+                        ],
                     )
         except Exception as e:
             log.error(f"save_ai_samples_batch: {e}")
@@ -1551,7 +1552,8 @@ class MySQLManager:
 
                     ai_days = CONFIG.get("ai_sample_retention_days", 180)
                     c.execute(
-                        "DELETE FROM ai_training WHERE created_at < NOW() - INTERVAL %s DAY", (ai_days,)
+                        "DELETE FROM ai_training WHERE created_at < NOW() - INTERVAL %s DAY",
+                        (ai_days,),
                     )
                     deleted_ai = c.rowcount
             if deleted_audit or deleted_ai:
@@ -1643,6 +1645,7 @@ def _before_request_hooks():
                     if expected and token != expected:
                         _audit("csrf_violation", request.path, session.get("user_id", 0))
                         from flask import abort
+
                         abort(403)  # CSRF-Verletzung → Request ablehnen
 
 
@@ -1750,7 +1753,7 @@ class DiscordNotifier:
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "footer": {"text": f"{BOT_FULL} · {CONFIG['exchange'].upper()}"},
             }
             if fields:
@@ -1972,7 +1975,9 @@ class OnChainFetcher:
                 md = data.get("market_data", {})
                 # Exchange Netflow Proxy: Price change vs Volume change
                 price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
-                vol_ratio = 0.0  # Default initialisieren – verhindert NameError wenn Marktdaten fehlen
+                vol_ratio = (
+                    0.0  # Default initialisieren – verhindert NameError wenn Marktdaten fehlen
+                )
                 vol_chg = 0.0
                 if md.get("total_volume", {}).get("usd") and md.get("market_cap", {}).get("usd"):
                     vol_ratio = md["total_volume"]["usd"] / max(md["market_cap"]["usd"], 1)
@@ -2082,7 +2087,8 @@ class AnomalyDetector:
             if len(self._data) > 2000:
                 self._data = self._data[-2000:]
             if len(self._data) >= 200 and (
-                self._last_trained is None or (datetime.now() - self._last_trained).total_seconds() > 3600
+                self._last_trained is None
+                or (datetime.now() - self._last_trained).total_seconds() > 3600
             ):
                 threading.Thread(target=self._train, daemon=True).start()
 
@@ -4055,7 +4061,9 @@ class RiskManager:
         active = self.circuit_breaker_active()
         remaining = 0
         if active and self.circuit_breaker_until:
-            remaining = max(0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60))
+            remaining = max(
+                0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60)
+            )
         return {
             "active": active,
             "losses": self.consecutive_losses,
@@ -4743,8 +4751,16 @@ def create_exchange():
     # API-Keys entschlüsseln und als plain str sicherstellen (kein SecretStr)
     _raw_key = CONFIG.get("api_key", "")
     _raw_sec = CONFIG.get("secret", "")
-    api_key = decrypt_value(_raw_key.reveal() if hasattr(_raw_key, "reveal") else _raw_key) if _raw_key else ""
-    api_secret = decrypt_value(_raw_sec.reveal() if hasattr(_raw_sec, "reveal") else _raw_sec) if _raw_sec else ""
+    api_key = (
+        decrypt_value(_raw_key.reveal() if hasattr(_raw_key, "reveal") else _raw_key)
+        if _raw_key
+        else ""
+    )
+    api_secret = (
+        decrypt_value(_raw_sec.reveal() if hasattr(_raw_sec, "reveal") else _raw_sec)
+        if _raw_sec
+        else ""
+    )
     return ex_cls(
         {
             "apiKey": api_key,
@@ -5360,7 +5376,9 @@ def bot_loop():
                 threading.Thread(target=fg_idx.update, daemon=True).start()
             if state.iteration % 60 == 1:
                 threading.Thread(target=dominance.update, daemon=True).start()
-                threading.Thread(target=lambda: funding_tracker.update(ex), daemon=True).start()
+                threading.Thread(
+                    target=lambda ex=ex: funding_tracker.update(ex), daemon=True
+                ).start()
 
             # Positionen verwalten (Long + Short)
             manage_positions(ex)
@@ -6132,7 +6150,9 @@ def on_update_discord(data):
         CONFIG["discord_daily_report"] = bool(data["daily_report"])
     if "report_hour" in data:
         CONFIG["discord_report_hour"] = int(data["report_hour"])
-    discord.send("✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info")
+    discord.send(
+        "✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info"
+    )
     emit("status", {"msg": "💬 Discord konfiguriert & getestet", "type": "success"})
 
 
