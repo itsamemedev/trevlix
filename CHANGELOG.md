@@ -7,6 +7,115 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.1.1] – 2026-03-09
+
+### Fixed — 40+ Bug Fixes
+
+#### Critical: Connection & Memory Leaks
+- **Connection-Leaks behoben** — `_get_conn()` Context-Manager in MySQLManager eingeführt; alle 25+ Methoden auf `with self._get_conn() as conn:` umgestellt; Pool-Semaphore wird nun immer freigegeben
+- **Double-Release ConnectionPool** — `_PooledConnection` verhindert jetzt doppelte Semaphore-Freigabe
+- **WS-Memory-Leak** — Unbegrenztes Wachstum von `_ws_limits` Dict bereinigt (max 1000 Einträge)
+- **Memory-Leak in `_login_attempts`** — Dict wuchs unbegrenzt für jede IP; periodische Bereinigung bei >10.000 Einträgen
+
+#### Security
+- **CSRF-Schutz mit Wirkung** — CSRF-Verletzung wurde nur geloggt aber nicht abgelehnt; `abort(403)` nach Audit-Log hinzugefügt
+- **XSS-Sanitization** — HTML-Escaping (`esc()`) für innerHTML mit externen Daten (News, Logs, Errors)
+- **Security Headers** — `X-XSS-Protection` (deprecated) entfernt, `Permissions-Policy` hinzugefügt
+
+#### Trading Logic
+- **weighted_vote() erzeugte nie Signal -1** — `sell_w` wurde nie gezählt, Short-Selling war komplett deaktiviert
+- **Partial-TP Level 2+ wurde nie ausgelöst** — `partial_sold == 0` verhinderte nach dem ersten Teilverkauf jeden weiteren
+- **Break-Even Stop nie implementiert** — Logik fehlte komplett in `manage_positions()`, jetzt eingefügt
+- **N_FEATURES Konstante falsch** — 47 statt 48; `market_vec` hat 30 Elemente, nicht 29
+
+#### Thread-Safety
+- **Race-Condition in AIEngine._train** — `self.scaler.fit_transform(X)` mutierte außerhalb des Locks; jetzt lokale Scaler mit atomarer Zuweisung
+- **AnomalyDetector Race-Condition** — Training läuft jetzt mit lokalem Scaler unter Lock-Schutz
+- **ShortEngine._get_ex() Thread-Safety** — `threading.Lock()` verhindert Race Condition bei parallelen Calls
+
+#### Bug Fixes
+- **vol_ratio NameError** — Fehlende Initialisierung wenn CoinGecko-Marktdaten fehlen
+- **timedelta.seconds → total_seconds()** an 5 Stellen (Retraining, Cache, Circuit-Breaker, Heatmap, FundingRate)
+- **SecretStr nicht an CCXT übergeben** — `.reveal()` aufgerufen statt `str()` das "***" liefert
+- **Exchange-Map unvollständig** — kraken, huobi, coinbase fehlten in `EXCHANGE_MAP`
+- **datetime.utcnow() → datetime.now(timezone.utc)** in server.py und notifications.py
+- **verify_password Fallback** — Kein Fallback wenn bcrypt verfügbar aber Hash ist SHA-256
+- **Backup: Secrets nicht ausgeschlossen** — `telegram_token` und `discord_webhook` wurden mit exportiert
+- **state.open_trades → state.positions** — `AttributeError` in `/api/v1/health` und `/metrics`
+- **Uptime-Berechnung** — `BotState._start_time` hinzugefügt
+- **FundingTracker** — `funding_tracker.update(ex)` wird jetzt alle 60 Iterationen aufgerufen
+- **API Auth** — `@api_auth_required` Decorator zu `api_audit_log` hinzugefügt
+- **ccxt Exchange-Lookup** — `ccxt.__dict__[ex_name]` → `getattr(ccxt, ex_name, None)`
+- **Naming: NEXUS/QUANTRA → TREVLIX** — Alle Referenzen in server.py, notifications.py, Exporten korrigiert
+- **Lint-Fehler behoben** — B023 (Lambda Loop-Variable), UP017 (datetime.UTC), UP037 (quoted type annotation)
+
+### Changed
+- **Navigation** — Login/Register Buttons und Features-Link zu allen Unterseiten hinzugefügt
+- **Projektinfo** — QUANTRA → TREVLIX, quantra.com → trevlix.dev, Version synchronisiert
+
+---
+
+## [1.1.0] – 2026-03-08
+
+### 50 Improvements — Architecture, Frontend, Trading & Visual Upgrade
+
+#### Architecture
+- **Flask Blueprints** — `server.py` aufgeteilt in `routes/auth.py` und `routes/dashboard.py`
+- **Pydantic BaseSettings** — Typ-validierte Konfiguration in `services/config.py`
+- **Flask g Dependency Injection** — DB-Verbindungen werden per Request automatisch zurückgegeben
+
+#### Database
+- **Composite Index** — `idx_user_time(user_id, created_at)` auf `audit_log` für schnellere Queries
+
+#### Trading
+- **Exchange-spezifische Gebühren** — `EXCHANGE_DEFAULT_FEES` Dict + `get_exchange_fee_rate()` mit 1h Cache
+- **Aggregierter Balance** — `fetch_aggregated_balance()` über alle konfigurierten Exchanges
+- **Korrelationsfilter** — `is_correlated()` mit detailliertem Logging
+
+#### Frontend
+- **Dashboard CSS extrahiert** — 390 Zeilen Inline-CSS nach `static/css/dashboard.css`
+- **Dashboard JS extrahiert** — 1823 Zeilen Inline-JS nach `static/js/dashboard.js`
+- **FOUC Fix** — Inline-Script im `<head>` setzt Theme vor CSS-Laden
+- **Keyboard Shortcuts** — `.nav-kbd` Badges in allen Navigations-Items
+- **Responsive Tables** — CSS `.table-responsive` mit Shadow-Indikator bei Overflow
+- **Loading Overlay** — CSS Skeleton Animation + `#pageLoadOverlay` Spinner
+
+#### Visual Upgrade (v1.1.0)
+- **shared-nav.css** — Gradient Nav-Border, Logo-Glow, Gradient CTA-Button, Glassmorphism Mobile Nav
+- **index.html** — Gradient Buttons, Card-Glow on Hover, Hero Stat Cards mit Glassmorphism
+- **dashboard.css** — Gradient Header-Border, Card-Hover Glow, Gradient Start/Stop-Buttons
+- **Alle Doc-Pages** — Gradient H2-Underlines, FAQ Items mit Open-State-Glow, 404 Gradient-Button
+
+#### Infrastructure
+- **httpx statt requests** — In `DiscordNotifier` und `CryptoPanicClient` (Performance)
+- **SecretStr-Klasse** — Maskiert `api_key`/`jwt_secret`/`mysql_pass` in Logs
+- **DB Startup Retry** — Exponentieller Backoff (5 Versuche, 2-32s) in `_init_db()`
+- **BotState Thread-Safety** — `threading.RLock` + `collections.deque`
+- **ccxt Exception-Handling** — `RateLimitExceeded`, `NetworkError`, `ExchangeNotAvailable`
+- **validate_config()** — Prüft Ranges, Pflichtfelder, Abhängigkeiten beim Start
+- **WS Rate-Limiting** — `_ws_rate_check()` für `start/stop/pause/close_position`
+- **Backup SHA-256 Checksums** — `/api/v1/backup/verify` Endpoint
+- **validate_env.py** — Prüft MYSQL_PASS, JWT_SECRET, ENCRYPTION_KEY vor Server-Start
+- **CI Workflows** — Trigger auf `claude/**` Branches, Lint-Fehler behoben
+
+#### New Endpoints
+- `GET /api/v1/fees` — Exchange-spezifische Gebühren
+- `GET /api/v1/balance/all` — Aggregierter Multi-Exchange Balance
+- `GET /api/v1/backup/verify` — Backup-Integrität prüfen
+
+---
+
+## [1.0.5] – 2026-03-06
+
+### Added
+- **10 Improvements** — httpx, SecretStr, DB-Retry, Thread-Safety, ccxt-Exceptions, Modularisierung, Config-Validierung, WS-Rate-Limiting, Backup-Checksums, validate_env.py
+- **Socket.io Stabilität** — `ping_timeout=60`, `ping_interval=25`, `manage_session=True`; `auth_error` Event statt stummer Ablehnung; `request_state` Handler für Reconnects
+- **Dashboard Reconnection** — `connect_error` + Reconnection-Optionen; HTTP-Fallback lädt State via `/api/v1/state` vor WS-Connect
+- **services/notifications.py** — `DiscordNotifier` als standalone Modul
+- **routes/websocket.py** — WebSocket Handler-Registrierung (Migration vorbereitet)
+
+---
+
 ## [1.0.4] – 2026-03-02
 
 ### 25 Improvements – Installation, Infrastructure & Repository Cleanup

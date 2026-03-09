@@ -9,13 +9,13 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Trading Intelligence — v1.0.5**
+**Algorithmic Trading Intelligence — v1.1.1**
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.0.5-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.1.1-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -129,7 +129,7 @@ TREVLIX comes with a complete documentation website. All pages are interlinked w
 | **API Docs** | `api-docs.html` | Complete REST API reference with examples |
 | **FAQ** | `faq.html` | 18 frequently asked questions with answers |
 | **Security** | `security.html` | Security hardening guide and best practices |
-| **Changelog** | `changelog.html` | Visual release history (v1.0.0 — v1.0.5) |
+| **Changelog** | `changelog.html` | Visual release history (v1.0.0 — v1.1.1) |
 | **Roadmap** | `roadmap.html` | Planned features and development phases |
 | **About** | `about.html` | Project info, tech stack, and contributing guide |
 | **404** | `404.html` | Custom error page with navigation |
@@ -138,8 +138,11 @@ TREVLIX comes with a complete documentation website. All pages are interlinked w
 
 | File | Description |
 |------|-------------|
-| `shared-nav.css` | Shared navigation bar, footer, breadcrumbs, back-to-top button, print styles |
-| `trevlix_translations.js` | Frontend i18n translations (5 languages) |
+| `static/css/shared-nav.css` | Shared navigation bar, footer, breadcrumbs, back-to-top button, print styles |
+| `static/css/dashboard.css` | Dashboard-specific styles (extracted from inline) |
+| `static/js/dashboard.js` | Dashboard JavaScript logic (extracted from inline) |
+| `static/js/trevlix_translations.js` | Frontend i18n translations (5 languages) |
+| `static/js/page_i18n.js` | Page translation handler for sub-pages |
 | `sitemap.xml` | SEO sitemap for all pages |
 | `robots.txt` | Crawler directives |
 
@@ -195,11 +198,19 @@ trevlix/
 │       ├── mysql-init.sql     # 14-table database schema
 │       └── ssl/               # SSL certificates
 │
+├── Routes
+│   └── routes/
+│       ├── auth.py            # Authentication (login, register, admin)
+│       ├── dashboard.py       # Static page routes (about, strategies, faq, ...)
+│       └── websocket.py       # WebSocket event handler registration
+│
 ├── Services
 │   └── services/
+│       ├── config.py          # Pydantic BaseSettings configuration
 │       ├── db_pool.py         # MySQL connection pooling
 │       ├── encryption.py      # Fernet API key encryption
-│       └── indicator_cache.py # Technical indicator caching
+│       ├── indicator_cache.py # Technical indicator caching
+│       └── notifications.py   # Discord & Telegram notifications
 │
 ├── SEO
 │   ├── sitemap.xml            # Sitemap
