@@ -1352,7 +1352,7 @@ class MySQLManager:
         except Exception:
             pass
 
-    def export_csv(self, user_id: int = None, limit: int = 10000) -> str:
+    def export_csv(self, user_id: int | None = None, limit: int = 10000) -> str:
         trades = self.load_trades(limit=limit, user_id=user_id)
         if not trades:
             return "Keine Trades"
@@ -2859,6 +2859,8 @@ class AIEngine:
         fundamental verändert hat (ADWIN-ähnlicher gleitender Test).
         Trigger: signifikante Abweichung zwischen alter und neuer Win-Rate.
         """
+        if state is None:
+            return False
         trades = state.closed_trades
         if len(trades) < 40:
             return False
@@ -3066,20 +3068,26 @@ class AIEngine:
                 ybr = np.array(self.y_bear, dtype=np.int32) if self.y_bear else None
             n = len(X)
             log.info(f"🧠 Training: Global:{n} Bull:{len(self.X_bull)} Bear:{len(self.X_bear)}")
-            X_s = self.scaler.fit_transform(X)
+            # Lokale Scaler verwenden während Training — verhindert Race-Condition mit
+            # should_buy()/predict(), die self.scaler gleichzeitig lesen könnten.
+            # Atomare Zuweisung self.scaler = local_scaler erfolgt erst im Lock-Block am Ende.
+            local_scaler = StandardScaler()
+            X_s = local_scaler.fit_transform(X)
             global_m = self._build_ensemble(X_s, y)
             wf_acc = self._walk_forward(X_s, y)
             # Regime
             bull_m = None
             bull_acc = 0.0
+            local_bull_scaler = StandardScaler()
             if Xb is not None and len(Xb) >= 15 and len(set(yb)) >= 2:
-                Xbs = self.bull_scaler.fit_transform(Xb)
+                Xbs = local_bull_scaler.fit_transform(Xb)
                 bull_m = self._build_ensemble(Xbs, yb)
                 bull_acc = float(bull_m.score(Xbs, yb))
             bear_m = None
             bear_acc = 0.0
+            local_bear_scaler = StandardScaler()
             if Xbr is not None and len(Xbr) >= 15 and len(set(ybr)) >= 2:
-                Xbrs = self.bear_scaler.fit_transform(Xbr)
+                Xbrs = local_bear_scaler.fit_transform(Xbr)
                 bear_m = self._build_ensemble(Xbrs, ybr)
                 bear_acc = float(bear_m.score(Xbrs, ybr))
             # LSTM
@@ -3161,6 +3169,10 @@ class AIEngine:
                 self.bear_model = bear_m
                 self.lstm_model = lstm_m
                 self.lstm_acc = lstm_acc
+                # Atomare Zuweisung der lokalen Scaler unter Lock — thread-safe
+                self.scaler = local_scaler
+                self.bull_scaler = local_bull_scaler
+                self.bear_scaler = local_bear_scaler
                 self.cv_accuracy = wf_acc
                 self.wf_accuracy = wf_acc
                 self.bull_accuracy = bull_acc
@@ -3245,6 +3257,8 @@ class AIEngine:
 
     def _optimize(self):
         try:
+            if state is None:
+                return
             trades = state.closed_trades[:]
             if len(trades) < 15:
                 return
