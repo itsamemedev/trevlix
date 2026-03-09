@@ -148,7 +148,7 @@ class DiscordNotifier:
             return
         s = report.get("summary", {})
         self.send(
-            f"📊 NEXUS Tages-Report – {report.get('date', '')}",
+            f"📊 {self._bot_full.split()[0]} Tages-Report – {report.get('date', '')}",
             f"```\nPnL heute:  {s.get('daily_pnl', 0):+.2f} USDT\n"
             f"Trades:     {s.get('trades_today', 0)}\n"
             f"Win-Rate:   {s.get('win_rate', 0):.1f}%\n"
@@ -166,7 +166,7 @@ class DiscordNotifier:
     def error(self, msg: str):
         if not self._cfg("discord_on_error"):
             return
-        self.send("🔴 NEXUS FEHLER", f"```\n{msg[:500]}\n```", "error")
+        self.send(f"🔴 {self._bot_full.split()[0]} FEHLER", f"```\n{msg[:500]}\n```", "error")
 
     def backup_done(self, path: str):
         self.send("💾 Backup erstellt", f"```\n{os.path.basename(path)}\n```", "info")
