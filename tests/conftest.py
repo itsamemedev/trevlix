@@ -99,7 +99,7 @@ def sample_trades(sample_trade) -> list:
     trades = []
     for i in range(10):
         t = sample_trade.copy()
-        t["pnl"] = 150.0 if i % 3 != 0 else -80.0  # 7 Wins, 3 Losses
+        t["pnl"] = 150.0 if i % 3 != 0 else -80.0  # 6 Wins, 4 Losses (i=0,3,6,9 → loss)
         t["pnl_pct"] = 5.0 if i % 3 != 0 else -2.5
         trades.append(t)
     return trades

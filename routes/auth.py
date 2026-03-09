@@ -57,7 +57,7 @@ button:hover{transform:translateY(-1px)}
   <div class="logo">
     <div class="logo-icon">&#9889;</div>
     <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.1.0</div>
+    <div class="logo-sub">Algorithmic Trading Bot &middot; v1.1.1</div>
   </div>
   %(body)s
   <div class="ver">TREVLIX &middot; Open-Source Trading Bot</div>
@@ -231,6 +231,8 @@ def create_auth_blueprint(
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
 
+        if len(username) < 3:
+            return redirect("/register?err=short")
         if len(password) < 12 or not (
             _re.search(r"[A-Z]", password)
             and _re.search(r"[a-z]", password)

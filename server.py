@@ -1389,7 +1389,7 @@ class MySQLManager:
             bdir = CONFIG["backup_dir"]
             os.makedirs(bdir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
-            path = os.path.join(bdir, f"nexus_backup_{ts}.zip")
+            path = os.path.join(bdir, f"trevlix_backup_{ts}.zip")
             # [Verbesserung #17] Tabellennamen-Whitelist gegen SQL-Injection
             _ALLOWED_TABLES = frozenset(
                 [
@@ -1832,7 +1832,7 @@ class DiscordNotifier:
             return
         s = report.get("summary", {})
         self.send(
-            f"📊 NEXUS Tages-Report – {report.get('date', '')}",
+            f"📊 {BOT_NAME} Tages-Report – {report.get('date', '')}",
             f"```\nPnL heute:  {s.get('daily_pnl', 0):+.2f} USDT\n"
             f"Trades:     {s.get('trades_today', 0)}\n"
             f"Win-Rate:   {s.get('win_rate', 0):.1f}%\n"
@@ -1850,7 +1850,7 @@ class DiscordNotifier:
     def error(self, msg: str):
         if not CONFIG.get("discord_on_error"):
             return
-        self.send("🔴 NEXUS FEHLER", f"```\n{msg[:500]}\n```", "error")
+        self.send(f"🔴 {BOT_NAME} FEHLER", f"```\n{msg[:500]}\n```", "error")
 
     def backup_done(self, path: str):
         self.send("💾 Backup erstellt", f"```\n{os.path.basename(path)}\n```", "info")
@@ -4575,10 +4575,12 @@ class ShortEngine:
             try:
                 name = CONFIG.get("short_exchange", "bybit")
                 ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
+                sk = CONFIG.get("short_api_key", "")
+                ss = CONFIG.get("short_secret", "")
                 self._ex = ex_cls(
                     {
-                        "apiKey": CONFIG.get("short_api_key", ""),
-                        "secret": CONFIG.get("short_secret", ""),
+                        "apiKey": sk.reveal() if hasattr(sk, "reveal") else sk,
+                        "secret": ss.reveal() if hasattr(ss, "reveal") else ss,
                         "enableRateLimit": True,
                         "options": {"defaultType": "swap"},
                     }
@@ -4724,9 +4726,11 @@ def emit_event(event, data):
 def create_exchange():
     name = CONFIG.get("exchange", "cryptocom")
     ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
-    # API-Keys entschlüsseln falls sie verschlüsselt gespeichert wurden
-    api_key = decrypt_value(CONFIG["api_key"]) if CONFIG.get("api_key") else ""
-    api_secret = decrypt_value(CONFIG["secret"]) if CONFIG.get("secret") else ""
+    # API-Keys entschlüsseln und als plain str sicherstellen (kein SecretStr)
+    _raw_key = CONFIG.get("api_key", "")
+    _raw_sec = CONFIG.get("secret", "")
+    api_key = decrypt_value(_raw_key.reveal() if hasattr(_raw_key, "reveal") else _raw_key) if _raw_key else ""
+    api_secret = decrypt_value(_raw_sec.reveal() if hasattr(_raw_sec, "reveal") else _raw_sec) if _raw_sec else ""
     return ex_cls(
         {
             "apiKey": api_key,
@@ -6114,7 +6118,7 @@ def on_update_discord(data):
         CONFIG["discord_daily_report"] = bool(data["daily_report"])
     if "report_hour" in data:
         CONFIG["discord_report_hour"] = int(data["report_hour"])
-    discord.send("✅ Discord verbunden", f"```\nQUANTRA {BOT_VERSION} konfiguriert!\n```", "info")
+    discord.send("✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info")
     emit("status", {"msg": "💬 Discord konfiguriert & getestet", "type": "success"})
 
 
