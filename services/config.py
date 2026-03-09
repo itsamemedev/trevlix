@@ -214,7 +214,7 @@ else:
                 setattr(self, k, v)
 
         @classmethod
-        def from_env(cls) -> "TrevlixConfig":
+        def from_env(cls) -> TrevlixConfig:
             """Erstellt eine Config-Instanz aus Umgebungsvariablen (Pydantic-Fallback)."""
             return cls(
                 exchange=os.getenv("EXCHANGE", "cryptocom"),

@@ -381,7 +381,9 @@ def create_auth_blueprint(
         user = db.get_user(username)
         if user and db.verify_password(user["password_hash"], password):
             if user.get("role") != "admin":
-                audit_fn("admin_login_denied", f"user={username} ip={client_ip} role={user.get('role')}")
+                audit_fn(
+                    "admin_login_denied", f"user={username} ip={client_ip} role={user.get('role')}"
+                )
                 return redirect("/admin/login?err=role")
             session["user_id"] = user["id"]
             session["username"] = user["username"]
