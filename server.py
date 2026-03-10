@@ -1001,7 +1001,8 @@ class MySQLManager:
                     c.execute("SELECT * FROM users WHERE username=%s", (username,))
                     row = c.fetchone()
             return self._decrypt_user_keys(dict(row)) if row else None
-        except Exception:
+        except Exception as e:
+            log.error(f"get_user({username!r}): {e}")
             return None
 
     def get_user_by_id(self, uid: int) -> dict | None:
@@ -1011,7 +1012,8 @@ class MySQLManager:
                     c.execute("SELECT * FROM users WHERE id=%s", (uid,))
                     row = c.fetchone()
             return self._decrypt_user_keys(dict(row)) if row else None
-        except Exception:
+        except Exception as e:
+            log.error(f"get_user_by_id({uid}): {e}")
             return None
 
     def get_all_users(self) -> list[dict]:
@@ -1030,7 +1032,8 @@ class MySQLManager:
                         d[k] = d[k].isoformat() if d[k] else None
                 result.append(d)
             return result
-        except Exception:
+        except Exception as e:
+            log.error(f"get_all_users: {e}")
             return []
 
     def create_user(
@@ -1069,16 +1072,16 @@ class MySQLManager:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning(f"update_user_login({user_id}): {e}")
 
     def update_user_balance(self, user_id: int, balance: float):
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"update_user_balance({user_id}, {balance}): {e}")
 
     # ── User Settings ────────────────────────────────────────────────────────
     def update_user_settings(self, user_id: int, settings: dict) -> bool:
@@ -1105,7 +1108,8 @@ class MySQLManager:
             if row and row.get("settings_json"):
                 return json.loads(row["settings_json"])
             return {}
-        except Exception:
+        except Exception as e:
+            log.error(f"get_user_settings({user_id}): {e}")
             return {}
 
     def update_user_api_keys(
@@ -1143,7 +1147,8 @@ class MySQLManager:
                     d["created_at"] = d["created_at"].isoformat()
                 result.append(d)
             return result
-        except Exception:
+        except Exception as e:
+            log.error(f"get_user_exchanges({user_id}): {e}")
             return []
 
     def upsert_user_exchange(
@@ -1237,7 +1242,8 @@ class MySQLManager:
                 d["api_secret"] = self._dec(d.get("api_secret", ""))
                 result.append(d)
             return result
-        except Exception:
+        except Exception as e:
+            log.error(f"get_enabled_exchanges({user_id}): {e}")
             return []
 
     def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
@@ -1323,7 +1329,8 @@ class MySQLManager:
                     )
                     rows = c.fetchall()
             return [dict(r) for r in rows]
-        except Exception:
+        except Exception as e:
+            log.error(f"get_recent_backtests: {e}")
             return []
 
     def add_alert(self, symbol: str, target: float, direction: str, user_id: int = 1) -> int:
@@ -1347,7 +1354,8 @@ class MySQLManager:
                     c.execute("SELECT * FROM price_alerts WHERE triggered=0")
                     rows = c.fetchall()
             return [dict(r) for r in rows]
-        except Exception:
+        except Exception as e:
+            log.error(f"get_active_alerts: {e}")
             return []
 
     def trigger_alert(self, aid: int):
@@ -1357,16 +1365,16 @@ class MySQLManager:
                     c.execute(
                         "UPDATE price_alerts SET triggered=1,triggered_at=NOW() WHERE id=%s", (aid,)
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"trigger_alert({aid}): {e}")
 
     def delete_alert(self, aid: int):
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"delete_alert({aid}): {e}")
 
     def get_all_alerts(self) -> list[dict]:
         try:
@@ -1382,7 +1390,8 @@ class MySQLManager:
                         d[k] = d[k].isoformat() if d[k] else None
                 result.append(d)
             return result
-        except Exception:
+        except Exception as e:
+            log.error(f"get_all_alerts: {e}")
             return []
 
     def save_daily_report(self, date_str: str, report: dict):
@@ -1404,7 +1413,8 @@ class MySQLManager:
                     c.execute("SELECT id FROM daily_reports WHERE report_date=CURDATE()")
                     row = c.fetchone()
             return row is not None
-        except Exception:
+        except Exception as e:
+            log.error(f"report_sent_today: {e}")
             return False
 
     def save_sentiment(self, symbol: str, score: float, source: str):
@@ -1417,8 +1427,8 @@ class MySQLManager:
                         UPDATE score=%s,source=%s,updated_at=NOW()""",
                         (symbol, score, source, score, source),
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"save_sentiment({symbol!r}): {e}")
 
     def get_sentiment(self, symbol: str) -> float | None:
         try:
@@ -1431,7 +1441,8 @@ class MySQLManager:
                     )
                     row = c.fetchone()
             return float(row["score"]) if row else None
-        except Exception:
+        except Exception as e:
+            log.error(f"get_sentiment({symbol!r}): {e}")
             return None
 
     def save_news(self, symbol: str, score: float, headline: str, count: int):
@@ -1444,8 +1455,8 @@ class MySQLManager:
                         UPDATE score=%s,headline=%s,article_count=%s,updated_at=NOW()""",
                         (symbol, score, headline[:500], count, score, headline[:500], count),
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"save_news({symbol!r}): {e}")
 
     def get_news(self, symbol: str) -> dict | None:
         try:
@@ -1458,7 +1469,8 @@ class MySQLManager:
                     )
                     row = c.fetchone()
             return dict(row) if row else None
-        except Exception:
+        except Exception as e:
+            log.error(f"get_news({symbol!r}): {e}")
             return None
 
     def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
@@ -1482,8 +1494,8 @@ class MySQLManager:
                             detail[:500],
                         ),
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"save_onchain({symbol!r}): {e}")
 
     def get_onchain(self, symbol: str) -> dict | None:
         try:
@@ -1496,7 +1508,8 @@ class MySQLManager:
                     )
                     row = c.fetchone()
             return dict(row) if row else None
-        except Exception:
+        except Exception as e:
+            log.error(f"get_onchain({symbol!r}): {e}")
             return None
 
     def save_arb(self, arb: dict):
@@ -1518,8 +1531,8 @@ class MySQLManager:
                             arb.get("profit", 0),
                         ),
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"save_arb({arb.get('symbol', '?')}): {e}")
 
     def save_genetic(self, generation: int, fitness: float, genome: dict):
         try:
@@ -1529,13 +1542,11 @@ class MySQLManager:
                         "INSERT INTO genetic_results (generation,fitness,genome_json) VALUES(%s,%s,%s)",
                         (generation, fitness, json.dumps(genome)),
                     )
-        except Exception:
-            pass
+        except Exception as e:
+            log.error(f"save_genetic(gen={generation}, fitness={fitness:.4f}): {e}")
 
     def export_csv(self, user_id: int | None = None, limit: int = 10000) -> str:
         trades = self.load_trades(limit=limit, user_id=user_id)
-        if not trades:
-            return "Keine Trades"
         buf = io.StringIO()
         fields = [
             "id",
@@ -1561,7 +1572,8 @@ class MySQLManager:
         ]
         w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
-        w.writerows(trades)
+        if trades:
+            w.writerows(trades)
         return buf.getvalue()
 
     def backup(self) -> str | None:
@@ -2261,11 +2273,14 @@ class GeneticOptimizer:
         return float(wr * 0.5 + min(pf, 5) / 5 * 0.3 + min(total_pnl / 10000, 1) * 0.2)
 
     def evolve(self, trades: list[dict]):
-        if not CONFIG.get("genetic_enabled") or self.running:
+        if not CONFIG.get("genetic_enabled"):
             return
         if len(trades) < 20:
             return
-        self.running = True
+        with self._lock:
+            if self.running:
+                return
+            self.running = True
         threading.Thread(target=self._run, args=(trades,), daemon=True).start()
 
     def _run(self, trades: list[dict]):
@@ -2340,7 +2355,8 @@ class GeneticOptimizer:
         except Exception as e:
             log.error(f"Genetik: {e}")
         finally:
-            self.running = False
+            with self._lock:
+                self.running = False
 
     def to_dict(self) -> dict:
         with self._lock:

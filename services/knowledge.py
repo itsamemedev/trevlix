@@ -144,10 +144,10 @@ class KnowledgeBase:
             if not row:
                 return None
             result = {
-                "value": json.loads(row["value_json"]) if row["value_json"] else None,
-                "confidence": row["confidence"],
-                "source": row["source"],
-                "updated_at": row["updated_at"].isoformat() if row.get("updated_at") else None,
+                "value": json.loads(row["value_json"]) if row.get("value_json") else None,
+                "confidence": row.get("confidence", 0.5),
+                "source": row.get("source", "unknown"),
+                "updated_at": row.get("updated_at").isoformat() if row.get("updated_at") else None,
             }
             self._cache[cache_key] = result
             self._cache_ts[cache_key] = now

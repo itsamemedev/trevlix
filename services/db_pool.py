@@ -191,23 +191,23 @@ class ConnectionPool:
                 if not self._semaphore.acquire(timeout=self._timeout):
                     raise TimeoutError("Kein freier DB-Connection-Slot im Timeout")
 
-                with self._lock:
-                    while self._pool:
-                        conn = self._pool.pop()
-                        if self._is_alive(conn):
-                            return _PooledConnection(conn, self)
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-
-                # Pool leer → neue Verbindung erstellen
                 try:
+                    with self._lock:
+                        while self._pool:
+                            conn = self._pool.pop()
+                            if self._is_alive(conn):
+                                return _PooledConnection(conn, self)
+                            try:
+                                conn.close()
+                            except Exception:
+                                pass
+
+                    # Pool leer → neue Verbindung erstellen
                     conn = self._create_connection()
                     return _PooledConnection(conn, self)
-                except Exception as e:
+                except Exception:
                     self._semaphore.release()
-                    raise e
+                    raise
             except Exception as e:
                 last_err = e
                 if attempt < retries:
