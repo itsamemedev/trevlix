@@ -139,19 +139,19 @@ class TestEMATrend:
     """Tests für EMA-Trend-Strategie."""
 
     def test_buy_signal(self, bullish_row):
-        from server import strat_ema_trend
+        from services.strategies import strat_ema_trend
 
         # EMA8 > EMA21 > EMA50 + Close > EMA21 → Buy
         assert strat_ema_trend(bullish_row, bullish_row) == 1
 
     def test_sell_signal(self, bearish_row):
-        from server import strat_ema_trend
+        from services.strategies import strat_ema_trend
 
         # EMA8 < EMA21 < EMA50 + Close < EMA21 → Sell
         assert strat_ema_trend(bearish_row, bearish_row) == -1
 
     def test_neutral(self, neutral_row):
-        from server import strat_ema_trend
+        from services.strategies import strat_ema_trend
 
         assert strat_ema_trend(neutral_row, neutral_row) == 0
 
@@ -160,19 +160,19 @@ class TestRSIStochastic:
     """Tests für RSI-Stochastic-Strategie."""
 
     def test_oversold_buy(self, bullish_row):
-        from server import strat_rsi_stoch
+        from services.strategies import strat_rsi_stoch
 
         oversold = {**bullish_row, "rsi": 28, "stoch_rsi": 15}
         assert strat_rsi_stoch(oversold, bullish_row) == 1
 
     def test_overbought_sell(self, bearish_row):
-        from server import strat_rsi_stoch
+        from services.strategies import strat_rsi_stoch
 
         overbought = {**bearish_row, "rsi": 72, "stoch_rsi": 82}
         assert strat_rsi_stoch(overbought, bearish_row) == -1
 
     def test_neutral_rsi(self, neutral_row):
-        from server import strat_rsi_stoch
+        from services.strategies import strat_rsi_stoch
 
         assert strat_rsi_stoch(neutral_row, neutral_row) == 0
 
@@ -181,14 +181,14 @@ class TestMACD:
     """Tests für MACD-Kreuzung-Strategie."""
 
     def test_bullish_crossover(self):
-        from server import strat_macd
+        from services.strategies import strat_macd
 
         prev = {"macd": -5, "macd_signal": -3}
         curr = {"macd": -2, "macd_signal": -3}  # MACD crosses above signal, below 0
         assert strat_macd(curr, prev) == 1
 
     def test_bearish_crossover(self):
-        from server import strat_macd
+        from services.strategies import strat_macd
 
         prev = {"macd": 5, "macd_signal": 3}
         curr = {"macd": 2, "macd_signal": 3}  # MACD crosses below signal, above 0
@@ -199,13 +199,13 @@ class TestBollinger:
     """Tests für Bollinger-Band-Strategie."""
 
     def test_lower_band_buy(self, bullish_row):
-        from server import strat_boll
+        from services.strategies import strat_boll
 
         lower = {**bullish_row, "bb_pct": 0.02, "rsi": 35}
         assert strat_boll(lower, bullish_row) == 1
 
     def test_upper_band_sell(self, bearish_row):
-        from server import strat_boll
+        from services.strategies import strat_boll
 
         upper = {**bearish_row, "bb_pct": 0.97, "rsi": 65}
         assert strat_boll(upper, bearish_row) == -1
@@ -215,14 +215,14 @@ class TestVolume:
     """Tests für Volumen-Ausbruch-Strategie."""
 
     def test_volume_breakout_up(self):
-        from server import strat_vol
+        from services.strategies import strat_vol
 
         curr = {"vol_ratio": 2.5, "close": 31000, "ema21": 30500}
         prev = {"close": 30800}
         assert strat_vol(curr, prev) == 1
 
     def test_volume_breakout_down(self):
-        from server import strat_vol
+        from services.strategies import strat_vol
 
         curr = {"vol_ratio": 2.5, "close": 29000, "ema21": 29500}
         prev = {"close": 29200}
@@ -233,13 +233,13 @@ class TestROCMomentum:
     """Tests für ROC-Momentum-Strategie."""
 
     def test_strong_momentum_up(self, bullish_row):
-        from server import strat_roc
+        from services.strategies import strat_roc
 
         strong = {**bullish_row, "roc10": 5, "roc20": 8}
         assert strat_roc(strong, bullish_row) == 1
 
     def test_strong_momentum_down(self, bearish_row):
-        from server import strat_roc
+        from services.strategies import strat_roc
 
         weak = {**bearish_row, "roc10": -5, "roc20": -8}
         assert strat_roc(weak, bearish_row) == -1
@@ -249,12 +249,12 @@ class TestIchimoku:
     """Tests für Ichimoku-Strategie."""
 
     def test_bullish_ichimoku(self, bullish_row):
-        from server import strat_ichimoku
+        from services.strategies import strat_ichimoku
 
         assert strat_ichimoku(bullish_row, bullish_row) == 1
 
     def test_bearish_ichimoku(self, bearish_row):
-        from server import strat_ichimoku
+        from services.strategies import strat_ichimoku
 
         assert strat_ichimoku(bearish_row, bearish_row) == -1
 
@@ -263,12 +263,12 @@ class TestVWAP:
     """Tests für VWAP-Strategie."""
 
     def test_above_vwap_buy(self, bullish_row):
-        from server import strat_vwap
+        from services.strategies import strat_vwap
 
         assert strat_vwap(bullish_row, bullish_row) == 1
 
     def test_below_vwap_sell(self, bearish_row):
-        from server import strat_vwap
+        from services.strategies import strat_vwap
 
         below = {**bearish_row, "price_vs_vwap": -0.02, "rsi": 40}
         assert strat_vwap(below, bearish_row) == -1

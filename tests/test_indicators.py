@@ -43,7 +43,7 @@ class TestComputeIndicators:
 
     def test_returns_dataframe(self):
         """compute_indicators soll einen DataFrame zurückgeben."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -52,7 +52,7 @@ class TestComputeIndicators:
 
     def test_requires_minimum_rows(self):
         """Weniger als 80 Zeilen → None."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(50)
         result = compute_indicators(df.copy())
@@ -60,7 +60,7 @@ class TestComputeIndicators:
 
     def test_ema_columns_exist(self):
         """EMA-Spalten müssen vorhanden sein."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -70,7 +70,7 @@ class TestComputeIndicators:
 
     def test_rsi_in_range(self):
         """RSI muss zwischen 0 und 100 liegen."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -81,7 +81,7 @@ class TestComputeIndicators:
 
     def test_macd_columns_exist(self):
         """MACD-Spalten müssen vorhanden sein."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -91,7 +91,7 @@ class TestComputeIndicators:
 
     def test_bollinger_bands_consistent(self):
         """Bollinger Bands: upper >= sma20 >= lower."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -101,7 +101,7 @@ class TestComputeIndicators:
 
     def test_atr_positive(self):
         """ATR muss positiv sein."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -110,7 +110,7 @@ class TestComputeIndicators:
 
     def test_volume_ratio_positive(self):
         """Volumen-Verhältnis muss positiv sein."""
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -123,7 +123,7 @@ class TestStrategies:
     """Tests für die Trading-Strategien."""
 
     def _get_rows(self):
-        from server import compute_indicators
+        from services.strategies import compute_indicators
 
         df = make_ohlcv(200)
         result = compute_indicators(df.copy())
@@ -131,35 +131,35 @@ class TestStrategies:
         return result.iloc[-1], result.iloc[-2]
 
     def test_ema_trend_returns_valid_signal(self):
-        from server import strat_ema_trend
+        from services.strategies import strat_ema_trend
 
         row, prev = self._get_rows()
         sig = strat_ema_trend(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_rsi_stoch_returns_valid_signal(self):
-        from server import strat_rsi_stoch
+        from services.strategies import strat_rsi_stoch
 
         row, prev = self._get_rows()
         sig = strat_rsi_stoch(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_macd_returns_valid_signal(self):
-        from server import strat_macd
+        from services.strategies import strat_macd
 
         row, prev = self._get_rows()
         sig = strat_macd(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_bollinger_returns_valid_signal(self):
-        from server import strat_boll
+        from services.strategies import strat_boll
 
         row, prev = self._get_rows()
         sig = strat_boll(row, prev)
         assert sig in (-1, 0, 1)
 
     def test_roc_returns_valid_signal(self):
-        from server import strat_roc
+        from services.strategies import strat_roc
 
         row, prev = self._get_rows()
         sig = strat_roc(row, prev)
