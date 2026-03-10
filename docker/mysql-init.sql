@@ -186,3 +186,32 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     expires_at DATETIME,
     active     TINYINT DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── User Exchanges (Multi-Exchange pro User) ────────────────────
+CREATE TABLE IF NOT EXISTS user_exchanges (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT NOT NULL,
+    exchange    VARCHAR(20) NOT NULL,
+    api_key     VARCHAR(500),
+    api_secret  VARCHAR(500),
+    enabled     TINYINT DEFAULT 0,
+    is_primary  TINYINT DEFAULT 0,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_user_exchange(user_id, exchange),
+    INDEX idx_user(user_id),
+    INDEX idx_enabled(user_id, enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Shared Knowledge (KI-Gemeinschaftswissen) ───────────────────
+CREATE TABLE IF NOT EXISTS shared_knowledge (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    category    VARCHAR(50) NOT NULL,
+    key_name    VARCHAR(100) NOT NULL,
+    value_json  MEDIUMTEXT,
+    confidence  DOUBLE DEFAULT 0.5,
+    source      VARCHAR(50) DEFAULT 'ai',
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_cat_key(category, key_name),
+    INDEX idx_category(category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

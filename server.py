@@ -83,6 +83,7 @@ from services.db_pool import ConnectionPool
 from services.encryption import decrypt_value, encrypt_value
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
+from services.knowledge import KnowledgeBase
 from services.market_data import (
     DominanceFilter,
     FearGreedIndex,
@@ -293,10 +294,39 @@ _LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.IN
 
 # ── [Verbesserung #50] Optionaler JSON-Logging-Formatter ──────────────────────
 _USE_JSON_LOGS = os.getenv("JSON_LOGS", "false").lower() in ("true", "1", "yes")
-_log_handlers: list[logging.Handler] = [
-    logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8"),
-    logging.StreamHandler(),
-]
+_USE_COLOR_LOGS = os.getenv("COLOR_LOGS", "true").lower() in ("true", "1", "yes")
+
+
+# ── [Verbesserung #51] Farbige Konsolenausgabe ───────────────────────────────
+class _ColorFormatter(logging.Formatter):
+    """ANSI-farbiger Log-Formatter für die Konsole."""
+
+    COLORS = {
+        "DEBUG": "\033[36m",  # Cyan
+        "INFO": "\033[32m",  # Grün
+        "WARNING": "\033[33m",  # Gelb
+        "ERROR": "\033[31m",  # Rot
+        "CRITICAL": "\033[41m",  # Rot Hintergrund
+    }
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelname, "")
+        ts = self.formatTime(record, datefmt="%H:%M:%S")
+        level = f"{color}{self.BOLD}{record.levelname:<8}{self.RESET}"
+        msg = record.getMessage()
+        return f"{self.DIM}{ts}{self.RESET} {level} {msg}"
+
+
+_file_handler = logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8")
+_console_handler = logging.StreamHandler()
+
+if _USE_COLOR_LOGS and not _USE_JSON_LOGS:
+    _console_handler.setFormatter(_ColorFormatter())
+
+_log_handlers: list[logging.Handler] = [_file_handler, _console_handler]
 
 if _USE_JSON_LOGS:
 
@@ -807,6 +837,33 @@ class MySQLManager:
                     last_used DATETIME, expires_at DATETIME,
                     active TINYINT DEFAULT 1
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # User Exchanges (Multi-Exchange pro User, Default deaktiviert)
+                c.execute("""CREATE TABLE IF NOT EXISTS user_exchanges (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    exchange VARCHAR(20) NOT NULL,
+                    api_key VARCHAR(500),
+                    api_secret VARCHAR(500),
+                    enabled TINYINT DEFAULT 0,
+                    is_primary TINYINT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_user_exchange(user_id, exchange),
+                    INDEX idx_user(user_id),
+                    INDEX idx_enabled(user_id, enabled)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Shared Knowledge (KI-Gemeinschaftswissen)
+                c.execute("""CREATE TABLE IF NOT EXISTS shared_knowledge (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    category VARCHAR(50) NOT NULL,
+                    key_name VARCHAR(100) NOT NULL,
+                    value_json MEDIUMTEXT,
+                    confidence DOUBLE DEFAULT 0.5,
+                    source VARCHAR(50) DEFAULT 'ai',
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    UNIQUE KEY uq_cat_key(category, key_name),
+                    INDEX idx_category(category)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
                 c.execute("SELECT id FROM users WHERE username='admin'")
                 if not c.fetchone():
@@ -1022,6 +1079,180 @@ class MySQLManager:
                     c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
         except Exception:
             pass
+
+    # ── User Settings ────────────────────────────────────────────────────────
+    def update_user_settings(self, user_id: int, settings: dict) -> bool:
+        """Speichert User-Settings als JSON in der DB."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "UPDATE users SET settings_json=%s WHERE id=%s",
+                        (json.dumps(settings, ensure_ascii=False), user_id),
+                    )
+            return True
+        except Exception as e:
+            log.error(f"update_user_settings: {e}")
+            return False
+
+    def get_user_settings(self, user_id: int) -> dict:
+        """Lädt User-Settings aus der DB."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT settings_json FROM users WHERE id=%s", (user_id,))
+                    row = c.fetchone()
+            if row and row.get("settings_json"):
+                return json.loads(row["settings_json"])
+            return {}
+        except Exception:
+            return {}
+
+    def update_user_api_keys(
+        self, user_id: int, exchange: str, api_key: str, api_secret: str
+    ) -> bool:
+        """Speichert verschlüsselte API-Keys für einen User."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "UPDATE users SET exchange=%s, api_key=%s, api_secret=%s WHERE id=%s",
+                        (exchange, self._enc(api_key), self._enc(api_secret), user_id),
+                    )
+            return True
+        except Exception as e:
+            log.error(f"update_user_api_keys: {e}")
+            return False
+
+    # ── User Exchanges (Multi-Exchange pro User) ─────────────────────────────
+    def get_user_exchanges(self, user_id: int) -> list[dict]:
+        """Gibt alle Exchange-Konfigurationen eines Users zurück."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT id, exchange, enabled, is_primary, created_at "
+                        "FROM user_exchanges WHERE user_id=%s ORDER BY is_primary DESC, exchange",
+                        (user_id,),
+                    )
+                    rows = c.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
+                    d["created_at"] = d["created_at"].isoformat()
+                result.append(d)
+            return result
+        except Exception:
+            return []
+
+    def upsert_user_exchange(
+        self,
+        user_id: int,
+        exchange: str,
+        api_key: str,
+        api_secret: str,
+        enabled: bool = False,
+        is_primary: bool = False,
+    ) -> bool:
+        """Erstellt oder aktualisiert eine Exchange-Konfiguration für einen User.
+
+        Neue Exchanges sind standardmäßig deaktiviert (enabled=False).
+        """
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    # Prüfe ob Exchange schon existiert
+                    c.execute(
+                        "SELECT id FROM user_exchanges WHERE user_id=%s AND exchange=%s",
+                        (user_id, exchange),
+                    )
+                    existing = c.fetchone()
+                    if existing:
+                        c.execute(
+                            "UPDATE user_exchanges SET api_key=%s, api_secret=%s, "
+                            "enabled=%s, is_primary=%s WHERE id=%s",
+                            (
+                                self._enc(api_key),
+                                self._enc(api_secret),
+                                enabled,
+                                is_primary,
+                                existing["id"],
+                            ),
+                        )
+                    else:
+                        c.execute(
+                            "INSERT INTO user_exchanges "
+                            "(user_id, exchange, api_key, api_secret, enabled, is_primary) "
+                            "VALUES(%s,%s,%s,%s,%s,%s)",
+                            (
+                                user_id,
+                                exchange,
+                                self._enc(api_key),
+                                self._enc(api_secret),
+                                enabled,
+                                is_primary,
+                            ),
+                        )
+                    # Wenn is_primary, alle anderen auf nicht-primär setzen
+                    if is_primary:
+                        c.execute(
+                            "UPDATE user_exchanges SET is_primary=0 "
+                            "WHERE user_id=%s AND exchange!=%s",
+                            (user_id, exchange),
+                        )
+            return True
+        except Exception as e:
+            log.error(f"upsert_user_exchange: {e}")
+            return False
+
+    def toggle_user_exchange(self, user_id: int, exchange_id: int, enabled: bool) -> bool:
+        """Aktiviert/Deaktiviert eine Exchange für einen User."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "UPDATE user_exchanges SET enabled=%s WHERE id=%s AND user_id=%s",
+                        (enabled, exchange_id, user_id),
+                    )
+            return True
+        except Exception as e:
+            log.error(f"toggle_user_exchange: {e}")
+            return False
+
+    def get_enabled_exchanges(self, user_id: int) -> list[dict]:
+        """Gibt nur aktivierte Exchanges eines Users zurück (mit entschlüsselten Keys)."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT * FROM user_exchanges WHERE user_id=%s AND enabled=1",
+                        (user_id,),
+                    )
+                    rows = c.fetchall()
+            result = []
+            for r in rows:
+                d = dict(r)
+                d["api_key"] = self._dec(d.get("api_key", ""))
+                d["api_secret"] = self._dec(d.get("api_secret", ""))
+                result.append(d)
+            return result
+        except Exception:
+            return []
+
+    def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
+        """Löscht eine Exchange-Konfiguration eines Users."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "DELETE FROM user_exchanges WHERE id=%s AND user_id=%s",
+                        (exchange_id, user_id),
+                    )
+            return True
+        except Exception as e:
+            log.error(f"delete_user_exchange: {e}")
+            return False
 
     # ── API Tokens ──────────────────────────────────────────────────────────
     def create_api_token(self, user_id: int, label: str = "default") -> str:
@@ -4083,6 +4314,11 @@ class ShortEngine:
 # GLOBALE INSTANZEN
 # ═══════════════════════════════════════════════════════════════════════════════
 db = MySQLManager()
+knowledge_base = KnowledgeBase(
+    db,
+    llm_endpoint=os.getenv("LLM_ENDPOINT", ""),
+    llm_api_key=os.getenv("LLM_API_KEY", ""),
+)
 discord = DiscordNotifier()
 fg_idx = FearGreedIndex(CONFIG)
 dominance = DominanceFilter(CONFIG)
@@ -4534,6 +4770,11 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
 
     db.save_trade(trade)
+    # KI-Gemeinschaftswissen: Erkenntnisse aus Trade speichern
+    try:
+        knowledge_base.learn_from_trade(trade)
+    except Exception:
+        pass  # Knowledge-Update ist optional
     emit_event(
         "trade",
         {
@@ -4953,6 +5194,218 @@ def api_create_token():
     return jsonify({"token": token, "expires_hours": CONFIG["jwt_expiry_hours"]})
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER SETTINGS & EXCHANGE MANAGEMENT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.route("/api/v1/user/settings")
+@api_auth_required
+def api_user_settings_get():
+    """Gibt die User-Settings aus der DB zurück."""
+    settings = db.get_user_settings(request.user_id)
+    return jsonify(settings)
+
+
+@app.route("/api/v1/user/settings", methods=["POST"])
+@api_auth_required
+def api_user_settings_update():
+    """Speichert User-Settings in der DB (kein .env nötig)."""
+    data = request.json or {}
+    # Erlaubte Settings für User (keine Admin-/System-Settings)
+    _ALLOWED_USER_SETTINGS = {
+        "paper_trading",
+        "paper_balance",
+        "risk_per_trade",
+        "stop_loss_pct",
+        "take_profit_pct",
+        "max_open_trades",
+        "scan_interval",
+        "timeframe",
+        "use_dca",
+        "dca_drop_pct",
+        "dca_max_levels",
+        "use_partial_tp",
+        "trailing_stop",
+        "trailing_pct",
+        "break_even_enabled",
+        "use_fear_greed",
+        "use_sentiment",
+        "use_news",
+        "use_anomaly",
+        "use_market_regime",
+        "ai_enabled",
+        "ai_min_confidence",
+        "discord_webhook",
+        "discord_on_buy",
+        "discord_on_sell",
+        "telegram_token",
+        "telegram_chat_id",
+        "portfolio_goal",
+        "language",
+        "max_daily_loss_pct",
+    }
+    filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    # Bestehende Settings laden und mergen
+    current = db.get_user_settings(request.user_id)
+    current.update(filtered)
+    ok = db.update_user_settings(request.user_id, current)
+    return jsonify({"ok": ok, "updated": list(filtered.keys())})
+
+
+@app.route("/api/v1/user/exchanges")
+@api_auth_required
+def api_user_exchanges_list():
+    """Listet alle Exchange-Konfigurationen des Users."""
+    exchanges = db.get_user_exchanges(request.user_id)
+    return jsonify(exchanges)
+
+
+@app.route("/api/v1/user/exchanges", methods=["POST"])
+@api_auth_required
+def api_user_exchanges_upsert():
+    """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
+    data = request.json or {}
+    exchange = data.get("exchange", "").lower()
+    api_key = data.get("api_key", "")
+    api_secret = data.get("api_secret", "")
+    enabled = data.get("enabled", False)  # Default: deaktiviert
+    is_primary = data.get("is_primary", False)
+    if exchange not in EXCHANGE_MAP:
+        return jsonify({"error": f"Exchange '{exchange}' nicht unterstützt"}), 400
+    if not api_key or not api_secret:
+        return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
+    ok = db.upsert_user_exchange(
+        request.user_id, exchange, api_key, api_secret, enabled, is_primary
+    )
+    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}")
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/v1/user/exchanges/<int:exchange_id>/toggle", methods=["POST"])
+@api_auth_required
+def api_user_exchange_toggle(exchange_id):
+    """Aktiviert/Deaktiviert eine Exchange für den User."""
+    enabled = (request.json or {}).get("enabled", False)
+    ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/v1/user/exchanges/<int:exchange_id>", methods=["DELETE"])
+@api_auth_required
+def api_user_exchange_delete(exchange_id):
+    """Löscht eine Exchange-Konfiguration des Users."""
+    ok = db.delete_user_exchange(request.user_id, exchange_id)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/v1/user/api-keys", methods=["POST"])
+@api_auth_required
+def api_user_update_keys():
+    """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
+    data = request.json or {}
+    exchange = data.get("exchange", CONFIG["exchange"])
+    api_key = data.get("api_key", "")
+    api_secret = data.get("api_secret", "")
+    if not api_key or not api_secret:
+        return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
+    ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
+    _audit("api_keys_update", f"Exchange: {exchange}")
+    return jsonify({"ok": ok})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# ADMIN: Multi-Exchange gleichzeitig laufen lassen
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# KI-GEMEINSCHAFTSWISSEN API
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.route("/api/v1/knowledge/summary")
+@api_auth_required
+def api_knowledge_summary():
+    """Markt-Zusammenfassung aus dem Gemeinschaftswissen."""
+    return jsonify(knowledge_base.get_market_summary())
+
+
+@app.route("/api/v1/knowledge/<category>")
+@api_auth_required
+def api_knowledge_category(category):
+    """Alle Einträge einer Wissens-Kategorie."""
+    if category not in KnowledgeBase.CATEGORIES:
+        return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
+    limit = min(int(request.args.get("limit", 50)), 200)
+    return jsonify(knowledge_base.get_category(category, limit))
+
+
+@app.route("/api/v1/knowledge/query", methods=["POST"])
+@api_auth_required
+def api_knowledge_query():
+    """Fragt die lokale LLM nach einer Analyse."""
+    data = request.json or {}
+    prompt = data.get("prompt", "")
+    if not prompt:
+        return jsonify({"error": "prompt ist Pflichtfeld"}), 400
+    # Kontext aus Gemeinschaftswissen zusammenstellen
+    summary = knowledge_base.get_market_summary()
+    context = (
+        f"Du bist ein Krypto-Trading-Analyst. Aktuelles Wissen:\n"
+        f"Top Symbole: {json.dumps(summary.get('top_symbols', [])[:5])}\n"
+        f"Strategie-Ranking: {json.dumps(summary.get('strategy_ranking', [])[:5])}\n"
+    )
+    answer = knowledge_base.query_llm(prompt, context)
+    if answer is None:
+        return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
+    return jsonify({"answer": answer})
+
+
+@app.route("/api/v1/admin/exchanges")
+@api_auth_required
+@admin_required
+def api_admin_exchanges():
+    """Admin sieht alle User-Exchanges und deren Status."""
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT ue.*, u.username FROM user_exchanges ue "
+                    "JOIN users u ON ue.user_id = u.id ORDER BY u.username, ue.exchange"
+                )
+                rows = c.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            d.pop("api_key", None)
+            d.pop("api_secret", None)
+            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
+                d["created_at"] = d["created_at"].isoformat()
+            result.append(d)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/v1/admin/exchanges/<int:exchange_id>/toggle", methods=["POST"])
+@api_auth_required
+@admin_required
+def api_admin_exchange_toggle(exchange_id):
+    """Admin kann jede Exchange aktivieren/deaktivieren."""
+    enabled = (request.json or {}).get("enabled", False)
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "UPDATE user_exchanges SET enabled=%s WHERE id=%s",
+                    (enabled, exchange_id),
+                )
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/v1/signal", methods=["POST"])
 @api_auth_required
 @limiter.limit("60 per minute")
@@ -5137,11 +5590,37 @@ def api_admin_config():
 @api_auth_required
 @admin_required
 def api_admin_config_update():
+    # Sensible Felder die NICHT über API geändert werden dürfen (nur .env)
+    _PROTECTED_KEYS = frozenset(
+        {
+            "api_key",
+            "secret",
+            "short_api_key",
+            "short_secret",
+            "mysql_pass",
+            "mysql_host",
+            "mysql_port",
+            "mysql_user",
+            "mysql_db",
+            "jwt_secret",
+            "admin_password",
+            "cryptopanic_token",
+            "discord_webhook",
+            "telegram_token",
+            "telegram_chat_id",
+            "encryption_key",
+        }
+    )
     data = request.json or {}
+    updated = []
     for k, v in data.items():
-        if k in CONFIG and k not in ("api_key", "secret", "mysql_pass", "jwt_secret"):
+        if k in _PROTECTED_KEYS:
+            continue  # Sensible Werte nur über .env änderbar
+        if k in CONFIG:
             CONFIG[k] = v
-    return jsonify({"ok": True})
+            updated.append(k)
+    _audit("config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}")
+    return jsonify({"ok": True, "updated": updated})
 
 
 # Legacy routes (Dashboard compatibility)
@@ -6615,6 +7094,12 @@ except Exception as _bp_err:
     log.warning(f"Blueprint-Registrierung übersprungen: {_bp_err}")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTO-START: Bot startet automatisch ohne Admin-Login
+# ═══════════════════════════════════════════════════════════════════════════════
+_AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
+
+
 if __name__ == "__main__":
     startup_banner()
     # [Verbesserung #7] Konfigurationsvalidierung
@@ -6631,6 +7116,19 @@ if __name__ == "__main__":
     threading.Thread(target=fg_idx.update, daemon=True).start()
     threading.Thread(target=dominance.update, daemon=True).start()
     threading.Thread(target=safety_scan, daemon=True).start()
+
+    # Auto-Start: Bot sofort starten ohne Login
+    if _AUTO_START:
+        state.running = True
+        state.paused = False
+        threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
+        log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
+        state.add_activity(
+            "🚀", "Auto-Start", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
+        )
+    else:
+        log.info("⏸️  Bot wartet auf manuellen Start (AUTO_START=false)")
+
     log.info("🌐 Dashboard: http://0.0.0.0:5000")
     log.info("📡 REST-API:  http://0.0.0.0:5000/api/v1/")
     log.info("📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
