@@ -41,12 +41,14 @@ class FearGreedIndex:
             log.debug(f"FG: {e}")
 
     def is_ok_to_buy(self) -> bool:
-        return (
-            self.value <= self.config["fg_buy_max"] if self.config.get("use_fear_greed") else True
-        )
+        if not self.config.get("use_fear_greed"):
+            return True
+        return self.value <= self.config.get("fg_buy_max", 80)
 
     def buy_boost(self) -> float:
-        return 1.3 if self.value < self.config["fg_sell_min"] else 1.0
+        if not self.config.get("use_fear_greed"):
+            return 1.0
+        return 1.3 if self.value < self.config.get("fg_sell_min", 25) else 1.0
 
     def to_dict(self) -> dict:
         return {
@@ -68,7 +70,7 @@ class MarketRegime:
 
     def update(self, ex):
         try:
-            ohlcv = ex.fetch_ohlcv("BTC/USDT", self.config["btc_regime_tf"], limit=200)
+            ohlcv = ex.fetch_ohlcv("BTC/USDT", self.config.get("btc_regime_tf", "4h"), limit=200)
             df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
             c = df["close"]
             e50 = c.ewm(span=50, adjust=False).mean().iloc[-1]
@@ -110,12 +112,14 @@ class DominanceFilter:
         if not self.config.get("use_dominance"):
             return True, "Dominanz-Filter deaktiv"
         with self._lock:
-            if self.usdt_dom > self.config["usdt_dom_max"]:
+            usdt_max = self.config.get("usdt_dom_max", 12.0)
+            btc_max = self.config.get("btc_dom_min", 40.0)
+            if self.usdt_dom > usdt_max:
                 return (
                     False,
-                    f"USDT-Dominanz {self.usdt_dom:.1f}% > {self.config['usdt_dom_max']}% → Markt flüchtet",
+                    f"USDT-Dominanz {self.usdt_dom:.1f}% > {usdt_max}% → Markt flüchtet",
                 )
-            if symbol not in ("BTC/USDT", "ETH/USDT") and self.btc_dom > self.config["btc_dom_min"]:
+            if symbol not in ("BTC/USDT", "ETH/USDT") and self.btc_dom > btc_max:
                 return False, f"BTC-Dominanz {self.btc_dom:.1f}% → Altcoin-Käufe blockiert"
             return True, f"BTC:{self.btc_dom:.0f}% USDT:{self.usdt_dom:.0f}%"
 
@@ -125,8 +129,8 @@ class DominanceFilter:
                 "btc_dom": round(self.btc_dom, 1),
                 "usdt_dom": round(self.usdt_dom, 1),
                 "last_update": self.last_update,
-                "ok_btc": self.btc_dom <= self.config["btc_dom_min"],
-                "ok_usdt": self.usdt_dom <= self.config["usdt_dom_max"],
+                "ok_btc": self.btc_dom <= self.config.get("btc_dom_min", 40.0),
+                "ok_usdt": self.usdt_dom <= self.config.get("usdt_dom_max", 12.0),
             }
 
 

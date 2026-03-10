@@ -25,6 +25,7 @@ class RiskManager:
     def __init__(self, config: dict, discord=None):
         self.config = config
         self.discord = discord
+        self._lock = threading.Lock()
         self.daily_start = config["paper_balance"]
         self.daily_pnl = 0.0
         self.peak = config["paper_balance"]
@@ -35,61 +36,71 @@ class RiskManager:
         self._day = datetime.now().date()
 
     def reset_daily(self, balance):
+        with self._lock:
+            today = datetime.now().date()
+            if today != self._day:
+                self.daily_start = balance
+                self.daily_pnl = 0.0
+                self._day = today
+
+    def update_peak(self, pv):
+        with self._lock:
+            if pv > self.peak:
+                self.peak = pv
+            dd = (self.peak - pv) / self.peak * 100 if self.peak > 0 else 0
+            if dd > self.max_drawdown:
+                self.max_drawdown = dd
+
+    def daily_loss_exceeded(self, balance) -> bool:
+        with self._lock:
+            self._reset_daily_unlocked(balance)
+            return (
+                (self.daily_start - balance) / self.daily_start > self.config["max_daily_loss_pct"]
+                if self.daily_start > 0
+                else False
+            )
+
+    def _reset_daily_unlocked(self, balance):
+        """Internes Reset ohne Lock (muss unter self._lock aufgerufen werden)."""
         today = datetime.now().date()
         if today != self._day:
             self.daily_start = balance
             self.daily_pnl = 0.0
             self._day = today
 
-    def update_peak(self, pv):
-        if pv > self.peak:
-            self.peak = pv
-        dd = (self.peak - pv) / self.peak * 100 if self.peak > 0 else 0
-        if dd > self.max_drawdown:
-            self.max_drawdown = dd
-
-    def daily_loss_exceeded(self, balance) -> bool:
-        return (
-            (self.daily_start - balance) / self.daily_start > self.config["max_daily_loss_pct"]
-            if self.daily_start > 0
-            else False
-        )
-
     def circuit_breaker_active(self) -> bool:
-        if self.circuit_breaker_until and datetime.now() < self.circuit_breaker_until:
-            return True
-        if self.circuit_breaker_until and datetime.now() >= self.circuit_breaker_until:
-            self.circuit_breaker_until = None
-            self.consecutive_losses = 0
-        return False
+        with self._lock:
+            return self._circuit_breaker_active_unlocked()
 
     def drawdown_breaker_active(self, current_balance: float) -> bool:
-        max_dd_pct = self.config.get("max_drawdown_pct", 0.10)
-        if self.peak <= 0:
+        with self._lock:
+            max_dd_pct = self.config.get("max_drawdown_pct", 0.10)
+            if self.peak <= 0:
+                return False
+            current_dd = (self.peak - current_balance) / self.peak
+            if current_dd > max_dd_pct:
+                if not self.circuit_breaker_until:
+                    mins = self.config["circuit_breaker_min"] * 2
+                    self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
+                    log.warning(
+                        f"Drawdown Circuit Breaker: {current_dd * 100:.1f}% > {max_dd_pct * 100:.0f}%"
+                    )
+                    if self.discord:
+                        self.discord.circuit_breaker(0, mins)
+                return True
             return False
-        current_dd = (self.peak - current_balance) / self.peak
-        if current_dd > max_dd_pct:
-            if not self.circuit_breaker_until:
-                mins = self.config["circuit_breaker_min"] * 2
-                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
-                log.warning(
-                    f"Drawdown Circuit Breaker: {current_dd * 100:.1f}% > {max_dd_pct * 100:.0f}%"
-                )
-                if self.discord:
-                    self.discord.circuit_breaker(0, mins)
-            return True
-        return False
 
     def record_result(self, won: bool):
-        if won:
-            self.consecutive_losses = 0
-        else:
-            self.consecutive_losses += 1
-            if self.consecutive_losses >= self.config["circuit_breaker_losses"]:
-                mins = self.config["circuit_breaker_min"]
-                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
-                if self.discord:
-                    self.discord.circuit_breaker(self.consecutive_losses, mins)
+        with self._lock:
+            if won:
+                self.consecutive_losses = 0
+            else:
+                self.consecutive_losses += 1
+                if self.consecutive_losses >= self.config["circuit_breaker_losses"]:
+                    mins = self.config["circuit_breaker_min"]
+                    self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
+                    if self.discord:
+                        self.discord.circuit_breaker(self.consecutive_losses, mins)
 
     def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
         if not open_syms or self.config["max_corr"] >= 1.0:
@@ -119,27 +130,38 @@ class RiskManager:
         return False
 
     def update_prices(self, symbol, price):
-        h = self._price_history.setdefault(symbol, [])
-        h.append(price)
-        if len(h) > 100:
-            self._price_history[symbol] = h[-100:]
+        with self._lock:
+            h = self._price_history.setdefault(symbol, [])
+            h.append(price)
+            if len(h) > 100:
+                self._price_history[symbol] = h[-100:]
 
     def circuit_status(self) -> dict:
-        active = self.circuit_breaker_active()
-        remaining = 0
-        if active and self.circuit_breaker_until:
-            remaining = max(
-                0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60)
-            )
-        return {
-            "active": active,
-            "losses": self.consecutive_losses,
-            "limit": self.config["circuit_breaker_losses"],
-            "remaining_min": remaining,
-            "until": self.circuit_breaker_until.strftime("%H:%M")
-            if self.circuit_breaker_until
-            else None,
-        }
+        with self._lock:
+            active = self._circuit_breaker_active_unlocked()
+            remaining = 0
+            if active and self.circuit_breaker_until:
+                remaining = max(
+                    0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60)
+                )
+            return {
+                "active": active,
+                "losses": self.consecutive_losses,
+                "limit": self.config["circuit_breaker_losses"],
+                "remaining_min": remaining,
+                "until": self.circuit_breaker_until.strftime("%H:%M")
+                if self.circuit_breaker_until
+                else None,
+            }
+
+    def _circuit_breaker_active_unlocked(self) -> bool:
+        """Interner Check ohne Lock (muss unter self._lock aufgerufen werden)."""
+        if self.circuit_breaker_until and datetime.now() < self.circuit_breaker_until:
+            return True
+        if self.circuit_breaker_until and datetime.now() >= self.circuit_breaker_until:
+            self.circuit_breaker_until = None
+            self.consecutive_losses = 0
+        return False
 
     def sharpe(self, returns, rf=0.0) -> float:
         if len(returns) < 3:
@@ -163,6 +185,8 @@ class LiquidityScorer:
             bid = ob["bids"][0][0]
             ask = ob["asks"][0][0]
             mid = (bid + ask) / 2
+            if mid <= 0:
+                return False, 0.0, "Ungültige Preise (mid=0)"
             spread = (ask - bid) / mid * 100
             if spread > self.config["max_spread_pct"]:
                 return (
@@ -275,6 +299,7 @@ class AdvancedRiskMetrics:
     """CVaR, EWMA-Volatilität und erweiterte Risikometriken."""
 
     def __init__(self):
+        self._lock = threading.Lock()
         self._vol_history: list[float] = []
         self._ewma_vol: float = 0.02
         self._lambda: float = 0.94
@@ -297,35 +322,39 @@ class AdvancedRiskMetrics:
         }
 
     def update_volatility(self, price: float) -> float:
-        self._vol_history.append(price)
-        if len(self._vol_history) > 200:
-            self._vol_history = self._vol_history[-200:]
-        if len(self._vol_history) < 5:
+        with self._lock:
+            self._vol_history.append(price)
+            if len(self._vol_history) > 200:
+                self._vol_history = self._vol_history[-200:]
+            if len(self._vol_history) < 5:
+                return self._ewma_vol
+            prices = np.array(self._vol_history[-30:])
+            returns = np.diff(np.log(prices + 1e-9))
+            if len(returns) > 0:
+                r2 = float(returns[-1] ** 2)
+                variance = self._lambda * self._ewma_vol**2 + (1 - self._lambda) * r2
+                self._ewma_vol = math.sqrt(max(0.0, variance))
             return self._ewma_vol
-        prices = np.array(self._vol_history[-30:])
-        returns = np.diff(np.log(prices + 1e-9))
-        if len(returns) > 0:
-            r2 = float(returns[-1] ** 2)
-            self._ewma_vol = math.sqrt(self._lambda * self._ewma_vol**2 + (1 - self._lambda) * r2)
-        return self._ewma_vol
 
     def volatility_forecast(self, horizon: int = 5) -> dict:
         """Prognostiziert Volatilität über n Perioden (EWMA mean-reversion)."""
         lt_avg = 0.02  # Langzeit-Volatilität Annahme
         forecasts = []
-        vol = self._ewma_vol
+        with self._lock:
+            vol = self._ewma_vol
+            current_vol = self._ewma_vol
         for _h in range(1, horizon + 1):
             # Mean-Reversion: Vol zieht zurück zum LT-Durchschnitt
             vol = vol + 0.1 * (lt_avg - vol)
             forecasts.append(round(vol * 100, 3))
         return {
-            "current_vol_pct": round(self._ewma_vol * 100, 3),
+            "current_vol_pct": round(current_vol * 100, 3),
             "forecast_horizon": horizon,
             "forecasts_pct": forecasts,
             "risk_level": "HOCH"
-            if self._ewma_vol > 0.04
+            if current_vol > 0.04
             else "MITTEL"
-            if self._ewma_vol > 0.02
+            if current_vol > 0.02
             else "NIEDRIG",
         }
 

@@ -22,8 +22,11 @@ Umgebungsvariable:
 import base64
 import logging
 import os
+import threading
 
 log = logging.getLogger("Encryption")
+
+_fernet_lock = threading.Lock()
 
 try:
     from cryptography.fernet import Fernet
@@ -48,7 +51,9 @@ def _get_fernet() -> "Fernet | None":
             'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
         )
         # Temporärer Key (wird bei Neustart gewechselt → alte verschlüsselte Werte lesbar solange Session läuft)
-        _get_fernet._temp_key = getattr(_get_fernet, "_temp_key", Fernet.generate_key())
+        with _fernet_lock:
+            if not hasattr(_get_fernet, "_temp_key"):
+                _get_fernet._temp_key = Fernet.generate_key()
         return Fernet(_get_fernet._temp_key)
 
     try:
@@ -76,8 +81,8 @@ def encrypt_value(plaintext: str) -> str:
     try:
         return f.encrypt(plaintext.encode()).decode()
     except Exception as e:
-        log.error(f"encrypt_value: {e}")
-        return plaintext
+        log.critical(f"encrypt_value FEHLGESCHLAGEN – Klartext wird NICHT gespeichert: {e}")
+        raise
 
 
 def decrypt_value(ciphertext: str) -> str:
