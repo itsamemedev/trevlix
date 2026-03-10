@@ -165,7 +165,11 @@ class LiquidityScorer:
             mid = (bid + ask) / 2
             spread = (ask - bid) / mid * 100
             if spread > self.config["max_spread_pct"]:
-                return False, round(spread, 3), f"Spread {spread:.3f}%>{self.config['max_spread_pct']}%"
+                return (
+                    False,
+                    round(spread, 3),
+                    f"Spread {spread:.3f}%>{self.config['max_spread_pct']}%",
+                )
             return True, round(spread, 3), "OK"
         except Exception as e:
             return True, 0.0, f"LQ:{e}"
