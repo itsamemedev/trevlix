@@ -41,7 +41,9 @@ class FearGreedIndex:
             log.debug(f"FG: {e}")
 
     def is_ok_to_buy(self) -> bool:
-        return self.value <= self.config["fg_buy_max"] if self.config.get("use_fear_greed") else True
+        return (
+            self.value <= self.config["fg_buy_max"] if self.config.get("use_fear_greed") else True
+        )
 
     def buy_boost(self) -> float:
         return 1.3 if self.value < self.config["fg_sell_min"] else 1.0
@@ -132,13 +134,26 @@ class SentimentFetcher:
     """CoinGecko Community-Sentiment als Trading-Signal."""
 
     COIN_MAP = {
-        "BTC": "bitcoin", "ETH": "ethereum", "BNB": "binancecoin",
-        "SOL": "solana", "XRP": "ripple", "ADA": "cardano",
-        "AVAX": "avalanche-2", "DOT": "polkadot", "LINK": "chainlink",
-        "MATIC": "matic-network", "LTC": "litecoin", "UNI": "uniswap",
-        "ATOM": "cosmos", "DOGE": "dogecoin", "SHIB": "shiba-inu",
-        "OP": "optimism", "ARB": "arbitrum", "SUI": "sui",
-        "TRX": "tron", "TON": "the-open-network",
+        "BTC": "bitcoin",
+        "ETH": "ethereum",
+        "BNB": "binancecoin",
+        "SOL": "solana",
+        "XRP": "ripple",
+        "ADA": "cardano",
+        "AVAX": "avalanche-2",
+        "DOT": "polkadot",
+        "LINK": "chainlink",
+        "MATIC": "matic-network",
+        "LTC": "litecoin",
+        "UNI": "uniswap",
+        "ATOM": "cosmos",
+        "DOGE": "dogecoin",
+        "SHIB": "shiba-inu",
+        "OP": "optimism",
+        "ARB": "arbitrum",
+        "SUI": "sui",
+        "TRX": "tron",
+        "TON": "the-open-network",
     }
 
     def __init__(self, config: dict, db):
@@ -195,12 +210,24 @@ class OnChainFetcher:
         detail = "—"
 
         cg_map = {
-            "btc": "bitcoin", "eth": "ethereum", "bnb": "binancecoin",
-            "sol": "solana", "xrp": "ripple", "ada": "cardano",
-            "dot": "polkadot", "avax": "avalanche-2", "link": "chainlink",
-            "matic": "matic-network", "ltc": "litecoin", "uni": "uniswap",
-            "atom": "cosmos", "doge": "dogecoin", "shib": "shiba-inu",
-            "op": "optimism", "arb": "arbitrum", "sui": "sui",
+            "btc": "bitcoin",
+            "eth": "ethereum",
+            "bnb": "binancecoin",
+            "sol": "solana",
+            "xrp": "ripple",
+            "ada": "cardano",
+            "dot": "polkadot",
+            "avax": "avalanche-2",
+            "link": "chainlink",
+            "matic": "matic-network",
+            "ltc": "litecoin",
+            "uni": "uniswap",
+            "atom": "cosmos",
+            "doge": "dogecoin",
+            "shib": "shiba-inu",
+            "op": "optimism",
+            "arb": "arbitrum",
+            "sui": "sui",
         }
         try:
             cg_id = cg_map.get(coin, "")

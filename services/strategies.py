@@ -111,6 +111,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
 # 9 STRATEGIEN
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def strat_ema_trend(r, p):
     if r["ema8"] > r["ema21"] > r["ema50"] and r["close"] > r["ema21"]:
         return 1
