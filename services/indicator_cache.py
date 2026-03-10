@@ -55,7 +55,7 @@ def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
         # Cache-Treffer nur bei gleichem Timestamp UND innerhalb TTL
         age = time.monotonic() - entry["created"]
         if entry["last_ts"] == ts_str and age < CACHE_TTL_SECONDS:
-            return entry["df"]
+            return entry["df"].copy()
 
     return None
 
@@ -77,7 +77,7 @@ def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
 
     with _lock:
         _cache[key] = {
-            "df": df,
+            "df": df.copy(),
             "last_ts": ts_str,
             "created": time.monotonic(),
         }

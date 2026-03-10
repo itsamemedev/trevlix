@@ -246,11 +246,18 @@ class AIEngine:
             # Individuelle Win-Rates der Strategien aktualisieren
             self._update_strategy_win_rates(votes, won)
 
-        # Training triggern (außerhalb des Locks)
-        if len(self.X_raw) >= self.min_samples and self.trades_since_retrain >= self.retrain_every:
+            # Entscheidung unter Lock treffen, Ausführung außerhalb
+            should_train = (
+                len(self.X_raw) >= self.min_samples
+                and self.trades_since_retrain >= self.retrain_every
+            )
+            should_optimize = self.trades_since_optimize >= self.optimize_every
+
+        # Training/Optimierung außerhalb des Locks ausführen
+        if should_train:
             self._train_model()
 
-        if self.trades_since_optimize >= self.optimize_every:
+        if should_optimize:
             self._optimize_parameters()
 
     def _update_strategy_win_rates(self, votes: dict, won: bool):
@@ -278,8 +285,10 @@ class AIEngine:
             return
 
         try:
-            X = np.array(self.X_raw, dtype=np.float32)
-            y = np.array(self.y_raw, dtype=np.int32)
+            # Snapshot der Trainingsdaten unter Lock
+            with self._lock:
+                X = np.array(self.X_raw, dtype=np.float32)
+                y = np.array(self.y_raw, dtype=np.int32)
             n = len(X)
 
             log.info(
@@ -331,11 +340,12 @@ class AIEngine:
             # Feature Importance → Strategie-Gewichte aktualisieren
             self._update_strategy_weights()
 
-            # Versionierung
-            self.is_trained = True
-            self.training_version += 1
-            self.trades_since_retrain = 0
-            self.last_trained = datetime.now().strftime("%H:%M:%S")
+            # Versionierung (unter Lock aktualisieren)
+            with self._lock:
+                self.is_trained = True
+                self.training_version += 1
+                self.trades_since_retrain = 0
+                self.last_trained = datetime.now().strftime("%H:%M:%S")
 
             msg = (
                 f"KI Modell v{self.training_version} trainiert | "
@@ -398,12 +408,15 @@ class AIEngine:
         Gibt Gewinnwahrscheinlichkeit für einen potenziellen Trade zurück.
         Ohne trainiertes Modell: konservatives 0.5 (keine Meinung).
         """
-        if not self.is_trained or self.model is None or not ML_AVAILABLE:
-            return 0.5
+        with self._lock:
+            if not self.is_trained or self.model is None or not ML_AVAILABLE:
+                return 0.5
+            model = self.model
+            scaler = self.scaler
 
         try:
-            X_scaled = self.scaler.transform(features.reshape(1, -1))
-            proba = self.model.predict_proba(X_scaled)[0]
+            X_scaled = scaler.transform(features.reshape(1, -1))
+            proba = model.predict_proba(X_scaled)[0]
             # Klasse 1 = Gewinn
             classes = list(self.model.classes_)
             win_idx = classes.index(1) if 1 in classes else -1
@@ -634,6 +647,7 @@ class AIEngine:
     def _optimize_vote_threshold(self, trades: list):
         """Optimiert den Min-Vote-Score Schwellenwert."""
         thresholds = [0.43, 0.50, 0.57, 0.60, 0.64, 0.71, 0.86]
+        best_score = -1.0
         best_wr = 0.0
         best_t = self.config.get("min_vote_score", 0.6)
 
@@ -643,7 +657,10 @@ class AIEngine:
             if len(filtered) < 5:
                 continue
             wr = sum(1 for tr in filtered if tr.get("pnl", 0) > 0) / len(filtered)
-            if wr > best_wr:
+            # Bestrafe kleine Stichproben um Überanpassung zu vermeiden
+            score = wr - 1.0 / math.sqrt(len(filtered))
+            if score > best_score:
+                best_score = score
                 best_wr = wr
                 best_t = t
 

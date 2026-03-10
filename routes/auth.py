@@ -192,6 +192,10 @@ def create_auth_blueprint(
   {reg_link}"""
             return _AUTH_TEMPLATE % {"page_title": "Login", "msg_display": "none", "body": body}
 
+        csrf_submitted = request.form.get("_csrf", "")
+        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+            return redirect("/login?err=1")
+
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if not username or not password:
@@ -250,6 +254,12 @@ def create_auth_blueprint(
             ok = request.args.get("ok", "")
             if err == "exists":
                 msg_txt, msg_cls, show = "Benutzername bereits vergeben.", "msg msg-err", "block"
+            elif err == "uname":
+                msg_txt, msg_cls, show = (
+                    "Benutzername muss mind. 3 Zeichen haben.",
+                    "msg msg-err",
+                    "block",
+                )
             elif err == "short":
                 msg_txt, msg_cls, show = (
                     "Passwort muss mind. 12 Zeichen mit Groß+Klein+Zahl haben.",
@@ -286,12 +296,16 @@ def create_auth_blueprint(
                 "body": body,
             }
 
+        csrf_submitted = request.form.get("_csrf", "")
+        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+            return redirect("/register?err=short")
+
         username = request.form.get("username", "").strip()[:32]
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
 
         if len(username) < 3:
-            return redirect("/register?err=short")
+            return redirect("/register?err=uname")
         if len(password) < 12 or not (
             _re.search(r"[A-Z]", password)
             and _re.search(r"[a-z]", password)
@@ -361,6 +375,10 @@ def create_auth_blueprint(
                 "msg_display": "none",
                 "body": body,
             }
+
+        csrf_submitted = request.form.get("_csrf", "")
+        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+            return redirect("/admin/login?err=1")
 
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")

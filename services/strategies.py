@@ -39,6 +39,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
     if len(df) < 80:
         return None
     try:
+        df = df.copy()
         c = df["close"]
         h = df["high"]
         lo = df["low"]

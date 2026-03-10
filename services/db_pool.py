@@ -196,6 +196,10 @@ class ConnectionPool:
                         conn = self._pool.pop()
                         if self._is_alive(conn):
                             return _PooledConnection(conn, self)
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
 
                 # Pool leer → neue Verbindung erstellen
                 try:
