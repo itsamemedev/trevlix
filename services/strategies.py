@@ -70,12 +70,12 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
         std20 = c.rolling(20).std()
         df["bb_upper"] = df["sma20"] + 2 * std20
         df["bb_lower"] = df["sma20"] - 2 * std20
-        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["sma20"]
+        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["sma20"].replace(0, np.nan)
         df["bb_pct"] = (c - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"]).replace(0, np.nan)
         # ATR
         tr = pd.concat([h - lo, (h - c.shift()).abs(), (lo - c.shift()).abs()], axis=1).max(axis=1)
         df["atr14"] = tr.ewm(span=14, adjust=False).mean()
-        df["atr_pct"] = df["atr14"] / c * 100
+        df["atr_pct"] = df["atr14"] / c.replace(0, np.nan) * 100
         # Volume
         df["vol_ma20"] = v.rolling(20).mean()
         df["vol_ratio"] = v / df["vol_ma20"].replace(0, np.nan)
