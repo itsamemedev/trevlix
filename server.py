@@ -83,6 +83,29 @@ from services.db_pool import ConnectionPool
 from services.encryption import decrypt_value, encrypt_value
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
+from services.market_data import (
+    DominanceFilter,
+    FearGreedIndex,
+    MarketRegime,
+    OnChainFetcher,
+    SentimentFetcher,
+)
+from services.risk import (
+    AdvancedRiskMetrics,
+    FundingRateTracker,
+    LiquidityScorer,
+    RiskManager,
+    SymbolCooldown,
+)
+from services.strategies import STRATEGIES, STRATEGY_NAMES, compute_indicators
+from services.utils import (
+    BOT_FULL,
+    BOT_NAME,
+    BOT_VERSION,
+    EXCHANGE_MAP,
+    validate_config,
+)
+from services.utils import make_secret as _secret
 
 try:
     from flask_limiter import Limiter
@@ -198,9 +221,7 @@ except ImportError:
 
 load_dotenv()
 
-BOT_NAME = "TREVLIX"
-BOT_VERSION = "1.1.1"
-BOT_FULL = f"{BOT_NAME} v{BOT_VERSION} · Algorithmic Crypto Trading Bot"
+# BOT_NAME, BOT_VERSION, BOT_FULL importiert aus services.utils
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # APP
@@ -302,26 +323,7 @@ logging.basicConfig(
 log = logging.getLogger("NEXUS")
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# [Verbesserung #2] SecretStr – maskiert Secrets in Logs / Tracebacks
-# ═══════════════════════════════════════════════════════════════════════════════
-class SecretStr(str):
-    """String-Subklasse, die in __repr__ und __str__ maskiert wird."""
-
-    def __repr__(self) -> str:
-        return "SecretStr('***')"
-
-    def __str__(self) -> str:
-        return "***"
-
-    def reveal(self) -> str:
-        """Gibt den echten Wert zurück – explizit aufrufen."""
-        return str.__str__(self)
-
-
-def _secret(val: str) -> SecretStr:
-    """Erstellt ein SecretStr-Objekt aus einem normalen String."""
-    return SecretStr(val)
+# SecretStr, _secret importiert aus services.utils
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -489,16 +491,7 @@ CONFIG: dict[str, Any] = {
     "mysql_db": os.getenv("MYSQL_DB", "nexus"),
 }
 
-EXCHANGE_MAP = {
-    "cryptocom": "cryptocom",
-    "binance": "binance",
-    "bybit": "bybit",
-    "okx": "okx",
-    "kucoin": "kucoin",
-    "kraken": "kraken",
-    "huobi": "huobi",
-    "coinbase": "coinbaseadvanced",  # CCXT-Klassenname für Coinbase Advanced Trade
-}
+# EXCHANGE_MAP importiert aus services.utils
 
 # [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
 EXCHANGE_DEFAULT_FEES: dict[str, float] = {
@@ -514,17 +507,7 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
 
 # Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
 _fee_cache: dict[str, dict] = {}
-STRATEGY_NAMES = [
-    "EMA-Trend",
-    "RSI-Stochastic",
-    "MACD-Kreuzung",
-    "Bollinger",
-    "Volumen-Ausbruch",
-    "OBV-Trend",
-    "ROC-Momentum",
-    "Ichimoku",
-    "VWAP",
-]
+# STRATEGY_NAMES importiert aus services.strategies
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -577,41 +560,7 @@ def close_db_connection(exc: BaseException | None = None) -> None:
             pass
 
 
-def validate_config(cfg: dict) -> list[str]:
-    """Validiert CONFIG-Werte und gibt eine Liste von Fehlermeldungen zurück.
-
-    Args:
-        cfg: Konfigurations-Dictionary mit den zu prüfenden Werten.
-
-    Returns:
-        Liste mit Fehlermeldungen. Leere Liste = alles OK.
-    """
-    errors: list[str] = []
-
-    # Numerische Ranges
-    if not (0 < cfg.get("stop_loss_pct", 0.025) < 1):
-        errors.append("stop_loss_pct muss zwischen 0 und 1 liegen")
-    if not (0 < cfg.get("take_profit_pct", 0.06) < 1):
-        errors.append("take_profit_pct muss zwischen 0 und 1 liegen")
-    if cfg.get("take_profit_pct", 0.06) <= cfg.get("stop_loss_pct", 0.025):
-        errors.append("take_profit_pct muss größer als stop_loss_pct sein")
-    if cfg.get("scan_interval", 60) < 10:
-        errors.append("scan_interval muss mindestens 10 Sekunden betragen")
-    if cfg.get("max_open_trades", 5) < 1:
-        errors.append("max_open_trades muss mindestens 1 sein")
-    if not (0 < cfg.get("risk_per_trade", 0.015) <= 0.5):
-        errors.append("risk_per_trade muss zwischen 0 und 0.5 liegen")
-
-    # Pflicht-Felder
-    ex = cfg.get("exchange", "")
-    if ex not in EXCHANGE_MAP:
-        errors.append(f"exchange '{ex}' ist ungültig – erlaubt: {list(EXCHANGE_MAP.keys())}")
-
-    # Logische Abhängigkeiten
-    if cfg.get("use_shorts") and not (cfg.get("short_api_key") and cfg.get("short_secret")):
-        errors.append("use_shorts=True erfordert short_api_key und short_secret")
-
-    return errors
+# validate_config importiert aus services.utils
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1866,40 +1815,7 @@ class DiscordNotifier:
         )
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# FEAR & GREED
-# ═══════════════════════════════════════════════════════════════════════════════
-class FearGreedIndex:
-    def __init__(self):
-        self.value = 50
-        self.label = "Neutral"
-        self.last_update = None
-
-    def update(self):
-        if not CONFIG.get("use_fear_greed"):
-            return
-        try:
-            r = requests.get("https://api.alternative.me/fng/?limit=1", timeout=8)
-            d = r.json()["data"][0]
-            self.value = int(d["value"])
-            self.label = d["value_classification"]
-            self.last_update = datetime.now().strftime("%H:%M")
-        except Exception as e:
-            log.debug(f"FG: {e}")
-
-    def is_ok_to_buy(self) -> bool:
-        return self.value <= CONFIG["fg_buy_max"] if CONFIG.get("use_fear_greed") else True
-
-    def buy_boost(self) -> float:
-        return 1.3 if self.value < CONFIG["fg_sell_min"] else 1.0
-
-    def to_dict(self) -> dict:
-        return {
-            "value": self.value,
-            "label": self.label,
-            "last_update": self.last_update,
-            "ok_to_buy": self.is_ok_to_buy(),
-        }
+# FearGreedIndex importiert aus services.market_data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1922,143 +1838,10 @@ class NewsSentimentAnalyzer:
         return self._client.get_score(symbol, db=db)
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ON-CHAIN DATA
-# ═══════════════════════════════════════════════════════════════════════════════
-class OnChainFetcher:
-    """
-    Holt On-Chain-Daten: Whale-Transfers, Exchange-Flows.
-    Nutzt öffentliche APIs (CoinGecko, Whale Alert public feed).
-    Score: -1 bis +1 (negativ=Verkaufsdruck, positiv=Akkumulation)
-    """
-
-    def get_score(self, symbol: str) -> tuple[float, str]:
-        cached = db.get_onchain(symbol)
-        if cached:
-            return float(cached["net_score"]), cached["detail"]
-
-        coin = symbol.replace("/USDT", "").lower()
-        whale_score = 0.0
-        flow_score = 0.0
-        detail = "—"
-
-        # CoinGecko: Developer + Community Score als Proxy
-        try:
-            cg_map = {
-                "btc": "bitcoin",
-                "eth": "ethereum",
-                "bnb": "binancecoin",
-                "sol": "solana",
-                "xrp": "ripple",
-                "ada": "cardano",
-                "dot": "polkadot",
-                "avax": "avalanche-2",
-                "link": "chainlink",
-                "matic": "matic-network",
-                "ltc": "litecoin",
-                "uni": "uniswap",
-                "atom": "cosmos",
-                "doge": "dogecoin",
-                "shib": "shiba-inu",
-                "op": "optimism",
-                "arb": "arbitrum",
-                "sui": "sui",
-            }
-            cg_id = cg_map.get(coin, "")
-            if cg_id:
-                r = requests.get(
-                    f"https://api.coingecko.com/api/v3/coins/{cg_id}?localization=false"
-                    "&tickers=false&market_data=true&community_data=true&developer_data=true",
-                    timeout=8,
-                )
-                data = r.json()
-                md = data.get("market_data", {})
-                # Exchange Netflow Proxy: Price change vs Volume change
-                price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
-                vol_ratio = (
-                    0.0  # Default initialisieren – verhindert NameError wenn Marktdaten fehlen
-                )
-                vol_chg = 0.0
-                if md.get("total_volume", {}).get("usd") and md.get("market_cap", {}).get("usd"):
-                    vol_ratio = md["total_volume"]["usd"] / max(md["market_cap"]["usd"], 1)
-                    vol_chg = (vol_ratio - 0.05) * 10  # normalized
-                # Whale proxy: big volume with rising price = accumulation
-                if price_chg > 2 and vol_chg > 0.5:
-                    whale_score = 0.6
-                elif price_chg < -2 and vol_chg > 0.5:
-                    whale_score = -0.6
-                elif price_chg > 1:
-                    whale_score = 0.3
-                elif price_chg < -1:
-                    whale_score = -0.3
-                # Developer activity as long-term health proxy
-                dev = data.get("developer_data", {})
-                commits = dev.get("commit_count_4_weeks") or 0
-                if commits > 20:
-                    flow_score = 0.2
-                elif commits > 5:
-                    flow_score = 0.1
-                detail = f"24h:{price_chg:+.1f}% Vol:{vol_ratio * 100:.1f}% Commits:{commits}"
-        except Exception as e:
-            log.debug(f"OnChain {symbol}: {e}")
-
-        net = float(np.clip((whale_score + flow_score) / 2, -1, 1))
-        db.save_onchain(symbol, whale_score, flow_score, detail)
-        return net, detail
+# OnChainFetcher importiert aus services.market_data
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# DOMINANZ-FILTER
-# ═══════════════════════════════════════════════════════════════════════════════
-class DominanceFilter:
-    """
-    BTC-Dominanz > 40% → Altcoin-Käufe stark einschränken
-    USDT-Dominanz > 12% → Markt flüchtet → Kaufstopp
-    """
-
-    def __init__(self):
-        self.btc_dom = 50.0
-        self.usdt_dom = 6.0
-        self.last_update = None
-        self._lock = threading.Lock()
-
-    def update(self):
-        if not CONFIG.get("use_dominance"):
-            return
-        try:
-            r = requests.get("https://api.coingecko.com/api/v3/global", timeout=8)
-            data = r.json().get("data", {})
-            mcp = data.get("market_cap_percentage", {})
-            with self._lock:
-                self.btc_dom = float(mcp.get("btc", 50))
-                self.usdt_dom = float(mcp.get("usdt", 6))
-                self.last_update = datetime.now().strftime("%H:%M")
-            log.info(f"🌐 Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
-        except Exception as e:
-            log.debug(f"Dominanz: {e}")
-
-    def is_ok_to_buy(self, symbol: str) -> tuple[bool, str]:
-        if not CONFIG.get("use_dominance"):
-            return True, "Dominanz-Filter deaktiv"
-        with self._lock:
-            if self.usdt_dom > CONFIG["usdt_dom_max"]:
-                return (
-                    False,
-                    f"⚠️ USDT-Dominanz {self.usdt_dom:.1f}% > {CONFIG['usdt_dom_max']}% → Markt flüchtet",
-                )
-            if symbol not in ("BTC/USDT", "ETH/USDT") and self.btc_dom > CONFIG["btc_dom_min"]:
-                return False, f"⚠️ BTC-Dominanz {self.btc_dom:.1f}% → Altcoin-Käufe blockiert"
-            return True, f"✅ BTC:{self.btc_dom:.0f}% USDT:{self.usdt_dom:.0f}%"
-
-    def to_dict(self) -> dict:
-        with self._lock:
-            return {
-                "btc_dom": round(self.btc_dom, 1),
-                "usdt_dom": round(self.usdt_dom, 1),
-                "last_update": self.last_update,
-                "ok_btc": self.btc_dom <= CONFIG["btc_dom_min"],
-                "ok_usdt": self.usdt_dom <= CONFIG["usdt_dom_max"],
-            }
+# DominanceFilter importiert aus services.market_data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2440,182 +2223,7 @@ class RLAgent:
         }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# TECHNISCHE INDIKATOREN
-# ═══════════════════════════════════════════════════════════════════════════════
-def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
-    if len(df) < 80:
-        return None
-    try:
-        c = df["close"]
-        h = df["high"]
-        lo = df["low"]
-        v = df["volume"]
-        df["ema8"] = c.ewm(span=8, adjust=False).mean()
-        df["ema21"] = c.ewm(span=21, adjust=False).mean()
-        df["ema50"] = c.ewm(span=50, adjust=False).mean()
-        df["ema200"] = c.ewm(span=200, adjust=False).mean()
-        df["sma20"] = c.rolling(20).mean()
-        # RSI
-        delta = c.diff()
-        gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
-        loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
-        df["rsi"] = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
-        rm = df["rsi"].rolling(14)
-        df["stoch_rsi"] = (df["rsi"] - rm.min()) / (rm.max() - rm.min()).replace(0, np.nan) * 100
-        # MACD
-        e12 = c.ewm(span=12, adjust=False).mean()
-        e26 = c.ewm(span=26, adjust=False).mean()
-        df["macd"] = e12 - e26
-        df["macd_signal"] = df["macd"].ewm(span=9, adjust=False).mean()
-        df["macd_hist"] = df["macd"] - df["macd_signal"]
-        df["macd_hist_slope"] = df["macd_hist"].diff()
-        # ROC
-        df["roc10"] = c.pct_change(10) * 100
-        df["roc20"] = c.pct_change(20) * 100
-        # Bollinger
-        std20 = c.rolling(20).std()
-        df["bb_upper"] = df["sma20"] + 2 * std20
-        df["bb_lower"] = df["sma20"] - 2 * std20
-        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["sma20"]
-        df["bb_pct"] = (c - df["bb_lower"]) / (df["bb_upper"] - df["bb_lower"]).replace(0, np.nan)
-        # ATR
-        tr = pd.concat([h - lo, (h - c.shift()).abs(), (lo - c.shift()).abs()], axis=1).max(axis=1)
-        df["atr14"] = tr.ewm(span=14, adjust=False).mean()
-        df["atr_pct"] = df["atr14"] / c * 100
-        # Volume
-        df["vol_ma20"] = v.rolling(20).mean()
-        df["vol_ratio"] = v / df["vol_ma20"].replace(0, np.nan)
-        df["obv"] = (np.sign(c.diff()) * v).cumsum()
-        df["obv_ema"] = df["obv"].ewm(span=20, adjust=False).mean()
-        # Ichimoku (simplified)
-        hi9 = h.rolling(9).max()
-        lo9 = lo.rolling(9).min()
-        hi26 = h.rolling(26).max()
-        lo26 = lo.rolling(26).min()
-        df["ichi_tenkan"] = (hi9 + lo9) / 2
-        df["ichi_kijun"] = (hi26 + lo26) / 2
-        df["ichi_above"] = (c > df["ichi_kijun"]).astype(float)
-        # VWAP (daily reset not possible on rolling data – use 20-period approx)
-        tp = (h + lo + c) / 3
-        df["vwap"] = (tp * v).rolling(20).sum() / v.rolling(20).sum()
-        df["price_vs_vwap"] = (c - df["vwap"]) / df["vwap"].replace(0, np.nan)
-        # Composite
-        df["ema_alignment"] = (
-            np.sign(df["ema8"] - df["ema21"]) * 0.4
-            + np.sign(df["ema21"] - df["ema50"]) * 0.4
-            + np.sign(df["ema50"] - df["ema200"]) * 0.2
-        )
-        df["price_vs_ema21"] = (c - df["ema21"]) / df["ema21"].replace(0, np.nan)
-        df["returns"] = c.pct_change()
-        result = df.dropna()
-        return result if len(result) >= 20 else None
-    except Exception as e:
-        log.debug(f"Indikator: {e}")
-        return None
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# 9 STRATEGIEN
-# ═══════════════════════════════════════════════════════════════════════════════
-def strat_ema_trend(r, p):
-    if r["ema8"] > r["ema21"] > r["ema50"] and r["close"] > r["ema21"]:
-        return 1
-    if r["ema8"] < r["ema21"] < r["ema50"] and r["close"] < r["ema21"]:
-        return -1
-    return 0
-
-
-def strat_rsi_stoch(r, p):
-    rsi = r.get("rsi", 50)
-    sr = r.get("stoch_rsi", 50)
-    if rsi < 35 and sr < 25:
-        return 1
-    if rsi > 65 and sr > 75:
-        return -1
-    return 0
-
-
-def strat_macd(r, p):
-    cu = p["macd"] < p["macd_signal"] and r["macd"] > r["macd_signal"]
-    cd = p["macd"] > p["macd_signal"] and r["macd"] < r["macd_signal"]
-    if cu and r["macd"] < 0:
-        return 1
-    if cd and r["macd"] > 0:
-        return -1
-    return 0
-
-
-def strat_boll(r, p):
-    bp = r.get("bb_pct", 0.5)
-    if bp < 0.05 and r["rsi"] < 40:
-        return 1
-    if bp > 0.95 and r["rsi"] > 60:
-        return -1
-    return 0
-
-
-def strat_vol(r, p):
-    vs = r.get("vol_ratio", 1) > 2.0
-    up = r["close"] > r.get("ema21", r["close"]) and r["close"] > p["close"] * 1.005
-    dn = r["close"] < r.get("ema21", r["close"]) and r["close"] < p["close"] * 0.995
-    if vs and up:
-        return 1
-    if vs and dn:
-        return -1
-    return 0
-
-
-def strat_obv(r, p):
-    if r["obv"] > r["obv_ema"] and p["obv"] <= p["obv_ema"]:
-        return 1
-    if r["obv"] < r["obv_ema"] and p["obv"] >= p["obv_ema"]:
-        return -1
-    return 0
-
-
-def strat_roc(r, p):
-    r10 = r.get("roc10", 0)
-    r20 = r.get("roc20", 0)
-    if r10 > 3 and r20 > 5:
-        return 1
-    if r10 < -3 and r20 < -5:
-        return -1
-    return 0
-
-
-def strat_ichimoku(r, p):
-    above = r.get("ichi_above", 0)
-    tenkan = r.get("ichi_tenkan", r["close"])
-    kijun = r.get("ichi_kijun", r["close"])
-    if above and tenkan > kijun and r["close"] > tenkan:
-        return 1
-    if not above and tenkan < kijun and r["close"] < tenkan:
-        return -1
-    return 0
-
-
-def strat_vwap(r, p):
-    pvw = r.get("price_vs_vwap", 0)
-    rsi = r.get("rsi", 50)
-    if pvw > 0.01 and rsi > 50:
-        return 1
-    if pvw < -0.01 and rsi < 50:
-        return -1
-    return 0
-
-
-STRATEGIES = [
-    ("EMA-Trend", strat_ema_trend),
-    ("RSI-Stochastic", strat_rsi_stoch),
-    ("MACD-Kreuzung", strat_macd),
-    ("Bollinger", strat_boll),
-    ("Volumen-Ausbruch", strat_vol),
-    ("OBV-Trend", strat_obv),
-    ("ROC-Momentum", strat_roc),
-    ("Ichimoku", strat_ichimoku),
-    ("VWAP", strat_vwap),
-]
+# compute_indicators, STRATEGIES, STRATEGY_NAMES importiert aus services.strategies
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3915,251 +3523,16 @@ class TaxReportGenerator:
         }
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# MARKT-REGIME
-# ═══════════════════════════════════════════════════════════════════════════════
-class MarketRegime:
-    def __init__(self):
-        self.is_bull = True
-        self.btc_price = 0.0
-        self.last_update = None
-
-    def update(self, ex):
-        try:
-            ohlcv = ex.fetch_ohlcv("BTC/USDT", CONFIG["btc_regime_tf"], limit=200)
-            df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
-            c = df["close"]
-            e50 = c.ewm(span=50, adjust=False).mean().iloc[-1]
-            e200 = c.ewm(span=200, adjust=False).mean().iloc[-1] if len(c) >= 200 else e50
-            cur = float(c.iloc[-1])
-            self.btc_price = cur
-            self.is_bull = cur > e50 and e50 > e200 * 0.98
-            self.last_update = datetime.now().strftime("%H:%M:%S")
-        except Exception as e:
-            log.debug(f"Regime:{e}")
+# MarketRegime importiert aus services.market_data
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# RISK MANAGER
-# ═══════════════════════════════════════════════════════════════════════════════
-class RiskManager:
-    def __init__(self):
-        self.daily_start = CONFIG["paper_balance"]
-        self.daily_pnl = 0.0
-        self.peak = CONFIG["paper_balance"]
-        self.max_drawdown = 0.0
-        self.consecutive_losses = 0
-        self.circuit_breaker_until = None
-        self._price_history: dict[str, list[float]] = {}
-        self._day = datetime.now().date()
-
-    def reset_daily(self, balance):
-        today = datetime.now().date()
-        if today != self._day:
-            self.daily_start = balance
-            self.daily_pnl = 0.0
-            self._day = today
-
-    def update_peak(self, pv):
-        if pv > self.peak:
-            self.peak = pv
-        dd = (self.peak - pv) / self.peak * 100 if self.peak > 0 else 0
-        if dd > self.max_drawdown:
-            self.max_drawdown = dd
-
-    def daily_loss_exceeded(self, balance) -> bool:
-        return (
-            (self.daily_start - balance) / self.daily_start > CONFIG["max_daily_loss_pct"]
-            if self.daily_start > 0
-            else False
-        )
-
-    def circuit_breaker_active(self) -> bool:
-        if self.circuit_breaker_until and datetime.now() < self.circuit_breaker_until:
-            return True
-        if self.circuit_breaker_until and datetime.now() >= self.circuit_breaker_until:
-            self.circuit_breaker_until = None
-            self.consecutive_losses = 0
-        return False
-
-    def drawdown_breaker_active(self, current_balance: float) -> bool:
-        """[Verbesserung #26] Drawdown-basierter Circuit Breaker."""
-        max_dd_pct = CONFIG.get("max_drawdown_pct", 0.10)
-        if self.peak <= 0:
-            return False
-        current_dd = (self.peak - current_balance) / self.peak
-        if current_dd > max_dd_pct:
-            if not self.circuit_breaker_until:
-                mins = CONFIG["circuit_breaker_min"] * 2  # Doppelte Pausenzeit bei Drawdown
-                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
-                log.warning(
-                    f"⚡ Drawdown Circuit Breaker: {current_dd * 100:.1f}% > {max_dd_pct * 100:.0f}%"
-                )
-                discord.circuit_breaker(0, mins)
-            return True
-        return False
-
-    def record_result(self, won: bool):
-        if won:
-            self.consecutive_losses = 0
-        else:
-            self.consecutive_losses += 1
-            if self.consecutive_losses >= CONFIG["circuit_breaker_losses"]:
-                mins = CONFIG["circuit_breaker_min"]
-                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
-                discord.circuit_breaker(self.consecutive_losses, mins)
-
-    def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
-        """[#27] Prüft ob ein Symbol mit offenen Positionen korreliert ist.
-
-        Verhindert zu konzentrierte Portfolios durch Korrelations-Limit.
-        Wird vor jedem Trade-Entry aufgerufen um systematisch alle offenen
-        Positionen zu prüfen.
-
-        Args:
-            symbol: Symbol das geprüft werden soll (z.B. 'ETH/USDT').
-            open_syms: Liste der Symbole mit aktuell offenen Positionen.
-
-        Returns:
-            True wenn Korrelation > ``CONFIG["max_corr"]`` zu mind. einem
-            offenen Symbol, False sonst. False auch wenn weniger als 20
-            Preisdatenpunkte für den Vergleich vorhanden sind.
-        """
-        if not open_syms or CONFIG["max_corr"] >= 1.0:
-            return False
-        h1 = self._price_history.get(symbol, [])
-        if len(h1) < 20:
-            return False
-        for s in open_syms:
-            if s == symbol:
-                continue
-            h2 = self._price_history.get(s, [])
-            if len(h2) < 20:
-                continue
-            n = min(len(h1), len(h2), 100)
-            r1 = np.diff(h1[-n:])
-            r2 = np.diff(h2[-n:])
-            if len(r1) > 3 and len(r1) == len(r2):
-                try:
-                    corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
-                    if corr > CONFIG["max_corr"]:
-                        log.info(
-                            f"🔗 Korrelations-Block: {symbol}↔{s} corr={corr:.2f} > {CONFIG['max_corr']}"
-                        )
-                        return True
-                except Exception:
-                    pass
-        return False
-
-    def update_prices(self, symbol, price):
-        h = self._price_history.setdefault(symbol, [])
-        h.append(price)
-        if len(h) > 100:
-            self._price_history[symbol] = h[-100:]
-
-    def circuit_status(self) -> dict:
-        active = self.circuit_breaker_active()
-        remaining = 0
-        if active and self.circuit_breaker_until:
-            remaining = max(
-                0, int((self.circuit_breaker_until - datetime.now()).total_seconds() / 60)
-            )
-        return {
-            "active": active,
-            "losses": self.consecutive_losses,
-            "limit": CONFIG["circuit_breaker_losses"],
-            "remaining_min": remaining,
-            "until": self.circuit_breaker_until.strftime("%H:%M")
-            if self.circuit_breaker_until
-            else None,
-        }
-
-    def sharpe(self, returns, rf=0.0) -> float:
-        if len(returns) < 3:
-            return 0.0
-        r = np.array(returns)
-        exc = r - rf
-        return float(np.mean(exc) / np.std(exc) * np.sqrt(252)) if np.std(exc) > 0 else 0.0
+# RiskManager importiert aus services.risk
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# LIQUIDITY SCORER
-# ═══════════════════════════════════════════════════════════════════════════════
-class LiquidityScorer:
-    def check(self, ex, symbol) -> tuple[bool, float, str]:
-        try:
-            ob = ex.fetch_order_book(symbol, limit=5)
-            if not ob["bids"] or not ob["asks"]:
-                return True, 0.0, "OK"
-            bid = ob["bids"][0][0]
-            ask = ob["asks"][0][0]
-            mid = (bid + ask) / 2
-            spread = (ask - bid) / mid * 100
-            if spread > CONFIG["max_spread_pct"]:
-                return False, round(spread, 3), f"Spread {spread:.3f}%>{CONFIG['max_spread_pct']}%"
-            return True, round(spread, 3), "OK"
-        except Exception as e:
-            return True, 0.0, f"LQ:{e}"
+# LiquidityScorer importiert aus services.risk
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SENTIMENT (CoinGecko)
-# ═══════════════════════════════════════════════════════════════════════════════
-class SentimentFetcher:
-    COIN_MAP = {
-        "BTC": "bitcoin",
-        "ETH": "ethereum",
-        "BNB": "binancecoin",
-        "SOL": "solana",
-        "XRP": "ripple",
-        "ADA": "cardano",
-        "AVAX": "avalanche-2",
-        "DOT": "polkadot",
-        "LINK": "chainlink",
-        "MATIC": "matic-network",
-        "LTC": "litecoin",
-        "UNI": "uniswap",
-        "ATOM": "cosmos",
-        "DOGE": "dogecoin",
-        "SHIB": "shiba-inu",
-        "OP": "optimism",
-        "ARB": "arbitrum",
-        "SUI": "sui",
-        "TRX": "tron",
-        "TON": "the-open-network",
-    }
-
-    def get_score(self, symbol: str) -> float:
-        cached = db.get_sentiment(symbol)
-        if cached is not None:
-            return cached
-        if not CONFIG.get("use_sentiment"):
-            return 0.5
-        coin = symbol.replace("/USDT", "").upper()
-        cg_id = self.COIN_MAP.get(coin, "")
-        if not cg_id:
-            return 0.5
-        try:
-            r = requests.get(
-                f"https://api.coingecko.com/api/v3/coins/{cg_id}"
-                "?localization=false&tickers=false&market_data=false&community_data=true",
-                timeout=8,
-            )
-            cd = r.json().get("community_data", {})
-            sentiment_up = cd.get("sentiment_votes_up_percentage", 50) or 50
-            score = float(np.clip(sentiment_up / 100, 0, 1))
-            db.save_sentiment(symbol, score, "coingecko")
-            return score
-        except Exception:
-            return 0.5
-
-    def get_trending(self) -> list[str]:
-        try:
-            r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
-            coins = r.json().get("coins", [])
-            return [f"{c['item']['symbol'].upper()}/USDT" for c in coins[:7]]
-        except Exception:
-            return []
+# SentimentFetcher importiert aus services.market_data
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4711,20 +4084,20 @@ class ShortEngine:
 # ═══════════════════════════════════════════════════════════════════════════════
 db = MySQLManager()
 discord = DiscordNotifier()
-fg_idx = FearGreedIndex()
-dominance = DominanceFilter()
+fg_idx = FearGreedIndex(CONFIG)
+dominance = DominanceFilter(CONFIG)
 news_fetcher = NewsSentimentAnalyzer()
-onchain = OnChainFetcher()
-sentiment_f = SentimentFetcher()
+onchain = OnChainFetcher(db)
+sentiment_f = SentimentFetcher(CONFIG, db)
 anomaly = AnomalyDetector()
 genetic = GeneticOptimizer()
 rl_agent = RLAgent()
 mtf = MultiTimeframeFilter()
 ob = OrderbookImbalance()
 tax = TaxReportGenerator()
-regime = MarketRegime()
-risk = RiskManager()
-liq = LiquidityScorer()
+regime = MarketRegime(CONFIG)
+risk = RiskManager(CONFIG, discord)
+liq = LiquidityScorer(CONFIG)
 bt = BacktestEngine()
 price_alerts = PriceAlertManager()
 arb_scanner = ArbitrageScanner()
@@ -7004,49 +6377,10 @@ def _set_env_var(key: str, value: str):
         f.write(txt)
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# SYMBOL COOLDOWN (Verbesserung 7)
-# Sperrt ein Symbol nach einem Verlust-Trade für X Minuten
-# ════════════════════════════════════════════════════════════════════════════════
+# SymbolCooldown importiert aus services.risk
 
 
-class SymbolCooldown:
-    """Verhindert Re-Entry in dasselbe Symbol direkt nach einem Verlust-Trade."""
-
-    def __init__(self):
-        self._cooldowns: dict[str, datetime] = {}
-        self._lock = threading.Lock()
-
-    def set_cooldown(self, symbol: str, minutes: int = None):
-        mins = minutes or CONFIG.get("cooldown_minutes", 60)
-        until = datetime.now() + timedelta(minutes=mins)
-        with self._lock:
-            self._cooldowns[symbol] = until
-        log.debug(f"[COOLDOWN] {symbol} gesperrt bis {until.strftime('%H:%M')}")
-
-    def is_blocked(self, symbol: str) -> bool:
-        with self._lock:
-            until = self._cooldowns.get(symbol)
-            if until and datetime.now() < until:
-                return True
-            if until:
-                del self._cooldowns[symbol]
-            return False
-
-    def status(self) -> dict:
-        now = datetime.now()
-        with self._lock:
-            return {
-                sym: {
-                    "until": until.strftime("%H:%M:%S"),
-                    "remaining_min": round((until - now).total_seconds() / 60, 1),
-                }
-                for sym, until in self._cooldowns.items()
-                if until > now
-            }
-
-
-symbol_cooldown = SymbolCooldown()
+symbol_cooldown = SymbolCooldown(CONFIG)
 
 
 @app.route("/api/v1/cooldowns")
@@ -7115,71 +6449,10 @@ def api_news_filter():
     )
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# FUNDING RATE TRACKER (Verbesserung 10)
-# ════════════════════════════════════════════════════════════════════════════════
+# FundingRateTracker importiert aus services.risk
 
 
-class FundingRateTracker:
-    """Ruft Perpetual Funding Rates von Bybit/Binance ab und filtert teure Shorts."""
-
-    def __init__(self):
-        self._rates: dict[str, float] = {}
-        self._last_update: datetime | None = None
-        self._lock = threading.Lock()
-
-    def update(self, ex=None):
-        """Aktualisiert Funding Rates (alle 15 Min)."""
-        if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
-            return
-        try:
-            url = "https://api.bybit.com/v5/market/tickers?category=linear"
-            resp = requests.get(url, timeout=8)
-            if resp.status_code == 200:
-                data = resp.json().get("result", {}).get("list", [])
-                with self._lock:
-                    for item in data:
-                        sym = item.get("symbol", "")
-                        fr = item.get("fundingRate", "0")
-                        if sym.endswith("USDT"):
-                            base = sym.replace("USDT", "") + "/USDT"
-                            self._rates[base] = float(fr)
-                self._last_update = datetime.now()
-                log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
-        except Exception as e:
-            log.debug(f"[FUNDING] Update: {e}")
-
-    def get_rate(self, symbol: str) -> float | None:
-        with self._lock:
-            return self._rates.get(symbol)
-
-    def is_short_too_expensive(self, symbol: str) -> bool:
-        if not CONFIG.get("funding_rate_filter"):
-            return False
-        rate = self.get_rate(symbol)
-        if rate is None:
-            return False
-        max_rate = CONFIG.get("funding_rate_max", 0.001)
-        return rate > max_rate
-
-    def top_rates(self, n: int = 10) -> list:
-        with self._lock:
-            sorted_rates = sorted(self._rates.items(), key=lambda x: abs(x[1]), reverse=True)[:n]
-        return [
-            {"symbol": s, "rate": round(r * 100, 4), "rate_8h_pct": round(r * 100, 4)}
-            for s, r in sorted_rates
-        ]
-
-    def status(self) -> dict:
-        return {
-            "count": len(self._rates),
-            "last_update": self._last_update.isoformat() if self._last_update else None,
-            "filter_enabled": CONFIG.get("funding_rate_filter"),
-            "max_rate": CONFIG.get("funding_rate_max"),
-        }
-
-
-funding_tracker = FundingRateTracker()
+funding_tracker = FundingRateTracker(CONFIG)
 
 
 @app.route("/api/v1/funding-rates")
@@ -7203,142 +6476,7 @@ def api_funding_config():
     return jsonify({"success": True, **funding_tracker.status()})
 
 
-# ════════════════════════════════════════════════════════════════════════════════
-# ADVANCED RISK METRICS (KI-Verbesserungen 23-25)
-# ════════════════════════════════════════════════════════════════════════════════
-
-
-class AdvancedRiskMetrics:
-    """
-    [23] CVaR / Expected Shortfall:
-         Wie viel verlieren wir im schlimmsten Fall (jenseits VaR)?
-    [24] Multi-Regime-Klassifikator (4 Zustände)
-    [25] EWMA-Volatilitätsprognose
-    """
-
-    def __init__(self):
-        self._vol_history: list[float] = []
-        self._ewma_vol: float = 0.02
-        self._lambda: float = 0.94  # RiskMetrics EWMA
-
-    # [23] CVaR (Conditional Value at Risk = Expected Shortfall)
-    def compute_cvar(self, confidence: float = 0.95) -> dict:
-        trades = state.closed_trades
-        if len(trades) < 10:
-            return {"var": 0, "cvar": 0, "es": 0, "n": 0}
-        pnl_arr = np.array([t.get("pnl", 0) for t in trades])
-        var_threshold = np.percentile(pnl_arr, (1 - confidence) * 100)
-        tail_losses = pnl_arr[pnl_arr <= var_threshold]
-        cvar = float(np.mean(tail_losses)) if len(tail_losses) > 0 else float(var_threshold)
-        return {
-            "var": round(float(var_threshold), 2),
-            "cvar": round(cvar, 2),
-            "es": round(abs(cvar), 2),
-            "n_tail": len(tail_losses),
-            "confidence": confidence,
-            "worst_loss": round(float(pnl_arr.min()), 2),
-            "avg_loss": round(float(pnl_arr[pnl_arr < 0].mean()) if any(pnl_arr < 0) else 0, 2),
-        }
-
-    # [25] EWMA-Volatilitätsprognose
-    def update_volatility(self, price: float) -> float:
-        self._vol_history.append(price)
-        if len(self._vol_history) > 200:
-            self._vol_history = self._vol_history[-200:]
-        if len(self._vol_history) < 5:
-            return self._ewma_vol
-        prices = np.array(self._vol_history[-30:])
-        returns = np.diff(np.log(prices + 1e-9))
-        if len(returns) > 0:
-            r2 = float(returns[-1] ** 2)
-            # EWMA update: σ²_t = λ·σ²_{t-1} + (1-λ)·r²_t
-            self._ewma_vol = math.sqrt(self._lambda * self._ewma_vol**2 + (1 - self._lambda) * r2)
-        return self._ewma_vol
-
-    def volatility_forecast(self, horizon: int = 5) -> dict:
-        """Prognostiziert Volatilität über n Perioden (EWMA mean-reversion)."""
-        lt_avg = 0.02  # Langzeit-Volatilität Annahme
-        forecasts = []
-        vol = self._ewma_vol
-        for _h in range(1, horizon + 1):
-            # Mean-Reversion: Vol zieht zurück zum LT-Durchschnitt
-            vol = vol + 0.1 * (lt_avg - vol)
-            forecasts.append(round(vol * 100, 3))
-        return {
-            "current_vol_pct": round(self._ewma_vol * 100, 3),
-            "forecast_horizon": horizon,
-            "forecasts_pct": forecasts,
-            "risk_level": "HOCH"
-            if self._ewma_vol > 0.04
-            else "MITTEL"
-            if self._ewma_vol > 0.02
-            else "NIEDRIG",
-        }
-
-    # [24] Multi-Regime-Klassifikator (4 Zustände)
-    def classify_regime(self, prices: list, volumes: list = None) -> str:
-        """
-        Klassifiziert Marktregime in 4 Zustände:
-        - TREND_UP:   Starker Aufwärtstrend
-        - TREND_DOWN: Starker Abwärtstrend
-        - RANGE:      Seitwärtsbewegung
-        - CRASH:      Schneller Absturz (>5% in kurzer Zeit)
-        Returns: Regime-String
-        """
-        if len(prices) < 20:
-            return "TREND_UP"
-        pa = np.array(prices[-50:])
-        # Kurze vs. lange SMA
-        sma_short = float(np.mean(pa[-10:]))
-        sma_long = float(np.mean(pa[-30:]) if len(pa) >= 30 else np.mean(pa))
-        trend_pct = (sma_short - sma_long) / (sma_long + 1e-9)
-        # Volatilität
-        vol = float(np.std(pa[-20:]) / (np.mean(pa[-20:]) + 1e-9))
-        # Recent drawdown
-        recent_peak = float(np.max(pa[-10:]))
-        current = float(pa[-1])
-        drawdown = (recent_peak - current) / (recent_peak + 1e-9)
-        if drawdown > 0.05:
-            return "CRASH"
-        elif trend_pct > 0.02 and vol < 0.04:
-            return "TREND_UP"
-        elif trend_pct < -0.02 and vol < 0.04:
-            return "TREND_DOWN"
-        else:
-            return "RANGE"
-
-    # [26] Conformal Prediction Intervals
-    def conformal_predict(
-        self, model, X_cal: np.ndarray, y_cal: np.ndarray, X_test: np.ndarray, alpha: float = 0.1
-    ) -> dict:
-        """
-        [26] Conformal Prediction: Liefert garantierte Vorhersage-Intervalle.
-        Mit (1-alpha) Wahrscheinlichkeit liegt das echte Label im Interval.
-        """
-        if model is None or len(X_cal) < 10:
-            return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
-        try:
-            # Non-conformity scores: |f(x) - y|
-            probs = model.predict_proba(X_cal)[:, 1]
-            scores = np.abs(probs - y_cal)
-            # Quantil der non-conformity scores
-            q_level = math.ceil((len(scores) + 1) * (1 - alpha)) / len(scores)
-            q_level = min(q_level, 1.0)
-            q_hat = float(np.quantile(scores, q_level))
-            test_prob = float(model.predict_proba(X_test)[:, 1][0])
-            lower = max(0.0, test_prob - q_hat)
-            upper = min(1.0, test_prob + q_hat)
-            return {
-                "prediction": round(test_prob, 3),
-                "lower": round(lower, 3),
-                "upper": round(upper, 3),
-                "width": round(upper - lower, 3),
-                "q_hat": round(q_hat, 3),
-                "coverage": round(1 - alpha, 2),
-            }
-        except Exception as e:
-            log.debug(f"[CONFORMAL] {e}")
-            return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "error"}
+# AdvancedRiskMetrics importiert aus services.risk
 
 
 adv_risk = AdvancedRiskMetrics()
@@ -7348,7 +6486,7 @@ adv_risk = AdvancedRiskMetrics()
 @api_auth_required
 def api_cvar():
     confidence = float(request.args.get("conf", 0.95))
-    return jsonify(adv_risk.compute_cvar(confidence))
+    return jsonify(adv_risk.compute_cvar(state.closed_trades, confidence))
 
 
 @app.route("/api/v1/risk/volatility")

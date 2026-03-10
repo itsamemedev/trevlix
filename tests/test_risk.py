@@ -17,15 +17,16 @@ class TestRiskManager:
 
     def _make_risk(self):
         """Erstellt RiskManager-Instanz mit Test-CONFIG."""
-        import server
+        from services.risk import RiskManager
 
-        # CONFIG für Tests anpassen
-        server.CONFIG["max_daily_loss_pct"] = 0.05
-        server.CONFIG["circuit_breaker_losses"] = 3
-        server.CONFIG["circuit_breaker_min"] = 60
-        server.CONFIG["max_corr"] = 0.75
-        server.CONFIG["paper_balance"] = 10000.0
-        return server.RiskManager()
+        config = {
+            "max_daily_loss_pct": 0.05,
+            "circuit_breaker_losses": 3,
+            "circuit_breaker_min": 60,
+            "max_corr": 0.75,
+            "paper_balance": 10000.0,
+        }
+        return RiskManager(config)
 
     def test_daily_loss_not_exceeded_initially(self):
         """Frisch erstellter RiskManager hat kein Tageslimit überschritten."""
