@@ -204,6 +204,8 @@ class ConnectionPool:
 
                     # Pool leer → neue Verbindung erstellen
                     conn = self._create_connection()
+                    if conn is None:
+                        raise ConnectionError("Keine DB-Verbindung möglich (pymysql nicht verfügbar)")
                     return _PooledConnection(conn, self)
                 except Exception:
                     self._semaphore.release()

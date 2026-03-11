@@ -26,9 +26,9 @@ class RiskManager:
         self.config = config
         self.discord = discord
         self._lock = threading.Lock()
-        self.daily_start = config["paper_balance"]
+        self.daily_start = config.get("paper_balance", 10000.0)
         self.daily_pnl = 0.0
-        self.peak = config["paper_balance"]
+        self.peak = config.get("paper_balance", 10000.0)
         self.max_drawdown = 0.0
         self.consecutive_losses = 0
         self.circuit_breaker_until = None
@@ -55,7 +55,7 @@ class RiskManager:
         with self._lock:
             self._reset_daily_unlocked(balance)
             return (
-                (self.daily_start - balance) / self.daily_start > self.config["max_daily_loss_pct"]
+                (self.daily_start - balance) / self.daily_start > self.config.get("max_daily_loss_pct", 0.05)
                 if self.daily_start > 0
                 else False
             )
@@ -80,7 +80,7 @@ class RiskManager:
             current_dd = (self.peak - current_balance) / self.peak
             if current_dd > max_dd_pct:
                 if not self.circuit_breaker_until:
-                    mins = self.config["circuit_breaker_min"] * 2
+                    mins = self.config.get("circuit_breaker_min", 30) * 2
                     self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
                     log.warning(
                         f"Drawdown Circuit Breaker: {current_dd * 100:.1f}% > {max_dd_pct * 100:.0f}%"
@@ -96,14 +96,14 @@ class RiskManager:
                 self.consecutive_losses = 0
             else:
                 self.consecutive_losses += 1
-                if self.consecutive_losses >= self.config["circuit_breaker_losses"]:
-                    mins = self.config["circuit_breaker_min"]
+                if self.consecutive_losses >= self.config.get("circuit_breaker_losses", 3):
+                    mins = self.config.get("circuit_breaker_min", 30)
                     self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
                     if self.discord:
                         self.discord.circuit_breaker(self.consecutive_losses, mins)
 
     def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
-        if not open_syms or self.config["max_corr"] >= 1.0:
+        if not open_syms or self.config.get("max_corr", 0.75) >= 1.0:
             return False
         h1 = self._price_history.get(symbol, [])
         if len(h1) < 20:
@@ -120,9 +120,10 @@ class RiskManager:
             if len(r1) > 3 and len(r1) == len(r2):
                 try:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
-                    if corr > self.config["max_corr"]:
+                    max_corr = self.config.get("max_corr", 0.75)
+                    if corr > max_corr:
                         log.info(
-                            f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {self.config['max_corr']}"
+                            f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}"
                         )
                         return True
                 except Exception:
@@ -147,7 +148,7 @@ class RiskManager:
             return {
                 "active": active,
                 "losses": self.consecutive_losses,
-                "limit": self.config["circuit_breaker_losses"],
+                "limit": self.config.get("circuit_breaker_losses", 3),
                 "remaining_min": remaining,
                 "until": self.circuit_breaker_until.strftime("%H:%M")
                 if self.circuit_breaker_until
@@ -181,7 +182,7 @@ class LiquidityScorer:
         try:
             ob = ex.fetch_order_book(symbol, limit=5)
             if not ob["bids"] or not ob["asks"]:
-                return True, 0.0, "OK"
+                return False, 0.0, "Kein Orderbook"
             bid = ob["bids"][0][0]
             ask = ob["asks"][0][0]
             mid = (bid + ask) / 2

@@ -93,8 +93,8 @@ class ExchangeManager:
             if ex_data["exchange"] == exchange_name:
                 inst = self._create_instance(
                     exchange_name,
-                    ex_data.get("api_key", ""),
-                    ex_data.get("api_secret", ""),
+                    decrypt_value(ex_data.get("api_key", "")),
+                    decrypt_value(ex_data.get("api_secret", "")),
                 )
                 if inst:
                     with self._lock:
@@ -123,8 +123,8 @@ class ExchangeManager:
 
             inst = self._create_instance(
                 name,
-                ex_data.get("api_key", ""),
-                ex_data.get("api_secret", ""),
+                decrypt_value(ex_data.get("api_key", "")),
+                decrypt_value(ex_data.get("api_secret", "")),
             )
             if inst:
                 with self._lock:

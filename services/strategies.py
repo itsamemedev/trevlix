@@ -55,7 +55,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
         loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
         df["rsi"] = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
         rm = df["rsi"].rolling(14)
-        df["stoch_rsi"] = (df["rsi"] - rm.min()) / (rm.max() - rm.min()).replace(0, np.nan) * 100
+        df["stoch_rsi"] = ((df["rsi"] - rm.min()) / (rm.max() - rm.min()).replace(0, np.nan)) * 100
         # MACD
         e12 = c.ewm(span=12, adjust=False).mean()
         e26 = c.ewm(span=26, adjust=False).mean()

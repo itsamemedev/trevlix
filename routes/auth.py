@@ -298,7 +298,7 @@ def create_auth_blueprint(
 
         csrf_submitted = request.form.get("_csrf", "")
         if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
-            return redirect("/register?err=short")
+            return redirect("/register")
 
         username = request.form.get("username", "").strip()[:32]
         password = request.form.get("password", "")
