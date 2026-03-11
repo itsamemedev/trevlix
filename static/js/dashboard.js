@@ -1,6 +1,9 @@
 // ── HTML-Escaping für sichere innerHTML-Nutzung ──────────────────────
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
 
+// ── JWT Token (aus Cookie oder Session) ──────────────────────────────
+let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+
 // [Socket.io Fix] Initiale State-Abfrage per HTTP, bevor WS verbunden ist
 (async function _initState(){
   try {
@@ -179,7 +182,7 @@ function updateUI(d){
   // Chart pos buttons
   if((d.positions||[]).length){
     document.getElementById('chartPosBtns').innerHTML=d.positions.map(p=>
-      `<button onclick="openChart('${p.symbol}')" class="filter-btn">${p.symbol.replace('/USDT','')} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
+      `<button onclick="openChart('${esc(p.symbol)}')" class="filter-btn">${esc(p.symbol.replace('/USDT',''))} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
   }
   // ARB stat
   document.getElementById('sArb').textContent=(d.arb_log||[]).length;
@@ -233,8 +236,8 @@ function updateGenetic(gen){
   document.getElementById('genGenCount').textContent='Gen.'+gen.generation;
   const el=document.getElementById('genHistory');
   if(gen.history?.length) el.innerHTML=gen.history.slice(0,8).map(h=>
-    `<div class="log-row info"><span class="log-time">Gen.${h.gen}</span>
-     <span class="log-msg">Fitness:${h.fitness} · SL:${(h.genome?.sl*100).toFixed(1)}% · TP:${(h.genome?.tp*100).toFixed(1)}%</span></div>`).join('');
+    `<div class="log-row info"><span class="log-time">Gen.${esc(h.gen)}</span>
+     <span class="log-msg">Fitness:${esc(h.fitness)} · SL:${(h.genome?.sl*100).toFixed(1)}% · TP:${(h.genome?.tp*100).toFixed(1)}%</span></div>`).join('');
   else el.innerHTML='<div class="empty" style="padding:8px">—</div>';
 }
 
@@ -257,8 +260,8 @@ function updatePositions(positions){
         <div style="text-align:right">
           <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${c}">${pos?'+':''}${fmt(p.pnl)}</div>
           <div style="font-size:11px;font-family:var(--mono);color:${c}">${fmtPct(p.pnl_pct||0)}</div>
-          <button onclick="closePos('${p.symbol}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
-              <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${p.symbol}',${p.entry})">🎯 SL</button>
+          <button onclick="closePos('${esc(p.symbol)}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
+              <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${esc(p.symbol)}',${p.entry})">🎯 SL</button>
         </div>
       </div>
       <div class="pos-bot"><span>SL: ${(p.sl||0).toFixed(4)}</span><span>TP: ${(p.tp||0).toFixed(4)}</span><span>${fmt(p.invested||0,0)} USDT</span></div>
@@ -399,7 +402,7 @@ function updateActivity(acts){
     return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
       <div style="font-size:18px;flex-shrink:0">${esc(a.icon)}</div>
       <div style="flex:1"><div style="font-size:12px;font-weight:700;color:${c}">${esc(a.title)}</div>
-        <div style="font-size:10px;color:var(--sub);margin-top:1px">${a.detail}</div></div>
+        <div style="font-size:10px;color:var(--sub);margin-top:1px">${esc(a.detail)}</div></div>
       <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${a.time}</div>
     </div>`;
   }).join('');
@@ -448,7 +451,7 @@ async function loadHeatmap(sortBy){
       const sym=coin.symbol.replace('/USDT','');
       const nc=coin.news_score>0.3?'🟢':coin.news_score<-0.3?'🔴':'⬜';
       const cls=(coin.in_pos?' inpos':'')+(coin.short?' inshort':'');
-      return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${coin.symbol}')">
+      return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${esc(coin.symbol)}')">
         <div class="hm-symbol">${sym}</div>
         <div class="hm-pct">${pct>=0?'+':''}${pct.toFixed(1)}%</div>
         <div class="hm-news">${nc}</div>
@@ -532,7 +535,7 @@ function runBacktest(){
   socket.emit('run_backtest',{
     symbol:document.getElementById('btSym').value.trim(),
     timeframe:document.getElementById('btTf').value,
-    candles:parseInt(document.getElementById('btCandles').value),
+    candles:parseInt(document.getElementById('btCandles').value, 10),
     sl:parseFloat(document.getElementById('btSL').value)/100,
     tp:parseFloat(document.getElementById('btTP').value)/100,
     vote:parseFloat(document.getElementById('btVote').value)/100,
@@ -585,12 +588,12 @@ function exportJSON(){window.open('/api/export/json');}
 function startBot(){socket.emit('start_bot');}
 function stopBot(){socket.emit('stop_bot');}
 function pauseBot(){socket.emit('pause_bot');}
-let _lastClosedSymbol = null;
+const _closeHistory = [];
 let _undoTimeout = null;
 
 function closePos(sym){
   if(!confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) return;
-  _lastClosedSymbol = sym;
+  _closeHistory.push(sym);
   socket.emit('close_position',{symbol:sym});
   showUndoBar(sym);
 }
@@ -601,16 +604,16 @@ function showUndoBar(sym){
   msg.textContent = sym + ' closed';
   bar.style.display = 'flex';
   clearTimeout(_undoTimeout);
-  _undoTimeout = setTimeout(()=>{ bar.style.display='none'; _lastClosedSymbol=null; }, 8000);
+  _undoTimeout = setTimeout(()=>{ bar.style.display='none'; }, 8000);
 }
 
 function undoClose(){
-  if(!_lastClosedSymbol) return;
-  socket.emit('undo_close', {symbol: _lastClosedSymbol});
+  if(!_closeHistory.length) return;
+  const sym = _closeHistory.pop();
+  socket.emit('undo_close', {symbol: sym});
   document.getElementById('undoBar').style.display = 'none';
   clearTimeout(_undoTimeout);
-  _lastClosedSymbol = null;
-  toast('↩ Undo close — attempting','info');
+  toast('↩ Undo close '+sym+' — attempting','info');
 }
 // old closePos replaced above
 function _closePos_orig(sym){if(confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) socket.emit('close_position',{symbol:sym});}
@@ -656,13 +659,13 @@ function saveSettings(){
   socket.emit('update_config',{
     stop_loss_pct:parseFloat(document.getElementById('sSL').value)/100,
     take_profit_pct:parseFloat(document.getElementById('sTP').value)/100,
-    max_open_trades:parseInt(document.getElementById('sMaxTrades').value),
-    scan_interval:parseInt(document.getElementById('sInterval').value),
+    max_open_trades:parseInt(document.getElementById('sMaxTrades').value, 10),
+    scan_interval:parseInt(document.getElementById('sInterval').value, 10),
     paper_trading:document.getElementById('sPaper').checked,
     trailing_stop:document.getElementById('sTrailing').checked,
     ai_min_confidence:parseFloat(document.getElementById('sAiConf').value)/100,
-    circuit_breaker_losses:parseInt(document.getElementById('sCBLosses').value),
-    circuit_breaker_min:parseInt(document.getElementById('sCBMin').value),
+    circuit_breaker_losses:parseInt(document.getElementById('sCBLosses').value, 10),
+    circuit_breaker_min:parseInt(document.getElementById('sCBMin').value, 10),
     max_spread_pct:parseFloat(document.getElementById('sSpread').value),
     use_fear_greed:document.getElementById('sFG').checked,
     ai_use_kelly:document.getElementById('sKelly').checked,
@@ -672,7 +675,7 @@ function saveSettings(){
     use_dominance:document.getElementById('sDom').checked,
     use_anomaly:document.getElementById('sAnomaly').checked,
     use_dca:document.getElementById('sDCA').checked,
-    dca_max_levels:parseInt(document.getElementById('sDCALvl').value),
+    dca_max_levels:parseInt(document.getElementById('sDCALvl').value, 10),
     use_partial_tp:document.getElementById('sPartialTP').checked,
     use_shorts:document.getElementById('sShorts').checked,
     use_arbitrage:document.getElementById('sArb').checked,
@@ -690,7 +693,7 @@ function saveKeys(){
 }
 function saveDiscord(){
   socket.emit('update_discord',{webhook:document.getElementById('sDiscord').value,
-    report_hour:parseInt(document.getElementById('sReportHour').value)});
+    report_hour:parseInt(document.getElementById('sReportHour').value, 10)});
 }
 async function createToken(){
   try{
@@ -1208,7 +1211,7 @@ async function loadCooldowns() {
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--muted)">
         <span style="font-size:13px;font-weight:600;color:#ef4444;flex:1">${sym}</span>
         <span style="font-size:11px;color:var(--sub)">bis ${info.until} (${info.remaining_min} Min.)</span>
-        <button onclick="clearCooldown('${sym}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
+        <button onclick="clearCooldown('${esc(sym)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
       </div>`).join('');
   } catch(e) { el.innerHTML = '<div class="empty">Fehler</div>'; }
 }
@@ -1226,7 +1229,7 @@ async function createGrid() {
   const symbol = document.getElementById('gridSymbol')?.value?.trim().toUpperCase();
   const lower  = parseFloat(document.getElementById('gridLower')?.value);
   const upper  = parseFloat(document.getElementById('gridUpper')?.value);
-  const levels = parseInt(document.getElementById('gridLevels')?.value || 10);
+  const levels = parseInt(document.getElementById('gridLevels')?.value || 10, 10);
   const invest = parseFloat(document.getElementById('gridInvest')?.value || 100);
   if (!symbol || !lower || !upper || lower >= upper) {
     toast('Symbol, Unter- und Obergrenze erforderlich (untere < obere)', 'warning'); return;
@@ -1247,7 +1250,7 @@ async function loadGrids() {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <span style="font-weight:700;color:#e8f4ff">${g.symbol}</span>
           <span style="font-size:9px;padding:2px 6px;border-radius:4px;${g.active?'background:rgba(0,255,136,.08);color:var(--jade)':'background:rgba(255,255,255,.05);color:var(--sub)'}">${g.active?'AKTIV':'INAKTIV'}</span>
-          <button onclick="deleteGrid('${g.symbol}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
+          <button onclick="deleteGrid('${esc(g.symbol)}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
         </div>
         <div style="font-size:11px;color:var(--sub)">${g.levels} Stufen · ${g.lower}–${g.upper} USDT · Schritt: ${g.step?.toFixed(4) || '—'}</div>
         <div style="font-size:11px;color:var(--sub)">Offene Käufe: ${g.open_buys || 0} · Trades: ${g.total_trades || 0} · PnL: <span style="color:${(g.total_pnl||0)>=0?'var(--jade)':'var(--red)'}">${(g.total_pnl||0)>=0?'+':''}${(g.total_pnl||0).toFixed(4)} USDT</span></div>
@@ -1256,9 +1259,12 @@ async function loadGrids() {
 }
 async function deleteGrid(symbol) {
   if (!confirm(QI18n.t('confirm_delete_grid').replace('{sym}',symbol))) return;
-  await fetch('/api/v1/grid/'+symbol, {
-    method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-  loadGrids(); toast(`Grid ${symbol} gelöscht`, 'info');
+  try {
+    const r = await fetch('/api/v1/grid/'+encodeURIComponent(symbol), {
+      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Fehler beim Löschen','error'); return; }
+    loadGrids(); toast(`Grid ${symbol} gelöscht`, 'info');
+  } catch(e){ toast('Netzwerkfehler: '+e.message,'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1394,11 +1400,11 @@ document.addEventListener('keydown', e => {
   if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT') return;
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   switch(e.key.toLowerCase()){
-    case ' ':  e.preventDefault(); toggleBot(); break;
-    case 'b':  showSection('backtest'); break;
-    case 's':  showSection('settings'); break;
-    case 'd':  showSection('home'); break;
-    case 'a':  showSection('ai'); break;
+    case ' ':  e.preventDefault(); if(lastData?.running) stopBot(); else startBot(); break;
+    case 'b':  { const nb=document.getElementById('nb-backtest'); if(nb) nav('backtest',nb); } break;
+    case 's':  { const nb=document.getElementById('nb-settings'); if(nb) nav('settings',nb); } break;
+    case 'd':  { const nb=document.getElementById('nb-home'); if(nb) nav('home',nb); } break;
+    case 'a':  { const nb=document.getElementById('nb-ai'); if(nb) nav('ai',nb); } break;
     case 't':  toggleTheme(); break;
     case '?':
       const h = document.getElementById('shortcutHelp');
@@ -1492,7 +1498,7 @@ async function runMarkowitz(){
 async function runCompareBacktest(){
   const syms = document.getElementById('compareSymbols')?.value?.split(',').map(s=>s.trim()).filter(Boolean);
   const tf   = document.getElementById('compareTf')?.value || '1h';
-  const can  = parseInt(document.getElementById('compareCandles')?.value) || 500;
+  const can  = parseInt(document.getElementById('compareCandles')?.value, 10) || 500;
   const el   = document.getElementById('compareResults');
   if(!syms||syms.length<1){ toast('Mindestens 1 Symbol','warning'); return; }
   if(el) el.innerHTML='<div style="text-align:center;padding:20px;color:var(--sub)">⏳ Backtest läuft...</div>';
@@ -1549,16 +1555,25 @@ async function loadBtHistory(){
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
 async function adjustSL(symbol, entryPrice){
-  const pct = prompt(`SL für ${symbol} (% vom Entry ${entryPrice.toFixed(4)})\nz.B. 2.5 für -2.5%:`);
-  if(!pct) return;
-  const r = await fetch('/api/v1/positions/'+encodeURIComponent(symbol)+'/sl',{
-    method:'PATCH',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
-    body: JSON.stringify({sl_pct: parseFloat(pct)})
-  });
-  const d = await r.json();
-  if(d.new_sl) toast(`✅ SL ${symbol}: ${d.new_sl.toFixed(4)}`,'success');
-  else toast(d.error||'Fehler','error');
+  const raw = prompt(`SL für ${symbol} (% vom Entry ${entryPrice.toFixed(4)})\nz.B. 2.5 für -2.5%:`);
+  if(!raw) return;
+  const pct = parseFloat(raw);
+  if(isNaN(pct) || pct <= 0 || pct > 50){
+    toast('Ungültiger SL-Wert (muss zwischen 0 und 50% liegen)','error');
+    return;
+  }
+  try {
+    const r = await fetch('/api/v1/positions/'+encodeURIComponent(symbol)+'/sl',{
+      method:'PATCH',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      body: JSON.stringify({sl_pct: pct})
+    });
+    const d = await r.json();
+    if(d.new_sl) toast(`✅ SL ${symbol}: ${d.new_sl.toFixed(4)}`,'success');
+    else toast(d.error||'Fehler','error');
+  } catch(e) {
+    toast('Netzwerkfehler: '+e.message,'error');
+  }
 }
 
 // ── Web Push Notifications ──────────────────────────────────────────────────
@@ -1598,15 +1613,8 @@ function _checkPush(data){
   }
 }
 
-// ── Load Feature Importance on AI tab switch ─────────────────────────────────
-function onTabSwitch(section){
-  if(section === 'ai'){
-    setTimeout(loadFeatureImportance, 500);
-  }
-  if(section === 'backtest'){
-    setTimeout(loadBtHistory, 300);
-  }
-}
+// NOTE: onTabSwitch is already defined above (line ~1113) with loadSharedAIStatus + loadFeatureImportance + loadBtHistory.
+// Do NOT redefine it here — the earlier definition already covers all tab switch logic.
 
 // Restore push pref
 if(localStorage.getItem('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
@@ -1681,7 +1689,7 @@ function mexUpdate(data) {
         <span style="color:var(--txt);font-weight:600">${p.symbol}</span>
         <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
         <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${p.pnl?.toFixed(2)} USDT</span>
-        <button onclick="mexClosePos('${id}','${p.symbol}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
+        <button onclick="mexClosePos('${esc(id)}','${esc(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
       </div>`).join('') : '';
 
     return `
@@ -1728,12 +1736,12 @@ function mexUpdate(data) {
 
         <div style="display:flex;gap:8px;margin-top:12px">
           ${!enabled
-            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${id}')">🔑 API-Keys einrichten</button>`
+            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 API-Keys einrichten</button>`
             : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${id}')">⏹ Stoppen</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${id}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${id}')">▶ Starten</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${id}')">🔑 Keys</button>`
+              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${esc(id)}')">⏹ Stoppen</button>
+                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 Keys</button>`
+              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${esc(id)}')">▶ Starten</button>
+                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 Keys</button>`
           }
         </div>
       </div>
@@ -1811,7 +1819,7 @@ function nav(id, el) {
 
 // Beim Start: Exchange-Status laden
 fetch('/api/v1/exchanges', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}})
-  .then(r => r.json()).then(mexUpdate).catch(()=>{});
+  .then(r => r.json()).then(mexUpdate).catch(e => console.warn('Exchange-Status laden fehlgeschlagen:', e));
 
 // ── Init ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
