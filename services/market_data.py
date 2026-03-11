@@ -113,7 +113,7 @@ class DominanceFilter:
             return True, "Dominanz-Filter deaktiv"
         with self._lock:
             usdt_max = self.config.get("usdt_dom_max", 12.0)
-            btc_max = self.config.get("btc_dom_min", 40.0)
+            btc_max = self.config.get("btc_dom_max", 40.0)
             if self.usdt_dom > usdt_max:
                 return (
                     False,
@@ -129,7 +129,7 @@ class DominanceFilter:
                 "btc_dom": round(self.btc_dom, 1),
                 "usdt_dom": round(self.usdt_dom, 1),
                 "last_update": self.last_update,
-                "ok_btc": self.btc_dom <= self.config.get("btc_dom_min", 40.0),
+                "ok_btc": self.btc_dom <= self.config.get("btc_dom_max", 40.0),
                 "ok_usdt": self.usdt_dom <= self.config.get("usdt_dom_max", 12.0),
             }
 
@@ -165,11 +165,11 @@ class SentimentFetcher:
         self.db = db
 
     def get_score(self, symbol: str) -> float:
+        if not self.config.get("use_sentiment"):
+            return 0.5
         cached = self.db.get_sentiment(symbol)
         if cached is not None:
             return cached
-        if not self.config.get("use_sentiment"):
-            return 0.5
         coin = symbol.replace("/USDT", "").upper()
         cg_id = self.COIN_MAP.get(coin, "")
         if not cg_id:

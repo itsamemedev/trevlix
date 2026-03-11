@@ -440,7 +440,7 @@ CONFIG: dict[str, Any] = {
     "funding_rate_filter": True,  # Shorts blockieren wenn Funding zu teuer
     "funding_rate_max": 0.001,  # Max. Funding-Rate für Shorts (0.1% pro 8h)
     "funding_rate_cache": {},
-    "btc_dom_min": 40.0,
+    "btc_dom_max": 40.0,
     "usdt_dom_max": 12.0,
     # Anomalie
     "use_anomaly": True,
