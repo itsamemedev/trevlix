@@ -171,10 +171,11 @@ def validate() -> list[Issue]:
         issues.append(Issue("warning", "API_KEY", "API_SECRET gesetzt, aber API_KEY fehlt"))
 
     # ── Bekannte schwache Werte ───────────────────────────────────────────────
+    # Check exact matches AND whether the value is based on a weak pattern (e.g. "password123")
     weak_values = {"test", "geheim", "pass", "password", "123456", "admin", "nexus", "secret"}
     for var in ["MYSQL_PASS", "JWT_SECRET", "ADMIN_PASSWORD", "SECRET_KEY"]:
         val = os.getenv(var, "").lower()
-        if val in weak_values:
+        if val in weak_values or any(w in val for w in weak_values):
             issues.append(Issue("critical", var, f"{var} ist ein bekanntes schwaches Passwort"))
 
     return issues

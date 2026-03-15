@@ -54,7 +54,7 @@ def _get_fernet() -> "Fernet | None":
         with _fernet_lock:
             if not hasattr(_get_fernet, "_temp_key"):
                 _get_fernet._temp_key = Fernet.generate_key()
-        return Fernet(_get_fernet._temp_key)
+            return Fernet(_get_fernet._temp_key)
 
     try:
         # Fernet erwartet URL-safe base64, 32 Bytes → 44 Zeichen

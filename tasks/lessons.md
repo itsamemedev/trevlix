@@ -28,3 +28,15 @@
 ### Lektion 6: Exchanges default deaktiviert
 **Problem:** Neue Exchange-Konfigurationen sollten nicht automatisch aktiv sein.
 **Regel:** `enabled TINYINT DEFAULT 0` in der Tabelle, `enabled=False` als Parameter-Default. User muss explizit aktivieren.
+
+## Session: fix-bugs-create-docs-gC9Lq (2026-03-15)
+
+### Lektion 7: Lock-Scope bei Thread-Safety beachten
+**Problem:** `_get_fernet._temp_key` wurde innerhalb des Locks gesetzt, aber `Fernet(key)` wurde außerhalb des Locks aufgerufen. In einer Race Condition kann ein Thread den Key lesen, bevor er vollständig gesetzt wurde (obwohl CPython GIL das in der Praxis selten trifft).
+**Regel:** Alle Operationen, die auf einer im Lock gesetzten Variable basieren, müssen INNERHALB des Lock-Kontexts stattfinden. `return`-Statements in `with lock:` Blöcken sind erlaubt und korrekt.
+**Code:** `services/encryption.py:54-57`
+
+### Lektion 8: Set-Membership vs. Substring-Prüfung bei Passwort-Validation
+**Problem:** `val in weak_set` prüft nur exakte Übereinstimmung. "password123" wäre nicht erkannt, obwohl es ein schwaches Muster enthält.
+**Regel:** Für Passwort-Schwäche-Checks immer BEIDE prüfen: `val in weak_set or any(w in val for w in weak_set)`. Achtung auf False Positives (z.B. "administration" enthält "admin") – für Security-Checks ist ein strengerer Ansatz vertretbar.
+**Code:** `validate_env.py:174-178`

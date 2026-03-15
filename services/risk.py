@@ -55,7 +55,8 @@ class RiskManager:
         with self._lock:
             self._reset_daily_unlocked(balance)
             return (
-                (self.daily_start - balance) / self.daily_start > self.config.get("max_daily_loss_pct", 0.05)
+                (self.daily_start - balance) / self.daily_start
+                > self.config.get("max_daily_loss_pct", 0.05)
                 if self.daily_start > 0
                 else False
             )
@@ -122,9 +123,7 @@ class RiskManager:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
                     max_corr = self.config.get("max_corr", 0.75)
                     if corr > max_corr:
-                        log.info(
-                            f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}"
-                        )
+                        log.info(f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}")
                         return True
                 except Exception:
                     pass
