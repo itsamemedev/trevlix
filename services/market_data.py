@@ -1,6 +1,5 @@
 """TREVLIX – Marktdaten-Services.
 
-Extrahiert aus server.py für bessere Modularisierung.
 Enthält FearGreedIndex, MarketRegime, DominanceFilter,
 SentimentFetcher und OnChainFetcher.
 
@@ -15,30 +14,81 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 log = logging.getLogger("trevlix.market_data")
+
+# ── Shared CoinGecko ID map (previously duplicated in two classes) ────────────
+COINGECKO_ID_MAP: dict[str, str] = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "BNB": "binancecoin",
+    "SOL": "solana",
+    "XRP": "ripple",
+    "ADA": "cardano",
+    "AVAX": "avalanche-2",
+    "DOT": "polkadot",
+    "LINK": "chainlink",
+    "MATIC": "matic-network",
+    "LTC": "litecoin",
+    "UNI": "uniswap",
+    "ATOM": "cosmos",
+    "DOGE": "dogecoin",
+    "SHIB": "shiba-inu",
+    "OP": "optimism",
+    "ARB": "arbitrum",
+    "SUI": "sui",
+    "TRX": "tron",
+    "TON": "the-open-network",
+}
+
+
+def _make_session(retries: int = 2, backoff: float = 0.3) -> requests.Session:
+    """Creates a requests.Session with retry logic and a shared User-Agent."""
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    session.headers.update({"User-Agent": "TREVLIX/1.2 market-data-client"})
+    return session
+
+
+# Module-level session (thread-safe for reads, one session per process)
+_session = _make_session()
 
 
 class FearGreedIndex:
     """Fear & Greed Index von alternative.me."""
 
+    _URL = "https://api.alternative.me/fng/?limit=1"
+
     def __init__(self, config: dict):
         self.config = config
         self.value = 50
         self.label = "Neutral"
-        self.last_update = None
+        self.last_update: str | None = None
 
-    def update(self):
+    def update(self) -> None:
         if not self.config.get("use_fear_greed"):
             return
         try:
-            r = requests.get("https://api.alternative.me/fng/?limit=1", timeout=8)
+            r = _session.get(self._URL, timeout=8)
+            r.raise_for_status()
             d = r.json()["data"][0]
             self.value = int(d["value"])
             self.label = d["value_classification"]
             self.last_update = datetime.now().strftime("%H:%M")
+        except requests.HTTPError as e:
+            log.debug(f"FearGreed HTTP error: {e}")
         except Exception as e:
-            log.debug(f"FG: {e}")
+            log.debug(f"FearGreed: {e}")
 
     def is_ok_to_buy(self) -> bool:
         if not self.config.get("use_fear_greed"):
@@ -66,9 +116,9 @@ class MarketRegime:
         self.config = config
         self.is_bull = True
         self.btc_price = 0.0
-        self.last_update = None
+        self.last_update: str | None = None
 
-    def update(self, ex):
+    def update(self, ex) -> None:
         try:
             ohlcv = ex.fetch_ohlcv("BTC/USDT", self.config.get("btc_regime_tf", "4h"), limit=200)
             df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
@@ -80,24 +130,27 @@ class MarketRegime:
             self.is_bull = cur > e50 and e50 > e200 * 0.98
             self.last_update = datetime.now().strftime("%H:%M:%S")
         except Exception as e:
-            log.debug(f"Regime:{e}")
+            log.debug(f"MarketRegime update: {e}")
 
 
 class DominanceFilter:
     """BTC/USDT-Dominanz-Filter für Altcoin-Käufe."""
 
+    _URL = "https://api.coingecko.com/api/v3/global"
+
     def __init__(self, config: dict):
         self.config = config
         self.btc_dom = 50.0
         self.usdt_dom = 6.0
-        self.last_update = None
+        self.last_update: str | None = None
         self._lock = threading.Lock()
 
-    def update(self):
+    def update(self) -> None:
         if not self.config.get("use_dominance"):
             return
         try:
-            r = requests.get("https://api.coingecko.com/api/v3/global", timeout=8)
+            r = _session.get(self._URL, timeout=8)
+            r.raise_for_status()
             data = r.json().get("data", {})
             mcp = data.get("market_cap_percentage", {})
             with self._lock:
@@ -105,6 +158,8 @@ class DominanceFilter:
                 self.usdt_dom = float(mcp.get("usdt", 6))
                 self.last_update = datetime.now().strftime("%H:%M")
             log.info(f"Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
+        except requests.HTTPError as e:
+            log.debug(f"Dominanz HTTP error: {e}")
         except Exception as e:
             log.debug(f"Dominanz: {e}")
 
@@ -137,28 +192,7 @@ class DominanceFilter:
 class SentimentFetcher:
     """CoinGecko Community-Sentiment als Trading-Signal."""
 
-    COIN_MAP = {
-        "BTC": "bitcoin",
-        "ETH": "ethereum",
-        "BNB": "binancecoin",
-        "SOL": "solana",
-        "XRP": "ripple",
-        "ADA": "cardano",
-        "AVAX": "avalanche-2",
-        "DOT": "polkadot",
-        "LINK": "chainlink",
-        "MATIC": "matic-network",
-        "LTC": "litecoin",
-        "UNI": "uniswap",
-        "ATOM": "cosmos",
-        "DOGE": "dogecoin",
-        "SHIB": "shiba-inu",
-        "OP": "optimism",
-        "ARB": "arbitrum",
-        "SUI": "sui",
-        "TRX": "tron",
-        "TON": "the-open-network",
-    }
+    # Uses the module-level COINGECKO_ID_MAP — no duplicate definition needed.
 
     def __init__(self, config: dict, db):
         self.config = config
@@ -171,29 +205,36 @@ class SentimentFetcher:
         if cached is not None:
             return cached
         coin = symbol.replace("/USDT", "").upper()
-        cg_id = self.COIN_MAP.get(coin, "")
+        cg_id = COINGECKO_ID_MAP.get(coin, "")
         if not cg_id:
             return 0.5
         try:
-            r = requests.get(
+            url = (
                 f"https://api.coingecko.com/api/v3/coins/{cg_id}"
-                "?localization=false&tickers=false&market_data=false&community_data=true",
-                timeout=8,
+                "?localization=false&tickers=false&market_data=false&community_data=true"
             )
+            r = _session.get(url, timeout=8)
+            r.raise_for_status()
             cd = r.json().get("community_data", {})
             sentiment_up = cd.get("sentiment_votes_up_percentage", 50) or 50
             score = float(np.clip(sentiment_up / 100, 0, 1))
             self.db.save_sentiment(symbol, score, "coingecko")
             return score
-        except Exception:
+        except requests.HTTPError as e:
+            log.debug(f"Sentiment HTTP error for {symbol}: {e}")
+            return 0.5
+        except Exception as e:
+            log.debug(f"Sentiment {symbol}: {e}")
             return 0.5
 
     def get_trending(self) -> list[str]:
         try:
-            r = requests.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
+            r = _session.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
+            r.raise_for_status()
             coins = r.json().get("coins", [])
             return [f"{c['item']['symbol'].upper()}/USDT" for c in coins[:7]]
-        except Exception:
+        except Exception as e:
+            log.debug(f"Trending: {e}")
             return []
 
 
@@ -213,57 +254,52 @@ class OnChainFetcher:
         flow_score = 0.0
         detail = "—"
 
-        cg_map = {
-            "btc": "bitcoin",
-            "eth": "ethereum",
-            "bnb": "binancecoin",
-            "sol": "solana",
-            "xrp": "ripple",
-            "ada": "cardano",
-            "dot": "polkadot",
-            "avax": "avalanche-2",
-            "link": "chainlink",
-            "matic": "matic-network",
-            "ltc": "litecoin",
-            "uni": "uniswap",
-            "atom": "cosmos",
-            "doge": "dogecoin",
-            "shib": "shiba-inu",
-            "op": "optimism",
-            "arb": "arbitrum",
-            "sui": "sui",
-        }
+        # Uses the module-level COINGECKO_ID_MAP (lowercased keys)
+        cg_id = COINGECKO_ID_MAP.get(coin.upper(), "")
+        if not cg_id:
+            net = float(np.clip((whale_score + flow_score) / 2, -1, 1))
+            return net, detail
+
         try:
-            cg_id = cg_map.get(coin, "")
-            if cg_id:
-                r = requests.get(
-                    f"https://api.coingecko.com/api/v3/coins/{cg_id}?localization=false"
-                    "&tickers=false&market_data=true&community_data=true&developer_data=true",
-                    timeout=8,
-                )
-                data = r.json()
-                md = data.get("market_data", {})
-                price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
+            url = (
+                f"https://api.coingecko.com/api/v3/coins/{cg_id}"
+                "?localization=false&tickers=false"
+                "&market_data=true&community_data=true&developer_data=true"
+            )
+            r = _session.get(url, timeout=8)
+            r.raise_for_status()
+            data = r.json()
+            md = data.get("market_data", {})
+            price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
+
+            vol_chg = 0.0
+            total_vol = (md.get("total_volume") or {}).get("usd", 0)
+            market_cap = (md.get("market_cap") or {}).get("usd", 0)
+            if total_vol and market_cap:
+                vol_ratio = total_vol / max(market_cap, 1)
+                vol_chg = (vol_ratio - 0.05) * 10
+            else:
                 vol_ratio = 0.0
-                vol_chg = 0.0
-                if md.get("total_volume", {}).get("usd") and md.get("market_cap", {}).get("usd"):
-                    vol_ratio = md["total_volume"]["usd"] / max(md["market_cap"]["usd"], 1)
-                    vol_chg = (vol_ratio - 0.05) * 10
-                if price_chg > 2 and vol_chg > 0.5:
-                    whale_score = 0.6
-                elif price_chg < -2 and vol_chg > 0.5:
-                    whale_score = -0.6
-                elif price_chg > 1:
-                    whale_score = 0.3
-                elif price_chg < -1:
-                    whale_score = -0.3
-                dev = data.get("developer_data", {})
-                commits = dev.get("commit_count_4_weeks") or 0
-                if commits > 20:
-                    flow_score = 0.2
-                elif commits > 5:
-                    flow_score = 0.1
-                detail = f"24h:{price_chg:+.1f}% Vol:{vol_ratio * 100:.1f}% Commits:{commits}"
+
+            if price_chg > 2 and vol_chg > 0.5:
+                whale_score = 0.6
+            elif price_chg < -2 and vol_chg > 0.5:
+                whale_score = -0.6
+            elif price_chg > 1:
+                whale_score = 0.3
+            elif price_chg < -1:
+                whale_score = -0.3
+
+            dev = data.get("developer_data", {})
+            commits = dev.get("commit_count_4_weeks") or 0
+            if commits > 20:
+                flow_score = 0.2
+            elif commits > 5:
+                flow_score = 0.1
+
+            detail = f"24h:{price_chg:+.1f}% Vol:{vol_ratio * 100:.1f}% Commits:{commits}"
+        except requests.HTTPError as e:
+            log.debug(f"OnChain HTTP error {symbol}: {e}")
         except Exception as e:
             log.debug(f"OnChain {symbol}: {e}")
 
