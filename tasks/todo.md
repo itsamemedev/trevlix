@@ -126,3 +126,44 @@ CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Do
 
 - **Vorher:** 2 Bugs offen, kein CLAUDE.md
 - **Nachher:** 141/141 Tests ✓ | Lint ✓ | Format ✓ | CLAUDE.md ✓ | Bugs behoben ✓
+
+## Session: improve-install-script-NpvV7 (2026-03-15)
+
+### Aufgaben
+
+- [x] Bugs im install.sh behoben (--dir Flag, VENV_DIR vor Definition verwendet)
+- [x] MySQL durch MariaDB ersetzt (direkte Installation)
+- [x] Domain-Abfrage hinzugefügt (z.B. example.com, app.example.com)
+- [x] Certbot SSL-Zertifikat Integration (Let's Encrypt)
+- [x] Nginx Reverse Proxy Konfiguration (bei Domain-Setup)
+- [x] Fail2ban Installation & Konfiguration (SSH, Nginx, Trevlix Login)
+- [x] UFW Firewall Regeln verbessert (SSH, HTTP/HTTPS oder Port 5000)
+- [x] Zusammenfassung mit allen Zugangsdaten (Admin, MariaDB, Domain)
+- [x] .env vollständiger mit allen Variablen aus .env.example
+- [x] Passwort-Generierung nach venv (Fernet-Key korrekt)
+
+### Behobene Bugs
+
+| # | Zeile | Problem | Fix |
+|---|-------|---------|-----|
+| 1 | Z.37-44 | `--dir` Flag: `shift` in `for`-Loop funktioniert nicht | `while [[ $# -gt 0 ]]` mit korrektem `shift 2` |
+| 2 | Z.52 | `INSTALL_DIR` wird nach Flag-Parsing erneut hart gesetzt | `CUSTOM_INSTALL_DIR` Variable, Default via `${CUSTOM_INSTALL_DIR:-/opt/trevlix}` |
+| 3 | Z.281 | `$VENV_DIR` vor Definition verwendet (Fernet-Key) | Secret-Generierung nach venv-Erstellung verschoben |
+| 4 | Z.202 | `python3.8` in detect_python obwohl min. 3.9 | Entfernt |
+| 5 | Z.135 | UUOC: `cat /etc/debian_version \| cut` | `cut -d. -f1 < /etc/debian_version` |
+
+### Neue Features
+
+| Feature | Beschreibung |
+|---------|-------------|
+| Domain-Setup | Interaktive Domain-Abfrage mit Validierung |
+| Certbot SSL | Automatisches Let's Encrypt Zertifikat + Auto-Renewal |
+| Nginx Proxy | Vollständiger Reverse Proxy mit Rate-Limiting, WebSocket, Security Headers |
+| Fail2ban | SSH (3 Versuche/2h Ban), Nginx, Trevlix-Login (5 Versuche/1h Ban) |
+| UFW Hardening | Default deny incoming, SSH immer erlaubt, Domain: 80/443, sonst: 5000 |
+| Credential-Anzeige | Admin-PW, DB-User/PW, Root-PW am Ende sichtbar |
+
+### Ergebnis
+
+- **Vorher:** install.sh v1.0.4 mit Bugs, MySQL, keine Domain/SSL/Fail2ban
+- **Nachher:** install.sh v2.0.0 – MariaDB, Domain+SSL, Fail2ban, UFW, Bugfixes
