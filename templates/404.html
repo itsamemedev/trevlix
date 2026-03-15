@@ -60,25 +60,83 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 <div class="error-wrap">
   <div class="error-content">
-    <div class="error-code">404</div>
+    <!-- Animated 404 code -->
+    <div style="position:relative;margin-bottom:16px">
+      <div class="error-code">404</div>
+      <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:200px;height:200px;border-radius:50%;background:radial-gradient(ellipse at center,rgba(0,255,136,.06),transparent 70%);pointer-events:none"></div>
+    </div>
+
+    <div style="font-family:var(--fm);font-size:11px;letter-spacing:2px;color:var(--sub);text-transform:uppercase;margin-bottom:16px">Error 404 · Page Not Found</div>
     <div class="error-title" data-i18n="err404_title">Seite nicht gefunden</div>
     <p class="error-desc" data-i18n-html="err404_desc">Die angeforderte Seite existiert nicht oder wurde verschoben. Kein Grund zur Panik &mdash; dein Portfolio ist sicher!</p>
+
+    <!-- Search suggestion box -->
+    <div style="background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.12);border-radius:12px;padding:16px 20px;margin-bottom:28px;text-align:left">
+      <div style="font-family:var(--fc);font-size:13px;font-weight:700;color:var(--white);margin-bottom:10px">Meintest du vielleicht...?</div>
+      <div id="suggestions" style="display:flex;flex-direction:column;gap:6px"></div>
+    </div>
+
     <div class="error-links">
       <a href="/" class="primary" data-i18n="err404_home">Zur Startseite</a>
-      <a href="/" class="secondary" data-i18n="err404_dashboard">Zum Dashboard</a>
+      <a href="/dashboard" class="secondary" data-i18n="err404_dashboard">Zum Dashboard</a>
     </div>
-    <div class="error-pages">
-      <a href="/strategies" data-i18n="nav_strategies">Strategien</a>
-      <a href="/api-docs">API Docs</a>
-      <a href="/installation">Installation</a>
-      <a href="/faq" data-i18n="nav_faq">FAQ</a>
-      <a href="/security" data-i18n="footer_security">Sicherheit</a>
-      <a href="/changelog">Changelog</a>
-      <a href="/roadmap">Roadmap</a>
-      <a href="/about">About</a>
+
+    <div style="margin-top:32px">
+      <div style="font-family:var(--fm);font-size:10px;color:var(--sub);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Alle Seiten</div>
+      <div class="error-pages">
+        <a href="/">Home</a>
+        <a href="/strategies">Strategien</a>
+        <a href="/api-docs">API Docs</a>
+        <a href="/installation">Installation</a>
+        <a href="/faq">FAQ</a>
+        <a href="/security">Sicherheit</a>
+        <a href="/changelog">Changelog</a>
+        <a href="/roadmap">Roadmap</a>
+        <a href="/about">About</a>
+        <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a>
+      </div>
+    </div>
+
+    <!-- Fun terminal message -->
+    <div style="margin-top:36px;font-family:var(--fm);font-size:11px;background:#010305;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 16px;text-align:left;color:var(--sub)">
+      <span style="color:var(--jade)">$</span> trevlix <span style="color:var(--blue)">find-page</span> --url "<span id="current-path" style="color:var(--amber)"></span>"<br>
+      <span style="color:var(--red)">[ERROR]</span> Seite nicht gefunden. Bot laeuft weiterhin... <span id="bot-status" style="color:var(--jade)">✓ ACTIVE</span><br>
+      <span style="color:var(--jade)">$</span> <span style="animation:blink 1s infinite;display:inline-block;width:7px;height:11px;background:var(--jade);vertical-align:middle"></span>
     </div>
   </div>
 </div>
+
+<script>
+// Show current path
+const pathEl = document.getElementById('current-path');
+if(pathEl) pathEl.textContent = window.location.pathname;
+
+// Smart suggestions based on path
+const PAGES = [
+  {path: '/strategies', label: 'Trading-Strategien', icon: '📈'},
+  {path: '/api-docs', label: 'API Dokumentation', icon: '🔌'},
+  {path: '/installation', label: 'Installationsanleitung', icon: '⚙️'},
+  {path: '/faq', label: 'Häufige Fragen (FAQ)', icon: '❓'},
+  {path: '/security', label: 'Sicherheitsleitfaden', icon: '🔒'},
+  {path: '/changelog', label: 'Changelog', icon: '📋'},
+  {path: '/roadmap', label: 'Roadmap', icon: '🗺️'},
+  {path: '/about', label: 'Über TREVLIX', icon: 'ℹ️'},
+];
+const currPath = window.location.pathname.toLowerCase().replace(/\//g,'');
+const suggestions = PAGES.filter(p => {
+  const pname = p.path.replace('/','').toLowerCase();
+  return currPath && (pname.includes(currPath.substring(0,4)) || currPath.includes(pname.substring(0,4)));
+}).slice(0,3);
+const fallback = PAGES.slice(0,3);
+const shown = suggestions.length ? suggestions : fallback;
+document.getElementById('suggestions').innerHTML = shown.map(p =>
+  `<a href="${p.path}" style="display:flex;align-items:center;gap:10px;color:var(--jade);text-decoration:none;font-size:13px;padding:4px 0;transition:.2s" onmouseover="this.style.paddingLeft='4px'" onmouseout="this.style.paddingLeft='0'">
+    <span>${p.icon}</span>
+    <span style="color:var(--txt)">${p.label}</span>
+    <span style="color:var(--sub);margin-left:auto;font-family:var(--fm);font-size:11px">${p.path}</span>
+  </a>`
+).join('');
+</script>
 
 <script>
 const sn=document.getElementById('siteNav');

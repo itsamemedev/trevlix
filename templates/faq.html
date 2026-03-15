@@ -88,7 +88,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <h1 data-i18n="faq_h1">Häufig gestellte Fragen</h1>
 <p class="subtitle" data-i18n="faq_subtitle">Antworten auf die wichtigsten Fragen rund um TREVLIX</p>
-<div class="faq-count" data-i18n-html="faq_count">18 Fragen &middot; Klicke auf eine Frage zum Aufklappen</div>
+<div class="faq-count" data-i18n-html="faq_count">26 Fragen &middot; Klicke auf eine Frage zum Aufklappen &middot; Zuletzt aktualisiert: Mär 2026</div>
 
 <h2 data-i18n="faq_cat_general">Allgemein</h2>
 
@@ -188,6 +188,107 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 <div class="faq-item">
   <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q18">Wo bekomme ich Hilfe?</span> <span class="arrow">&#9660;</span></div>
   <div class="faq-a"><p data-i18n-html="faq_a18">Bei Problemen oder Fragen: (1) Prüfe die <a href="/installation">Installationsanleitung</a>, (2) Erstelle ein <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a>, (3) Tritt dem Discord-Server bei.</p></div>
+</div>
+
+<h2>Performance &amp; Backtest</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Wie führe ich einen Backtest durch?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>Im Dashboard unter dem Reiter <strong>Backtest</strong> kannst du historische Daten für jedes Symbol und jeden Zeitraum laden. Wähle Symbol, Zeitraum (z.B. 1h, 4h, 1d), Startkapital und klicke auf <em>Run Backtest</em>. Ergebnisse zeigen Win-Rate, Sharpe Ratio, Max Drawdown und alle Trades im Detail.</p>
+    <p>Für Walk-Forward-Tests wird der Zeitraum automatisch in In-Sample und Out-of-Sample Segmente aufgeteilt, um Overfitting zu verhindern.</p>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was bedeutet Win-Rate von 55–65%?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>Eine Win-Rate von 55–65% bedeutet, dass 55–65% aller Trades profitabel abgeschlossen werden. Wichtiger als die Win-Rate ist das Verhältnis von durchschnittlichem Gewinn zu durchschnittlichem Verlust (Reward/Risk Ratio).</p>
+    <p>TREVLIX zielt auf eine Kombination aus Win-Rate ≥58% und einem Reward/Risk Ratio von mindestens 1.5:1 ab. Der genetische Optimizer passt Stop-Loss und Take-Profit kontinuierlich an, um dieses Ziel zu erreichen. <strong>Vergangene Backtests garantieren keine zukünftigen Ergebnisse.</strong></p>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist die optimale Konfiguration für Anfänger?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>Empfohlene Starter-Konfiguration:</p>
+    <ul style="padding-left:20px;display:flex;flex-direction:column;gap:6px;margin:8px 0">
+      <li style="font-size:13px;color:var(--dim)"><code>PAPER_TRADING=true</code> — Mindestens 30 Tage Paper Trading</li>
+      <li style="font-size:13px;color:var(--dim)"><code>TRADE_AMOUNT=50</code> USDT pro Trade — Klein anfangen</li>
+      <li style="font-size:13px;color:var(--dim)"><code>VOTE_THRESHOLD=6</code> — Mindestens 6/9 Strategien müssen zustimmen</li>
+      <li style="font-size:13px;color:var(--dim)"><code>MAX_OPEN_TRADES=3</code> — Nicht zu viele parallele Positionen</li>
+      <li style="font-size:13px;color:var(--dim)"><code>DAILY_LOSS_LIMIT=5</code> % — Tagesverlust-Schutz aktivieren</li>
+      <li style="font-size:13px;color:var(--dim)">Symbol: <code>BTC/USDT</code> oder <code>ETH/USDT</code> — Liquide Märkte</li>
+    </ul>
+  </div>
+</div>
+
+<h2>Technische Fragen</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Wie funktioniert das Datenbankschema?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>TREVLIX verwendet MySQL 8.0 mit 14 Tabellen. Die wichtigsten Tabellen:</p>
+    <ul style="padding-left:20px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+      <li style="font-size:13px;color:var(--dim)"><code>trades</code> — Alle Trades mit Entry/Exit, PnL, Strategie-Votes</li>
+      <li style="font-size:13px;color:var(--dim)"><code>ml_models</code> — Serialisierte KI-Modelle (Pickle)</li>
+      <li style="font-size:13px;color:var(--dim)"><code>config</code> — Verschlüsselte Konfiguration inkl. API-Keys</li>
+      <li style="font-size:13px;color:var(--dim)"><code>users</code> — Multi-User mit bcrypt-Passwörtern und TOTP-Secret</li>
+      <li style="font-size:13px;color:var(--dim)"><code>audit_log</code> — Alle sicherheitsrelevanten Aktionen</li>
+      <li style="font-size:13px;color:var(--dim)"><code>price_alerts</code> — Konfigurierte Preisalarme</li>
+    </ul>
+    <p>Alle Abfragen verwenden parametrisierte Queries. Kein Raw-SQL mit String-Interpolation.</p>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Kann ich TREVLIX mit TradingView verbinden?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>Ja! TREVLIX unterstützt TradingView Webhooks. Unter <code>/api/v1/signal</code> kannst du externe Signale empfangen. In TradingView bei einer Strategie oder einem Indikator unter <em>Alert → Webhook URL</em> die TREVLIX-URL eintragen:</p>
+    <p><code>https://deine-domain.de/api/v1/signal</code></p>
+    <p>Das JSON-Payload muss <code>{"symbol": "BTC/USDT", "action": "buy", "token": "dein-api-token"}</code> enthalten. Detaillierte Dokumentation in der <a href="/api-docs">API Docs</a>.</p>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Wie exportiere ich Daten / Trades?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>Im Dashboard stehen mehrere Export-Optionen bereit:</p>
+    <ul style="padding-left:20px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+      <li style="font-size:13px;color:var(--dim)"><strong>Trade-History CSV</strong> — Alle Trades mit Zeitstempel, Symbol, PnL, Gebühren</li>
+      <li style="font-size:13px;color:var(--dim)"><strong>Steuer-Report CSV</strong> — FIFO/LIFO aufbereitete Gewinne/Verluste für das Finanzamt</li>
+      <li style="font-size:13px;color:var(--dim)"><strong>PineScript Export</strong> — Strategielogik als TradingView-Script</li>
+      <li style="font-size:13px;color:var(--dim)"><strong>REST API</strong> — Alle Daten über <code>/api/v1/trades</code> programmatisch abrufbar</li>
+    </ul>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was passiert beim Bot-Absturz oder Neustart?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>TREVLIX ist auf Widerstandsfähigkeit ausgelegt:</p>
+    <ul style="padding-left:20px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+      <li style="font-size:13px;color:var(--dim)">Alle offenen Positionen werden beim Start aus der Datenbank wiederhergestellt</li>
+      <li style="font-size:13px;color:var(--dim)">WebSocket-Verbindungen stellen sich automatisch wieder her (mit Exponential Backoff)</li>
+      <li style="font-size:13px;color:var(--dim)">KI-Modelle werden persistiert — kein Trainingsverlust</li>
+      <li style="font-size:13px;color:var(--dim)">Docker mit <code>restart: unless-stopped</code> sorgt für automatischen Neustart</li>
+      <li style="font-size:13px;color:var(--dim)">Discord/Telegram-Alert bei kritischen Fehlern (wenn konfiguriert)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Wie hoch sind die API-Rate-Limits?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a">
+    <p>TREVLIX respektiert die Rate-Limits der Exchanges automatisch über die CCXT-Bibliothek. Standardwerte:</p>
+    <ul style="padding-left:20px;display:flex;flex-direction:column;gap:4px;margin:8px 0">
+      <li style="font-size:13px;color:var(--dim)">Marktdaten: alle 60 Sekunden (konfigurierbar über <code>FETCH_INTERVAL</code>)</li>
+      <li style="font-size:13px;color:var(--dim)">Orderbook: bei Bedarf, max. 10/Minute pro Exchange</li>
+      <li style="font-size:13px;color:var(--dim)">Order-Placement: CCXT-internes Rate-Limiting aktiv</li>
+      <li style="font-size:13px;color:var(--dim)">Login-Endpunkt: max. 10 Versuche/Minute per IP</li>
+    </ul>
+    <p>Bei Rate-Limit-Fehlern wartet TREVLIX automatisch und wiederholt die Anfrage.</p>
+  </div>
 </div>
 
 </div>

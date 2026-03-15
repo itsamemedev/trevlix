@@ -210,6 +210,70 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   </ul>
 </div>
 
+<!-- Incident Response -->
+<h2>8. Incident Response Plan</h2>
+<p>Was tun, wenn du einen Sicherheitsvorfall vermutets oder feststellst:</p>
+
+<div style="display:flex;flex-direction:column;gap:10px;margin:16px 0">
+  <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;background:var(--ink1);border:1px solid rgba(239,68,68,.2);border-radius:12px">
+    <div style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--red);flex-shrink:0;min-width:32px;text-align:center">1</div>
+    <div>
+      <div style="font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:4px">Sofort: Bot stoppen</div>
+      <p style="margin:0;font-size:13px">Im Dashboard auf <strong style="color:var(--red)">STOP</strong> klicken oder <code>kill</code> des Python-Prozesses. Offene Positionen manuell prüfen und ggf. schliessen.</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;background:var(--ink1);border:1px solid rgba(245,158,11,.2);border-radius:12px">
+    <div style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--amber);flex-shrink:0;min-width:32px;text-align:center">2</div>
+    <div>
+      <div style="font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:4px">API-Keys sperren</div>
+      <p style="margin:0;font-size:13px">Sofort alle API-Keys auf deiner Exchange deaktivieren oder löschen. Betrachte sie als kompromittiert bis zur Klärung.</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;background:var(--ink1);border:1px solid rgba(14,165,233,.2);border-radius:12px">
+    <div style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--blue);flex-shrink:0;min-width:32px;text-align:center">3</div>
+    <div>
+      <div style="font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:4px">Logs analysieren</div>
+      <p style="margin:0;font-size:13px">Prüfe <code>/api/v1/admin/audit</code> auf verdächtige Logins, unbekannte IPs, Konfigurationsänderungen. Sichere die Logs bevor sie rotieren.</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;background:var(--ink1);border:1px solid rgba(0,255,136,.15);border-radius:12px">
+    <div style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--jade);flex-shrink:0;min-width:32px;text-align:center">4</div>
+    <div>
+      <div style="font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:4px">Passwörter & Secrets rotieren</div>
+      <p style="margin:0;font-size:13px">Alle Secrets in <code>.env</code> neu generieren: <code>JWT_SECRET</code>, <code>SECRET_KEY</code>, <code>ADMIN_PASSWORD</code>, <code>ENCRYPTION_KEY</code>. Alle aktiven Sessions invalidieren.</p>
+    </div>
+  </div>
+  <div style="display:flex;gap:16px;align-items:flex-start;padding:16px;background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px">
+    <div style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--white);flex-shrink:0;min-width:32px;text-align:center">5</div>
+    <div>
+      <div style="font-family:var(--fc);font-size:15px;font-weight:800;color:var(--white);margin-bottom:4px">Melden &amp; System neu aufsetzen</div>
+      <p style="margin:0;font-size:13px">Wenn ein Einbruch bestätigt: <a href="https://github.com/itsamemedev/Trevlix/security/advisories" target="_blank" rel="noopener">Security Advisory</a> melden. Bei kompromittiertem Server: frische Instanz aufsetzen und aus sauberem Backup restoren.</p>
+    </div>
+  </div>
+</div>
+
+<!-- Security Self-Check -->
+<h2>9. Sicherheits-Selbstcheck</h2>
+<p>Führe diesen Check regelmäßig durch — mindestens einmal pro Quartal:</p>
+
+<div class="card ok">
+  <div class="card-label">Sicherheits-Checkliste</div>
+  <ul class="checklist">
+    <li>2FA im Dashboard aktiviert und getestet</li>
+    <li>Admin-Passwort: mindestens 12 Zeichen, gemischt, kein Dictionary-Wort</li>
+    <li>API-Keys: nur Trading-Permission, kein Withdrawal, IP-Whitelisting aktiv</li>
+    <li>API-Keys in den letzten 90 Tagen rotiert</li>
+    <li><code>.env</code> nicht im Git-Repository</li>
+    <li>HTTPS aktiv — kein HTTP in Produktion</li>
+    <li>Firewall: nur Port 22 (SSH), 80 (Redirect), 443 (HTTPS) offen</li>
+    <li>MySQL nicht öffentlich erreichbar (nur localhost / Docker-Netz)</li>
+    <li>Audit-Log der letzten 7 Tage auf verdächtige Aktivität geprüft</li>
+    <li>TREVLIX auf aktueller Version (GitHub Auto-Update nutzen)</li>
+    <li>Discord/Telegram-Alert für Bot-Fehler konfiguriert</li>
+    <li>Letztes Datenbankbackup nicht älter als 24 Stunden</li>
+  </ul>
+</div>
+
 </div>
 
 <!-- Footer -->
