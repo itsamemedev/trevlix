@@ -112,6 +112,30 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <h1 data-i18n="strat_h1">Trading-Strategien</h1>
 <p class="subtitle" data-i18n-html="strat_subtitle">TREVLIX nutzt 9 Voting-Strategien, die gemeinsam über Trades abstimmen. Jede Strategie gibt ein Signal: <strong style="color:var(--jade)">BUY</strong>, <strong style="color:var(--red)">SELL</strong> oder <strong style="color:var(--sub)">HOLD</strong>.</p>
 
+<!-- Performance summary -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin:24px 0 36px">
+  <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:32px;font-weight:900;color:var(--jade)">58–65%</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">WIN-RATE (BACKTEST)</div>
+  </div>
+  <div style="background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:32px;font-weight:900;color:var(--blue)">1.8:1</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">Ø REWARD/RISK RATIO</div>
+  </div>
+  <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:32px;font-weight:900;color:var(--amber)">9</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">VOTING-STRATEGIEN</div>
+  </div>
+  <div style="background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:32px;font-weight:900;color:var(--white)">31</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">KI FEATURE-DIMENSIONEN</div>
+  </div>
+</div>
+
+<div style="background:rgba(239,68,68,.05);border:1px solid rgba(239,68,68,.2);border-radius:10px;padding:14px 18px;margin-bottom:24px;font-size:13px;color:var(--dim)">
+  ⚠️ <strong style="color:var(--white)">Backtests ≠ Live-Performance.</strong> Die genannten Werte basieren auf historischen Daten (BTC/USDT, 1h-Chart, 2024). Vergangene Performance garantiert keine zukünftigen Ergebnisse. Starte immer mit Paper Trading!
+</div>
+
 <!-- Ensemble -->
 <div class="ensemble-box">
   <h3 data-i18n="strat_ensemble_h">Voting-Ensemble System</h3>
@@ -297,6 +321,71 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   </div>
   <p style="margin:0"><strong>Gewichtung:</strong> ~12% im KI-Ensemble</p>
   <div class="weight-bar"><div class="weight-bar-fill" style="width:12%;background:var(--jade)"></div></div>
+</div>
+
+<!-- Timeframe Guide -->
+<div class="ensemble-box" style="margin-top:36px">
+  <h3 style="font-family:var(--fc);font-size:20px;font-weight:900;color:var(--white);margin-bottom:12px">Empfohlene Zeitrahmen (Timeframes)</h3>
+  <p style="font-size:13px;color:var(--dim);margin-bottom:20px">Die Strategien performen unterschiedlich gut je nach Zeitrahmen. Hier eine Übersicht für optimale Konfiguration:</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+    <div style="background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.12);border-radius:10px;padding:14px">
+      <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--jade);margin-bottom:8px">1h Chart</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        ✅ EMA Trend<br>✅ MACD<br>✅ Ichimoku<br>✅ VWAP<br>
+        <span style="font-size:11px;color:var(--sub);margin-top:4px;display:block">Empfohlen für Einsteiger</span>
+      </div>
+    </div>
+    <div style="background:rgba(14,165,233,.04);border:1px solid rgba(14,165,233,.12);border-radius:10px;padding:14px">
+      <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--blue);margin-bottom:8px">15m Chart</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        ✅ RSI + Stochastic<br>✅ Volume Breakout<br>✅ Bollinger Bands<br>✅ ROC<br>
+        <span style="font-size:11px;color:var(--sub);margin-top:4px;display:block">Schnellere Signale, mehr Trades</span>
+      </div>
+    </div>
+    <div style="background:rgba(245,158,11,.04);border:1px solid rgba(245,158,11,.12);border-radius:10px;padding:14px">
+      <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--amber);margin-bottom:8px">4h Chart</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        ✅ Alle 9 Strategien<br>✅ Weniger Rauschen<br>✅ OBV besonders stark<br>✅ Ichimoku ideal<br>
+        <span style="font-size:11px;color:var(--sub);margin-top:4px;display:block">Beste Signalqualität</span>
+      </div>
+    </div>
+    <div style="background:rgba(139,92,246,.04);border:1px solid rgba(139,92,246,.12);border-radius:10px;padding:14px">
+      <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:#8b5cf6;margin-bottom:8px">1d Chart</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        ✅ EMA 50/200 stark<br>✅ MACD Divergenz<br>✅ Swing Trading<br>⚠️ Wenige Trades<br>
+        <span style="font-size:11px;color:var(--sub);margin-top:4px;display:block">Für geduldige Trader</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Strategy Combination Tips -->
+<div style="margin-top:24px;background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:14px;padding:24px">
+  <h3 style="font-family:var(--fc);font-size:18px;font-weight:800;color:var(--white);margin-bottom:12px">Strategien-Kombinationen</h3>
+  <p style="font-size:13px;color:var(--dim);margin-bottom:16px">Bestimmte Strategiekombinationen liefern bessere Ergebnisse in spezifischen Marktphasen:</p>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px">
+    <div style="padding:14px;background:rgba(0,255,136,.04);border-radius:10px;border:1px solid rgba(0,255,136,.08)">
+      <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade);margin-bottom:8px">Bull Market</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        EMA Trend + MACD + Ichimoku = starke Trend-Bestätigung<br>
+        <code style="font-size:10px">VOTE_THRESHOLD=5</code> empfohlen
+      </div>
+    </div>
+    <div style="padding:14px;background:rgba(239,68,68,.04);border-radius:10px;border:1px solid rgba(239,68,68,.08)">
+      <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--red);margin-bottom:8px">Bear Market</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        RSI + Bollinger + Volume = Überverkauft-Rebound<br>
+        <code style="font-size:10px">VOTE_THRESHOLD=7</code> empfohlen
+      </div>
+    </div>
+    <div style="padding:14px;background:rgba(245,158,11,.04);border-radius:10px;border:1px solid rgba(245,158,11,.08)">
+      <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--amber);margin-bottom:8px">Seitwärtsmarkt</div>
+      <div style="font-size:12px;color:var(--dim);line-height:1.8">
+        Bollinger + RSI + VWAP = Mean-Reversion Trades<br>
+        <code style="font-size:10px">VOTE_THRESHOLD=6</code> empfohlen
+      </div>
+    </div>
+  </div>
 </div>
 
 </div>

@@ -106,6 +106,26 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <h1 data-i18n="roadmap_h1">Roadmap</h1>
 <p class="subtitle" data-i18n="roadmap_subtitle">Geplante Features und die Zukunft des TREVLIX Trading Bots.</p>
 
+<!-- Roadmap summary bar -->
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:24px 0 36px">
+  <div style="background:rgba(0,255,136,.06);border:1px solid rgba(0,255,136,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--jade)">2</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">PHASEN ABGESCHLOSSEN</div>
+  </div>
+  <div style="background:rgba(14,165,233,.06);border:1px solid rgba(14,165,233,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--blue)">1</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">IN ENTWICKLUNG</div>
+  </div>
+  <div style="background:rgba(245,158,11,.06);border:1px solid rgba(245,158,11,.2);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--amber)">2</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">GEPLANT</div>
+  </div>
+  <div style="background:rgba(255,255,255,.03);border:1px solid var(--muted);border-radius:10px;padding:16px;text-align:center">
+    <div style="font-family:var(--fc);font-size:28px;font-weight:900;color:var(--white)">v2.0</div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-top:4px;letter-spacing:.5px">LANGFRISTIG</div>
+  </div>
+</div>
+
 <!-- Phase 1: Done -->
 <div class="phase done">
   <div class="phase-header">
@@ -150,7 +170,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <div class="phase active">
   <div class="phase-header">
     <span class="phase-title">Phase 3 &mdash; Advanced Trading</span>
-    <span class="phase-badge b-active">In Entwicklung</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="phase-badge b-active">In Entwicklung</span>
+      <span style="font-family:var(--fm);font-size:10px;color:var(--sub)">Q2 2026</span>
+    </div>
   </div>
   <ul class="feature-list">
     <li>Options-Trading Integration (Deribit)</li>
@@ -169,7 +192,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <div class="phase planned">
   <div class="phase-header">
     <span class="phase-title">Phase 4 &mdash; Enterprise</span>
-    <span class="phase-badge b-planned">Geplant</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="phase-badge b-planned">Geplant</span>
+      <span style="font-family:var(--fm);font-size:10px;color:var(--sub)">Q3–Q4 2026</span>
+    </div>
   </div>
   <ul class="feature-list">
     <li>Mobile App (PWA) mit Push-Benachrichtigungen</li>
@@ -188,7 +214,10 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <div class="phase future">
   <div class="phase-header">
     <span class="phase-title">Phase 5 &mdash; Next-Gen AI</span>
-    <span class="phase-badge b-future">Zukunft</span>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="phase-badge b-future">Zukunft</span>
+      <span style="font-family:var(--fm);font-size:10px;color:var(--sub)">2027+</span>
+    </div>
   </div>
   <ul class="feature-list">
     <li>Transformer-basiertes Preisvorhersage-Modell</li>
@@ -203,7 +232,68 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
   <div class="progress-label">0% &mdash; v2.0.0</div>
 </div>
 
-<p style="margin-top:32px;text-align:center;color:var(--sub)">Hast du Feature-Wuensche? Erstelle ein <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a> mit dem Label <code>enhancement</code>.</p>
+<!-- Community Requests -->
+<h2 style="font-family:var(--fc);font-size:22px;font-weight:900;color:var(--white);margin:44px 0 16px">Community Feature-Requests</h2>
+<p style="color:var(--dim);font-size:14px;margin-bottom:20px">Die am häufigsten gewünschten Features — basierend auf GitHub Issues und Community-Feedback:</p>
+
+<div style="display:flex;flex-direction:column;gap:10px;margin-bottom:36px">
+  <div style="background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:var(--white)">Telegram Bot für Trading-Commands</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">Bot starten/stoppen, Positionen ansehen, Alerts per Telegram</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-family:var(--fm);font-size:11px;color:var(--amber);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:3px 10px;border-radius:20px">Phase 4</span>
+      <span style="font-family:var(--fm);font-size:12px;color:var(--jade)">👍 38</span>
+    </div>
+  </div>
+  <div style="background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:var(--white)">Mobile PWA mit Push-Benachrichtigungen</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">Dashboard als Progressive Web App mit Offline-Unterstützung</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-family:var(--fm);font-size:11px;color:var(--amber);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:3px 10px;border-radius:20px">Phase 4</span>
+      <span style="font-family:var(--fm);font-size:12px;color:var(--jade)">👍 31</span>
+    </div>
+  </div>
+  <div style="background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:var(--white)">DeFi / DEX Integration (Uniswap, PancakeSwap)</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">On-Chain Trading ohne KYC via Web3-Wallets</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-family:var(--fm);font-size:11px;color:var(--blue);background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.2);padding:3px 10px;border-radius:20px">Phase 3</span>
+      <span style="font-family:var(--fm);font-size:12px;color:var(--jade)">👍 27</span>
+    </div>
+  </div>
+  <div style="background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:var(--white)">Plugin-System für Community-Strategien</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">Eigene Strategien als Python-Plugin einbinden und teilen</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-family:var(--fm);font-size:11px;color:var(--amber);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);padding:3px 10px;border-radius:20px">Phase 4</span>
+      <span style="font-family:var(--fm);font-size:12px;color:var(--jade)">👍 24</span>
+    </div>
+  </div>
+  <div style="background:var(--ink1);border:1px solid rgba(255,255,255,.06);border-radius:12px;padding:16px 20px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+    <div>
+      <div style="font-weight:600;font-size:14px;color:var(--white)">Multi-Timeframe Analyse (MTF)</div>
+      <div style="font-size:12px;color:var(--sub);margin-top:2px">Signale aus 1m, 5m, 15m, 1h und 4h kombinieren</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+      <span style="font-family:var(--fm);font-size:11px;color:var(--blue);background:rgba(14,165,233,.08);border:1px solid rgba(14,165,233,.2);padding:3px 10px;border-radius:20px">Phase 3</span>
+      <span style="font-family:var(--fm);font-size:12px;color:var(--jade)">👍 19</span>
+    </div>
+  </div>
+</div>
+
+<div style="background:var(--ink1);border:1px solid rgba(0,255,136,.12);border-radius:12px;padding:20px 24px;text-align:center">
+  <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:8px">Dein Feature-Wunsch fehlt?</div>
+  <p style="color:var(--dim);font-size:13px;margin-bottom:16px">Erstelle ein GitHub Issue mit dem Label <code>enhancement</code>. Die Community und das TREVLIX-Team prüfen jeden Vorschlag und fügt ihn zur Roadmap hinzu, wenn er von ausreichend Nutzern gewünscht wird.</p>
+  <a href="https://github.com/itsamemedev/Trevlix/issues/new?labels=enhancement" target="_blank" rel="noopener" style="display:inline-block;font-family:var(--fc);font-size:14px;font-weight:700;background:linear-gradient(135deg,var(--jade),var(--jade2));color:var(--ink);padding:10px 24px;border-radius:8px;text-decoration:none">Feature vorschlagen →</a>
+</div>
 
 </div>
 

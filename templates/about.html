@@ -167,21 +167,167 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 <span class="c-cmd">make install</span>
 <span class="c-cmd">make test</span></pre>
 
+<!-- Project History Timeline -->
+<h2>Projekt-Geschichte</h2>
+<p>TREVLIX entstand aus der Frustration über teure, Cloud-abhängige Trading-Bots ohne Transparenz. Das Projekt startete als privates Skript und wuchs zu einem vollständigen Open-Source-Ökosystem.</p>
+
+<div style="position:relative;padding-left:32px;margin:24px 0">
+  <div style="position:absolute;left:11px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--jade),var(--blue),var(--amber),var(--muted))"></div>
+
+  <div style="position:relative;margin-bottom:28px">
+    <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--jade);border:2px solid var(--jade);box-shadow:0 0 12px rgba(0,255,136,.4);display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--ink)"></div>
+    </div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Dez 2025</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px">v1.0.0 — Erster öffentlicher Release</div>
+    <p style="margin:0;font-size:13px">Flask-Backend, 5 Exchanges, 9 Strategien, 3-Modell-KI-Ensemble, Paper Trading, JWT + 2FA, Docker, One-Click-Installer, 5 Sprachen.</p>
+  </div>
+
+  <div style="position:relative;margin-bottom:28px">
+    <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--ink);border:2px solid var(--blue);box-shadow:0 0 8px rgba(14,165,233,.3);display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--blue)"></div>
+    </div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Jan 2026</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px">v1.0.1–1.0.2 — Intelligence Update</div>
+    <p style="margin:0;font-size:13px">LSTM Neural Network, Genetic Algorithm Optimizer, Discord/Telegram, Multi-User-System, Circuit Breaker, Steuer-Report, Backtest-Engine.</p>
+  </div>
+
+  <div style="position:relative;margin-bottom:28px">
+    <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--ink);border:2px solid var(--amber);box-shadow:0 0 8px rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--amber)"></div>
+    </div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Feb 2026</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px">v1.0.3 — Advanced Trading</div>
+    <p style="margin:0;font-size:13px">Grid-Trading Modul, Monte-Carlo Risikoanalyse, PineScript-Export, Copy-Trading, Keyboard Shortcuts, Dark/Light Mode.</p>
+  </div>
+
+  <div style="position:relative">
+    <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--jade);border:2px solid var(--jade);box-shadow:0 0 12px rgba(0,255,136,.5);display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--ink)"></div>
+    </div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Mär 2026 — Aktuell</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--jade);margin-bottom:4px">v1.1.0 — Website & Dokumentation</div>
+    <p style="margin:0;font-size:13px">Vollständiges Website-Relaunch, 7 neue Dokumentationsseiten, Shared-Navigation, i18n auf allen Seiten, SEO-Optimierung, verbessertes Dashboard-Design.</p>
+  </div>
+</div>
+
+<!-- Architecture Overview -->
+<h2>Architektur-Überblick</h2>
+<p>TREVLIX ist modular aufgebaut. Jede Komponente ist entkoppelt und über klare Schnittstellen verbunden. Das ermöglicht einfache Erweiterung ohne den Kern zu berühren.</p>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:20px 0">
+  <div class="card" style="border-left:3px solid var(--jade)">
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade);margin-bottom:8px">🌐 Web Layer</div>
+    <div style="font-size:12px;color:var(--dim);line-height:1.8">
+      <code>server.py</code> — Flask App + WebSocket<br>
+      <code>routes/auth.py</code> — Login, 2FA, JWT<br>
+      <code>routes/dashboard.py</code> — Seiten-Routen<br>
+      <code>routes/websocket.py</code> — Echtzeit-Events
+    </div>
+  </div>
+  <div class="card" style="border-left:3px solid var(--blue)">
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--blue);margin-bottom:8px">⚙️ Services</div>
+    <div style="font-size:12px;color:var(--dim);line-height:1.8">
+      <code>services/exchange_manager.py</code><br>
+      <code>services/strategies.py</code><br>
+      <code>services/risk.py</code><br>
+      <code>services/knowledge.py</code>
+    </div>
+  </div>
+  <div class="card" style="border-left:3px solid var(--amber)">
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--amber);margin-bottom:8px">🧠 KI Engine</div>
+    <div style="font-size:12px;color:var(--dim);line-height:1.8">
+      <code>ai_engine.py</code> — ML Ensemble<br>
+      RandomForest + XGBoost<br>
+      LSTM (TensorFlow)<br>
+      RL-Agent + Genetic Optimizer
+    </div>
+  </div>
+  <div class="card" style="border-left:3px solid rgba(139,92,246,.8)">
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:#8b5cf6;margin-bottom:8px">🗄️ Datenhaltung</div>
+    <div style="font-size:12px;color:var(--dim);line-height:1.8">
+      <code>services/db_pool.py</code> — Pool<br>
+      MySQL 8.0 — 14 Tabellen<br>
+      <code>services/encryption.py</code><br>
+      Fernet-verschlüsselte Keys
+    </div>
+  </div>
+</div>
+
+<!-- Core Principles -->
+<h2>Kernprinzipien</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:16px 0">
+  <div class="card">
+    <div style="font-size:24px;margin-bottom:10px">🔒</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:6px">Security First</div>
+    <p style="margin:0;font-size:13px">JWT-Auth, 2FA/TOTP, Fernet-Verschlüsselung für API-Keys, bcrypt-Passwörter, Rate-Limiting, CORS-Schutz. Kein Kompromiss bei Sicherheit.</p>
+  </div>
+  <div class="card">
+    <div style="font-size:24px;margin-bottom:10px">🌐</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:6px">Self-Hosted & Transparent</div>
+    <p style="margin:0;font-size:13px">Kein Cloud-Zwang. Alle Daten bleiben auf deiner Infrastruktur. Vollständiger Quellcode öffentlich auf GitHub — keine Black Box.</p>
+  </div>
+  <div class="card">
+    <div style="font-size:24px;margin-bottom:10px">🧬</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:6px">Adaptive Intelligence</div>
+    <p style="margin:0;font-size:13px">Das KI-System lernt aus jedem Trade. Genetischer Optimizer und RL-Agent passen Parameter dynamisch an — der Bot wird mit der Zeit besser.</p>
+  </div>
+  <div class="card">
+    <div style="font-size:24px;margin-bottom:10px">⚖️</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:6px">Risk Management</div>
+    <p style="margin:0;font-size:13px">Circuit Breaker, Stop-Loss, tägliche Verlustlimits, Kelly-Sizing und Korrelationsfilter schützen das Kapital auch in volatilen Märkten.</p>
+  </div>
+</div>
+
 <!-- License -->
 <h2 data-i18n="about_license">Lizenz</h2>
 <p data-i18n-html="about_license_txt">TREVLIX ist lizenziert unter der <strong>MIT License</strong>. Du darfst die Software frei nutzen, kopieren, modifizieren, zusammenfügen, veröffentlichen, verteilen, unterlizenzieren und/oder verkaufen &mdash; unter Beibehaltung des Copyright-Hinweises.</p>
 
-<!-- Links -->
-<h2 data-i18n="about_links">Links</h2>
-<div class="card">
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-    <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="padding:8px 0;font-size:14px">GitHub Repository</a>
-    <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener" style="padding:8px 0;font-size:14px">Issue Tracker</a>
-    <a href="https://github.com/itsamemedev/Trevlix/pulls" target="_blank" rel="noopener" style="padding:8px 0;font-size:14px">Pull Requests</a>
-    <a href="https://github.com/itsamemedev/Trevlix/discussions" target="_blank" rel="noopener" style="padding:8px 0;font-size:14px">Discussions</a>
-    <a href="/changelog" style="padding:8px 0;font-size:14px">Changelog</a>
-    <a href="/roadmap" style="padding:8px 0;font-size:14px">Roadmap</a>
+<div class="card ok" style="border-color:rgba(0,255,136,.2);background:rgba(0,255,136,.03)">
+  <div style="font-family:var(--fm);font-size:11px;color:var(--jade);letter-spacing:1px;text-transform:uppercase;margin-bottom:8px">MIT License — Kurzzusammenfassung</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div style="font-size:12px;color:var(--dim)">✅ Kommerzielle Nutzung erlaubt</div>
+    <div style="font-size:12px;color:var(--dim)">✅ Modifikation erlaubt</div>
+    <div style="font-size:12px;color:var(--dim)">✅ Verteilung erlaubt</div>
+    <div style="font-size:12px;color:var(--dim)">✅ Private Nutzung erlaubt</div>
+    <div style="font-size:12px;color:var(--dim)">⚠️ Copyright-Hinweis beibehalten</div>
+    <div style="font-size:12px;color:var(--dim)">⚠️ Keine Gewährleistung</div>
   </div>
+</div>
+
+<!-- Links -->
+<h2 data-i18n="about_links">Links & Community</h2>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin:16px 0">
+  <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">📦</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade)">GitHub Repository</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Quellcode, Releases, Forks</div>
+  </a>
+  <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">🐛</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade)">Issue Tracker</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Bugs melden, Features anfragen</div>
+  </a>
+  <a href="https://github.com/itsamemedev/Trevlix/discussions" target="_blank" rel="noopener" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">💬</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade)">Discussions</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Community, Ideen, Feedback</div>
+  </a>
+  <a href="https://github.com/itsamemedev/Trevlix/pulls" target="_blank" rel="noopener" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">🔀</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--jade)">Pull Requests</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Beiträge einreichen</div>
+  </a>
+  <a href="/changelog" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">📋</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--blue)">Changelog</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Versionshistorie & Änderungen</div>
+  </a>
+  <a href="/roadmap" class="card" style="display:block;text-decoration:none;transition:all .3s">
+    <div style="font-size:20px;margin-bottom:6px">🗺️</div>
+    <div style="font-family:var(--fc);font-size:14px;font-weight:800;color:var(--amber)">Roadmap</div>
+    <div style="font-size:12px;color:var(--sub);margin-top:4px">Geplante Features & Phasen</div>
+  </a>
 </div>
 
 </div>
