@@ -7,7 +7,7 @@ Verwendung:
     from services.exchange_manager import ExchangeManager
     mgr = ExchangeManager(db, config)
     exchanges = mgr.get_active_exchanges(user_id=1)
-    for ex_inst in exchanges:
+    for name, ex_inst in exchanges:
         balance = ex_inst.fetch_balance()
 """
 
@@ -27,7 +27,7 @@ except ImportError:
 from services.encryption import decrypt_value
 from services.utils import EXCHANGE_MAP
 
-log = logging.getLogger("NEXUS")
+log = logging.getLogger("trevlix.exchange_manager")
 
 
 class ExchangeManager:
@@ -35,6 +35,10 @@ class ExchangeManager:
 
     Cached Exchange-Instanzen pro User/Exchange-Kombination.
     Exchanges ohne expliziten Toggle gelten als deaktiviert.
+
+    Thread-safety note: all cache reads and writes are performed under
+    ``self._lock`` to eliminate the TOCTOU (check-then-act) race that
+    existed when the lock was only acquired for writes.
     """
 
     def __init__(self, db_manager, config: dict):
@@ -75,6 +79,10 @@ class ExchangeManager:
     def get_user_exchange(self, user_id: int, exchange_name: str) -> Any | None:
         """Gibt eine cached Exchange-Instanz für einen User zurück.
 
+        The cache check and update are both performed under the same lock
+        to prevent the TOCTOU race where two threads could simultaneously
+        miss the cache and each create a new instance.
+
         Args:
             user_id: User-ID.
             exchange_name: Name der Exchange.
@@ -83,23 +91,25 @@ class ExchangeManager:
             CCXT Exchange-Instanz oder None.
         """
         cache_key = f"{user_id}:{exchange_name}"
+
         with self._lock:
             if cache_key in self._instances:
                 return self._instances[cache_key]
 
-        # Aus DB laden
-        exchanges = self._db.get_enabled_exchanges(user_id)
-        for ex_data in exchanges:
-            if ex_data["exchange"] == exchange_name:
-                inst = self._create_instance(
-                    exchange_name,
-                    decrypt_value(ex_data.get("api_key", "")),
-                    decrypt_value(ex_data.get("api_secret", "")),
-                )
-                if inst:
-                    with self._lock:
+            # Not in cache — load credentials from DB and create instance.
+            # Lock is held during DB access to prevent duplicate creation;
+            # DB reads are fast (indexed lookup) so this is acceptable.
+            exchanges = self._db.get_enabled_exchanges(user_id)
+            for ex_data in exchanges:
+                if ex_data["exchange"] == exchange_name:
+                    inst = self._create_instance(
+                        exchange_name,
+                        decrypt_value(ex_data.get("api_key", "")),
+                        decrypt_value(ex_data.get("api_secret", "")),
+                    )
+                    if inst:
                         self._instances[cache_key] = inst
-                return inst
+                    return inst
         return None
 
     def get_active_exchanges(self, user_id: int) -> list[tuple[str, Any]]:
@@ -111,25 +121,28 @@ class ExchangeManager:
         Returns:
             Liste von (exchange_name, ccxt_instance) Tupeln.
         """
-        result = []
         exchanges = self._db.get_enabled_exchanges(user_id)
+        result: list[tuple[str, Any]] = []
+
         for ex_data in exchanges:
             name = ex_data["exchange"]
             cache_key = f"{user_id}:{name}"
+
             with self._lock:
                 if cache_key in self._instances:
                     result.append((name, self._instances[cache_key]))
                     continue
 
-            inst = self._create_instance(
-                name,
-                decrypt_value(ex_data.get("api_key", "")),
-                decrypt_value(ex_data.get("api_secret", "")),
-            )
-            if inst:
-                with self._lock:
+                # Not cached — create under lock to avoid duplicate instances
+                inst = self._create_instance(
+                    name,
+                    decrypt_value(ex_data.get("api_key", "")),
+                    decrypt_value(ex_data.get("api_secret", "")),
+                )
+                if inst:
                     self._instances[cache_key] = inst
-                result.append((name, inst))
+                    result.append((name, inst))
+
         return result
 
     def get_admin_exchange(self) -> Any | None:
@@ -156,7 +169,7 @@ class ExchangeManager:
             api_secret,
         )
 
-    def invalidate_cache(self, user_id: int, exchange_name: str | None = None):
+    def invalidate_cache(self, user_id: int, exchange_name: str | None = None) -> None:
         """Invalidiert den Cache für einen User (z.B. nach API-Key-Update).
 
         Args:
@@ -180,7 +193,7 @@ class ExchangeManager:
         Returns:
             Dict: {exchange_name: {"total": {...}, "free": {...}}} oder Fehler.
         """
-        result = {}
+        result: dict[str, dict] = {}
         for name, inst in self.get_active_exchanges(user_id):
             try:
                 bal = inst.fetch_balance()

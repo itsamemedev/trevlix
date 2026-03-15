@@ -97,3 +97,32 @@
 ## Review
 
 CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Docker Build.
+
+## Session: fix-bugs-create-docs-gC9Lq (2026-03-15)
+
+### Aufgaben
+
+- [x] Vollständiges Codebase-Audit durchgeführt
+- [x] CLAUDE.md erstellt (Workflow Orchestration, Task Management, Core Principles, Architecture)
+- [x] Bug #1: Thread-Safety in `services/encryption.py` behoben – `Fernet()` Instanziierung nun innerhalb des Locks
+- [x] Bug #2: Schwache Passwort-Erkennung in `validate_env.py` – jetzt auch Substring-Matches gefunden (z.B. "password123")
+- [x] `tasks/lessons.md` aktualisiert
+- [x] Lint ✓ | Format ✓ | Tests ✓
+
+### Behobene Bugs
+
+| # | Datei | Problem | Fix |
+|---|-------|---------|-----|
+| 1 | `services/encryption.py:57` | Thread-Safety: `Fernet(_get_fernet._temp_key)` außerhalb des Locks – Race Condition möglich | `return Fernet(...)` in den `with _fernet_lock:` Block verschoben |
+| 2 | `validate_env.py:177` | Schwache Werte nur per Exact-Match erkannt – "password123" wurde nicht erkannt | `any(w in val for w in weak_values)` – auch Substring-Matches werden jetzt erkannt |
+
+### Neue Dateien
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `CLAUDE.md` | Workflow-Richtlinien für Claude Code (aus Bild-Vorgabe) – Orchestration, Task Management, Core Principles, Projekt-Regeln |
+
+### Ergebnis
+
+- **Vorher:** 2 Bugs offen, kein CLAUDE.md
+- **Nachher:** 141/141 Tests ✓ | Lint ✓ | Format ✓ | CLAUDE.md ✓ | Bugs behoben ✓

@@ -55,7 +55,8 @@ class RiskManager:
         with self._lock:
             self._reset_daily_unlocked(balance)
             return (
-                (self.daily_start - balance) / self.daily_start > self.config.get("max_daily_loss_pct", 0.05)
+                (self.daily_start - balance) / self.daily_start
+                > self.config.get("max_daily_loss_pct", 0.05)
                 if self.daily_start > 0
                 else False
             )
@@ -122,9 +123,7 @@ class RiskManager:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
                     max_corr = self.config.get("max_corr", 0.75)
                     if corr > max_corr:
-                        log.info(
-                            f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}"
-                        )
+                        log.info(f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}")
                         return True
                 except Exception:
                     pass
@@ -208,7 +207,7 @@ class SymbolCooldown:
         self._cooldowns: dict[str, datetime] = {}
         self._lock = threading.Lock()
 
-    def set_cooldown(self, symbol: str, minutes: int = None):
+    def set_cooldown(self, symbol: str, minutes: int | None = None):
         mins = minutes or self.config.get("cooldown_minutes", 60)
         until = datetime.now() + timedelta(minutes=mins)
         with self._lock:
@@ -252,17 +251,17 @@ class FundingRateTracker:
         try:
             url = "https://api.bybit.com/v5/market/tickers?category=linear"
             resp = requests.get(url, timeout=8)
-            if resp.status_code == 200:
-                data = resp.json().get("result", {}).get("list", [])
-                with self._lock:
-                    for item in data:
-                        sym = item.get("symbol", "")
-                        fr = item.get("fundingRate", "0")
-                        if sym.endswith("USDT"):
-                            base = sym.replace("USDT", "") + "/USDT"
-                            self._rates[base] = float(fr)
-                self._last_update = datetime.now()
-                log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
+            resp.raise_for_status()
+            data = resp.json().get("result", {}).get("list", [])
+            with self._lock:
+                for item in data:
+                    sym = item.get("symbol", "")
+                    fr = item.get("fundingRate", "0")
+                    if sym.endswith("USDT"):
+                        base = sym.replace("USDT", "") + "/USDT"
+                        self._rates[base] = float(fr)
+            self._last_update = datetime.now()
+            log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
         except Exception as e:
             log.debug(f"[FUNDING] Update: {e}")
 
@@ -365,9 +364,10 @@ class AdvancedRiskMetrics:
         - TREND_DOWN: Starker Abwärtstrend
         - RANGE:      Seitwärtsbewegung
         - CRASH:      Schneller Absturz (>5% in kurzer Zeit)
+        - UNKNOWN:    Zu wenig Daten (<20 Preispunkte)
         """
         if len(prices) < 20:
-            return "TREND_UP"
+            return "UNKNOWN"
         pa = np.array(prices[-50:])
         sma_short = float(np.mean(pa[-10:]))
         sma_long = float(np.mean(pa[-30:]) if len(pa) >= 30 else np.mean(pa))

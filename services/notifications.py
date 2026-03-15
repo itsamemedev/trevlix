@@ -1,14 +1,16 @@
 """
 TREVLIX – Notifications Service
 ================================
-[Verbesserung #6] Ausgelagerter Benachrichtigungs-Dienst.
+Sendet Benachrichtigungen über Discord-Webhooks und Telegram.
 
-Enthält DiscordNotifier als standalone-Modul, das ohne direkte
-Abhängigkeit auf server.py verwendet werden kann.
+Verwendung:
+    from services.notifications import DiscordNotifier, TelegramNotifier
 
-Verwendung in server.py (nach vollständiger Migration):
-    from services.notifications import DiscordNotifier
     discord = DiscordNotifier(config=CONFIG)
+    discord.trade_buy(symbol, price, invest, ai_score, win_prob)
+
+    telegram = TelegramNotifier(config=CONFIG)
+    telegram.send("Bot gestartet")
 """
 
 import logging
@@ -21,11 +23,14 @@ log = logging.getLogger("trevlix.notifications")
 
 
 class DiscordNotifier:
-    """
-    Sendet Benachrichtigungen über Discord-Webhooks.
+    """Sendet Benachrichtigungen über Discord-Webhooks.
 
-    Kann standalone (mit config-Parameter) oder als Legacy-Wrapper
-    (mit globalem CONFIG-Zugriff via server.py) verwendet werden.
+    Requires config keys:
+        discord_webhook (str): Full Discord webhook URL.
+        discord_on_buy / discord_on_sell / discord_on_circuit /
+        discord_on_error / discord_daily_report (bool): Feature toggles.
+        exchange (str): Exchange name shown in footer.
+        paper_trading (bool): Shown in trade notifications.
     """
 
     COLORS = {
@@ -41,34 +46,30 @@ class DiscordNotifier:
         "anomaly": 16711680,
     }
 
-    def __init__(self, config: dict | None = None, bot_full: str = "TREVLIX"):
+    def __init__(self, config: dict, bot_full: str = "TREVLIX"):
         """
         Args:
-            config: Optionaler Config-Dict. Wenn None, wird der globale CONFIG
-                    aus server.py verwendet (Backward-Compatibility).
+            config: Config dict with Discord/bot settings.
             bot_full: Bot-Name für Footer-Text.
         """
         self._config = config
         self._bot_full = bot_full
 
     def _cfg(self, key: str, default=None):
-        """Liest einen Config-Wert – aus übergebenem oder globalem CONFIG."""
-        if self._config is not None:
-            return self._config.get(key, default)
-        # Lazy-Import für Backward-Compatibility
-        try:
-            import server
+        return self._config.get(key, default)
 
-            return server.CONFIG.get(key, default)
-        except Exception:
-            return default
-
-    def send(self, title: str, desc: str, color_key: str = "info", fields: list | None = None):
+    def send(
+        self,
+        title: str,
+        desc: str,
+        color_key: str = "info",
+        fields: list | None = None,
+    ) -> None:
         url = self._cfg("discord_webhook", "")
         if not url:
             return
         try:
-            embed = {
+            embed: dict = {
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
@@ -82,9 +83,17 @@ class DiscordNotifier:
                 ]
             httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:
-            log.debug(f"Discord: {e}")
+            log.debug(f"Discord send failed: {e}")
 
-    def trade_buy(self, symbol, price, invest, ai_score, win_prob, news_score=0):
+    def trade_buy(
+        self,
+        symbol: str,
+        price: float,
+        invest: float,
+        ai_score: float,
+        win_prob: float,
+        news_score: float = 0,
+    ) -> None:
         if not self._cfg("discord_on_buy"):
             return
         news_txt = f"📰 {news_score:+.2f}" if news_score != 0 else "—"
@@ -100,7 +109,15 @@ class DiscordNotifier:
             ],
         )
 
-    def trade_sell(self, symbol, price, pnl, pnl_pct, reason, partial=False):
+    def trade_sell(
+        self,
+        symbol: str,
+        price: float,
+        pnl: float,
+        pnl_pct: float,
+        reason: str,
+        partial: bool = False,
+    ) -> None:
         if not self._cfg("discord_on_sell"):
             return
         won = pnl >= 0
@@ -112,7 +129,7 @@ class DiscordNotifier:
             "sell_win" if won else "sell_loss",
         )
 
-    def circuit_breaker(self, losses, pause_min):
+    def circuit_breaker(self, losses: int, pause_min: int) -> None:
         if not self._cfg("discord_on_circuit"):
             return
         self.send(
@@ -121,7 +138,7 @@ class DiscordNotifier:
             "circuit",
         )
 
-    def price_alert(self, symbol, price, target, direction):
+    def price_alert(self, symbol: str, price: float, target: float, direction: str) -> None:
         self.send(
             f"🔔 PREIS-ALERT: {symbol}",
             f"```\nAktuell: {price:.4f}\nZiel:    {target:.4f}\n"
@@ -129,21 +146,21 @@ class DiscordNotifier:
             "alert",
         )
 
-    def arb_found(self, symbol, buy_ex, sell_ex, spread):
+    def arb_found(self, symbol: str, buy_ex: str, sell_ex: str, spread: float) -> None:
         self.send(
             f"💹 ARBITRAGE: {symbol}",
             f"```\nKauf:    {buy_ex}\nVerkauf: {sell_ex}\nSpread:  {spread:.2f}%\n```",
             "arb",
         )
 
-    def anomaly_detected(self, symbol, score):
+    def anomaly_detected(self, symbol: str, score: float) -> None:
         self.send(
             f"🚨 ANOMALIE: {symbol}",
             f"```\nAnomalie-Score: {score:.3f}\nBot pausiert!\n```",
             "anomaly",
         )
 
-    def daily_report(self, report: dict):
+    def daily_report(self, report: dict) -> None:
         if not self._cfg("discord_daily_report"):
             return
         s = report.get("summary", {})
@@ -163,25 +180,125 @@ class DiscordNotifier:
             ],
         )
 
-    def error(self, msg: str):
+    def error(self, msg: str) -> None:
         if not self._cfg("discord_on_error"):
             return
-        self.send(f"🔴 {self._bot_full.split()[0]} FEHLER", f"```\n{msg[:500]}\n```", "error")
+        self.send(
+            f"🔴 {self._bot_full.split()[0]} FEHLER",
+            f"```\n{msg[:500]}\n```",
+            "error",
+        )
 
-    def backup_done(self, path: str):
+    def backup_done(self, path: str) -> None:
         self.send("💾 Backup erstellt", f"```\n{os.path.basename(path)}\n```", "info")
 
-    def short_open(self, symbol, price, invest):
+    def short_open(self, symbol: str, price: float, invest: float) -> None:
         self.send(
             f"🔴 SHORT: {symbol}",
             f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n```",
             "sell_loss",
         )
 
-    def genetic_result(self, gen: int, fitness: float, genome: dict):
+    def genetic_result(self, gen: int, fitness: float, genome: dict) -> None:
         self.send(
             f"🧬 Genetik Gen.{gen}",
             f"```\nFitness: {fitness:.3f}\n"
             f"SL: {genome.get('sl', 0) * 100:.1f}% TP: {genome.get('tp', 0) * 100:.1f}%\n```",
             "info",
+        )
+
+
+class TelegramNotifier:
+    """Sendet Benachrichtigungen über Telegram Bot API.
+
+    Requires config keys:
+        telegram_token (str): Bot token from @BotFather.
+        telegram_chat_id (str): Target chat / channel ID.
+        telegram_on_buy / telegram_on_sell / telegram_on_error (bool): Toggles.
+
+    Falls back to TELEGRAM_TOKEN / TELEGRAM_CHAT_ID environment variables
+    if the config keys are not present.
+    """
+
+    _API_BASE = "https://api.telegram.org/bot{token}/sendMessage"
+
+    def __init__(self, config: dict, bot_full: str = "TREVLIX"):
+        self._config = config
+        self._bot_full = bot_full
+
+    def _token(self) -> str:
+        return self._config.get("telegram_token", "") or os.getenv("TELEGRAM_TOKEN", "")
+
+    def _chat_id(self) -> str:
+        return self._config.get("telegram_chat_id", "") or os.getenv("TELEGRAM_CHAT_ID", "")
+
+    def send(self, text: str, parse_mode: str = "HTML") -> None:
+        """Sends a plain text (or HTML-formatted) message to the configured chat."""
+        token = self._token()
+        chat_id = self._chat_id()
+        if not token or not chat_id:
+            return
+        try:
+            url = self._API_BASE.format(token=token)
+            httpx.post(
+                url,
+                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                timeout=5,
+            )
+        except Exception as e:
+            log.debug(f"Telegram send failed: {e}")
+
+    def trade_buy(
+        self,
+        symbol: str,
+        price: float,
+        invest: float,
+        ai_score: float,
+        win_prob: float,
+    ) -> None:
+        if not self._config.get("telegram_on_buy"):
+            return
+        mode = "📝 Paper" if self._config.get("paper_trading") else "💰 Live"
+        self.send(
+            f"🟢 <b>KAUF: {symbol}</b>\n"
+            f"Preis: <code>{price:.4f}</code> USDT\n"
+            f"Investiert: <code>{invest:.2f}</code> USDT\n"
+            f"KI-Score: <code>{ai_score:.0f}%</code>  Win: <code>{win_prob:.0f}%</code>\n"
+            f"Modus: {mode}"
+        )
+
+    def trade_sell(
+        self,
+        symbol: str,
+        price: float,
+        pnl: float,
+        pnl_pct: float,
+        reason: str,
+    ) -> None:
+        if not self._config.get("telegram_on_sell"):
+            return
+        icon = "✅" if pnl >= 0 else "❌"
+        self.send(
+            f"{icon} <b>VERKAUF: {symbol}</b>\n"
+            f"Preis: <code>{price:.4f}</code> USDT\n"
+            f"PnL: <code>{pnl:+.2f} ({pnl_pct:+.2f}%)</code>\n"
+            f"Grund: {reason}"
+        )
+
+    def error(self, msg: str) -> None:
+        if not self._config.get("telegram_on_error"):
+            return
+        short = msg[:400] if len(msg) > 400 else msg
+        self.send(f"🔴 <b>{self._bot_full.split()[0]} FEHLER</b>\n<code>{short}</code>")
+
+    def circuit_breaker(self, losses: int, pause_min: int) -> None:
+        self.send(
+            f"⚡ <b>CIRCUIT BREAKER</b>\n{losses} Verluste → Pause <code>{pause_min}</code> Minuten"
+        )
+
+    def price_alert(self, symbol: str, price: float, target: float, direction: str) -> None:
+        arrow = "↑" if direction == "above" else "↓"
+        self.send(
+            f"🔔 <b>PREIS-ALERT: {symbol}</b>\n"
+            f"Aktuell: <code>{price:.4f}</code>  Ziel: <code>{target:.4f}</code> {arrow}"
         )
