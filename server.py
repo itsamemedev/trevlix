@@ -1,14 +1,14 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║    ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗                             ║
-║    ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝                             ║
-║    ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗                             ║
-║    ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║                             ║
-║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
-║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
+║    ████████╗██████╗ ███████╗██╗   ██╗██╗     ██╗██╗  ██╗                   ║
+║    ╚══██╔══╝██╔══██╗██╔════╝██║   ██║██║     ██║╚██╗██╔╝                   ║
+║       ██║   ██████╔╝█████╗  ██║   ██║██║     ██║ ╚███╔╝                    ║
+║       ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝██║     ██║ ██╔██╗                    ║
+║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
+║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Neural Exchange Unified System  ·  v1.1.0                                ║
+║    Algorithmic Crypto Trading Bot  ·  v1.2.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -18,7 +18,12 @@
 ║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
 ║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
 ║                                                                              ║
-║  NEU IN v1.1.0                                                               ║
+║  UNIQUE FEATURES                                                             ║
+║  · Trade DNA             – 7D-Fingerprint + Pattern Mining für Trades       ║
+║  · Smart Exits           – ATR-basierte volatilitätsadaptive SL/TP          ║
+║  · KI-Gemeinschaftswissen – LLM-Anbindung + Shared Knowledge Base          ║
+║                                                                              ║
+║  TRADING-FEATURES                                                            ║
 ║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
@@ -35,13 +40,13 @@
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  pip install flask flask-socketio flask-cors ccxt pandas numpy               ║
 ║    scikit-learn xgboost tensorflow ta python-dotenv eventlet requests        ║
-║    PyMySQL PyJWT bcrypt                                                      ║
+║    PyMySQL PyJWT bcrypt httpx                                                ║
 ║                                                                              ║
 ║  .env:  MYSQL_HOST=localhost  MYSQL_USER=root  MYSQL_PASS=geheim            ║
-║         MYSQL_DB=nexus        ADMIN_PASSWORD=adminpass                       ║
-║         CRYPTOPANIC_TOKEN=...  JWT_SECRET=...                                ║
+║         MYSQL_DB=trevlix      ADMIN_PASSWORD=<secure>                       ║
+║         ENCRYPTION_KEY=...    JWT_SECRET=...                                 ║
 ║                                                                              ║
-║  MySQL:  CREATE DATABASE nexus CHARACTER SET utf8mb4;                       ║
+║  MySQL:  CREATE DATABASE trevlix CHARACTER SET utf8mb4;                     ║
 ║  Start:  python server.py  →  http://localhost:5000                         ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
@@ -352,7 +357,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=_log_handlers,
 )
-log = logging.getLogger("NEXUS")
+log = logging.getLogger("TREVLIX")
 
 
 # SecretStr, _secret importiert aus services.utils
@@ -524,7 +529,7 @@ CONFIG: dict[str, Any] = {
     "smart_exit_max_tp_pct": 0.15,  # Max. TP in Prozent (15%)
     "smart_exit_squeeze_threshold": 0.03,  # BB-Width Threshold für Squeeze
     # Auth / Multi-User
-    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "nexus")),
+    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "trevlix")),
     "jwt_secret": _secret(os.getenv("JWT_SECRET", secrets.token_hex(32))),
     "jwt_expiry_hours": 24,
     "multi_user": True,
@@ -534,7 +539,7 @@ CONFIG: dict[str, Any] = {
     "mysql_port": int(os.getenv("MYSQL_PORT", "3306")),
     "mysql_user": os.getenv("MYSQL_USER", "root"),
     "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
-    "mysql_db": os.getenv("MYSQL_DB", "nexus"),
+    "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
 }
 
 # EXCHANGE_MAP importiert aus services.utils

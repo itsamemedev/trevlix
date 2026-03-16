@@ -8,7 +8,7 @@
 <meta property="og:description" content="Erfahre mehr ueber das TREVLIX Projekt und wie du beitragen kannst.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.1.0 — About</title>
+<title>TREVLIX v1.2.0 — About</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -102,10 +102,10 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <!-- Stats -->
 <div class="stat-grid">
-  <div class="stat-box"><div class="stat-val">14</div><div class="stat-label" data-i18n="stat_modules">Module</div></div>
+  <div class="stat-box"><div class="stat-val">16</div><div class="stat-label" data-i18n="stat_modules">Module</div></div>
   <div class="stat-box"><div class="stat-val">9</div><div class="stat-label" data-i18n="stat_strategies">Strategien</div></div>
-  <div class="stat-box"><div class="stat-val">5</div><div class="stat-label" data-i18n="stat_exchanges">Exchanges</div></div>
-  <div class="stat-box"><div class="stat-val">31</div><div class="stat-label" data-i18n="stat_ai_features">KI-Features</div></div>
+  <div class="stat-box"><div class="stat-val">8</div><div class="stat-label" data-i18n="stat_exchanges">Exchanges</div></div>
+  <div class="stat-box"><div class="stat-val">34</div><div class="stat-label" data-i18n="stat_ai_features">KI-Features</div></div>
   <div class="stat-box"><div class="stat-val">5</div><div class="stat-label" data-i18n="stat_languages">Sprachen</div></div>
   <div class="stat-box"><div class="stat-val">100%</div><div class="stat-label" data-i18n="stat_open_source">Open Source</div></div>
 </div>
@@ -201,13 +201,22 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
     <p style="margin:0;font-size:13px">Grid-Trading Modul, Monte-Carlo Risikoanalyse, PineScript-Export, Copy-Trading, Keyboard Shortcuts, Dark/Light Mode.</p>
   </div>
 
+  <div style="position:relative;margin-bottom:28px">
+    <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--ink);border:2px solid var(--amber);box-shadow:0 0 8px rgba(245,158,11,.3);display:flex;align-items:center;justify-content:center">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--amber)"></div>
+    </div>
+    <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Mär 2026</div>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--white);margin-bottom:4px">v1.2.0 — Website & Dokumentation</div>
+    <p style="margin:0;font-size:13px">Vollständiges Website-Relaunch, 7 neue Dokumentationsseiten, Shared-Navigation, i18n auf allen Seiten, SEO-Optimierung, verbessertes Dashboard-Design.</p>
+  </div>
+
   <div style="position:relative">
     <div style="position:absolute;left:-32px;top:4px;width:22px;height:22px;border-radius:50%;background:var(--jade);border:2px solid var(--jade);box-shadow:0 0 12px rgba(0,255,136,.5);display:flex;align-items:center;justify-content:center">
       <div style="width:8px;height:8px;border-radius:50%;background:var(--ink)"></div>
     </div>
     <div style="font-family:var(--fm);font-size:10px;color:var(--sub);margin-bottom:4px">Mär 2026 — Aktuell</div>
-    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--jade);margin-bottom:4px">v1.1.0 — Website & Dokumentation</div>
-    <p style="margin:0;font-size:13px">Vollständiges Website-Relaunch, 7 neue Dokumentationsseiten, Shared-Navigation, i18n auf allen Seiten, SEO-Optimierung, verbessertes Dashboard-Design.</p>
+    <div style="font-family:var(--fc);font-size:16px;font-weight:800;color:var(--jade);margin-bottom:4px">v1.2.0 — Unique Features</div>
+    <p style="margin:0;font-size:13px">Trade DNA Fingerprinting (7-Dimensionen-Marktmuster-Erkennung), Smart Exit Engine (ATR-basierte volatilitätsadaptive SL/TP), KI-Gemeinschaftswissen, TTL-Cache für externe APIs, Pool-Monitoring, verbesserte Sicherheit.</p>
   </div>
 </div>
 
@@ -231,7 +240,9 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
       <code>services/exchange_manager.py</code><br>
       <code>services/strategies.py</code><br>
       <code>services/risk.py</code><br>
-      <code>services/knowledge.py</code>
+      <code>services/knowledge.py</code><br>
+      <code>services/trade_dna.py</code><br>
+      <code>services/smart_exits.py</code>
     </div>
   </div>
   <div class="card" style="border-left:3px solid var(--amber)">
@@ -338,7 +349,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.1.0 &middot; MIT License</div>
+      <div class="footer-version">v1.2.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="/" data-i18n="nav_home">Home</a><a href="/strategies" data-i18n="nav_strategies">Strategien</a><a href="/api-docs">API Docs</a><a href="/" data-i18n="nav_dashboard">Dashboard</a></div>
