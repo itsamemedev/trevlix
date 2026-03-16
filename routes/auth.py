@@ -262,7 +262,8 @@ def create_auth_blueprint(
                 )
             elif err == "short":
                 msg_txt, msg_cls, show = (
-                    "Passwort muss mind. 12 Zeichen mit Groß+Klein+Zahl haben.",
+                    "Passwort muss mind. 12 Zeichen mit Groß+Klein+Zahl+Sonderzeichen"
+                    " haben und darf keine gängigen Muster enthalten.",
                     "msg msg-err",
                     "block",
                 )
@@ -306,10 +307,35 @@ def create_auth_blueprint(
 
         if len(username) < 3:
             return redirect("/register?err=uname")
-        if len(password) < 12 or not (
-            _re.search(r"[A-Z]", password)
-            and _re.search(r"[a-z]", password)
-            and _re.search(r"\d", password)
+        _WEAK_PATTERNS = frozenset(
+            {
+                "password",
+                "123456",
+                "qwerty",
+                "admin",
+                "letmein",
+                "welcome",
+                "monkey",
+                "dragon",
+                "master",
+                "abc123",
+                "login",
+                "princess",
+                "passw0rd",
+                "shadow",
+                "trustno1",
+            }
+        )
+        has_upper = _re.search(r"[A-Z]", password)
+        has_lower = _re.search(r"[a-z]", password)
+        has_digit = _re.search(r"\d", password)
+        has_special = _re.search(r"[!@#$%^&*(),.?\":{}|<>\-_=+\[\]\\;'/`~]", password)
+        pw_lower = password.lower()
+        has_weak = any(w in pw_lower for w in _WEAK_PATTERNS)
+        if (
+            len(password) < 12
+            or not (has_upper and has_lower and has_digit and has_special)
+            or has_weak
         ):
             return redirect("/register?err=short")
         if password != password2:

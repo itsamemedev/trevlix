@@ -98,6 +98,68 @@
 
 CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Docker Build.
 
+## Session: improve-and-optimize-MPdc7 (2026-03-16)
+
+### Aufgaben
+
+- [x] Market Data Caching: TTL-Cache für FearGreed + Dominance API-Aufrufe
+- [x] WebSocket Rate-Limit Memory Leak Fix (zeitbasierte Eviction alle 60s)
+- [x] Password Strength: Weak-Pattern + Sonderzeichen-Pflicht bei Registrierung
+- [x] Type Hints auf MySQLManager DB-Methoden und RiskManager
+- [x] Connection Pool Health Monitoring (pool_stats(), Erschöpfungs-Warnung)
+- [x] 21 neue Tests für alle Verbesserungen
+- [x] Lint ✓ | Format ✓ | Tests ✓
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `services/market_data.py` | `_TTLCache` Klasse + 5-Min-Cache für FearGreed & Dominance |
+| `routes/auth.py` | Sonderzeichen-Pflicht + 15 Weak-Pattern-Checks bei Registrierung |
+| `routes/websocket.py` | Zeitbasierte Rate-Limit-Eviction (60s Intervall statt >1000) |
+| `server.py` | WS-Rate-Limit Fix + Type Hints auf DB-Methoden |
+| `services/risk.py` | Type Hints auf `reset_daily`, `update_peak`, `update_prices` |
+| `services/db_pool.py` | `pool_stats()` Monitoring + Pool-Erschöpfungs-Warnung |
+| `tests/test_improvements.py` | 21 neue Tests (TTL-Cache, Password, Pool-Stats) |
+
+### Ergebnis
+
+- **Vorher:** 122 Tests, kein API-Caching, Memory-Leak-Risiko, schwache Passwort-Policy
+- **Nachher:** 143/143 Tests ✓ | Lint ✓ | Format ✓ | 6 Verbesserungen
+
+### Phase 2: Unique Features (2026-03-16)
+
+- [x] Trade DNA Fingerprinting & Pattern Mining (services/trade_dna.py)
+- [x] Smart Exit Engine – Volatility-Adaptive SL/TP (services/smart_exits.py)
+- [x] Discord-Notifications für DNA-Boost und Smart Exit
+- [x] Integration in server.py (open_position, close_position, manage_positions, snapshot)
+- [x] 3 neue API-Endpunkte (/api/v1/trade-dna, /api/v1/trade-dna/patterns, /api/v1/smart-exits)
+- [x] trade_dna DB-Tabelle (server.py + docker/mysql-init.sql)
+- [x] 39 neue Tests (test_trade_dna.py + test_smart_exits.py)
+- [x] Lint ✓ | Format ✓ | 182/182 Tests ✓
+
+### Neue Dateien (Phase 2)
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `services/trade_dna.py` | Trade DNA Fingerprinting – 7-dimensionaler Fingerprint + Pattern Mining |
+| `services/smart_exits.py` | Volatility-Adaptive SL/TP – ATR-basierte dynamische Exit-Level |
+| `tests/test_trade_dna.py` | 19 Tests für DNA-Engine |
+| `tests/test_smart_exits.py` | 20 Tests für Smart Exit Engine |
+
+### Geänderte Dateien (Phase 2)
+
+| Datei | Änderung |
+|-------|----------|
+| `server.py` | DNA + Smart Exits Integration (open/close/manage/snapshot + 3 API-Endpunkte) |
+| `docker/mysql-init.sql` | `trade_dna` Tabelle mit Indizes |
+| `services/notifications.py` | `dna_boost()` + `smart_exit()` Discord-Methoden |
+
+### Ergebnis (Phase 2)
+
+- **Vorher:** 143 Tests, fixe SL/TP, kein Trade-Pattern-Learning
+- **Nachher:** 182/182 Tests ✓ | Lint ✓ | Format ✓ | 2 einzigartige Features
+
 ## Session: fix-bugs-create-docs-gC9Lq (2026-03-15)
 
 ### Aufgaben

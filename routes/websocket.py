@@ -60,10 +60,21 @@ def register_handlers(
     """
 
     # ── Rate-Limit-Hilfsfunktion ────────────────────────────────────────────
+    _last_cleanup = [0.0]  # Mutable Container für nonlocal-freien Zugriff
+
     def _ws_rate_check(sid: str, action: str, min_interval: float = 2.0) -> bool:
-        """
-        Gibt True zurück wenn der Request erlaubt ist.
+        """Gibt True zurück wenn der Request erlaubt ist.
+
         Blockiert wenn min_interval seit letztem gleichen Event nicht vergangen.
+        Bereinigt stale Einträge alle 60 Sekunden um Memory-Leaks zu verhindern.
+
+        Args:
+            sid: Socket-ID des Clients.
+            action: Name des Events (z.B. 'start_bot').
+            min_interval: Minimale Sekunden zwischen gleichen Events.
+
+        Returns:
+            True wenn der Request erlaubt ist, False wenn Rate-Limited.
         """
         import time
 
@@ -74,12 +85,15 @@ def register_handlers(
             return False
         _ws_limits[key] = now
 
-        # Alte Einträge bereinigen um Memory-Leak zu vermeiden (max 1000 Einträge)
-        if len(_ws_limits) > 1000:
+        # Zeitbasierte Eviction alle 60s (statt nur bei >1000 Einträgen)
+        if now - _last_cleanup[0] > 60:
+            _last_cleanup[0] = now
             cutoff = now - 300  # Einträge älter als 5 Minuten entfernen
             stale = [k for k, v in _ws_limits.items() if v < cutoff]
             for k in stale:
                 _ws_limits.pop(k, None)
+            if stale:
+                log.debug(f"WS Rate-Limit: {len(stale)} stale Einträge entfernt")
 
         return True
 

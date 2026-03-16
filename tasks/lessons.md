@@ -40,3 +40,24 @@
 **Problem:** `val in weak_set` prüft nur exakte Übereinstimmung. "password123" wäre nicht erkannt, obwohl es ein schwaches Muster enthält.
 **Regel:** Für Passwort-Schwäche-Checks immer BEIDE prüfen: `val in weak_set or any(w in val for w in weak_set)`. Achtung auf False Positives (z.B. "administration" enthält "admin") – für Security-Checks ist ein strengerer Ansatz vertretbar.
 **Code:** `validate_env.py:174-178`
+
+## Session: improve-and-optimize-MPdc7 (2026-03-16)
+
+### Lektion 9: Externe API-Aufrufe immer cachen
+**Problem:** `FearGreedIndex.update()` und `DominanceFilter.update()` riefen bei jedem Bot-Zyklus die externe API auf, obwohl sich die Daten nur alle 5-10 Minuten ändern.
+**Regel:** Externe API-Aufrufe immer mit TTL-Cache versehen. Minimum 5 Minuten für Marktdaten, die sich selten ändern.
+**Code:** `services/market_data.py:_TTLCache`
+
+### Lektion 10: In-Memory-Dicts brauchen zeitbasierte Eviction
+**Problem:** `_ws_limits` Dict wuchs unbegrenzt, weil Cleanup nur bei >1000 Einträgen stattfand. Bei niedrigem Traffic wurde nie aufgeräumt.
+**Regel:** In-Memory-Caches und Rate-Limit-Dicts brauchen zeitbasierte Eviction (z.B. alle 60s), nicht nur größenbasierte. Verhindert schleichende Memory-Leaks.
+**Code:** `server.py:_ws_rate_check`, `routes/websocket.py:_ws_rate_check`
+
+### Lektion 11: Bucket-Grenzen in Tests genau prüfen
+**Problem:** Test erwartete `confidence=0.8` → "strong", aber Bucket-Grenze für "unanimous" lag bei 0.70. Wert 0.8 >= 0.70 → "unanimous", nicht "strong".
+**Regel:** Bei Tests mit Bucketized-Werten immer die exakten Grenzen prüfen. Am besten den Wert so wählen, dass er klar in den gewünschten Bucket fällt (z.B. 0.65 statt 0.8 für "strong" bei Grenze 0.70).
+**Code:** `tests/test_trade_dna.py:108`
+
+### Lektion 12: Neue Features non-invasiv integrieren
+**Problem:** Trade DNA und Smart Exits mussten in bestehende Trading-Logik integriert werden, ohne Seiteneffekte.
+**Regel:** Neue Features immer hinter Config-Flags schalten (`use_trade_dna`, `use_smart_exits`). Fallback auf bestehendes Verhalten wenn deaktiviert. Integration an klar definierten Punkten: open_position() für Initialisierung, close_position() für Recording, manage_positions() für laufende Anpassung.

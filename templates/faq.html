@@ -8,7 +8,7 @@
 <meta property="og:description" content="Antworten auf die haeufigsten Fragen zum TREVLIX Trading Bot.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.1.0 — FAQ</title>
+<title>TREVLIX v1.2.0 — FAQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../static/css/shared-nav.css">
@@ -88,7 +88,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <h1 data-i18n="faq_h1">Häufig gestellte Fragen</h1>
 <p class="subtitle" data-i18n="faq_subtitle">Antworten auf die wichtigsten Fragen rund um TREVLIX</p>
-<div class="faq-count" data-i18n-html="faq_count">26 Fragen &middot; Klicke auf eine Frage zum Aufklappen &middot; Zuletzt aktualisiert: Mär 2026</div>
+<div class="faq-count" data-i18n-html="faq_count">29 Fragen &middot; Klicke auf eine Frage zum Aufklappen &middot; Zuletzt aktualisiert: Mär 2026</div>
 
 <h2 data-i18n="faq_cat_general">Allgemein</h2>
 
@@ -291,6 +291,23 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
   </div>
 </div>
 
+<h2>v1.2.0 Features</h2>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist Trade DNA Fingerprinting?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Trade DNA erstellt für jeden Trade einen einzigartigen Fingerprint aus 7 Marktdimensionen: Regime (Bull/Bear/Range/Crash), Volatilität, Fear &amp; Greed Index, News-Sentiment, Orderbook-Imbalance, Signal-Konsensus und Handelszeit. Das System lernt automatisch, welche Marktmuster profitabel waren und passt die Konfidenz zukünftiger Trades an — Boost bei hoher historischer Win-Rate, Block bei niedriger.</p></div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist die Smart Exit Engine?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Die Smart Exit Engine ersetzt fixe prozentuale Stop-Loss und Take-Profit Level durch dynamische, ATR-basierte (Average True Range) Exits. Je nach Marktregime werden unterschiedliche Multiplikatoren verwendet: Im Bullenmarkt engere Stops und größeres TP, im Crash-Regime weite Stops zum Schutz. Zusätzlich erkennt die Volatility Squeeze Detection über die Bollinger-Bandbreite bevorstehende Ausbrüche.</p></div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Wie funktioniert die dynamische SL/TP-Anpassung?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Im laufenden Trade passt die Smart Exit Engine Stop-Loss und Take-Profit dynamisch an: Im Gewinn wird der SL enger nachgezogen (nur nach oben, nie nach unten). Bei starkem Profit in einem Bullenmarkt wird das Take-Profit nach oben erweitert, um den Trend voll auszuschöpfen. Die Anpassung erfolgt regime-abhängig in jedem Scan-Zyklus.</p></div>
+</div>
+
 </div>
 
 <!-- Footer -->
@@ -299,7 +316,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.1.0 &middot; MIT License</div>
+      <div class="footer-version">v1.2.0 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="/" data-i18n="nav_home">Home</a><a href="/strategies" data-i18n="nav_strategies">Strategien</a><a href="/api-docs">API Docs</a><a href="/" data-i18n="nav_dashboard">Dashboard</a></div>

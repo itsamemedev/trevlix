@@ -1,14 +1,14 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
 ║                                                                              ║
-║    ███╗   ██╗███████╗██╗  ██╗██╗   ██╗███████╗                             ║
-║    ████╗  ██║██╔════╝╚██╗██╔╝██║   ██║██╔════╝                             ║
-║    ██╔██╗ ██║█████╗   ╚███╔╝ ██║   ██║███████╗                             ║
-║    ██║╚██╗██║██╔══╝   ██╔██╗ ██║   ██║╚════██║                             ║
-║    ██║ ╚████║███████╗██╔╝ ██╗╚██████╔╝███████║                             ║
-║    ╚═╝  ╚═══╝╚══════╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝                             ║
+║    ████████╗██████╗ ███████╗██╗   ██╗██╗     ██╗██╗  ██╗                   ║
+║    ╚══██╔══╝██╔══██╗██╔════╝██║   ██║██║     ██║╚██╗██╔╝                   ║
+║       ██║   ██████╔╝█████╗  ██║   ██║██║     ██║ ╚███╔╝                    ║
+║       ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝██║     ██║ ██╔██╗                    ║
+║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
+║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Neural Exchange Unified System  ·  v1.1.0                                ║
+║    Algorithmic Crypto Trading Bot  ·  v1.2.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -18,7 +18,12 @@
 ║  · Circuit Breaker       · Trailing Stop         · Korrelations-Filter       ║
 ║  · Liquidity Check       · Tages-Report          · Auto-Backup               ║
 ║                                                                              ║
-║  NEU IN v1.1.0                                                               ║
+║  UNIQUE FEATURES                                                             ║
+║  · Trade DNA             – 7D-Fingerprint + Pattern Mining für Trades       ║
+║  · Smart Exits           – ATR-basierte volatilitätsadaptive SL/TP          ║
+║  · KI-Gemeinschaftswissen – LLM-Anbindung + Shared Knowledge Base          ║
+║                                                                              ║
+║  TRADING-FEATURES                                                            ║
 ║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
@@ -35,13 +40,13 @@
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  pip install flask flask-socketio flask-cors ccxt pandas numpy               ║
 ║    scikit-learn xgboost tensorflow ta python-dotenv eventlet requests        ║
-║    PyMySQL PyJWT bcrypt                                                      ║
+║    PyMySQL PyJWT bcrypt httpx                                                ║
 ║                                                                              ║
 ║  .env:  MYSQL_HOST=localhost  MYSQL_USER=root  MYSQL_PASS=geheim            ║
-║         MYSQL_DB=nexus        ADMIN_PASSWORD=adminpass                       ║
-║         CRYPTOPANIC_TOKEN=...  JWT_SECRET=...                                ║
+║         MYSQL_DB=trevlix      ADMIN_PASSWORD=<secure>                       ║
+║         ENCRYPTION_KEY=...    JWT_SECRET=...                                 ║
 ║                                                                              ║
-║  MySQL:  CREATE DATABASE nexus CHARACTER SET utf8mb4;                       ║
+║  MySQL:  CREATE DATABASE trevlix CHARACTER SET utf8mb4;                     ║
 ║  Start:  python server.py  →  http://localhost:5000                         ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
@@ -98,7 +103,9 @@ from services.risk import (
     RiskManager,
     SymbolCooldown,
 )
+from services.smart_exits import SmartExitEngine
 from services.strategies import STRATEGIES, STRATEGY_NAMES, compute_indicators
+from services.trade_dna import TradeDNA
 from services.utils import (
     BOT_FULL,
     BOT_NAME,
@@ -350,7 +357,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=_log_handlers,
 )
-log = logging.getLogger("NEXUS")
+log = logging.getLogger("TREVLIX")
 
 
 # SecretStr, _secret importiert aus services.utils
@@ -507,8 +514,22 @@ CONFIG: dict[str, Any] = {
     # [Verbesserung #24] Data Retention
     "audit_retention_days": 90,  # Audit-Logs nach N Tagen löschen
     "ai_sample_retention_days": 180,  # AI-Samples nach N Tagen löschen
+    # Trade DNA Fingerprinting
+    "use_trade_dna": True,
+    "dna_min_matches": 5,  # Min. historische Matches für Konfidenz-Anpassung
+    "dna_boost_threshold": 0.65,  # WR ab der ein Boost gewährt wird
+    "dna_block_threshold": 0.35,  # WR unter der geblockt wird
+    # Smart Exits (Volatility-Adaptive SL/TP)
+    "use_smart_exits": True,
+    "smart_exit_atr_sl_mult": 1.5,  # ATR-Multiplikator für Stop-Loss
+    "smart_exit_reward_ratio": 2.0,  # Reward-Ratio für Take-Profit
+    "smart_exit_min_sl_pct": 0.01,  # Min. SL in Prozent (1%)
+    "smart_exit_max_sl_pct": 0.08,  # Max. SL in Prozent (8%)
+    "smart_exit_min_tp_pct": 0.02,  # Min. TP in Prozent (2%)
+    "smart_exit_max_tp_pct": 0.15,  # Max. TP in Prozent (15%)
+    "smart_exit_squeeze_threshold": 0.03,  # BB-Width Threshold für Squeeze
     # Auth / Multi-User
-    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "nexus")),
+    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "trevlix")),
     "jwt_secret": _secret(os.getenv("JWT_SECRET", secrets.token_hex(32))),
     "jwt_expiry_hours": 24,
     "multi_user": True,
@@ -518,7 +539,7 @@ CONFIG: dict[str, Any] = {
     "mysql_port": int(os.getenv("MYSQL_PORT", "3306")),
     "mysql_user": os.getenv("MYSQL_USER", "root"),
     "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
-    "mysql_db": os.getenv("MYSQL_DB", "nexus"),
+    "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
 }
 
 # EXCHANGE_MAP importiert aus services.utils
@@ -864,6 +885,22 @@ class MySQLManager:
                     UNIQUE KEY uq_cat_key(category, key_name),
                     INDEX idx_category(category)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Trade DNA Fingerprints
+                c.execute("""CREATE TABLE IF NOT EXISTS trade_dna (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    symbol VARCHAR(20),
+                    dna_hash VARCHAR(16),
+                    fingerprint VARCHAR(500),
+                    dimensions_json TEXT,
+                    raw_values_json TEXT,
+                    won TINYINT,
+                    pnl DOUBLE DEFAULT 0,
+                    dna_boost DOUBLE DEFAULT 1.0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_hash(dna_hash),
+                    INDEX idx_symbol(symbol),
+                    INDEX idx_time(created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
                 c.execute("SELECT id FROM users WHERE username='admin'")
                 if not c.fetchone():
@@ -994,7 +1031,15 @@ class MySQLManager:
             user["api_secret"] = self._dec(user["api_secret"])
         return user
 
-    def get_user(self, username: str) -> dict | None:
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        """Lädt einen Benutzer anhand des Benutzernamens.
+
+        Args:
+            username: Der gesuchte Benutzername.
+
+        Returns:
+            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1005,7 +1050,15 @@ class MySQLManager:
             log.error(f"get_user({username!r}): {e}")
             return None
 
-    def get_user_by_id(self, uid: int) -> dict | None:
+    def get_user_by_id(self, uid: int) -> dict[str, Any] | None:
+        """Lädt einen Benutzer anhand der ID.
+
+        Args:
+            uid: Die gesuchte User-ID.
+
+        Returns:
+            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1016,7 +1069,12 @@ class MySQLManager:
             log.error(f"get_user_by_id({uid}): {e}")
             return None
 
-    def get_all_users(self) -> list[dict]:
+    def get_all_users(self) -> list[dict[str, Any]]:
+        """Lädt alle Benutzer (ohne sensible Keys).
+
+        Returns:
+            Liste von User-Dicts mit serialisierten Datumsfeldern.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1024,7 +1082,7 @@ class MySQLManager:
                         "SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users"
                     )
                     rows = c.fetchall()
-            result = []
+            result: list[dict[str, Any]] = []
             for r in rows:
                 d = dict(r)
                 for k in ("created_at", "last_login"):
@@ -1057,6 +1115,15 @@ class MySQLManager:
             return False
 
     def verify_password(self, stored_hash: str, password: str) -> bool:
+        """Verifiziert ein Passwort gegen den gespeicherten Hash.
+
+        Args:
+            stored_hash: Gespeicherter bcrypt- oder SHA-256-Hash.
+            password: Eingegebenes Klartext-Passwort.
+
+        Returns:
+            True wenn das Passwort korrekt ist.
+        """
         try:
             pw = password.encode()
             if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
@@ -1067,7 +1134,12 @@ class MySQLManager:
         except Exception:
             return False
 
-    def update_user_login(self, user_id: int):
+    def update_user_login(self, user_id: int) -> None:
+        """Aktualisiert den last_login Timestamp eines Users.
+
+        Args:
+            user_id: Die User-ID.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1075,7 +1147,13 @@ class MySQLManager:
         except Exception as e:
             log.warning(f"update_user_login({user_id}): {e}")
 
-    def update_user_balance(self, user_id: int, balance: float):
+    def update_user_balance(self, user_id: int, balance: float) -> None:
+        """Aktualisiert den Kontostand eines Users.
+
+        Args:
+            user_id: Die User-ID.
+            balance: Neuer Kontostand.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -3996,6 +4074,9 @@ class BotState:
                 "news_score": round(p.get("news_score", 0), 2),
                 "onchain_score": round(p.get("onchain_score", 0), 2),
                 "trade_type": "long",
+                "dna_hash": p.get("dna_hash", ""),
+                "dna_boost": p.get("dna_boost", 1.0),
+                "exit_regime": p.get("exit_regime", ""),
             }
             for sym, p in self.positions.items()
         ] + [
@@ -4101,6 +4182,8 @@ class BotState:
             "price_alerts": db.get_all_alerts()[:20],
             "use_shorts": CONFIG.get("use_shorts", False),
             "use_arbitrage": CONFIG.get("use_arbitrage", True),
+            "trade_dna": trade_dna.to_dict(),
+            "smart_exits": smart_exits.to_dict(),
         }
 
 
@@ -4652,20 +4735,46 @@ def open_position(ex, scan: dict):
     if not allowed:
         return
 
+    # ── Trade DNA Fingerprinting ─────────────────────────────────────────
+    dna_result = None
+    dna_adjustment = None
+    if CONFIG.get("use_trade_dna"):
+        regime_str = "bull" if regime.is_bull else "bear"
+        local_regime = (
+            smart_exits.classify_regime_from_scan(scan) if smart_exits.enabled else regime_str
+        )
+        dna_result = trade_dna.compute(symbol, scan, local_regime, fg_idx.value)
+        dna_adjustment = trade_dna.confidence_adjustment(dna_result)
+        if dna_adjustment["action"] == "block" and dna_adjustment["matches"] >= CONFIG.get(
+            "dna_min_matches", 5
+        ):
+            log.info(f"🧬 {symbol} DNA-Block: {dna_adjustment['reason']}")
+            state.add_activity("🧬", f"DNA-Block: {symbol}", dna_adjustment["reason"], "warning")
+            return
+
     fg_boost = fg_idx.buy_boost()
+    # DNA-Boost in Position-Sizing einbeziehen
+    dna_mult = dna_adjustment["multiplier"] if dna_adjustment else 1.0
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
         if CONFIG["ai_use_kelly"]
         else state.balance * CONFIG["risk_per_trade"] * fg_boost
     )
+    invest *= dna_mult
     invest = min(invest, state.balance * CONFIG["max_position_pct"])
     if invest < 5:
         return
 
     fee = invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     qty = (invest - fee) / price
-    sl = price * (1 - CONFIG["stop_loss_pct"])
-    tp = price * (1 + CONFIG["take_profit_pct"])
+
+    # ── Smart Exits: Dynamische SL/TP ────────────────────────────────────
+    if smart_exits.enabled:
+        local_regime = smart_exits.classify_regime_from_scan(scan)
+        sl, tp = smart_exits.compute(price, scan, local_regime)
+    else:
+        sl = price * (1 - CONFIG["stop_loss_pct"])
+        tp = price * (1 + CONFIG["take_profit_pct"])
 
     if CONFIG["paper_trading"]:
         state.balance -= invest
@@ -4678,7 +4787,7 @@ def open_position(ex, scan: dict):
             return
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
-    state.positions[symbol] = {
+    pos_data = {
         "entry": price,
         "qty": qty,
         "invested": invest - fee,
@@ -4695,8 +4804,20 @@ def open_position(ex, scan: dict):
         "news_score": round(ns, 3),
         "onchain_score": round(scan.get("onchain_score", 0), 3),
     }
+    # Trade DNA: Fingerprint in Position speichern
+    if dna_result:
+        pos_data["dna_hash"] = dna_result["hash"]
+        pos_data["dna_fingerprint"] = dna_result["fingerprint"]
+        pos_data["dna_boost"] = round(dna_mult, 3)
+    # Smart Exits: Regime in Position speichern
+    if smart_exits.enabled:
+        pos_data["exit_regime"] = smart_exits.classify_regime_from_scan(scan)
+    state.positions[symbol] = pos_data
+    dna_info = f" | DNA:{dna_mult:.2f}x" if dna_result and dna_mult != 1.0 else ""
+    smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
-        f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}% | News:{ns:+.2f}"
+        f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%"
+        f" | News:{ns:+.2f}{dna_info}{smart_info}"
     )
     state.add_activity(
         "🟢",
@@ -4705,6 +4826,19 @@ def open_position(ex, scan: dict):
         "success",
     )
     discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, ns)
+    # DNA + Smart Exit Discord-Notifications
+    if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
+        discord.dna_boost(
+            symbol,
+            dna_adjustment["action"],
+            dna_adjustment.get("win_rate", 0),
+            dna_adjustment.get("matches", 0),
+            dna_adjustment.get("multiplier", 1.0),
+        )
+    if smart_exits.enabled:
+        discord.smart_exit(
+            symbol, sl, tp, pos_data.get("exit_regime", "bull"), scan.get("atr_pct", 0)
+        )
     emit_event(
         "trade",
         {
@@ -4762,6 +4896,16 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         regime_str = pos.get("regime", "bull")
         ai_engine.on_sell(symbol, pnl, regime_str)
         risk.record_result(pnl > 0)
+        # Trade DNA: Ergebnis aufzeichnen
+        if CONFIG.get("use_trade_dna") and pos.get("dna_fingerprint"):
+            dna_entry = {
+                "hash": pos.get("dna_hash", ""),
+                "fingerprint": pos["dna_fingerprint"],
+                "dimensions": {},  # Nicht gespeichert, aber Fingerprint reicht
+                "symbol": symbol,
+                "timestamp": pos.get("opened", ""),
+            }
+            trade_dna.record(dna_entry, won=pnl > 0)
         trade = _make_trade(
             symbol,
             pos,
@@ -4805,7 +4949,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
 
 def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level=0, partial_sold=0):
-    return {
+    trade = {
         "symbol": symbol,
         "entry": round(pos["entry"], 4),
         "exit": round(price, 4),
@@ -4827,6 +4971,14 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
         "news_score": round(pos.get("news_score", 0), 3),
         "onchain_score": round(pos.get("onchain_score", 0), 3),
     }
+    # Trade DNA Fingerprint anhängen (für historische Analyse)
+    if pos.get("dna_hash"):
+        trade["dna_hash"] = pos["dna_hash"]
+        trade["dna_boost"] = pos.get("dna_boost", 1.0)
+    # Smart Exit Regime anhängen
+    if pos.get("exit_regime"):
+        trade["exit_regime"] = pos["exit_regime"]
+    return trade
 
 
 def try_dca(ex, symbol):
@@ -4907,6 +5059,19 @@ def manage_positions(ex):
                     f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
                     f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
                 )
+
+        # Smart Exits: Dynamische SL/TP-Anpassung basierend auf aktueller Volatilität
+        if smart_exits.enabled:
+            atr_val = pos.get("_last_atr", 0)
+            # ATR aus letztem Scan oder geschätzt aus Preisbewegung
+            if atr_val <= 0:
+                atr_val = abs(price - pos["entry"]) * 0.5  # Grobe Schätzung
+            exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
+            new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
+            if new_smart_sl and new_smart_sl > pos["sl"]:
+                pos["sl"] = new_smart_sl
+            if new_smart_tp and new_smart_tp > pos["tp"]:
+                pos["tp"] = new_smart_tp
 
         # Trailing Stop
         if CONFIG["trailing_stop"] and price > pos.get("highest", price):
@@ -5857,13 +6022,23 @@ def prometheus_metrics():
 # [Verbesserung #8] In-Memory Rate-Limiting für kritische Socket-Events
 # ═══════════════════════════════════════════════════════════════════════════════
 _ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
+_ws_limits_last_cleanup: float = 0.0
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
-    """
-    Prüft ob ein Socket-Event zu schnell wiederholt wird.
+    """Prüft ob ein Socket-Event zu schnell wiederholt wird.
+
     Gibt False zurück wenn der Client warten muss.
+    Bereinigt stale Einträge alle 60s statt nur bei >1000 Einträgen.
+
+    Args:
+        action: Name des Socket-Events.
+        min_interval: Minimale Sekunden zwischen gleichen Events.
+
+    Returns:
+        True wenn erlaubt, False wenn Rate-Limited.
     """
+    global _ws_limits_last_cleanup
     sid = request.sid if hasattr(request, "sid") else "global"
     key = f"{sid}:{action}"
     now = time.time()
@@ -5871,12 +6046,13 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     if now - last < min_interval:
         return False
     _ws_limits[key] = now
-    # Cleanup alter Einträge (alle 5 Minuten)
-    if len(_ws_limits) > 1000:
+    # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
+    if now - _ws_limits_last_cleanup > 60:
+        _ws_limits_last_cleanup = now
         cutoff = now - 300
-        for k in list(_ws_limits):
-            if _ws_limits[k] < cutoff:
-                del _ws_limits[k]
+        stale = [k for k, v in _ws_limits.items() if v < cutoff]
+        for k in stale:
+            del _ws_limits[k]
     return True
 
 
@@ -6975,6 +7151,43 @@ def api_funding_config():
 
 
 adv_risk = AdvancedRiskMetrics()
+
+# ── Trade DNA Fingerprinting ──────────────────────────────────────────────
+trade_dna = TradeDNA(
+    min_matches=CONFIG.get("dna_min_matches", 5),
+    boost_threshold=CONFIG.get("dna_boost_threshold", 0.65),
+    block_threshold=CONFIG.get("dna_block_threshold", 0.35),
+)
+
+# ── Smart Exit Engine ─────────────────────────────────────────────────────
+smart_exits = SmartExitEngine(CONFIG)
+
+
+@app.route("/api/v1/trade-dna")
+@api_auth_required
+def api_trade_dna():
+    """Trade DNA Fingerprinting Status und Top-Patterns."""
+    return jsonify(trade_dna.to_dict())
+
+
+@app.route("/api/v1/trade-dna/patterns")
+@api_auth_required
+def api_trade_dna_patterns():
+    """Top profitable und schlechteste DNA-Muster."""
+    n = int(request.args.get("n", 10))
+    return jsonify(
+        {
+            "top": trade_dna.top_patterns(n),
+            "worst": trade_dna.worst_patterns(n),
+        }
+    )
+
+
+@app.route("/api/v1/smart-exits")
+@api_auth_required
+def api_smart_exits():
+    """Smart Exit Engine Status."""
+    return jsonify(smart_exits.to_dict())
 
 
 @app.route("/api/v1/risk/cvar")

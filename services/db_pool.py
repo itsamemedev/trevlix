@@ -196,6 +196,8 @@ class ConnectionPool:
                         while self._pool:
                             conn = self._pool.pop()
                             if self._is_alive(conn):
+                                if len(self._pool) == 0:
+                                    log.warning("DB-Pool erschöpft: letzte Verbindung vergeben")
                                 return _PooledConnection(conn, self)
                             try:
                                 conn.close()
@@ -203,6 +205,7 @@ class ConnectionPool:
                                 pass
 
                     # Pool leer → neue Verbindung erstellen
+                    log.warning("DB-Pool leer: erstelle neue Verbindung on-demand")
                     conn = self._create_connection()
                     if conn is None:
                         raise ConnectionError(
@@ -274,5 +277,22 @@ class ConnectionPool:
 
     @property
     def available(self) -> int:
+        """Anzahl der aktuell verfügbaren Verbindungen im Pool."""
         with self._lock:
             return len(self._pool)
+
+    def pool_stats(self) -> dict[str, int | float]:
+        """Gibt Monitoring-Statistiken des Connection-Pools zurück.
+
+        Returns:
+            Dict mit pool_size, available, in_use und utilization_pct.
+        """
+        with self._lock:
+            avail = len(self._pool)
+        in_use = self._pool_size - avail
+        return {
+            "pool_size": self._pool_size,
+            "available": avail,
+            "in_use": in_use,
+            "utilization_pct": round(in_use / max(self._pool_size, 1) * 100, 1),
+        }
