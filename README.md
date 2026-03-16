@@ -9,13 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Trading Intelligence — v1.1.1**
+**Algorithmic Crypto Trading Bot — v1.2.0**
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://python.org)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
+[![Tests](https://img.shields.io/badge/tests-200+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.1-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -23,28 +24,62 @@
 
 ## Features
 
-- **Multi-Exchange Support** — Crypto.com, Binance, Bybit, OKX, KuCoin simultaneously
-- **14+ AI Modules** — XGBoost, LightGBM, CatBoost, LSTM, Transformer, Random Forest
+### Trading Engine
+- **Multi-Exchange Support** — Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi, Coinbase
 - **9 Voting Strategies** — EMA Trend, RSI+Stochastic, MACD, Bollinger, Volume, OBV, ROC, Ichimoku, VWAP
-- **Real-time Dashboard** — WebSocket-powered live UI with Socket.io
 - **Grid Trading** — Automated grid strategies with configurable levels
-- **Monte-Carlo Risk Analysis** — Portfolio simulations with VaR calculation
-- **Circuit Breaker** — Automatic trading pause after consecutive losses
-- **Telegram Notifications** — Real-time alerts for all trades
-- **Discord Integration** — Webhooks with daily reports
-- **Audit Log** — Full action history with timestamps
-- **Break-Even Stop-Loss** — Automatic SL adjustment after profit
-- **Symbol Cooldown** — Locks symbols after a loss
-- **IP Whitelist** — Access control by IP address
-- **News Sentiment Filter** — Blocks trades on negative news
-- **Funding Rate Filter** — Avoids expensive short positions
+- **Partial Take-Profit** — Staged profit taking (25/50/100%)
+- **DCA Strategy** — Averaging down on falling positions
+- **Short-Selling** — Bearish trades on futures (Binance/Bybit)
+- **Arbitrage Scanner** — Cross-exchange price spread detection
 - **Paper Trading** — Risk-free testing without real capital
-- **Copy Trading** — Followers receive all signals in real time
-- **Multi-User System** — Multiple portfolios on a single instance, each with their own API keys
+
+### AI & Machine Learning (14+ Models)
+- **Random Forest, XGBoost, LightGBM, CatBoost** — Ensemble models
+- **LSTM Ensemble** — Recurrent neural networks for time series
+- **Stacking Ensemble** — Meta-learner combining all base models
+- **Genetic Optimizer** — Evolutionary strategy discovery
+- **Reinforcement Learning** — PPO agent learns from market
+- **Anomaly Detection** — Isolation Forest stops bot during flash crashes
+- **Optuna Hyperparameter Tuning** — Bayesian optimization
+- **Kelly Criterion** — Optimal position sizing based on win probability
+
+### Unique Features
+- **Trade DNA Fingerprinting** — 7-dimensional fingerprint + pattern mining for each trade
+- **Smart Exits** — ATR-based volatility-adaptive SL/TP (regime-dependent)
+- **Performance Attribution** — Hedge-fund-style profit/loss analysis by strategy, regime, session, symbol, sentiment
+- **Adaptive Strategy Weights** — Self-learning strategy weights with exponential decay and regime-sensitivity
+- **KI-Gemeinschaftswissen** — Shared knowledge base with optional LLM integration (Ollama, LM Studio)
+
+### Risk Management
+- **Circuit Breaker** — Automatic trading pause after consecutive losses
+- **Drawdown Control** — Max portfolio drawdown limit with automatic pause
+- **Daily Loss Limit** — Max 5% daily loss, resets at midnight
+- **Correlation Filter** — Blocks correlated positions (>0.75)
+- **Liquidity Check** — Orderbook spread + minimum volume verification
+- **Symbol Cooldown** — Locks symbols after a loss
+- **Trailing & Break-Even Stop-Loss** — Dynamic SL adjustment
+- **Monte-Carlo Risk Analysis** — Portfolio VaR/CVaR calculation
+- **Funding Rate Filter** — Avoids expensive short positions
+- **Conformal Prediction** — Guaranteed prediction intervals
+
+### Market Analysis
+- **Fear & Greed Index** — Alternative.me sentiment signal
+- **Market Regime Detection** — Bull/Bear/Range/Crash classification
+- **BTC/USDT Dominance Filter** — Altcoin trade blocking when BTC dominates
+- **News Sentiment** — CryptoPanic real-time news as AI signal
+- **On-Chain Data** — Whale alerts, exchange flows (CryptoQuant)
+
+### Infrastructure
+- **Real-time Dashboard** — WebSocket-powered live UI with Socket.IO
+- **Full REST API** — 45+ JWT-authenticated endpoints
+- **Multi-User System** — Multiple portfolios, each with own API keys
 - **2FA** — Two-factor authentication (TOTP)
 - **5 Languages** — DE, EN, ES, RU, PT
-- **Full REST API** — JWT-authenticated API with WebSocket real-time updates
+- **Discord & Telegram** — Real-time trade notifications
 - **GitHub Updater** — In-dashboard one-click update & rollback
+- **Auto-Backup** — Regular data backup with SHA-256 verification
+- **Copy Trading** — Followers receive all signals in real time
 
 ---
 
@@ -98,11 +133,15 @@ SECRET_KEY=random_hex_string_32chars
 ENCRYPTION_KEY=fernet_key  # python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 # CORS (optional — default allows all origins)
-# For production, restrict to your domain:
 # ALLOWED_ORIGINS=https://yourdomain.com,http://localhost:5000
 
 # Trading
 PAPER_TRADING=true   # Always start in paper mode first!
+
+# Unique Features
+USE_TRADE_DNA=true           # Trade DNA fingerprinting
+USE_SMART_EXITS=true         # Volatility-adaptive SL/TP
+USE_ADAPTIVE_WEIGHTS=true    # Self-learning strategy weights
 
 # Notifications (optional)
 DISCORD_WEBHOOK=https://discord.com/api/webhooks/...
@@ -110,53 +149,7 @@ TELEGRAM_TOKEN=your_bot_token
 TELEGRAM_CHAT_ID=your_chat_id
 ```
 
-Full guide: [INSTALLATION.html](INSTALLATION.html)
-
----
-
-## Website & Documentation
-
-TREVLIX comes with a complete documentation website. All pages are interlinked with a consistent navigation bar, footer, and responsive design.
-
-### Pages
-
-| Page | File | Description |
-|------|------|-------------|
-| **Home** | `index.html` | Landing page with features, comparison, and download |
-| **Dashboard** | `dashboard.html` | Real-time trading dashboard with WebSocket updates |
-| **Installation** | `INSTALLATION.html` | Step-by-step setup guide (Docker, manual, Raspberry Pi) |
-| **Strategies** | `strategies.html` | Detailed explanation of all 9 voting strategies |
-| **API Docs** | `api-docs.html` | Complete REST API reference with examples |
-| **FAQ** | `faq.html` | 18 frequently asked questions with answers |
-| **Security** | `security.html` | Security hardening guide and best practices |
-| **Changelog** | `changelog.html` | Visual release history (v1.0.0 — v1.1.1) |
-| **Roadmap** | `roadmap.html` | Planned features and development phases |
-| **About** | `about.html` | Project info, tech stack, and contributing guide |
-| **404** | `404.html` | Custom error page with navigation |
-
-### Shared Assets
-
-| File | Description |
-|------|-------------|
-| `static/css/shared-nav.css` | Shared navigation bar, footer, breadcrumbs, back-to-top button, print styles |
-| `static/css/dashboard.css` | Dashboard-specific styles (extracted from inline) |
-| `static/js/dashboard.js` | Dashboard JavaScript logic (extracted from inline) |
-| `static/js/trevlix_translations.js` | Frontend i18n translations (5 languages) |
-| `static/js/page_i18n.js` | Page translation handler for sub-pages |
-| `sitemap.xml` | SEO sitemap for all pages |
-| `robots.txt` | Crawler directives |
-
-### Design Features
-
-- Dark theme with neon green (#00ff88) accent
-- Responsive design (mobile-first)
-- Fixed site-wide navigation bar
-- Breadcrumb navigation on sub-pages
-- Back-to-top button
-- Skip-to-content accessibility link
-- OpenGraph and Twitter Card meta tags
-- JSON-LD structured data (index.html)
-- Print stylesheet for documentation pages
+Full guide: [INSTALLATION.html](templates/INSTALLATION.html)
 
 ---
 
@@ -164,75 +157,101 @@ TREVLIX comes with a complete documentation website. All pages are interlinked w
 
 ```
 trevlix/
-├── server.py                  # Flask + WebSocket Backend (6200+ lines)
-├── ai_engine.py               # AI Engine (XGBoost, LSTM, ...)
-├── trevlix_i18n.py            # Internationalization (Python)
-├── trevlix_translations.js    # Internationalization (JS)
+├── server.py                          # Flask + WebSocket Backend (7400+ lines)
+├── ai_engine.py                       # AI Engine reference (XGBoost, LSTM, ...)
+├── trevlix_i18n.py                    # Internationalization (Python)
+├── validate_env.py                    # Pre-startup environment validation
 │
-├── Website
-│   ├── index.html             # Landing Page
-│   ├── dashboard.html         # Trading Dashboard UI
-│   ├── INSTALLATION.html      # Installation Guide
-│   ├── strategies.html        # Trading Strategies Guide
-│   ├── api-docs.html          # REST API Documentation
-│   ├── faq.html               # FAQ Page
-│   ├── security.html          # Security Guide
-│   ├── changelog.html         # Changelog
-│   ├── roadmap.html           # Feature Roadmap
-│   ├── about.html             # About Page
-│   ├── 404.html               # Error Page
-│   └── shared-nav.css         # Shared Navigation Styles
+├── routes/                            # Flask Blueprints
+│   ├── auth.py                        # Login, register, 2FA, admin
+│   ├── dashboard.py                   # Static page routes
+│   └── websocket.py                   # WebSocket event handlers
 │
-├── Configuration
-│   ├── .env.example           # Configuration template (73 variables)
-│   ├── requirements.txt       # Python dependencies (47 packages)
-│   ├── pyproject.toml         # pytest, coverage, ruff config
-│   ├── Makefile               # 15 convenience targets
-│   └── install.sh             # One-click installer
+├── services/                          # Modular business logic (15 modules)
+│   ├── adaptive_weights.py            # Self-learning strategy weights [NEW]
+│   ├── config.py                      # Pydantic BaseSettings configuration
+│   ├── cryptopanic.py                 # CryptoPanic news sentiment client
+│   ├── db_pool.py                     # Thread-safe MySQL connection pooling
+│   ├── encryption.py                  # Fernet API key encryption
+│   ├── exchange_manager.py            # Multi-exchange manager (CCXT)
+│   ├── indicator_cache.py             # Technical indicator TTL caching
+│   ├── knowledge.py                   # AI knowledge base + LLM integration
+│   ├── market_data.py                 # FearGreed, dominance, sentiment, on-chain
+│   ├── notifications.py               # Discord & Telegram alerts
+│   ├── performance_attribution.py     # Profit/loss factor analysis [NEW]
+│   ├── risk.py                        # Circuit breaker, VaR, correlation filter
+│   ├── smart_exits.py                 # Volatility-adaptive SL/TP
+│   ├── strategies.py                  # 9 voting trading strategies
+│   ├── trade_dna.py                   # Trade DNA fingerprinting
+│   └── utils.py                       # Shared utilities & constants
 │
-├── Docker
-│   ├── Dockerfile             # Multi-stage Python 3.11 image
-│   ├── docker-compose.yml     # 3 services: trevlix, mysql, nginx
-│   └── docker/
-│       ├── nginx.conf         # Nginx reverse proxy (HTTPS, WebSocket)
-│       ├── mysql-init.sql     # 14-table database schema
-│       └── ssl/               # SSL certificates
+├── templates/                         # Jinja2 HTML templates (11 pages)
+│   ├── index.html                     # Landing page
+│   ├── dashboard.html                 # Real-time trading dashboard
+│   ├── INSTALLATION.html              # Setup guide
+│   ├── strategies.html                # Strategy documentation
+│   ├── api-docs.html                  # REST API reference
+│   ├── faq.html, security.html        # FAQ & security
+│   ├── changelog.html, roadmap.html   # History & roadmap
+│   ├── about.html, 404.html           # About & error page
 │
-├── Routes
-│   └── routes/
-│       ├── auth.py            # Authentication (login, register, admin)
-│       ├── dashboard.py       # Static page routes (about, strategies, faq, ...)
-│       └── websocket.py       # WebSocket event handler registration
+├── static/                            # Frontend assets
+│   ├── css/shared-nav.css             # Shared navigation styles
+│   ├── css/dashboard.css              # Dashboard styles
+│   ├── js/dashboard.js                # Dashboard logic (1823 lines)
+│   ├── js/trevlix_translations.js     # i18n (5 languages)
+│   └── js/page_i18n.js               # Page translator
 │
-├── Services
-│   └── services/
-│       ├── config.py          # Pydantic BaseSettings configuration
-│       ├── db_pool.py         # MySQL connection pooling
-│       ├── encryption.py      # Fernet API key encryption
-│       ├── indicator_cache.py # Technical indicator caching
-│       └── notifications.py   # Discord & Telegram notifications
+├── tests/                             # Pytest test suite (200+ tests)
+│   ├── conftest.py                    # Shared fixtures
+│   ├── test_adaptive_weights.py       # Adaptive weights tests [NEW]
+│   ├── test_performance_attribution.py # Attribution tests [NEW]
+│   ├── test_trade_dna.py              # DNA fingerprinting tests
+│   ├── test_smart_exits.py            # Smart exit tests
+│   └── ... (14 test modules total)
 │
-├── SEO
-│   ├── sitemap.xml            # Sitemap
-│   └── robots.txt             # Crawler directives
+├── docker/                            # Docker infrastructure
+│   ├── Dockerfile                     # Multi-stage Python 3.11 image
+│   ├── docker-compose.yml             # 3 services: trevlix, mysql, nginx
+│   ├── mysql-init.sql                 # 17-table database schema
+│   └── nginx.conf                     # Reverse proxy (HTTPS, WebSocket)
 │
-├── Tests
-│   └── tests/
-│       ├── conftest.py        # pytest fixtures
-│       ├── test_encryption.py # Encryption tests
-│       ├── test_indicators.py # Indicator tests
-│       └── test_risk.py       # Risk management tests
+├── docs/                              # Extended documentation
+│   ├── API.md, ARCHITECTURE.md        # API & architecture docs
+│   ├── DATABASE.md, SECURITY.md       # DB schema & security
+│   ├── SERVICES.md, SETUP.md          # Services & setup guide
+│   └── TRADING.md                     # Trading strategies & config
 │
-├── CHANGELOG.md               # Detailed version history
-├── README.md                  # This file
-└── LICENSE                    # MIT License
+├── CHANGELOG.md                       # Detailed version history
+├── CLAUDE.md                          # Claude Code workflow guidelines
+├── README.md                          # This file
+└── LICENSE                            # MIT License
 ```
 
 ---
 
-## WebSocket / Dashboard API
+## REST API (45+ Endpoints)
 
-The dashboard communicates with the server exclusively via Socket.io. All commands are sent as events:
+| Category | Endpoints | Description |
+|----------|-----------|-------------|
+| **Auth** | `/login`, `/register`, `/logout` | Username/password + 2FA |
+| **Trading** | `/api/v1/positions`, `/api/v1/trades` | Open/closed positions |
+| **Config** | `/api/v1/config`, `/api/v1/status` | Bot configuration |
+| **Exchange** | `/api/v1/user/exchanges`, `/api/v1/balance/all` | Multi-exchange management |
+| **Knowledge** | `/api/v1/knowledge/*` | AI knowledge base + LLM |
+| **Risk** | `/api/v1/risk/cvar`, `/api/v1/risk/volatility` | Risk metrics |
+| **DNA** | `/api/v1/trade-dna`, `/api/v1/trade-dna/patterns` | Trade fingerprinting |
+| **Smart Exits** | `/api/v1/smart-exits` | Volatility-adaptive exits |
+| **Attribution** | `/api/v1/performance/attribution` | Profit/loss breakdown |
+| **Weights** | `/api/v1/strategies/weights` | Adaptive strategy weights |
+| **Backup** | `/api/v1/backup`, `/api/v1/backup/verify` | Backup & verification |
+| **Update** | `/api/v1/update/check`, `/api/v1/update/apply` | GitHub updater |
+
+Full API documentation: [api-docs.html](templates/api-docs.html)
+
+---
+
+## WebSocket Events
 
 | Event | Direction | Description |
 |-------|-----------|-------------|
@@ -242,18 +261,31 @@ The dashboard communicates with the server exclusively via Socket.io. All comman
 | `close_position` | Client → Server | Manually close a trade |
 | `run_backtest` | Client → Server | Start backtest |
 | `force_train` / `force_optimize` | Client → Server | Trigger AI training |
-| `check_update` / `apply_update` / `rollback_update` | Client → Server | GitHub updater |
+| `check_update` / `apply_update` | Client → Server | GitHub updater |
 | `start_exchange` / `stop_exchange` | Client → Server | Multi-exchange control |
-| `save_exchange_keys` | Client → Server | Save per-exchange API keys |
 | `scan_arbitrage` | Client → Server | Find price spreads |
 | `create_grid` | Client → Server | Create grid strategy |
 | `update` | Server → Client | Full state snapshot |
-| `status` | Server → Client | Toast notification |
 | `trade` | Server → Client | Trade executed |
 | `ai_update` | Server → Client | AI model update |
-| `backtest_result` | Server → Client | Backtest completed |
-| `price_alert` | Server → Client | Price alert triggered |
-| `update_status` | Server → Client | GitHub update info |
+
+---
+
+## The 9 Trading Strategies
+
+| # | Strategy | Signal Logic |
+|---|----------|-------------|
+| 1 | **EMA-Trend** | EMA 8/21/50 alignment + price confirmation |
+| 2 | **RSI-Stochastic** | Oversold (<35) / Overbought (>65) oscillator |
+| 3 | **MACD-Crossover** | Signal line crossover + zero-line filter |
+| 4 | **Bollinger Bands** | Mean reversion near band edges + RSI |
+| 5 | **Volume Breakout** | High-volume candle in trend direction |
+| 6 | **OBV-Trend** | On-Balance-Volume trend confirmation |
+| 7 | **ROC-Momentum** | Rate of Change dual-timeframe threshold |
+| 8 | **Ichimoku** | Tenkan-Kijun crossover, cloud confirmation |
+| 9 | **VWAP** | Volume-Weighted Average Price deviation + RSI |
+
+All strategies vote: **+1** (buy), **-1** (sell), **0** (neutral). Weighted voting determines the final signal.
 
 ---
 
@@ -263,12 +295,18 @@ Each registered user stores their own exchange API keys in the database (Fernet-
 
 ---
 
-## Security Notes
+## Security
 
-- **CORS**: By default `ALLOWED_ORIGINS=*` (all origins allowed) for easy local setup. **Set a specific origin in production** via `.env`.
-- **Session auth**: Dashboard requires login. WebSocket connections are rejected if not authenticated.
-- **Admin-only**: Sensitive actions (apply update, manage users, exchange keys) require `role=admin`.
-- **Encryption**: All API keys are Fernet-encrypted before storage.
+- **Fernet Encryption** — All API keys encrypted before storage
+- **bcrypt Hashing** — Secure password storage
+- **2FA (TOTP)** — Two-factor authentication
+- **JWT Authentication** — Secure API tokens
+- **CSRF Protection** — Token validation on forms
+- **Rate Limiting** — 5 login attempts per IP per 15 min
+- **IP Whitelist** — Access control by IP
+- **Protected Config** — Sensitive keys only via `.env` (not API)
+- **CORS** — Configurable origin restriction
+- **Audit Log** — Full action history
 
 ---
 

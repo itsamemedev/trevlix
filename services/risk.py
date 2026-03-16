@@ -13,8 +13,8 @@ import math
 import threading
 from datetime import datetime, timedelta
 
+import httpx
 import numpy as np
-import requests
 
 log = logging.getLogger("trevlix.risk")
 
@@ -266,7 +266,7 @@ class FundingRateTracker:
             return
         try:
             url = "https://api.bybit.com/v5/market/tickers?category=linear"
-            resp = requests.get(url, timeout=8)
+            resp = httpx.get(url, timeout=8)
             resp.raise_for_status()
             data = resp.json().get("result", {}).get("list", [])
             with self._lock:

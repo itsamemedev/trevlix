@@ -7,6 +7,45 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.2.0] – 2026-03-16
+
+### Added — 2 New Unique Features + Optimizations
+
+#### Feature 1: Performance Attribution Engine (`services/performance_attribution.py`)
+- **Hedge-Fund-Style Attribution** — Analysiert WOHER Gewinne/Verluste kommen
+- **5 Dimensionen** — Aufschlüsselung nach Strategie, Marktregime, Tageszeit, Symbol, Fear & Greed Bucket
+- **Kreuz-Attribution** — Regime × Strategy Matrix zeigt welche Strategie in welchem Regime am besten performt
+- **Globale Metriken** — Profit Factor, Expectancy, Sharpe Ratio, Win-Rate
+- **Top/Worst Contributors** — Identifiziert profitabelste und verlustreichste Faktoren
+- **API-Endpunkt** — `GET /api/v1/performance/attribution` (vollständiger Report)
+- **API-Endpunkt** — `GET /api/v1/performance/contributors` (Top/Worst-Performer)
+
+#### Feature 2: Adaptive Strategy Weighting (`services/adaptive_weights.py`)
+- **Self-Learning Weights** — Strategie-Gewichte passen sich automatisch an Performance an
+- **Exponential Decay** — Neuere Trades zählen exponentiell stärker (configurable decay factor)
+- **Regime-Sensitivity** — Separate Gewichte pro Marktregime (Bull/Bear/Range/Crash)
+- **Gewichts-Clamping** — Begrenzt auf 0.3x–2.5x (verhindert Über-/Untergewichtung)
+- **Normalisierung** — Durchschnittliches Gewicht bleibt bei 1.0
+- **Rolling Window** — Nur die letzten N Trades zählen (Default: 50)
+- **Integration in weighted_vote()** — Adaptive Gewichte ersetzen fixe Gewichte wenn aktiviert
+- **API-Endpunkt** — `GET /api/v1/strategies/weights` (Gewichte + Performance)
+
+#### Optimizations
+- **FundingRateTracker: `requests` → `httpx`** — Konsistente HTTP-Client-Nutzung, besser für Connection-Pooling
+- **Dashboard Snapshot** — Adaptive Weights + Performance Attribution im State-Snapshot integriert
+- **Close-Position Integration** — Beide Features zeichnen automatisch bei Trade-Close auf
+
+### Changed
+- **README.md** — Komplett überarbeitet: korrekte Projektstruktur (15 Service-Module statt 5), alle Features dokumentiert, Python 3.11+ Badge, 200+ Tests Badge, korrekte Zeilenanzahl (7400+)
+- **CHANGELOG.md** — v1.2.0 Release dokumentiert
+- **Version** — 1.1.1 → 1.2.0
+
+### Tests
+- **35+ neue Tests** — `test_performance_attribution.py` (25 Tests) + `test_adaptive_weights.py` (18 Tests)
+- **Alle Tests bestehen** — 200+ Tests ✓ | Lint ✓ | Format ✓
+
+---
+
 ## [1.1.1] – 2026-03-09
 
 ### Fixed — 40+ Bug Fixes

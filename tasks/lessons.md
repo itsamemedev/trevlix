@@ -61,3 +61,14 @@
 ### Lektion 12: Neue Features non-invasiv integrieren
 **Problem:** Trade DNA und Smart Exits mussten in bestehende Trading-Logik integriert werden, ohne Seiteneffekte.
 **Regel:** Neue Features immer hinter Config-Flags schalten (`use_trade_dna`, `use_smart_exits`). Fallback auf bestehendes Verhalten wenn deaktiviert. Integration an klar definierten Punkten: open_position() für Initialisierung, close_position() für Recording, manage_positions() für laufende Anpassung.
+
+## Session: optimize-and-new-features-V3RYE (2026-03-16)
+
+### Lektion 13: Normalisierung beeinflusst Tests mit absoluten Werten
+**Problem:** Test `test_exponential_decay` erwartete `weights["EMA-Trend"] >= 1.0`, aber Normalisierung (9 Strategien bei Default 1.0, nur 1 angepasst) drückte den absoluten Wert unter 1.0.
+**Regel:** Bei normalisierten Gewichten keine absoluten Schwellwerte testen, sondern relative Vergleiche: "Strategie A sollte höher sein als Strategie B". Normalisierung ändert absolute Werte, aber relative Ordnung bleibt erhalten.
+**Code:** `tests/test_adaptive_weights.py:test_exponential_decay`
+
+### Lektion 14: `requests` → `httpx` konsistent halten
+**Problem:** `FundingRateTracker` nutzte noch `requests.get`, während alle anderen Services bereits `httpx` verwendeten. Inkompatible Error-Handling-Muster.
+**Regel:** HTTP-Client einheitlich im Projekt verwenden. Wenn `httpx` der Standard ist, alle Services migrieren. Verhindert Verwirrung bei Exception-Handling (`requests.HTTPError` vs `httpx.HTTPStatusError`).
