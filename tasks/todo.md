@@ -58,45 +58,10 @@
 - [x] Repo aufgeräumt: Lint, Format, Tests
 - [x] 10 neue Tests für KnowledgeBase, alle 141 Tests bestehen
 
-### Neue Dateien
-
-| Datei | Beschreibung |
-|-------|-------------|
-| `services/knowledge.py` | KI-Gemeinschaftswissen Service (Markt-Insights, LLM-Anbindung) |
-| `services/exchange_manager.py` | Multi-Exchange Manager (cached Instanzen, Admin/User) |
-| `tests/test_knowledge.py` | 10 Unit-Tests für KnowledgeBase |
-
-### Geänderte Dateien
-
-| Datei | Änderung |
-|-------|----------|
-| `server.py` | Farbige Logs, Admin-Config-Schutz, User-Settings-API, Exchange-API, Knowledge-API, Auto-Start |
-| `.env.example` | AUTO_START, COLOR_LOGS, LLM_ENDPOINT, LLM_API_KEY |
-| `docker/mysql-init.sql` | user_exchanges + shared_knowledge Tabellen |
-
-### Neue API-Endpunkte
-
-| Route | Methode | Auth | Beschreibung |
-|-------|---------|------|-------------|
-| `/api/v1/user/settings` | GET/POST | User | User-Settings lesen/speichern |
-| `/api/v1/user/exchanges` | GET/POST | User | Exchange-Konfigurationen |
-| `/api/v1/user/exchanges/<id>/toggle` | POST | User | Exchange an/aus |
-| `/api/v1/user/exchanges/<id>` | DELETE | User | Exchange löschen |
-| `/api/v1/user/api-keys` | POST | User | API-Keys aktualisieren |
-| `/api/v1/admin/exchanges` | GET | Admin | Alle User-Exchanges |
-| `/api/v1/admin/exchanges/<id>/toggle` | POST | Admin | Admin Exchange-Toggle |
-| `/api/v1/knowledge/summary` | GET | User | Markt-Zusammenfassung |
-| `/api/v1/knowledge/<category>` | GET | User | Wissens-Kategorie |
-| `/api/v1/knowledge/query` | POST | User | LLM-Anfrage |
-
 ### Ergebnis
 
 - **Vorher:** 131 Tests, Admin-Config unsicher, kein Auto-Start, keine User-Settings
 - **Nachher:** 141/141 Tests ✓ | Lint ✓ | Format ✓ | 10 neue API-Endpunkte
-
-## Review
-
-CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Docker Build.
 
 ## Session: improve-and-optimize-MPdc7 (2026-03-16)
 
@@ -108,124 +73,66 @@ CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Do
 - [x] Type Hints auf MySQLManager DB-Methoden und RiskManager
 - [x] Connection Pool Health Monitoring (pool_stats(), Erschöpfungs-Warnung)
 - [x] 21 neue Tests für alle Verbesserungen
-- [x] Lint ✓ | Format ✓ | Tests ✓
 
-### Geänderte Dateien
-
-| Datei | Änderung |
-|-------|----------|
-| `services/market_data.py` | `_TTLCache` Klasse + 5-Min-Cache für FearGreed & Dominance |
-| `routes/auth.py` | Sonderzeichen-Pflicht + 15 Weak-Pattern-Checks bei Registrierung |
-| `routes/websocket.py` | Zeitbasierte Rate-Limit-Eviction (60s Intervall statt >1000) |
-| `server.py` | WS-Rate-Limit Fix + Type Hints auf DB-Methoden |
-| `services/risk.py` | Type Hints auf `reset_daily`, `update_peak`, `update_prices` |
-| `services/db_pool.py` | `pool_stats()` Monitoring + Pool-Erschöpfungs-Warnung |
-| `tests/test_improvements.py` | 21 neue Tests (TTL-Cache, Password, Pool-Stats) |
-
-### Ergebnis
-
-- **Vorher:** 122 Tests, kein API-Caching, Memory-Leak-Risiko, schwache Passwort-Policy
-- **Nachher:** 143/143 Tests ✓ | Lint ✓ | Format ✓ | 6 Verbesserungen
-
-### Phase 2: Unique Features (2026-03-16)
+### Phase 2: Unique Features
 
 - [x] Trade DNA Fingerprinting & Pattern Mining (services/trade_dna.py)
 - [x] Smart Exit Engine – Volatility-Adaptive SL/TP (services/smart_exits.py)
 - [x] Discord-Notifications für DNA-Boost und Smart Exit
-- [x] Integration in server.py (open_position, close_position, manage_positions, snapshot)
-- [x] 3 neue API-Endpunkte (/api/v1/trade-dna, /api/v1/trade-dna/patterns, /api/v1/smart-exits)
-- [x] trade_dna DB-Tabelle (server.py + docker/mysql-init.sql)
-- [x] 39 neue Tests (test_trade_dna.py + test_smart_exits.py)
-- [x] Lint ✓ | Format ✓ | 182/182 Tests ✓
+- [x] Integration in server.py
+- [x] 39 neue Tests
 
-### Neue Dateien (Phase 2)
+### Ergebnis
 
-| Datei | Beschreibung |
-|-------|-------------|
-| `services/trade_dna.py` | Trade DNA Fingerprinting – 7-dimensionaler Fingerprint + Pattern Mining |
-| `services/smart_exits.py` | Volatility-Adaptive SL/TP – ATR-basierte dynamische Exit-Level |
-| `tests/test_trade_dna.py` | 19 Tests für DNA-Engine |
-| `tests/test_smart_exits.py` | 20 Tests für Smart Exit Engine |
-
-### Geänderte Dateien (Phase 2)
-
-| Datei | Änderung |
-|-------|----------|
-| `server.py` | DNA + Smart Exits Integration (open/close/manage/snapshot + 3 API-Endpunkte) |
-| `docker/mysql-init.sql` | `trade_dna` Tabelle mit Indizes |
-| `services/notifications.py` | `dna_boost()` + `smart_exit()` Discord-Methoden |
-
-### Ergebnis (Phase 2)
-
-- **Vorher:** 143 Tests, fixe SL/TP, kein Trade-Pattern-Learning
-- **Nachher:** 182/182 Tests ✓ | Lint ✓ | Format ✓ | 2 einzigartige Features
+- **Vorher:** 122 Tests
+- **Nachher:** 182/182 Tests ✓ | Lint ✓ | Format ✓
 
 ## Session: fix-bugs-create-docs-gC9Lq (2026-03-15)
 
+- [x] CLAUDE.md erstellt
+- [x] Bug #1: Thread-Safety in `services/encryption.py` behoben
+- [x] Bug #2: Schwache Passwort-Erkennung in `validate_env.py` behoben
+
+## Session: improve-install-script-NpvV7 (2026-03-15)
+
+- [x] install.sh v2.0.0 – MariaDB, Domain+SSL, Fail2ban, UFW, Bugfixes
+
+---
+
+## Session: optimize-and-new-features-V3RYE (2026-03-16)
+
 ### Aufgaben
 
-- [x] Vollständiges Codebase-Audit durchgeführt
-- [x] CLAUDE.md erstellt (Workflow Orchestration, Task Management, Core Principles, Architecture)
-- [x] Bug #1: Thread-Safety in `services/encryption.py` behoben – `Fernet()` Instanziierung nun innerhalb des Locks
-- [x] Bug #2: Schwache Passwort-Erkennung in `validate_env.py` – jetzt auch Substring-Matches gefunden (z.B. "password123")
-- [x] `tasks/lessons.md` aktualisiert
-- [x] Lint ✓ | Format ✓ | Tests ✓
-
-### Behobene Bugs
-
-| # | Datei | Problem | Fix |
-|---|-------|---------|-----|
-| 1 | `services/encryption.py:57` | Thread-Safety: `Fernet(_get_fernet._temp_key)` außerhalb des Locks – Race Condition möglich | `return Fernet(...)` in den `with _fernet_lock:` Block verschoben |
-| 2 | `validate_env.py:177` | Schwache Werte nur per Exact-Match erkannt – "password123" wurde nicht erkannt | `any(w in val for w in weak_values)` – auch Substring-Matches werden jetzt erkannt |
+- [x] **Performance Attribution Engine** – Hedge-Fund-Style Profit/Loss-Analyse (5 Dimensionen + Kreuz-Attribution)
+- [x] **Adaptive Strategy Weighting** – Self-Learning Weights mit Exponential Decay + Regime-Sensitivity
+- [x] **FundingRateTracker Optimierung** – `requests.get` → `httpx.get` für konsistentes Connection-Pooling
+- [x] **server.py Integration** – Beide Features in weighted_vote(), close_position(), Snapshot
+- [x] **4 neue API-Endpunkte** – `/api/v1/performance/attribution`, `/contributors`, `/strategies/weights`
+- [x] **49 neue Tests** – test_performance_attribution.py (25) + test_adaptive_weights.py (17) + 1 skipped
+- [x] **README.md** – Komplett überarbeitet (korrekte Projektstruktur, alle Services, Python 3.11+)
+- [x] **CHANGELOG.md** – v1.2.0 Release dokumentiert
+- [x] Lint ✓ | Format ✓ | 249/249 Tests ✓
 
 ### Neue Dateien
 
 | Datei | Beschreibung |
 |-------|-------------|
-| `CLAUDE.md` | Workflow-Richtlinien für Claude Code (aus Bild-Vorgabe) – Orchestration, Task Management, Core Principles, Projekt-Regeln |
+| `services/performance_attribution.py` | Performance Attribution Engine – 5-dimensionale Profit/Loss-Analyse |
+| `services/adaptive_weights.py` | Adaptive Strategy Weighting – Self-Learning Strategie-Gewichte |
+| `tests/test_performance_attribution.py` | 25 Tests für Performance Attribution |
+| `tests/test_adaptive_weights.py` | 17 Tests für Adaptive Weights |
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `server.py` | Imports, Initialisierung, weighted_vote() Integration, close_position(), Snapshot, 4 API-Endpunkte |
+| `services/risk.py` | `requests` → `httpx` in FundingRateTracker |
+| `README.md` | Komplett überarbeitet |
+| `CHANGELOG.md` | v1.2.0 Entry |
+| `tasks/todo.md` | Session-Dokumentation |
 
 ### Ergebnis
 
-- **Vorher:** 2 Bugs offen, kein CLAUDE.md
-- **Nachher:** 141/141 Tests ✓ | Lint ✓ | Format ✓ | CLAUDE.md ✓ | Bugs behoben ✓
-
-## Session: improve-install-script-NpvV7 (2026-03-15)
-
-### Aufgaben
-
-- [x] Bugs im install.sh behoben (--dir Flag, VENV_DIR vor Definition verwendet)
-- [x] MySQL durch MariaDB ersetzt (direkte Installation)
-- [x] Domain-Abfrage hinzugefügt (z.B. example.com, app.example.com)
-- [x] Certbot SSL-Zertifikat Integration (Let's Encrypt)
-- [x] Nginx Reverse Proxy Konfiguration (bei Domain-Setup)
-- [x] Fail2ban Installation & Konfiguration (SSH, Nginx, Trevlix Login)
-- [x] UFW Firewall Regeln verbessert (SSH, HTTP/HTTPS oder Port 5000)
-- [x] Zusammenfassung mit allen Zugangsdaten (Admin, MariaDB, Domain)
-- [x] .env vollständiger mit allen Variablen aus .env.example
-- [x] Passwort-Generierung nach venv (Fernet-Key korrekt)
-
-### Behobene Bugs
-
-| # | Zeile | Problem | Fix |
-|---|-------|---------|-----|
-| 1 | Z.37-44 | `--dir` Flag: `shift` in `for`-Loop funktioniert nicht | `while [[ $# -gt 0 ]]` mit korrektem `shift 2` |
-| 2 | Z.52 | `INSTALL_DIR` wird nach Flag-Parsing erneut hart gesetzt | `CUSTOM_INSTALL_DIR` Variable, Default via `${CUSTOM_INSTALL_DIR:-/opt/trevlix}` |
-| 3 | Z.281 | `$VENV_DIR` vor Definition verwendet (Fernet-Key) | Secret-Generierung nach venv-Erstellung verschoben |
-| 4 | Z.202 | `python3.8` in detect_python obwohl min. 3.9 | Entfernt |
-| 5 | Z.135 | UUOC: `cat /etc/debian_version \| cut` | `cut -d. -f1 < /etc/debian_version` |
-
-### Neue Features
-
-| Feature | Beschreibung |
-|---------|-------------|
-| Domain-Setup | Interaktive Domain-Abfrage mit Validierung |
-| Certbot SSL | Automatisches Let's Encrypt Zertifikat + Auto-Renewal |
-| Nginx Proxy | Vollständiger Reverse Proxy mit Rate-Limiting, WebSocket, Security Headers |
-| Fail2ban | SSH (3 Versuche/2h Ban), Nginx, Trevlix-Login (5 Versuche/1h Ban) |
-| UFW Hardening | Default deny incoming, SSH immer erlaubt, Domain: 80/443, sonst: 5000 |
-| Credential-Anzeige | Admin-PW, DB-User/PW, Root-PW am Ende sichtbar |
-
-### Ergebnis
-
-- **Vorher:** install.sh v1.0.4 mit Bugs, MySQL, keine Domain/SSL/Fail2ban
-- **Nachher:** install.sh v2.0.0 – MariaDB, Domain+SSL, Fail2ban, UFW, Bugfixes
+- **Vorher:** 182 Tests, fixe Strategie-Gewichte, keine Performance-Analyse
+- **Nachher:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | 2 einzigartige Features | README aktuell

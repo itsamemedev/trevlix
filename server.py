@@ -81,6 +81,7 @@ from flask import Flask, Response, g, jsonify, redirect, request, send_file, ses
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
+from services.adaptive_weights import AdaptiveWeights
 from services.cryptopanic import CryptoPanicClient
 from services.db_pool import ConnectionPool
 
@@ -96,6 +97,7 @@ from services.market_data import (
     OnChainFetcher,
     SentimentFetcher,
 )
+from services.performance_attribution import PerformanceAttribution
 from services.risk import (
     AdvancedRiskMetrics,
     FundingRateTracker,
@@ -4184,6 +4186,8 @@ class BotState:
             "use_arbitrage": CONFIG.get("use_arbitrage", True),
             "trade_dna": trade_dna.to_dict(),
             "smart_exits": smart_exits.to_dict(),
+            "adaptive_weights": adaptive_weights.to_dict(),
+            "performance_attribution": perf_attribution.to_dict(),
         }
 
 
@@ -4581,6 +4585,14 @@ def scan_symbol(ex, symbol) -> dict | None:
             except Exception:
                 votes[nm] = 0
 
+        # Adaptive Weights: dynamische Strategie-Gewichte anwenden
+        if CONFIG.get("use_adaptive_weights"):
+            regime_str = "bull" if regime and regime.is_bull else "bear"
+            aw = adaptive_weights.get_weights(regime=regime_str)
+            for nm in aw:
+                if nm in ai_engine.weights:
+                    ai_engine.weights[nm] = aw[nm]
+
         signal, conf = ai_engine.weighted_vote(votes, CONFIG["min_vote_score"])
         ob_ratio, ob_desc = ob.get(ex, symbol)
         mtf_ok, mtf_desc = mtf.is_confirmed(ex, symbol, signal)
@@ -4930,6 +4942,27 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
 
     db.save_trade(trade)
+    # Performance Attribution: Trade aufzeichnen
+    try:
+        perf_attribution.record_trade(
+            symbol=symbol,
+            pnl=pnl,
+            strategy=reason,
+            regime=pos.get("regime", "unknown"),
+            fg_value=pos.get("fg_value", 50),
+            hour=pos.get("entry_hour"),
+        )
+    except Exception:
+        pass
+    # Adaptive Weights: Strategie-Ergebnis aufzeichnen
+    try:
+        adaptive_weights.record_vote(
+            strategy=reason,
+            won=pnl > 0,
+            regime=pos.get("regime", "unknown"),
+        )
+    except Exception:
+        pass
     # KI-Gemeinschaftswissen: Erkenntnisse aus Trade speichern
     try:
         knowledge_base.learn_from_trade(trade)
@@ -7162,6 +7195,20 @@ trade_dna = TradeDNA(
 # ── Smart Exit Engine ─────────────────────────────────────────────────────
 smart_exits = SmartExitEngine(CONFIG)
 
+# ── Adaptive Strategy Weighting ──────────────────────────────────────────
+adaptive_weights = AdaptiveWeights(
+    window_size=CONFIG.get("aw_window_size", 50),
+    decay_factor=CONFIG.get("aw_decay_factor", 0.92),
+    min_weight=CONFIG.get("aw_min_weight", 0.3),
+    max_weight=CONFIG.get("aw_max_weight", 2.5),
+    min_samples=CONFIG.get("aw_min_samples", 10),
+)
+
+# ── Performance Attribution Engine ───────────────────────────────────────
+perf_attribution = PerformanceAttribution(
+    max_trades=CONFIG.get("pa_max_trades", 5000),
+)
+
 
 @app.route("/api/v1/trade-dna")
 @api_auth_required
@@ -7188,6 +7235,36 @@ def api_trade_dna_patterns():
 def api_smart_exits():
     """Smart Exit Engine Status."""
     return jsonify(smart_exits.to_dict())
+
+
+@app.route("/api/v1/performance/attribution")
+@api_auth_required
+def api_performance_attribution():
+    """Vollständiger Performance Attribution Report."""
+    return jsonify(perf_attribution.full_report())
+
+
+@app.route("/api/v1/performance/contributors")
+@api_auth_required
+def api_performance_contributors():
+    """Top-Contributors und Worst-Performers."""
+    n = int(request.args.get("n", 5))
+    return jsonify(perf_attribution.top_contributors(n))
+
+
+@app.route("/api/v1/strategies/weights")
+@api_auth_required
+def api_strategy_weights():
+    """Adaptive Strategy Weights und Performance."""
+    regime = request.args.get("regime")
+    return jsonify(
+        {
+            "weights": adaptive_weights.get_weights(regime),
+            "performance": adaptive_weights.strategy_performance(),
+            "regime_performance": adaptive_weights.regime_performance(),
+            **adaptive_weights.stats(),
+        }
+    )
 
 
 @app.route("/api/v1/risk/cvar")
