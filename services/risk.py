@@ -35,7 +35,12 @@ class RiskManager:
         self._price_history: dict[str, list[float]] = {}
         self._day = datetime.now().date()
 
-    def reset_daily(self, balance):
+    def reset_daily(self, balance: float) -> None:
+        """Setzt die täglichen PnL-Werte zurück bei Tageswechsel.
+
+        Args:
+            balance: Aktueller Kontostand.
+        """
         with self._lock:
             today = datetime.now().date()
             if today != self._day:
@@ -43,7 +48,12 @@ class RiskManager:
                 self.daily_pnl = 0.0
                 self._day = today
 
-    def update_peak(self, pv):
+    def update_peak(self, pv: float) -> None:
+        """Aktualisiert den Portfolio-Höchststand und Drawdown.
+
+        Args:
+            pv: Aktueller Portfolio-Wert.
+        """
         with self._lock:
             if pv > self.peak:
                 self.peak = pv
@@ -129,7 +139,13 @@ class RiskManager:
                     pass
         return False
 
-    def update_prices(self, symbol, price):
+    def update_prices(self, symbol: str, price: float) -> None:
+        """Speichert den aktuellen Preis für Korrelationsberechnung.
+
+        Args:
+            symbol: Trading-Pair (z.B. 'BTC/USDT').
+            price: Aktueller Preis.
+        """
         with self._lock:
             h = self._price_history.setdefault(symbol, [])
             h.append(price)

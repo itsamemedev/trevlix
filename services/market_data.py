@@ -9,6 +9,7 @@ Verwendung:
 
 import logging
 import threading
+import time
 from datetime import datetime
 
 import numpy as np
@@ -18,6 +19,38 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 log = logging.getLogger("trevlix.market_data")
+
+
+class _TTLCache:
+    """Einfacher Thread-sicherer TTL-Cache für API-Responses.
+
+    Args:
+        ttl: Time-to-live in Sekunden.
+    """
+
+    def __init__(self, ttl: int = 300) -> None:
+        self._ttl = ttl
+        self._data: dict[str, tuple[float, object]] = {}
+        self._lock = threading.Lock()
+
+    def get(self, key: str) -> object | None:
+        """Gibt den gecachten Wert zurück oder None bei Ablauf/Miss."""
+        with self._lock:
+            entry = self._data.get(key)
+            if entry and time.monotonic() - entry[0] < self._ttl:
+                return entry[1]
+            return None
+
+    def set(self, key: str, value: object) -> None:
+        """Speichert einen Wert mit aktuellem Timestamp."""
+        with self._lock:
+            self._data[key] = (time.monotonic(), value)
+
+    def clear(self) -> None:
+        """Leert den gesamten Cache."""
+        with self._lock:
+            self._data.clear()
+
 
 # ── Shared CoinGecko ID map (previously duplicated in two classes) ────────────
 COINGECKO_ID_MAP: dict[str, str] = {
@@ -65,9 +98,10 @@ _session = _make_session()
 
 
 class FearGreedIndex:
-    """Fear & Greed Index von alternative.me."""
+    """Fear & Greed Index von alternative.me mit TTL-Cache."""
 
     _URL = "https://api.alternative.me/fng/?limit=1"
+    _cache = _TTLCache(ttl=300)  # 5 Minuten Cache
 
     def __init__(self, config: dict):
         self.config = config
@@ -76,7 +110,13 @@ class FearGreedIndex:
         self.last_update: str | None = None
 
     def update(self) -> None:
+        """Aktualisiert den Fear & Greed Index (mit 5-Min-Cache)."""
         if not self.config.get("use_fear_greed"):
+            return
+        cached = self._cache.get("fng")
+        if cached is not None:
+            self.value, self.label = cached
+            log.debug("FearGreed: Cache-Hit")
             return
         try:
             r = _session.get(self._URL, timeout=8)
@@ -85,6 +125,7 @@ class FearGreedIndex:
             self.value = int(d["value"])
             self.label = d["value_classification"]
             self.last_update = datetime.now().strftime("%H:%M")
+            self._cache.set("fng", (self.value, self.label))
         except requests.HTTPError as e:
             log.debug(f"FearGreed HTTP error: {e}")
         except Exception as e:
@@ -134,9 +175,10 @@ class MarketRegime:
 
 
 class DominanceFilter:
-    """BTC/USDT-Dominanz-Filter für Altcoin-Käufe."""
+    """BTC/USDT-Dominanz-Filter für Altcoin-Käufe mit TTL-Cache."""
 
     _URL = "https://api.coingecko.com/api/v3/global"
+    _cache = _TTLCache(ttl=300)  # 5 Minuten Cache
 
     def __init__(self, config: dict):
         self.config = config
@@ -146,7 +188,14 @@ class DominanceFilter:
         self._lock = threading.Lock()
 
     def update(self) -> None:
+        """Aktualisiert BTC/USDT-Dominanz (mit 5-Min-Cache)."""
         if not self.config.get("use_dominance"):
+            return
+        cached = self._cache.get("dominance")
+        if cached is not None:
+            with self._lock:
+                self.btc_dom, self.usdt_dom = cached
+            log.debug("Dominanz: Cache-Hit")
             return
         try:
             r = _session.get(self._URL, timeout=8)
@@ -157,6 +206,7 @@ class DominanceFilter:
                 self.btc_dom = float(mcp.get("btc", 50))
                 self.usdt_dom = float(mcp.get("usdt", 6))
                 self.last_update = datetime.now().strftime("%H:%M")
+            self._cache.set("dominance", (self.btc_dom, self.usdt_dom))
             log.info(f"Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
         except requests.HTTPError as e:
             log.debug(f"Dominanz HTTP error: {e}")

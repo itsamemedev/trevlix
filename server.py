@@ -994,7 +994,15 @@ class MySQLManager:
             user["api_secret"] = self._dec(user["api_secret"])
         return user
 
-    def get_user(self, username: str) -> dict | None:
+    def get_user(self, username: str) -> dict[str, Any] | None:
+        """Lädt einen Benutzer anhand des Benutzernamens.
+
+        Args:
+            username: Der gesuchte Benutzername.
+
+        Returns:
+            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1005,7 +1013,15 @@ class MySQLManager:
             log.error(f"get_user({username!r}): {e}")
             return None
 
-    def get_user_by_id(self, uid: int) -> dict | None:
+    def get_user_by_id(self, uid: int) -> dict[str, Any] | None:
+        """Lädt einen Benutzer anhand der ID.
+
+        Args:
+            uid: Die gesuchte User-ID.
+
+        Returns:
+            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1016,7 +1032,12 @@ class MySQLManager:
             log.error(f"get_user_by_id({uid}): {e}")
             return None
 
-    def get_all_users(self) -> list[dict]:
+    def get_all_users(self) -> list[dict[str, Any]]:
+        """Lädt alle Benutzer (ohne sensible Keys).
+
+        Returns:
+            Liste von User-Dicts mit serialisierten Datumsfeldern.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1024,7 +1045,7 @@ class MySQLManager:
                         "SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users"
                     )
                     rows = c.fetchall()
-            result = []
+            result: list[dict[str, Any]] = []
             for r in rows:
                 d = dict(r)
                 for k in ("created_at", "last_login"):
@@ -1057,6 +1078,15 @@ class MySQLManager:
             return False
 
     def verify_password(self, stored_hash: str, password: str) -> bool:
+        """Verifiziert ein Passwort gegen den gespeicherten Hash.
+
+        Args:
+            stored_hash: Gespeicherter bcrypt- oder SHA-256-Hash.
+            password: Eingegebenes Klartext-Passwort.
+
+        Returns:
+            True wenn das Passwort korrekt ist.
+        """
         try:
             pw = password.encode()
             if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
@@ -1067,7 +1097,12 @@ class MySQLManager:
         except Exception:
             return False
 
-    def update_user_login(self, user_id: int):
+    def update_user_login(self, user_id: int) -> None:
+        """Aktualisiert den last_login Timestamp eines Users.
+
+        Args:
+            user_id: Die User-ID.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1075,7 +1110,13 @@ class MySQLManager:
         except Exception as e:
             log.warning(f"update_user_login({user_id}): {e}")
 
-    def update_user_balance(self, user_id: int, balance: float):
+    def update_user_balance(self, user_id: int, balance: float) -> None:
+        """Aktualisiert den Kontostand eines Users.
+
+        Args:
+            user_id: Die User-ID.
+            balance: Neuer Kontostand.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -5857,13 +5898,23 @@ def prometheus_metrics():
 # [Verbesserung #8] In-Memory Rate-Limiting für kritische Socket-Events
 # ═══════════════════════════════════════════════════════════════════════════════
 _ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
+_ws_limits_last_cleanup: float = 0.0
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
-    """
-    Prüft ob ein Socket-Event zu schnell wiederholt wird.
+    """Prüft ob ein Socket-Event zu schnell wiederholt wird.
+
     Gibt False zurück wenn der Client warten muss.
+    Bereinigt stale Einträge alle 60s statt nur bei >1000 Einträgen.
+
+    Args:
+        action: Name des Socket-Events.
+        min_interval: Minimale Sekunden zwischen gleichen Events.
+
+    Returns:
+        True wenn erlaubt, False wenn Rate-Limited.
     """
+    global _ws_limits_last_cleanup
     sid = request.sid if hasattr(request, "sid") else "global"
     key = f"{sid}:{action}"
     now = time.time()
@@ -5871,12 +5922,13 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     if now - last < min_interval:
         return False
     _ws_limits[key] = now
-    # Cleanup alter Einträge (alle 5 Minuten)
-    if len(_ws_limits) > 1000:
+    # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
+    if now - _ws_limits_last_cleanup > 60:
+        _ws_limits_last_cleanup = now
         cutoff = now - 300
-        for k in list(_ws_limits):
-            if _ws_limits[k] < cutoff:
-                del _ws_limits[k]
+        stale = [k for k, v in _ws_limits.items() if v < cutoff]
+        for k in stale:
+            del _ws_limits[k]
     return True
 
 

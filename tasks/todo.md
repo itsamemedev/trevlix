@@ -98,6 +98,35 @@
 
 CI-Pipeline würde jetzt alle Stufen bestehen: Lint → Test → Coverage → Docker Build.
 
+## Session: improve-and-optimize-MPdc7 (2026-03-16)
+
+### Aufgaben
+
+- [x] Market Data Caching: TTL-Cache für FearGreed + Dominance API-Aufrufe
+- [x] WebSocket Rate-Limit Memory Leak Fix (zeitbasierte Eviction alle 60s)
+- [x] Password Strength: Weak-Pattern + Sonderzeichen-Pflicht bei Registrierung
+- [x] Type Hints auf MySQLManager DB-Methoden und RiskManager
+- [x] Connection Pool Health Monitoring (pool_stats(), Erschöpfungs-Warnung)
+- [x] 21 neue Tests für alle Verbesserungen
+- [x] Lint ✓ | Format ✓ | Tests ✓
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `services/market_data.py` | `_TTLCache` Klasse + 5-Min-Cache für FearGreed & Dominance |
+| `routes/auth.py` | Sonderzeichen-Pflicht + 15 Weak-Pattern-Checks bei Registrierung |
+| `routes/websocket.py` | Zeitbasierte Rate-Limit-Eviction (60s Intervall statt >1000) |
+| `server.py` | WS-Rate-Limit Fix + Type Hints auf DB-Methoden |
+| `services/risk.py` | Type Hints auf `reset_daily`, `update_peak`, `update_prices` |
+| `services/db_pool.py` | `pool_stats()` Monitoring + Pool-Erschöpfungs-Warnung |
+| `tests/test_improvements.py` | 21 neue Tests (TTL-Cache, Password, Pool-Stats) |
+
+### Ergebnis
+
+- **Vorher:** 122 Tests, kein API-Caching, Memory-Leak-Risiko, schwache Passwort-Policy
+- **Nachher:** 143/143 Tests ✓ | Lint ✓ | Format ✓ | 6 Verbesserungen
+
 ## Session: fix-bugs-create-docs-gC9Lq (2026-03-15)
 
 ### Aufgaben
