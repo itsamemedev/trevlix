@@ -202,6 +202,23 @@ CREATE TABLE IF NOT EXISTS user_exchanges (
     INDEX idx_enabled(user_id, enabled)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ── Trade DNA Fingerprints ──────────────────────────────────────
+CREATE TABLE IF NOT EXISTS trade_dna (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    symbol          VARCHAR(20),
+    dna_hash        VARCHAR(16),
+    fingerprint     VARCHAR(500),
+    dimensions_json TEXT,
+    raw_values_json TEXT,
+    won             TINYINT,
+    pnl             DOUBLE DEFAULT 0,
+    dna_boost       DOUBLE DEFAULT 1.0,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_hash   (dna_hash),
+    INDEX idx_symbol (symbol),
+    INDEX idx_time   (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ── Shared Knowledge (KI-Gemeinschaftswissen) ───────────────────
 CREATE TABLE IF NOT EXISTS shared_knowledge (
     id          INT AUTO_INCREMENT PRIMARY KEY,

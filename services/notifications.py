@@ -207,6 +207,45 @@ class DiscordNotifier:
             "info",
         )
 
+    def dna_boost(
+        self, symbol: str, action: str, win_rate: float, matches: int, multiplier: float
+    ) -> None:
+        """Benachrichtigung bei DNA-Pattern-Match (Boost oder Block).
+
+        Args:
+            symbol: Trading-Pair.
+            action: 'boost' oder 'block'.
+            win_rate: Historische Win-Rate des Musters.
+            matches: Anzahl historischer Matches.
+            multiplier: Konfidenz-Multiplikator.
+        """
+        emoji = "🧬✅" if action == "boost" else "🧬⛔"
+        color = "buy" if action == "boost" else "sell_loss"
+        self.send(
+            f"{emoji} DNA-{action.upper()}: {symbol}",
+            f"```\nWin-Rate:    {win_rate:.0f}%\n"
+            f"Matches:     {matches}\n"
+            f"Multiplikator: {multiplier:.2f}x\n```",
+            color,
+        )
+
+    def smart_exit(self, symbol: str, sl: float, tp: float, regime: str, atr_pct: float) -> None:
+        """Benachrichtigung über Smart Exit Level.
+
+        Args:
+            symbol: Trading-Pair.
+            sl: Berechneter Stop-Loss.
+            tp: Berechnetes Take-Profit.
+            regime: Aktuelles Marktregime.
+            atr_pct: ATR in Prozent.
+        """
+        self.send(
+            f"📐 Smart Exit: {symbol}",
+            f"```\nRegime:  {regime}\nATR:     {atr_pct:.2f}%\n"
+            f"SL:      {sl:.4f}\nTP:      {tp:.4f}\n```",
+            "info",
+        )
+
 
 class TelegramNotifier:
     """Sendet Benachrichtigungen über Telegram Bot API.
