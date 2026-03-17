@@ -103,3 +103,22 @@
 ### Lektion 20: Versionsnummern zentral verwalten
 **Problem:** `routes/auth.py` Templates enthielten hardcoded `v1.3.0`, während `services/utils.py:BOT_VERSION` und README `v1.2.0` zeigten.
 **Regel:** Versionsnummern NIE in Templates/HTML hardcoden. Immer aus einer zentralen Quelle (`BOT_VERSION`) referenzieren. Bei jeder Version-Bump alle Stellen prüfen: `grep -r "v1\." --include="*.py" --include="*.html"`.
+
+### Lektion 21: Klassen in server.py vs. services/ synchron halten
+**Problem:** `DiscordNotifier` in `server.py` fehlten `dna_boost()` und `smart_exit()` Methoden, die in `services/notifications.py` existierten. Aufruf verursachte `AttributeError` bei jedem Trade mit DNA/Smart Exits.
+**Regel:** Bei duplizierten Klassen (server.py vs. services/) IMMER prüfen ob alle aufgerufenen Methoden in BEIDEN Versionen existieren. Langfristig: Duplikate eliminieren.
+**Code:** `server.py:DiscordNotifier`, `services/notifications.py:DiscordNotifier`
+
+### Lektion 22: WebSocket-Handler dürfen nicht blockieren
+**Problem:** `on_force_genetic()` rief `genetic.evolve()` synchron auf, was den WebSocket-Thread blockierte und die UI einfroren lies.
+**Regel:** Heavy Operations in WebSocket-Handlern IMMER in `threading.Thread(target=..., daemon=True).start()` wrappen. Alle anderen Handler (`force_train`, `manual_backup`) machen das bereits korrekt.
+**Code:** `server.py:on_force_genetic`
+
+### Lektion 23: Request-Parameter IMMER validieren
+**Problem:** 11 API-Routes verwendeten `int(request.args.get(...))` ohne Fehlerbehandlung. Ungültige Eingaben (z.B. `?limit=abc`) verursachten unbehandelte `ValueError`.
+**Regel:** Request-Parameter nie direkt mit `int()` konvertieren. Immer `_safe_int(val, default)` oder try/except verwenden. Gilt für alle Typen: int, float, etc.
+**Code:** `server.py:_safe_int`
+
+### Lektion 24: Lock-Symmetrie bei Read/Write
+**Problem:** `is_correlated()` las `_price_history` ohne Lock, während `update_prices()` unter Lock schrieb. Race Condition bei gleichzeitigem Scan und Update.
+**Regel:** Wenn eine Methode unter Lock SCHREIBT, müssen alle Methoden die denselben State LESEN ebenfalls den Lock halten. Snapshot-Pattern: unter Lock kopieren, außerhalb berechnen.
