@@ -89,3 +89,17 @@
 **Problem:** 85+ `data-i18n` Keys in HTML-Templates hatten keine Entsprechung in `trevlix_translations.js`. Betroffene UI-Elemente zeigten den Key-Name statt übersetztem Text.
 **Regel:** Bei Hinzufügen neuer `data-i18n` Attribute in Templates IMMER gleichzeitig die Keys in `trevlix_translations.js` für alle 5 Sprachen (de, en, es, ru, pt) ergänzen.
 **Code:** `static/js/trevlix_translations.js`
+
+### Lektion 18: Lambda-Captures in Threads innerhalb von Loops
+**Problem:** `lambda: self.db.save_ai_sample(p["features"], won, regime_str)` in einem Thread innerhalb einer Loop bindet `p` per Referenz. Wenn der Thread startet, hat die Loop `p` möglicherweise schon überschrieben.
+**Regel:** Bei `threading.Thread(target=lambda: ...)` innerhalb von Loops IMMER Default-Parameter verwenden: `lambda f=p["features"], w=won: self.db.save_ai_sample(f, w)`.
+**Code:** `server.py:3580`
+
+### Lektion 19: Globale Caches brauchen Locks, nicht nur globale Dicts
+**Problem:** `_fee_cache` und `_heatmap_cache` hatten check-then-act Patterns ohne Lock (if cached → return cached, else compute → set cache). Concurrent requests konnten veraltete oder inkonsistente Werte lesen.
+**Regel:** Jeder globale Cache mit zeitbasierter Invalidierung braucht einen Lock um das Read-Check-Write-Pattern atomar zu machen.
+**Code:** `server.py:_fee_cache_lock`, `server.py:_heatmap_lock`
+
+### Lektion 20: Versionsnummern zentral verwalten
+**Problem:** `routes/auth.py` Templates enthielten hardcoded `v1.3.0`, während `services/utils.py:BOT_VERSION` und README `v1.2.0` zeigten.
+**Regel:** Versionsnummern NIE in Templates/HTML hardcoden. Immer aus einer zentralen Quelle (`BOT_VERSION`) referenzieren. Bei jeder Version-Bump alle Stellen prüfen: `grep -r "v1\." --include="*.py" --include="*.html"`.
