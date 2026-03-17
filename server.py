@@ -3189,6 +3189,18 @@ class AIEngine:
             # Modelle auf Disk persistieren (Neustart = kein Cold-Start)
             self._save_models()
             emit_event("ai_update", self.to_dict())
+            # Autonome LLM-Analyse: Training-Ergebnisse interpretieren
+            try:
+                knowledge_base.analyze_training_async(
+                    training_ver=self.training_ver,
+                    wf_accuracy=wf_acc,
+                    bull_accuracy=bull_acc,
+                    bear_accuracy=bear_acc,
+                    feature_weights=dict(self.weights),
+                    threshold=best_thresh,
+                )
+            except Exception:
+                pass  # LLM-Analyse ist optional
         except Exception as e:
             self.status_msg = f"❌ {e}"
             log.error(f"KI Training: {e}", exc_info=True)
@@ -3262,8 +3274,10 @@ class AIEngine:
             sl_grid = [0.010, 0.015, 0.020, 0.025, 0.030, 0.040, 0.050]
             tp_grid = [0.030, 0.050, 0.060, 0.070, 0.080, 0.100, 0.120, 0.150]
             best_score = -999.0
-            best_sl = CONFIG["stop_loss_pct"]
-            best_tp = CONFIG["take_profit_pct"]
+            prev_sl = CONFIG["stop_loss_pct"]
+            prev_tp = CONFIG["take_profit_pct"]
+            best_sl = prev_sl
+            best_tp = prev_tp
             for sl in sl_grid:
                 for tp in tp_grid:
                     if tp < sl * 1.5:
@@ -3305,6 +3319,17 @@ class AIEngine:
             )
             self.optim_log = self.optim_log[:20]
             log.info(f"🔬 Optimierung: {detail}")
+            # Autonome LLM-Analyse: Optimierungsergebnis bewerten
+            try:
+                knowledge_base.analyze_optimization_async(
+                    best_sl=best_sl,
+                    best_tp=best_tp,
+                    prev_sl=prev_sl,
+                    prev_tp=prev_tp,
+                    trade_count=len(trades[-80:]),
+                )
+            except Exception:
+                pass  # LLM-Analyse ist optional
         except Exception as e:
             log.error(f"Optimierung: {e}")
 
@@ -5036,6 +5061,20 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         knowledge_base.learn_from_trade(trade)
     except Exception:
         pass  # Knowledge-Update ist optional
+    # Autonome LLM-Analyse: Trade per LLM analysieren (async, non-blocking)
+    try:
+        knowledge_base.analyze_trade_async(
+            trade,
+            features={
+                "rsi": pos.get("rsi", "?"),
+                "news_score": pos.get("news_score", 0),
+                "regime": pos.get("regime", "unknown"),
+                "ai_score": pos.get("ai_score", 0),
+                "win_prob": pos.get("win_prob", 0),
+            },
+        )
+    except Exception:
+        pass  # LLM-Analyse ist optional
     emit_event(
         "trade",
         {
@@ -5280,6 +5319,16 @@ def bot_loop():
                 threading.Thread(
                     target=lambda ex=ex: funding_tracker.update(ex), daemon=True
                 ).start()
+                # Autonome LLM-Analyse: Periodische Marktanalyse
+                try:
+                    knowledge_base.generate_market_context_async(
+                        regime_is_bull=regime.is_bull,
+                        fg_value=fg_idx.value,
+                        open_positions=len(state.positions),
+                        iteration=state.iteration,
+                    )
+                except Exception:
+                    pass  # LLM-Analyse ist optional
 
             # Positionen verwalten (Long + Short)
             manage_positions(ex)
@@ -5650,6 +5699,22 @@ def api_knowledge_query():
     if answer is None:
         return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
     return jsonify({"answer": answer})
+
+
+@app.route("/api/v1/knowledge/llm-status")
+@api_auth_required
+def api_knowledge_llm_status():
+    """Status der autonomen LLM-Integration."""
+    return jsonify(
+        {
+            "llm_enabled": knowledge_base.llm_enabled,
+            "llm_endpoint": bool(knowledge_base._llm_endpoint),
+            "cached_market_analysis": knowledge_base.cached_market_analysis or None,
+            "trade_patterns": len(knowledge_base.get_category("trade_pattern", limit=100)),
+            "model_analyses": len(knowledge_base.get_category("model_config", limit=100)),
+            "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
+        }
+    )
 
 
 @app.route("/api/v1/admin/exchanges")

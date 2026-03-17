@@ -7,6 +7,29 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.1] – 2026-03-17
+
+### Added — Autonome LLM-Optimierungsanfragen
+
+#### KI-Engine: Autonome LLM-Integration (`services/knowledge.py`, `server.py`)
+- **Post-Trade LLM-Analyse** — Nach jedem abgeschlossenen Trade wird automatisch eine LLM-Analyse gestartet (async, non-blocking), die Gewinn-/Verlustursachen identifiziert und als `trade_pattern` im Gemeinschaftswissen speichert
+- **Periodische Marktanalyse** — Alle ~60 Iterationen generiert die LLM eine gecachte Marktanalyse mit Regime-Bewertung, Fear&Greed-Einschätzung und Handlungsempfehlung (15-Minuten-Cache)
+- **Training-Ergebnisse Interpretation** — Nach jedem 3. KI-Training analysiert die LLM Feature-Importance, Accuracy-Werte und Schwellwerte auf Overfitting und Optimierungspotenzial
+- **SL/TP-Optimierungs-Bewertung** — Nach jeder Grid-Search-Optimierung bewertet die LLM die Risk/Reward-Änderungen und speichert die Analyse als `risk_pattern`
+- **LLM-Response Cache** — 15-Minuten-Cache für LLM-Antworten verhindert redundante Anfragen
+- **`/api/v1/knowledge/llm-status`** — Neuer API-Endpunkt zeigt LLM-Status, gecachte Analyse und Anzahl gespeicherter Insights
+- **`llm_enabled` Property** — Schnelle Prüfung ob LLM-Endpunkt konfiguriert und verfügbar ist
+- **Alle LLM-Aufrufe sind async** — Threading-basiert, blockieren weder Bot-Loop noch Trading-Entscheidungen
+- **Graceful Degradation** — Funktioniert ohne LLM-Endpunkt, alle Aufrufe sind optional und fehlerresistent
+
+### Fixed — Bugfixes
+
+- **`get_market_summary()` KeyError-Risiko** — Dict-Zugriff in Top-Symbole und Strategie-Ranking verwendet jetzt konsistent `.get()` statt direktem Bracket-Zugriff (`v["total_trades"]` → `v.get("total_trades", 0)`), verhindert `KeyError` bei korrupten/unvollständigen Daten
+- **`get_market_summary()` None-Safety** — `s.get("value")` wird jetzt mit `or {}` abgesichert, da `.get("value", {})` bei explizitem `None`-Wert nicht den Default zurückgibt
+- **`_optimize()` fehlende Vorher/Nachher-Referenz** — SL/TP-Werte vor der Optimierung werden jetzt korrekt in `prev_sl`/`prev_tp` gespeichert, um sinnvolle Delta-Berechnung für die LLM-Analyse zu ermöglichen
+
+---
+
 ## [1.3.0] – 2026-03-17
 
 ### Added — Production-Ready Upgrade
