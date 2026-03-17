@@ -193,7 +193,7 @@ def strat_vol(r: Row, p: Row) -> int:
     Bug fixed: previously used r.get("ema21", r["close"]) which made
     `close > close` (always False) when ema21 was absent. Now uses 0.0
     as fallback so the ema21 condition degrades gracefully to `close > 0`.
-    The prev-row close uses .get() to avoid KeyError.
+    The prev-row close returns 0 if missing (skip signal).
     """
     vol_spike = r.get("vol_ratio", 1.0) > 2.0
     if not vol_spike:
@@ -201,7 +201,9 @@ def strat_vol(r: Row, p: Row) -> int:
 
     close = r.get("close", 0.0)
     ema21 = r.get("ema21", 0.0)
-    prev_close = p.get("close", close)
+    prev_close = p.get("close")
+    if not prev_close or prev_close <= 0:
+        return 0
 
     above_ema = close > ema21
     below_ema = close < ema21

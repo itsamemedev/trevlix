@@ -3543,7 +3543,10 @@ class AIEngine:
     def kelly_size(self, win_prob, balance, atr, fg_boost=1.0) -> float:
         if win_prob <= 0.5:
             return balance * CONFIG["risk_per_trade"] * fg_boost
-        odds = CONFIG["take_profit_pct"] / CONFIG["stop_loss_pct"]
+        sl_pct = CONFIG["stop_loss_pct"]
+        if sl_pct <= 0:
+            return balance * CONFIG["risk_per_trade"] * fg_boost
+        odds = CONFIG["take_profit_pct"] / sl_pct
         kelly = float(np.clip(((win_prob * odds - (1 - win_prob)) / odds) * 0.5, 0.01, 0.25))
         vol_adj = 1.0 / (1 + atr * 10) if atr > 0 else 1.0
         return balance * kelly * vol_adj * fg_boost
@@ -4382,7 +4385,11 @@ class ShortEngine:
             return
         price = state.prices.get(symbol, pos["entry"])
         pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
-        fee = pos["invested"] * get_exchange_fee_rate(CONFIG.get("short_exchange")) * 2  # [#29]
+        fee = (
+            pos["invested"]
+            * get_exchange_fee_rate(CONFIG.get("short_exchange"))
+            * CONFIG.get("short_leverage", 2)
+        )  # [#29]
         pnl = pos["invested"] * (pnl_pct / 100) - fee
         if CONFIG["paper_trading"]:
             state.balance += pos["invested"] + pnl
@@ -5055,6 +5062,8 @@ def try_dca(ex, symbol):
     dca_level = pos.get("dca_level", 0)
     if dca_level >= CONFIG["dca_max_levels"]:
         return
+    if pos["entry"] <= 0 or price <= 0:
+        return
     drop = (pos["entry"] - price) / pos["entry"]
     threshold = CONFIG["dca_drop_pct"] * (dca_level + 1)
     if drop < threshold:
@@ -5273,7 +5282,7 @@ def bot_loop():
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
                 threading.Thread(
-                    target=lambda: arb_scanner.scan(state.markets[:30]), daemon=True
+                    target=lambda m=state.markets[:30]: arb_scanner.scan(m), daemon=True
                 ).start()
 
             # Portfolio History
@@ -6165,8 +6174,9 @@ def on_stop_bot():
     if not _ws_rate_check("stop_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
-    state.running = False
-    state.paused = False
+    with state._lock:
+        state.running = False
+        state.paused = False
     emit("status", {"msg": "⏹ Bot gestoppt", "type": "info"}, broadcast=True)
     state.add_activity("⏹", "Bot gestoppt", "Alle Positionen offen", "info")
 
@@ -6175,8 +6185,9 @@ def on_stop_bot():
 def on_pause_bot():
     if not _ws_rate_check("pause_bot", min_interval=2.0):
         return
-    state.paused = not state.paused
-    msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
+    with state._lock:
+        state.paused = not state.paused
+        msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
     emit("status", {"msg": msg, "type": "warning"}, broadcast=True)
 
 

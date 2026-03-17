@@ -182,9 +182,10 @@ class RiskManager:
     def sharpe(self, returns, rf=0.0) -> float:
         if len(returns) < 3:
             return 0.0
-        r = np.array(returns)
+        r = np.array(returns, dtype=float)
         exc = r - rf
-        return float(np.mean(exc) / np.std(exc) * np.sqrt(252)) if np.std(exc) > 0 else 0.0
+        std = np.nanstd(exc)
+        return float(np.nanmean(exc) / std * np.sqrt(252)) if std > 0 else 0.0
 
 
 class LiquidityScorer:
@@ -275,7 +276,10 @@ class FundingRateTracker:
                     fr = item.get("fundingRate", "0")
                     if sym.endswith("USDT"):
                         base = sym.replace("USDT", "") + "/USDT"
-                        self._rates[base] = float(fr)
+                        try:
+                            self._rates[base] = float(fr)
+                        except (ValueError, TypeError):
+                            log.debug("Ungültige Funding-Rate für %s: %s", base, fr)
             self._last_update = datetime.now()
             log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
         except Exception as e:

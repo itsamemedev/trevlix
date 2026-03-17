@@ -144,6 +144,7 @@ class AIEngine:
         # ── Vorhersage-Tracking ─────────────────────────────────
         self.predictions_made = 0
         self.predictions_correct = 0
+        self._pending_predictions: dict[str, float] = {}
 
         # ── Parameter-Optimierung ───────────────────────────────
         self.optimize_every = 15  # Optimierung alle N Trades
@@ -226,6 +227,18 @@ class AIEngine:
         """Speichert Features beim Kauf für späteres Training."""
         with self._lock:
             self._pending_features[symbol] = features
+            # Win-Probability für spätere Accuracy-Berechnung speichern
+            if self.is_trained and self.model is not None and ML_AVAILABLE:
+                try:
+                    X_scaled = self.scaler.transform(features.reshape(1, -1))
+                    proba = self.model.predict_proba(X_scaled)[0]
+                    classes = list(self.model.classes_)
+                    win_idx = classes.index(1) if 1 in classes else -1
+                    self._pending_predictions[symbol] = (
+                        float(proba[win_idx]) if win_idx >= 0 else 0.5
+                    )
+                except Exception:
+                    pass
 
     def register_trade_close(self, symbol: str, pnl: float, votes: dict):
         """
@@ -242,6 +255,14 @@ class AIEngine:
             self.y_raw.append(1 if won else 0)
             self.trades_since_retrain += 1
             self.trades_since_optimize += 1
+
+            # Vorhersage-Accuracy tracken
+            pred = self._pending_predictions.pop(symbol, None)
+            if pred is not None:
+                self.predictions_made += 1
+                predicted_win = pred >= 0.5
+                if predicted_win == won:
+                    self.predictions_correct += 1
 
             # Individuelle Win-Rates der Strategien aktualisieren
             self._update_strategy_win_rates(votes, won)

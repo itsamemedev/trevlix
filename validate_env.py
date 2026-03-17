@@ -175,8 +175,10 @@ def validate() -> list[Issue]:
     weak_values = {"test", "geheim", "pass", "password", "123456", "admin", "nexus", "secret"}
     for var in ["MYSQL_PASS", "JWT_SECRET", "ADMIN_PASSWORD", "SECRET_KEY"]:
         val = os.getenv(var, "").lower()
-        if val in weak_values or any(w in val for w in weak_values):
+        if val in weak_values:
             issues.append(Issue("critical", var, f"{var} ist ein bekanntes schwaches Passwort"))
+        elif len(val) < 8:
+            issues.append(Issue("warning", var, f"{var} ist sehr kurz (< 8 Zeichen)"))
 
     return issues
 
