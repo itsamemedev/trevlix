@@ -72,3 +72,53 @@
 ### Lektion 14: `requests` → `httpx` konsistent halten
 **Problem:** `FundingRateTracker` nutzte noch `requests.get`, während alle anderen Services bereits `httpx` verwendeten. Inkompatible Error-Handling-Muster.
 **Regel:** HTTP-Client einheitlich im Projekt verwenden. Wenn `httpx` der Standard ist, alle Services migrieren. Verhindert Verwirrung bei Exception-Handling (`requests.HTTPError` vs `httpx.HTTPStatusError`).
+
+## Session: update-docs-fix-bugs-NdjFI (2026-03-17)
+
+### Lektion 15: Globale Dicts in Multi-Thread-Umgebungen IMMER mit Lock schützen
+**Problem:** `_ws_limits` und `_login_attempts` Dicts wurden von mehreren Threads gleichzeitig gelesen und geschrieben, ohne Lock-Protection. CPython GIL schützt nicht vor logischen Race Conditions (check-then-act).
+**Regel:** Jedes globale Dict, das von mehreren Threads geändert wird, braucht einen dedizierten `threading.Lock()`. Check-then-act Muster (read → decide → write) müssen atomar unter einem Lock stattfinden.
+**Code:** `server.py:_ws_limits_lock`, `server.py:_login_attempts_lock`
+
+### Lektion 16: Silent Exception Handling kann Security-Checks umgehen
+**Problem:** `except (ValueError, TypeError): pass` beim Session-Timeout-Parsing erlaubte, dass eine korrumpierte `last_active` Session-Variable den Timeout-Check komplett überspringt → User bleibt ewig eingeloggt.
+**Regel:** Bei Security-relevanten Exception-Handlern nie `pass` verwenden. Im Zweifel die sicherere Aktion wählen (Session invalidieren statt stillschweigend fortfahren).
+**Code:** `server.py:_before_request_hooks`
+
+### Lektion 17: i18n-Keys in HTML und JS synchron halten
+**Problem:** 85+ `data-i18n` Keys in HTML-Templates hatten keine Entsprechung in `trevlix_translations.js`. Betroffene UI-Elemente zeigten den Key-Name statt übersetztem Text.
+**Regel:** Bei Hinzufügen neuer `data-i18n` Attribute in Templates IMMER gleichzeitig die Keys in `trevlix_translations.js` für alle 5 Sprachen (de, en, es, ru, pt) ergänzen.
+**Code:** `static/js/trevlix_translations.js`
+
+### Lektion 18: Lambda-Captures in Threads innerhalb von Loops
+**Problem:** `lambda: self.db.save_ai_sample(p["features"], won, regime_str)` in einem Thread innerhalb einer Loop bindet `p` per Referenz. Wenn der Thread startet, hat die Loop `p` möglicherweise schon überschrieben.
+**Regel:** Bei `threading.Thread(target=lambda: ...)` innerhalb von Loops IMMER Default-Parameter verwenden: `lambda f=p["features"], w=won: self.db.save_ai_sample(f, w)`.
+**Code:** `server.py:3580`
+
+### Lektion 19: Globale Caches brauchen Locks, nicht nur globale Dicts
+**Problem:** `_fee_cache` und `_heatmap_cache` hatten check-then-act Patterns ohne Lock (if cached → return cached, else compute → set cache). Concurrent requests konnten veraltete oder inkonsistente Werte lesen.
+**Regel:** Jeder globale Cache mit zeitbasierter Invalidierung braucht einen Lock um das Read-Check-Write-Pattern atomar zu machen.
+**Code:** `server.py:_fee_cache_lock`, `server.py:_heatmap_lock`
+
+### Lektion 20: Versionsnummern zentral verwalten
+**Problem:** `routes/auth.py` Templates enthielten hardcoded `v1.3.0`, während `services/utils.py:BOT_VERSION` und README `v1.2.0` zeigten.
+**Regel:** Versionsnummern NIE in Templates/HTML hardcoden. Immer aus einer zentralen Quelle (`BOT_VERSION`) referenzieren. Bei jeder Version-Bump alle Stellen prüfen: `grep -r "v1\." --include="*.py" --include="*.html"`.
+
+### Lektion 21: Klassen in server.py vs. services/ synchron halten
+**Problem:** `DiscordNotifier` in `server.py` fehlten `dna_boost()` und `smart_exit()` Methoden, die in `services/notifications.py` existierten. Aufruf verursachte `AttributeError` bei jedem Trade mit DNA/Smart Exits.
+**Regel:** Bei duplizierten Klassen (server.py vs. services/) IMMER prüfen ob alle aufgerufenen Methoden in BEIDEN Versionen existieren. Langfristig: Duplikate eliminieren.
+**Code:** `server.py:DiscordNotifier`, `services/notifications.py:DiscordNotifier`
+
+### Lektion 22: WebSocket-Handler dürfen nicht blockieren
+**Problem:** `on_force_genetic()` rief `genetic.evolve()` synchron auf, was den WebSocket-Thread blockierte und die UI einfroren lies.
+**Regel:** Heavy Operations in WebSocket-Handlern IMMER in `threading.Thread(target=..., daemon=True).start()` wrappen. Alle anderen Handler (`force_train`, `manual_backup`) machen das bereits korrekt.
+**Code:** `server.py:on_force_genetic`
+
+### Lektion 23: Request-Parameter IMMER validieren
+**Problem:** 11 API-Routes verwendeten `int(request.args.get(...))` ohne Fehlerbehandlung. Ungültige Eingaben (z.B. `?limit=abc`) verursachten unbehandelte `ValueError`.
+**Regel:** Request-Parameter nie direkt mit `int()` konvertieren. Immer `_safe_int(val, default)` oder try/except verwenden. Gilt für alle Typen: int, float, etc.
+**Code:** `server.py:_safe_int`
+
+### Lektion 24: Lock-Symmetrie bei Read/Write
+**Problem:** `is_correlated()` las `_price_history` ohne Lock, während `update_prices()` unter Lock schrieb. Race Condition bei gleichzeitigem Scan und Update.
+**Regel:** Wenn eine Methode unter Lock SCHREIBT, müssen alle Methoden die denselben State LESEN ebenfalls den Lock halten. Snapshot-Pattern: unter Lock kopieren, außerhalb berechnen.

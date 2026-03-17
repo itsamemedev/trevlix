@@ -560,8 +560,23 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
 
 # Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
 _fee_cache: dict[str, dict] = {}
+_fee_cache_lock = threading.Lock()
 # STRATEGY_NAMES importiert aus services.strategies
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# Sicherheitswarnung: Default-Passwort erkennen
+# ═══════════════════════════════════════════════════════════════════════════════
+if not os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "") in (
+    "trevlix",
+    "admin",
+    "password",
+    "test",
+):
+    log.warning(
+        "⚠️  ADMIN_PASSWORD ist nicht gesetzt oder unsicher! "
+        "Setze ein starkes Passwort (min. 12 Zeichen) in .env: ADMIN_PASSWORD=..."
+    )
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #7] Konfigurationsvalidierung beim Start
@@ -1844,29 +1859,32 @@ class MySQLManager:
 # [Verbesserung #8] AUDIT-LOG HELPER
 # ═══════════════════════════════════════════════════════════════════════════════
 _login_attempts: dict[str, list[float]] = {}  # IP → [timestamps]
+_login_attempts_lock = threading.Lock()
 
 
 def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
     """[Verbesserung #3] Prüft ob IP zu viele Login-Versuche hatte."""
     now = time.time()
-    attempts = _login_attempts.get(ip, [])
-    attempts = [t for t in attempts if now - t < window]
-    if attempts:
-        _login_attempts[ip] = attempts
-    else:
-        # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
-        _login_attempts.pop(ip, None)
-    return len(attempts) < max_attempts
+    with _login_attempts_lock:
+        attempts = _login_attempts.get(ip, [])
+        attempts = [t for t in attempts if now - t < window]
+        if attempts:
+            _login_attempts[ip] = attempts
+        else:
+            # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
+            _login_attempts.pop(ip, None)
+        return len(attempts) < max_attempts
 
 
 def _record_login_attempt(ip: str):
-    _login_attempts.setdefault(ip, []).append(time.time())
-    # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
-    if len(_login_attempts) > 10_000:
-        cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
-        stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
-        for k in stale:
-            _login_attempts.pop(k, None)
+    with _login_attempts_lock:
+        _login_attempts.setdefault(ip, []).append(time.time())
+        # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
+        if len(_login_attempts) > 10_000:
+            cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
+            stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
+            for k in stale:
+                _login_attempts.pop(k, None)
 
 
 def _audit(action: str, detail: str = "", user_id: int = 0):
@@ -1902,7 +1920,13 @@ def _before_request_hooks():
                         abort(401)
                     return redirect("/login")
             except (ValueError, TypeError):
-                pass
+                # Ungültiger Timestamp → Session sicherheitshalber beenden
+                session.clear()
+                if request.path.startswith("/api/"):
+                    from flask import abort
+
+                    abort(401)
+                return redirect("/login")
         session["last_active"] = datetime.now().isoformat()
 
     # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
@@ -1936,6 +1960,14 @@ def _security_headers(response):
     if request.is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
+
+
+def _safe_int(val: Any, default: int) -> int:
+    """Sicherer int()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
 
 
 def _generate_csrf_token() -> str:
@@ -2134,6 +2166,29 @@ class DiscordNotifier:
         self.send(
             f"🧬 Genetik Gen.{gen}",
             f"```\nFitness: {fitness:.3f}\nSL: {genome.get('sl', 0) * 100:.1f}% TP: {genome.get('tp', 0) * 100:.1f}%\n```",
+            "info",
+        )
+
+    def dna_boost(
+        self, symbol: str, action: str, win_rate: float, matches: int, multiplier: float
+    ) -> None:
+        """Benachrichtigung bei DNA-Pattern-Match (Boost oder Block)."""
+        emoji = "🧬✅" if action == "boost" else "🧬⛔"
+        color = "buy" if action == "boost" else "sell_loss"
+        self.send(
+            f"{emoji} DNA-{action.upper()}: {symbol}",
+            f"```\nWin-Rate:    {win_rate:.0f}%\n"
+            f"Matches:     {matches}\n"
+            f"Multiplikator: {multiplier:.2f}x\n```",
+            color,
+        )
+
+    def smart_exit(self, symbol: str, sl: float, tp: float, regime: str, atr_pct: float) -> None:
+        """Benachrichtigung über Smart Exit Level."""
+        self.send(
+            f"📐 Smart Exit: {symbol}",
+            f"```\nRegime:  {regime}\nATR:     {atr_pct:.2f}%\n"
+            f"SL:      {sl:.4f}\nTP:      {tp:.4f}\n```",
             "info",
         )
 
@@ -3519,7 +3574,10 @@ class AIEngine:
     def kelly_size(self, win_prob, balance, atr, fg_boost=1.0) -> float:
         if win_prob <= 0.5:
             return balance * CONFIG["risk_per_trade"] * fg_boost
-        odds = CONFIG["take_profit_pct"] / CONFIG["stop_loss_pct"]
+        sl_pct = CONFIG["stop_loss_pct"]
+        if sl_pct <= 0:
+            return balance * CONFIG["risk_per_trade"] * fg_boost
+        odds = CONFIG["take_profit_pct"] / sl_pct
         kelly = float(np.clip(((win_prob * odds - (1 - win_prob)) / odds) * 0.5, 0.01, 0.25))
         vol_adj = 1.0 / (1 + atr * 10) if atr > 0 else 1.0
         return balance * kelly * vol_adj * fg_boost
@@ -3554,7 +3612,8 @@ class AIEngine:
         # RL lernen
         rl_agent.on_trade_close(p.get("scan", {}), pnl)
         threading.Thread(
-            target=lambda: self.db.save_ai_sample(p["features"], won, regime_str), daemon=True
+            target=lambda f=p["features"], w=won, r=regime_str: self.db.save_ai_sample(f, w, r),
+            daemon=True,
         ).start()
         n = len(self.X_raw)
         self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
@@ -3977,10 +4036,10 @@ class BotState:
         self.prices: dict[str, float] = {}
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
-        self.portfolio_history: list[dict] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
         from collections import deque
 
+        self.portfolio_history: deque = deque(maxlen=500)
         self.signal_log: deque = deque(maxlen=50)
         self.activity_log: deque = deque(maxlen=50)
         self.arb_log: deque = deque(maxlen=20)
@@ -4006,6 +4065,8 @@ class BotState:
 
     def return_pct(self):
         pv = self.portfolio_value()
+        if self.initial_balance <= 0:
+            return 0.0
         return (pv - self.initial_balance) / self.initial_balance * 100
 
     def win_rate(self):
@@ -4165,7 +4226,7 @@ class BotState:
                 }
                 for t in self.closed_trades[:100]
             ],
-            "portfolio_history": self.portfolio_history[-200:],
+            "portfolio_history": list(self.portfolio_history)[-200:],
             "signal_log": list(self.signal_log)[:30],
             "activity_log": list(self.activity_log)[:20],
             "arb_log": list(self.arb_log)[:10],
@@ -4355,7 +4416,11 @@ class ShortEngine:
             return
         price = state.prices.get(symbol, pos["entry"])
         pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
-        fee = pos["invested"] * get_exchange_fee_rate(CONFIG.get("short_exchange")) * 2  # [#29]
+        fee = (
+            pos["invested"]
+            * get_exchange_fee_rate(CONFIG.get("short_exchange"))
+            * CONFIG.get("short_leverage", 2)
+        )  # [#29]
         pnl = pos["invested"] * (pnl_pct / 100) - fee
         if CONFIG["paper_trading"]:
             state.balance += pos["invested"] + pnl
@@ -4498,9 +4563,10 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
     """
     ex_id = exchange_id or CONFIG.get("exchange", "cryptocom")
     now = time.time()
-    cached = _fee_cache.get(ex_id)
-    if cached and now - cached.get("ts", 0) < 3600:
-        return cached["rate"]
+    with _fee_cache_lock:
+        cached = _fee_cache.get(ex_id)
+        if cached and now - cached.get("ts", 0) < 3600:
+            return cached["rate"]
     # Versuche CCXT-Fee-Abfrage
     try:
         ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
@@ -4510,13 +4576,15 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
             rate = float(
                 fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"]))
             )
-            _fee_cache[ex_id] = {"rate": rate, "ts": now}
+            with _fee_cache_lock:
+                _fee_cache[ex_id] = {"rate": rate, "ts": now}
             return rate
     except Exception:
         pass
     # Fallback: Exchange-Default oder CONFIG
     rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])
-    _fee_cache[ex_id] = {"rate": rate, "ts": now}
+    with _fee_cache_lock:
+        _fee_cache[ex_id] = {"rate": rate, "ts": now}
     return rate
 
 
@@ -5025,6 +5093,8 @@ def try_dca(ex, symbol):
     dca_level = pos.get("dca_level", 0)
     if dca_level >= CONFIG["dca_max_levels"]:
         return
+    if pos["entry"] <= 0 or price <= 0:
+        return
     drop = (pos["entry"] - price) / pos["entry"]
     threshold = CONFIG["dca_drop_pct"] * (dca_level + 1)
     if drop < threshold:
@@ -5145,12 +5215,14 @@ def manage_positions(ex):
 # ═══════════════════════════════════════════════════════════════════════════════
 _heatmap_cache: list[dict] = []
 _heatmap_ts: datetime | None = None
+_heatmap_lock = threading.Lock()
 
 
 def get_heatmap_data(ex) -> list[dict]:
     global _heatmap_cache, _heatmap_ts
-    if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
-        return _heatmap_cache
+    with _heatmap_lock:
+        if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
+            return _heatmap_cache
     try:
         syms = state.markets[:60] if state.markets else []
         if not syms:
@@ -5170,8 +5242,9 @@ def get_heatmap_data(ex) -> list[dict]:
                 }
             )
         result.sort(key=lambda x: x["change"], reverse=True)
-        _heatmap_cache = result
-        _heatmap_ts = datetime.now()
+        with _heatmap_lock:
+            _heatmap_cache = result
+            _heatmap_ts = datetime.now()
         return result
     except Exception as e:
         log.debug(f"Heatmap: {e}")
@@ -5240,7 +5313,7 @@ def bot_loop():
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
                 threading.Thread(
-                    target=lambda: arb_scanner.scan(state.markets[:30]), daemon=True
+                    target=lambda m=state.markets[:30]: arb_scanner.scan(m), daemon=True
                 ).start()
 
             # Portfolio History
@@ -5248,7 +5321,6 @@ def bot_loop():
             state.portfolio_history.append(
                 {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
             )
-            state.portfolio_history = state.portfolio_history[-500:]
 
             # Short-Signale – parallelisiert mit ThreadPoolExecutor
             if not regime.is_bull and CONFIG.get("use_shorts"):
@@ -5290,7 +5362,11 @@ def bot_loop():
                         if s not in state.positions
                     }
                     for fut in as_completed(futures):
-                        res = fut.result()
+                        try:
+                            res = fut.result()
+                        except Exception as scan_err:
+                            log.debug(f"Scan-Future: {scan_err}")
+                            continue
                         if res and res["signal"] == 1:
                             state.add_signal(
                                 {
@@ -5355,7 +5431,7 @@ def api_state():
 @app.route("/api/v1/trades")
 @api_auth_required
 def api_trades():
-    limit = min(int(request.args.get("limit", 100)), 1000)
+    limit = min(_safe_int(request.args.get("limit", 100), 100), 1000)
     symbol = request.args.get("symbol")
     year = request.args.get("year")
     return jsonify(db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id))
@@ -5394,7 +5470,7 @@ def api_backtest():
 @app.route("/api/v1/tax")
 @api_auth_required
 def api_tax_v1():
-    year = int(request.args.get("year", datetime.now().year))
+    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     trades = db.load_trades(limit=10000, year=year, user_id=request.user_id)
     return jsonify(tax.generate(trades, year, method))
@@ -5551,7 +5627,7 @@ def api_knowledge_category(category):
     """Alle Einträge einer Wissens-Kategorie."""
     if category not in KnowledgeBase.CATEGORIES:
         return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = min(_safe_int(request.args.get("limit", 50), 50), 200)
     return jsonify(knowledge_base.get_category(category, limit))
 
 
@@ -5853,7 +5929,7 @@ def api_heatmap_legacy():
 def api_ohlcv(symbol):
     sym = symbol.replace("-", "/")
     tf = request.args.get("tf", "1h")
-    limit = min(int(request.args.get("limit", 200)), 500)
+    limit = min(_safe_int(request.args.get("limit", 200), 200), 500)
     try:
         ex = create_exchange()
         ohlcv = ex.fetch_ohlcv(sym, tf, limit=limit)
@@ -5866,7 +5942,7 @@ def api_ohlcv(symbol):
 @app.route("/api/tax_report")
 @dashboard_auth
 def api_tax_report():
-    year = int(request.args.get("year", datetime.now().year))
+    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     fmt = request.args.get("format", "json")
     trades = db.load_trades(limit=10000, year=year)
@@ -6056,6 +6132,7 @@ def prometheus_metrics():
 # ═══════════════════════════════════════════════════════════════════════════════
 _ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
 _ws_limits_last_cleanup: float = 0.0
+_ws_limits_lock = threading.Lock()
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
@@ -6075,17 +6152,18 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     sid = request.sid if hasattr(request, "sid") else "global"
     key = f"{sid}:{action}"
     now = time.time()
-    last = _ws_limits.get(key, 0)
-    if now - last < min_interval:
-        return False
-    _ws_limits[key] = now
-    # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
-    if now - _ws_limits_last_cleanup > 60:
-        _ws_limits_last_cleanup = now
-        cutoff = now - 300
-        stale = [k for k, v in _ws_limits.items() if v < cutoff]
-        for k in stale:
-            del _ws_limits[k]
+    with _ws_limits_lock:
+        last = _ws_limits.get(key, 0)
+        if now - last < min_interval:
+            return False
+        _ws_limits[key] = now
+        # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
+        if now - _ws_limits_last_cleanup > 60:
+            _ws_limits_last_cleanup = now
+            cutoff = now - 300
+            stale = [k for k, v in _ws_limits.items() if v < cutoff]
+            for k in stale:
+                del _ws_limits[k]
     return True
 
 
@@ -6113,10 +6191,11 @@ def on_start_bot():
     if not _ws_rate_check("start_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
-    if state.running:
-        return
-    state.running = True
-    state.paused = False
+    with state._lock:
+        if state.running:
+            return
+        state.running = True
+        state.paused = False
     threading.Thread(target=bot_loop, daemon=True).start()
     emit("status", {"msg": "🤖 TREVLIX gestartet", "type": "success"}, broadcast=True)
     state.add_activity(
@@ -6130,8 +6209,9 @@ def on_stop_bot():
     if not _ws_rate_check("stop_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
-    state.running = False
-    state.paused = False
+    with state._lock:
+        state.running = False
+        state.paused = False
     emit("status", {"msg": "⏹ Bot gestoppt", "type": "info"}, broadcast=True)
     state.add_activity("⏹", "Bot gestoppt", "Alle Positionen offen", "info")
 
@@ -6140,8 +6220,9 @@ def on_stop_bot():
 def on_pause_bot():
     if not _ws_rate_check("pause_bot", min_interval=2.0):
         return
-    state.paused = not state.paused
-    msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
+    with state._lock:
+        state.paused = not state.paused
+        msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
     emit("status", {"msg": msg, "type": "warning"}, broadcast=True)
 
 
@@ -6248,24 +6329,27 @@ def on_force_optimize():
 @socketio.on("force_genetic")
 def on_force_genetic():
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
-    genetic.evolve(state.closed_trades)
+    threading.Thread(
+        target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
+    ).start()
 
 
 @socketio.on("reset_ai")
 def on_reset_ai():
-    ai_engine.X_raw = []
-    ai_engine.y_raw = []
-    ai_engine.regimes_raw = []
-    ai_engine.X_bull = []
-    ai_engine.y_bull = []
-    ai_engine.X_bear = []
-    ai_engine.y_bear = []
-    ai_engine.is_trained = False
-    ai_engine.global_model = None
-    ai_engine.bull_model = None
-    ai_engine.bear_model = None
-    ai_engine.lstm_model = None
-    ai_engine.progress_pct = 0
+    with ai_engine._lock:
+        ai_engine.X_raw = []
+        ai_engine.y_raw = []
+        ai_engine.regimes_raw = []
+        ai_engine.X_bull = []
+        ai_engine.y_bull = []
+        ai_engine.X_bear = []
+        ai_engine.y_bear = []
+        ai_engine.is_trained = False
+        ai_engine.global_model = None
+        ai_engine.bull_model = None
+        ai_engine.bear_model = None
+        ai_engine.lstm_model = None
+        ai_engine.progress_pct = 0
     emit("status", {"msg": "🔄 KI zurückgesetzt", "type": "warning"})
 
 
@@ -6348,8 +6432,9 @@ def on_send_report():
 
 @socketio.on("reset_circuit_breaker")
 def on_reset_cb():
-    risk.circuit_breaker_until = None
-    risk.consecutive_losses = 0
+    with risk._lock:
+        risk.circuit_breaker_until = None
+        risk.consecutive_losses = 0
     emit("status", {"msg": "⚡ Circuit Breaker zurückgesetzt", "type": "success"}, broadcast=True)
     emit("update", state.snapshot(), broadcast=True)
 
@@ -6950,8 +7035,8 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
 @app.route("/api/v1/risk/monte-carlo")
 @api_auth_required
 def api_monte_carlo():
-    n_sim = min(int(request.args.get("n", 10000)), 50000)
-    n_days = min(int(request.args.get("days", 30)), 365)
+    n_sim = min(_safe_int(request.args.get("n", 10000), 10000), 50000)
+    n_days = min(_safe_int(request.args.get("days", 30), 30), 365)
     result = run_monte_carlo(n_sim, n_days)
     return jsonify(result)
 
@@ -7162,7 +7247,7 @@ funding_tracker = FundingRateTracker(CONFIG)
 @app.route("/api/v1/funding-rates")
 @api_auth_required
 def api_funding_rates():
-    n = int(request.args.get("n", 20))
+    n = _safe_int(request.args.get("n", 20), 20)
     return jsonify(
         {
             "top_rates": funding_tracker.top_rates(n),
@@ -7221,7 +7306,7 @@ def api_trade_dna():
 @api_auth_required
 def api_trade_dna_patterns():
     """Top profitable und schlechteste DNA-Muster."""
-    n = int(request.args.get("n", 10))
+    n = _safe_int(request.args.get("n", 10), 10)
     return jsonify(
         {
             "top": trade_dna.top_patterns(n),
@@ -7248,7 +7333,7 @@ def api_performance_attribution():
 @api_auth_required
 def api_performance_contributors():
     """Top-Contributors und Worst-Performers."""
-    n = int(request.args.get("n", 5))
+    n = _safe_int(request.args.get("n", 5), 5)
     return jsonify(perf_attribution.top_contributors(n))
 
 
@@ -7277,7 +7362,7 @@ def api_cvar():
 @app.route("/api/v1/risk/volatility")
 @api_auth_required
 def api_volatility():
-    return jsonify(adv_risk.volatility_forecast(int(request.args.get("h", 5))))
+    return jsonify(adv_risk.volatility_forecast(_safe_int(request.args.get("h", 5), 5)))
 
 
 @app.route("/api/v1/risk/regime")

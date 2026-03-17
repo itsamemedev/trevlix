@@ -143,8 +143,13 @@ class KnowledgeBase:
                     row = c.fetchone()
             if not row:
                 return None
+            try:
+                parsed_value = json.loads(row["value_json"]) if row.get("value_json") else None
+            except json.JSONDecodeError:
+                log.warning(f"Korruptes JSON in knowledge '{category}/{key}', verwende None")
+                parsed_value = None
             result = {
-                "value": json.loads(row["value_json"]) if row.get("value_json") else None,
+                "value": parsed_value,
                 "confidence": row.get("confidence", 0.5),
                 "source": row.get("source", "unknown"),
                 "updated_at": row.get("updated_at").isoformat() if row.get("updated_at") else None,
@@ -273,7 +278,8 @@ class KnowledgeBase:
             if resp.status_code == 200:
                 data = resp.json()
                 # OpenAI-kompatibles Format
-                answer = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                choices = data.get("choices") or []
+                answer = choices[0].get("message", {}).get("content", "") if choices else ""
                 if not answer:
                     # Ollama-Format
                     answer = data.get("response", "")

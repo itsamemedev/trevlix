@@ -116,13 +116,12 @@ class RiskManager:
     def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
         if not open_syms or self.config.get("max_corr", 0.75) >= 1.0:
             return False
-        h1 = self._price_history.get(symbol, [])
+        with self._lock:
+            h1 = list(self._price_history.get(symbol, []))
+            histories = {s: list(self._price_history.get(s, [])) for s in open_syms if s != symbol}
         if len(h1) < 20:
             return False
-        for s in open_syms:
-            if s == symbol:
-                continue
-            h2 = self._price_history.get(s, [])
+        for s, h2 in histories.items():
             if len(h2) < 20:
                 continue
             n = min(len(h1), len(h2), 100)
@@ -182,9 +181,10 @@ class RiskManager:
     def sharpe(self, returns, rf=0.0) -> float:
         if len(returns) < 3:
             return 0.0
-        r = np.array(returns)
+        r = np.array(returns, dtype=float)
         exc = r - rf
-        return float(np.mean(exc) / np.std(exc) * np.sqrt(252)) if np.std(exc) > 0 else 0.0
+        std = np.nanstd(exc)
+        return float(np.nanmean(exc) / std * np.sqrt(252)) if std > 0 else 0.0
 
 
 class LiquidityScorer:
@@ -262,8 +262,9 @@ class FundingRateTracker:
         self._lock = threading.Lock()
 
     def update(self, ex=None):
-        if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
-            return
+        with self._lock:
+            if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
+                return
         try:
             url = "https://api.bybit.com/v5/market/tickers?category=linear"
             resp = httpx.get(url, timeout=8)
@@ -275,7 +276,10 @@ class FundingRateTracker:
                     fr = item.get("fundingRate", "0")
                     if sym.endswith("USDT"):
                         base = sym.replace("USDT", "") + "/USDT"
-                        self._rates[base] = float(fr)
+                        try:
+                            self._rates[base] = float(fr)
+                        except (ValueError, TypeError):
+                            log.debug("Ungültige Funding-Rate für %s: %s", base, fr)
             self._last_update = datetime.now()
             log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
         except Exception as e:

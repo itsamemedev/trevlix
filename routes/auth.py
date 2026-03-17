@@ -160,7 +160,7 @@ button:active{transform:translateY(0)}
   <div class="logo">
     <div class="logo-icon">&#9889;</div>
     <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.3.0</div>
+    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.2.0</div>
   </div>
   <div class="divider"></div>
   %(body)s
@@ -176,22 +176,22 @@ button:active{transform:translateY(0)}
 <script>
 (function(){
   var T={
-    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.3.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
+    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.2.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
         username:"Benutzername",password:"Passwort",password_confirm:"Passwort best\\u00e4tigen",
         login_btn:"Anmelden &rarr;",register_btn:"Konto erstellen &rarr;",
         no_account:"Noch kein Konto?",register_link:"Registrieren",
         back_login:"&larr; Zur Anmeldung"},
-    en:{subtitle:"Algorithmic Trading Bot &middot; v1.3.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
+    en:{subtitle:"Algorithmic Trading Bot &middot; v1.2.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
         username:"Username",password:"Password",password_confirm:"Confirm Password",
         login_btn:"Sign In &rarr;",register_btn:"Create Account &rarr;",
         no_account:"No account yet?",register_link:"Register",
         back_login:"&larr; Back to Login"},
-    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.3.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
+    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.2.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
         username:"Usuario",password:"Contrase\\u00f1a",password_confirm:"Confirmar Contrase\\u00f1a",
         login_btn:"Iniciar Sesi\\u00f3n &rarr;",register_btn:"Crear Cuenta &rarr;",
         no_account:"\\u00bfNo tienes cuenta?",register_link:"Registrarse",
         back_login:"&larr; Volver al Login"},
-    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.3.0",
+    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.2.0",
         footer:"TREVLIX &middot; \\u041e\\u043f\\u0435\\u043d-\\u0441\\u043e\\u0443\\u0440\\u0441 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442",
         username:"\\u0418\\u043c\\u044f \\u043f\\u043e\\u043b\\u044c\\u0437\\u043e\\u0432\\u0430\\u0442\\u0435\\u043b\\u044f",
         password:"\\u041f\\u0430\\u0440\\u043e\\u043b\\u044c",
@@ -199,7 +199,7 @@ button:active{transform:translateY(0)}
         login_btn:"\\u0412\\u043e\\u0439\\u0442\\u0438 &rarr;",register_btn:"\\u0421\\u043e\\u0437\\u0434\\u0430\\u0442\\u044c &rarr;",
         no_account:"\\u041d\\u0435\\u0442 \\u0430\\u043a\\u043a\\u0430\\u0443\\u043d\\u0442\\u0430?",register_link:"\\u0420\\u0435\\u0433\\u0438\\u0441\\u0442\\u0440\\u0430\\u0446\\u0438\\u044f",
         back_login:"&larr; \\u041a \\u0432\\u0445\\u043e\\u0434\\u0443"},
-    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.3.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
+    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.2.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
         username:"Usu\\u00e1rio",password:"Senha",password_confirm:"Confirmar Senha",
         login_btn:"Entrar &rarr;",register_btn:"Criar Conta &rarr;",
         no_account:"N\\u00e3o tem conta?",register_link:"Registrar",
@@ -372,12 +372,12 @@ button:active{transform:translateY(0)}
   <div class="logo">
     <div class="logo-icon">&#128274;</div>
     <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.3.0</div>
+    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.2.0</div>
     <div class="admin-badge" data-i18n="admin_badge">Admin Panel</div>
   </div>
   <div class="divider"></div>
   %(body)s
-  <div class="ver" data-i18n="footer">TREVLIX &middot; Admin Panel &middot; v1.3.0</div>
+  <div class="ver" data-i18n="footer">TREVLIX &middot; Admin Panel &middot; v1.2.0</div>
   <div class="lang-bar">
     <button class="lang-btn" data-lang="de" title="Deutsch">DE</button>
     <button class="lang-btn active" data-lang="en" title="English">EN</button>
@@ -389,33 +389,33 @@ button:active{transform:translateY(0)}
 <script>
 (function(){
   var T={
-    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.3.0",
-        footer:"TREVLIX &middot; Admin-Bereich &middot; v1.3.0",
+    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.2.0",
+        footer:"TREVLIX &middot; Admin-Bereich &middot; v1.2.0",
         admin_badge:"Admin-Bereich",
         admin_user:"Admin Benutzername",admin_pass:"Admin Passwort",
         admin_btn:"Admin-Anmeldung &rarr;",
         back_login:"&larr; Zum normalen Login"},
-    en:{subtitle:"Algorithmic Trading Bot &middot; v1.3.0",
-        footer:"TREVLIX &middot; Admin Panel &middot; v1.3.0",
+    en:{subtitle:"Algorithmic Trading Bot &middot; v1.2.0",
+        footer:"TREVLIX &middot; Admin Panel &middot; v1.2.0",
         admin_badge:"Admin Panel",
         admin_user:"Admin Username",admin_pass:"Admin Password",
         admin_btn:"Admin Sign In &rarr;",
         back_login:"&larr; Back to User Login"},
-    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.3.0",
-        footer:"TREVLIX &middot; Panel de Admin &middot; v1.3.0",
+    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.2.0",
+        footer:"TREVLIX &middot; Panel de Admin &middot; v1.2.0",
         admin_badge:"Panel de Admin",
         admin_user:"Usuario Admin",admin_pass:"Contrase\\u00f1a Admin",
         admin_btn:"Acceso Admin &rarr;",
         back_login:"&larr; Volver al Login"},
-    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.3.0",
-        footer:"TREVLIX &middot; \\u041f\\u0430\\u043d\\u0435\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430 &middot; v1.3.0",
+    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.2.0",
+        footer:"TREVLIX &middot; \\u041f\\u0430\\u043d\\u0435\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430 &middot; v1.2.0",
         admin_badge:"\\u041f\\u0430\\u043d\\u0435\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
         admin_user:"\\u0418\\u043c\\u044f \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
         admin_pass:"\\u041f\\u0430\\u0440\\u043e\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
         admin_btn:"\\u0412\\u0445\\u043e\\u0434 \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430 &rarr;",
         back_login:"&larr; \\u041a \\u043e\\u0431\\u044b\\u0447\\u043d\\u043e\\u043c\\u0443 \\u0432\\u0445\\u043e\\u0434\\u0443"},
-    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.3.0",
-        footer:"TREVLIX &middot; Painel Admin &middot; v1.3.0",
+    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.2.0",
+        footer:"TREVLIX &middot; Painel Admin &middot; v1.2.0",
         admin_badge:"Painel Admin",
         admin_user:"Usu\\u00e1rio Admin",admin_pass:"Senha Admin",
         admin_btn:"Acesso Admin &rarr;",
@@ -550,6 +550,8 @@ def create_auth_blueprint(
 
         user = db.get_user(username)
         if user and db.verify_password(user["password_hash"], password):
+            # Session regenerieren um Session Fixation zu verhindern
+            session.clear()
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = user.get("role", "user")
@@ -640,11 +642,11 @@ def create_auth_blueprint(
         if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
             return redirect("/register")
 
-        username = request.form.get("username", "").strip()[:32]
+        username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
 
-        if len(username) < 3:
+        if len(username) < 3 or len(username) > 32:
             return redirect("/register?err=uname")
         _WEAK_PATTERNS = frozenset(
             {
@@ -768,6 +770,8 @@ def create_auth_blueprint(
                     "admin_login_denied", f"user={username} ip={client_ip} role={user.get('role')}"
                 )
                 return redirect("/admin/login?err=role")
+            # Session regenerieren um Session Fixation zu verhindern
+            session.clear()
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = "admin"

@@ -14,7 +14,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
-[![Tests](https://img.shields.io/badge/tests-200+-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-250+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](CHANGELOG.md)
 
@@ -72,7 +72,7 @@
 
 ### Infrastructure
 - **Real-time Dashboard** — WebSocket-powered live UI with Socket.IO
-- **Full REST API** — 45+ JWT-authenticated endpoints
+- **Full REST API** — 85+ JWT-authenticated endpoints
 - **Multi-User System** — Multiple portfolios, each with own API keys
 - **2FA** — Two-factor authentication (TOTP)
 - **5 Languages** — DE, EN, ES, RU, PT
@@ -167,7 +167,7 @@ trevlix/
 │   ├── dashboard.py                   # Static page routes
 │   └── websocket.py                   # WebSocket event handlers
 │
-├── services/                          # Modular business logic (15 modules)
+├── services/                          # Modular business logic (16 modules)
 │   ├── adaptive_weights.py            # Self-learning strategy weights [NEW]
 │   ├── config.py                      # Pydantic BaseSettings configuration
 │   ├── cryptopanic.py                 # CryptoPanic news sentiment client
@@ -202,13 +202,13 @@ trevlix/
 │   ├── js/trevlix_translations.js     # i18n (5 languages)
 │   └── js/page_i18n.js               # Page translator
 │
-├── tests/                             # Pytest test suite (200+ tests)
+├── tests/                             # Pytest test suite (250+ tests)
 │   ├── conftest.py                    # Shared fixtures
 │   ├── test_adaptive_weights.py       # Adaptive weights tests [NEW]
 │   ├── test_performance_attribution.py # Attribution tests [NEW]
 │   ├── test_trade_dna.py              # DNA fingerprinting tests
 │   ├── test_smart_exits.py            # Smart exit tests
-│   └── ... (14 test modules total)
+│   └── ... (14 test modules, 250+ tests total)
 │
 ├── docker/                            # Docker infrastructure
 │   ├── Dockerfile                     # Multi-stage Python 3.11 image
@@ -230,7 +230,7 @@ trevlix/
 
 ---
 
-## REST API (45+ Endpoints)
+## REST API (85+ Endpoints)
 
 | Category | Endpoints | Description |
 |----------|-----------|-------------|

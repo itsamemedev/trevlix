@@ -729,6 +729,127 @@ const QT = {
   toast_dna_pattern_found:         {de:'🧬 DNA-Muster erkannt',en:'🧬 DNA pattern found',es:'🧬 Patrón DNA encontrado',ru:'🧬 Обнаружен DNA-паттерн',pt:'🧬 Padrão DNA encontrado'},
   toast_adaptive_weights_updated:  {de:'⚖️ Adaptive Gewichte aktualisiert',en:'⚖️ Adaptive weights updated',es:'⚖️ Pesos adaptativos actualizados',ru:'⚖️ Адаптивные веса обновлены',pt:'⚖️ Pesos adaptativos atualizados'},
   toast_attribution_report_ready:  {de:'📊 Performance-Report bereit',en:'📊 Performance report ready',es:'📊 Informe de rendimiento listo',ru:'📊 Отчёт о производительности готов',pt:'📊 Relatório de desempenho pronto'},
+
+  /* ── SHARED NAV (Multi-Page) ── */
+  nav_api:          {de:'API Docs',en:'API Docs',es:'Docs API',ru:'API Документация',pt:'Docs API'},
+  nav_dashboard:    {de:'Dashboard',en:'Dashboard',es:'Panel',ru:'Панель',pt:'Painel'},
+  nav_download:     {de:'Download',en:'Download',es:'Descargar',ru:'Скачать',pt:'Download'},
+  nav_faq:          {de:'FAQ',en:'FAQ',es:'FAQ',ru:'FAQ',pt:'FAQ'},
+  nav_features:     {de:'Features',en:'Features',es:'Funciones',ru:'Функции',pt:'Funcionalidades'},
+  nav_installation: {de:'Installation',en:'Installation',es:'Instalación',ru:'Установка',pt:'Instalação'},
+  nav_strategies:   {de:'Strategien',en:'Strategies',es:'Estrategias',ru:'Стратегии',pt:'Estratégias'},
+  skip_to_content:  {de:'Zum Inhalt springen',en:'Skip to content',es:'Saltar al contenido',ru:'Перейти к содержимому',pt:'Ir para o conteúdo'},
+
+  /* ── FOOTER ── */
+  footer_copyright: {de:'© 2025 Trevlix. Alle Rechte vorbehalten.',en:'© 2025 Trevlix. All rights reserved.',es:'© 2025 Trevlix. Todos los derechos reservados.',ru:'© 2025 Trevlix. Все права защищены.',pt:'© 2025 Trevlix. Todos os direitos reservados.'},
+  footer_paper:     {de:'Paper Trading',en:'Paper Trading',es:'Trading Simulado',ru:'Бумажная торговля',pt:'Trading Simulado'},
+  footer_product:   {de:'Produkt',en:'Product',es:'Producto',ru:'Продукт',pt:'Produto'},
+  footer_resources: {de:'Ressourcen',en:'Resources',es:'Recursos',ru:'Ресурсы',pt:'Recursos'},
+  footer_security:  {de:'Sicherheit',en:'Security',es:'Seguridad',ru:'Безопасность',pt:'Segurança'},
+
+  /* ── INDEX / LANDING PAGE STATS ── */
+  stat_ai_features: {de:'KI-Features',en:'AI Features',es:'Funciones IA',ru:'ИИ-функции',pt:'Funcionalidades IA'},
+  stat_exchanges:   {de:'Börsen',en:'Exchanges',es:'Exchanges',ru:'Биржи',pt:'Exchanges'},
+  stat_languages:   {de:'Sprachen',en:'Languages',es:'Idiomas',ru:'Языки',pt:'Idiomas'},
+  stat_modules:     {de:'Module',en:'Modules',es:'Módulos',ru:'Модули',pt:'Módulos'},
+  stat_open_source: {de:'Open Source',en:'Open Source',es:'Código Abierto',ru:'Открытый код',pt:'Código Aberto'},
+  stat_strategies:  {de:'Strategien',en:'Strategies',es:'Estrategias',ru:'Стратегии',pt:'Estratégias'},
+
+  /* ── ABOUT PAGE ── */
+  about_h1:              {de:'Über Trevlix',en:'About Trevlix',es:'Sobre Trevlix',ru:'О Trevlix',pt:'Sobre o Trevlix'},
+  about_subtitle:        {de:'Algorithmischer Krypto-Trading-Bot',en:'Algorithmic Crypto Trading Bot',es:'Bot Algorítmico de Trading Cripto',ru:'Алгоритмический крипто-торговый бот',pt:'Bot Algorítmico de Trading Cripto'},
+  about_mission:         {de:'Mission',en:'Mission',es:'Misión',ru:'Миссия',pt:'Missão'},
+  about_mission_txt:     {de:'Professionelles algorithmisches Trading für jeden zugänglich machen.',en:'Making professional algorithmic trading accessible to everyone.',es:'Hacer accesible el trading algorítmico profesional para todos.',ru:'Сделать профессиональную алгоритмическую торговлю доступной каждому.',pt:'Tornar o trading algorítmico profissional acessível a todos.'},
+  about_tech_stack:      {de:'Technologie-Stack',en:'Technology Stack',es:'Stack Tecnológico',ru:'Технологический стек',pt:'Stack Tecnológico'},
+  about_tech_desc:       {de:'Moderne Architektur für maximale Performance',en:'Modern architecture for maximum performance',es:'Arquitectura moderna para rendimiento máximo',ru:'Современная архитектура для максимальной производительности',pt:'Arquitetura moderna para máximo desempenho'},
+  about_backend:         {de:'Backend',en:'Backend',es:'Backend',ru:'Бэкенд',pt:'Backend'},
+  about_ai_ml:           {de:'KI & Machine Learning',en:'AI & Machine Learning',es:'IA & Machine Learning',ru:'ИИ & Машинное обучение',pt:'IA & Machine Learning'},
+  about_infra:           {de:'Infrastruktur',en:'Infrastructure',es:'Infraestructura',ru:'Инфраструктура',pt:'Infraestrutura'},
+  about_contribute:      {de:'Mitwirken',en:'Contribute',es:'Contribuir',ru:'Внести вклад',pt:'Contribuir'},
+  about_contribute_txt:  {de:'Trevlix ist Open Source – jeder kann beitragen!',en:'Trevlix is open source – everyone can contribute!',es:'Trevlix es código abierto – ¡todos pueden contribuir!',ru:'Trevlix — открытый код, каждый может внести вклад!',pt:'Trevlix é código aberto – todos podem contribuir!'},
+  about_how_contribute:  {de:'Wie du beitragen kannst',en:'How to contribute',es:'Cómo contribuir',ru:'Как внести вклад',pt:'Como contribuir'},
+  about_step1:           {de:'Repository forken',en:'Fork the repository',es:'Hacer fork del repositorio',ru:'Сделать форк репозитория',pt:'Fazer fork do repositório'},
+  about_step3:           {de:'Feature Branch erstellen',en:'Create a feature branch',es:'Crear rama de funcionalidad',ru:'Создать ветку для функции',pt:'Criar branch de funcionalidade'},
+  about_step5:           {de:'Pull Request erstellen',en:'Create a pull request',es:'Crear un pull request',ru:'Создать pull request',pt:'Criar um pull request'},
+  about_comment_clone:   {de:'Repository klonen',en:'Clone the repository',es:'Clonar el repositorio',ru:'Клонировать репозиторий',pt:'Clonar o repositório'},
+  about_license:         {de:'Lizenz',en:'License',es:'Licencia',ru:'Лицензия',pt:'Licença'},
+  about_links:           {de:'Links',en:'Links',es:'Enlaces',ru:'Ссылки',pt:'Links'},
+
+  /* ── API DOCS PAGE ── */
+  api_h1:       {de:'API-Dokumentation',en:'API Documentation',es:'Documentación API',ru:'Документация API',pt:'Documentação da API'},
+  api_subtitle: {de:'REST API Referenz für Trevlix',en:'REST API reference for Trevlix',es:'Referencia de la API REST de Trevlix',ru:'Справочник REST API для Trevlix',pt:'Referência da API REST do Trevlix'},
+
+  /* ── CHANGELOG PAGE ── */
+  changelog_h1:         {de:'Changelog',en:'Changelog',es:'Registro de Cambios',ru:'Журнал изменений',pt:'Registro de Alterações'},
+  changelog_subtitle:   {de:'Versionshistorie & Updates',en:'Version history & updates',es:'Historial de versiones & actualizaciones',ru:'История версий и обновления',pt:'Histórico de versões & atualizações'},
+  changelog_added:      {de:'Hinzugefügt',en:'Added',es:'Añadido',ru:'Добавлено',pt:'Adicionado'},
+  changelog_changed:    {de:'Geändert',en:'Changed',es:'Cambiado',ru:'Изменено',pt:'Alterado'},
+  changelog_fixed:      {de:'Behoben',en:'Fixed',es:'Corregido',ru:'Исправлено',pt:'Corrigido'},
+  changelog_tag_latest: {de:'Aktuell',en:'Latest',es:'Último',ru:'Последний',pt:'Mais Recente'},
+
+  /* ── 404 ERROR PAGE ── */
+  err404_title:     {de:'Seite nicht gefunden',en:'Page not found',es:'Página no encontrada',ru:'Страница не найдена',pt:'Página não encontrada'},
+  err404_home:      {de:'Zur Startseite',en:'Go to homepage',es:'Ir al inicio',ru:'На главную',pt:'Ir para a página inicial'},
+  err404_dashboard: {de:'Zum Dashboard',en:'Go to dashboard',es:'Ir al panel',ru:'На панель',pt:'Ir para o painel'},
+
+  /* ── FAQ PAGE ── */
+  faq_h1:           {de:'Häufig gestellte Fragen',en:'Frequently Asked Questions',es:'Preguntas Frecuentes',ru:'Часто задаваемые вопросы',pt:'Perguntas Frequentes'},
+  faq_subtitle:     {de:'Antworten auf die wichtigsten Fragen',en:'Answers to the most important questions',es:'Respuestas a las preguntas más importantes',ru:'Ответы на самые важные вопросы',pt:'Respostas às perguntas mais importantes'},
+  faq_cat_general:  {de:'Allgemein',en:'General',es:'General',ru:'Общее',pt:'Geral'},
+  faq_cat_install:  {de:'Installation',en:'Installation',es:'Instalación',ru:'Установка',pt:'Instalação'},
+  faq_cat_trading:  {de:'Trading',en:'Trading',es:'Trading',ru:'Торговля',pt:'Trading'},
+  faq_cat_ai:       {de:'KI & Machine Learning',en:'AI & Machine Learning',es:'IA & Machine Learning',ru:'ИИ & Машинное обучение',pt:'IA & Machine Learning'},
+  faq_cat_security: {de:'Sicherheit',en:'Security',es:'Seguridad',ru:'Безопасность',pt:'Segurança'},
+  faq_q1:  {de:'Was ist Trevlix?',en:'What is Trevlix?',es:'¿Qué es Trevlix?',ru:'Что такое Trevlix?',pt:'O que é o Trevlix?'},
+  faq_a1:  {de:'Trevlix ist ein algorithmischer Krypto-Trading-Bot mit KI-Integration, der automatisch auf mehreren Börsen handelt.',en:'Trevlix is an algorithmic crypto trading bot with AI integration that automatically trades on multiple exchanges.',es:'Trevlix es un bot algorítmico de trading cripto con integración de IA que opera automáticamente en múltiples exchanges.',ru:'Trevlix — это алгоритмический крипто-торговый бот с интеграцией ИИ, автоматически торгующий на нескольких биржах.',pt:'Trevlix é um bot algorítmico de trading cripto com integração de IA que opera automaticamente em múltiplas exchanges.'},
+  faq_q2:  {de:'Welche Börsen werden unterstützt?',en:'Which exchanges are supported?',es:'¿Qué exchanges se admiten?',ru:'Какие биржи поддерживаются?',pt:'Quais exchanges são suportadas?'},
+  faq_a2:  {de:'Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi und Coinbase.',en:'Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi, and Coinbase.',es:'Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi y Coinbase.',ru:'Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi и Coinbase.',pt:'Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi e Coinbase.'},
+  faq_q3:  {de:'Ist Paper Trading möglich?',en:'Is paper trading available?',es:'¿Es posible el trading simulado?',ru:'Доступна ли бумажная торговля?',pt:'O trading simulado está disponível?'},
+  faq_q4:  {de:'Wie installiere ich Trevlix?',en:'How do I install Trevlix?',es:'¿Cómo instalo Trevlix?',ru:'Как установить Trevlix?',pt:'Como instalo o Trevlix?'},
+  faq_a4:  {de:'Per One-Liner-Script, manuell via pip oder per Docker. Siehe Installationsseite.',en:'Via one-liner script, manually via pip, or via Docker. See the installation page.',es:'Con script de una línea, manualmente vía pip o vía Docker. Ver página de instalación.',ru:'С помощью скрипта, вручную через pip или через Docker. См. страницу установки.',pt:'Via script de uma linha, manualmente via pip ou via Docker. Veja a página de instalação.'},
+  faq_q5:  {de:'Was kostet Trevlix?',en:'What does Trevlix cost?',es:'¿Cuánto cuesta Trevlix?',ru:'Сколько стоит Trevlix?',pt:'Quanto custa o Trevlix?'},
+  faq_a5:  {de:'Trevlix ist Open Source und komplett kostenlos (MIT-Lizenz).',en:'Trevlix is open source and completely free (MIT license).',es:'Trevlix es código abierto y completamente gratuito (licencia MIT).',ru:'Trevlix — открытый код и полностью бесплатный (лицензия MIT).',pt:'Trevlix é código aberto e completamente gratuito (licença MIT).'},
+  faq_q6:  {de:'Wie viele Strategien gibt es?',en:'How many strategies are there?',es:'¿Cuántas estrategias hay?',ru:'Сколько стратегий существует?',pt:'Quantas estratégias existem?'},
+  faq_q7:  {de:'Wie funktioniert das Voting-System?',en:'How does the voting system work?',es:'¿Cómo funciona el sistema de votación?',ru:'Как работает система голосования?',pt:'Como funciona o sistema de votação?'},
+  faq_a7:  {de:'Alle 9 Strategien stimmen ab: +1 (Kauf), -1 (Verkauf), 0 (Neutral). Gewichtete Mehrheit entscheidet.',en:'All 9 strategies vote: +1 (buy), -1 (sell), 0 (neutral). Weighted majority decides.',es:'Las 9 estrategias votan: +1 (compra), -1 (venta), 0 (neutral). La mayoría ponderada decide.',ru:'Все 9 стратегий голосуют: +1 (покупка), -1 (продажа), 0 (нейтрально). Решает взвешенное большинство.',pt:'Todas as 9 estratégias votam: +1 (compra), -1 (venda), 0 (neutro). A maioria ponderada decide.'},
+  faq_q8:  {de:'Welche KI-Modelle werden verwendet?',en:'Which AI models are used?',es:'¿Qué modelos de IA se usan?',ru:'Какие ИИ-модели используются?',pt:'Quais modelos de IA são usados?'},
+  faq_q9:  {de:'Sind meine API-Keys sicher?',en:'Are my API keys safe?',es:'¿Están seguros mis API keys?',ru:'Мои API-ключи в безопасности?',pt:'Meus API keys estão seguros?'},
+  faq_a9:  {de:'Ja, alle API-Keys werden mit Fernet (AES-128-CBC) verschlüsselt in der Datenbank gespeichert.',en:'Yes, all API keys are encrypted with Fernet (AES-128-CBC) and stored in the database.',es:'Sí, todos los API keys se cifran con Fernet (AES-128-CBC) y se almacenan en la base de datos.',ru:'Да, все API-ключи шифруются с помощью Fernet (AES-128-CBC) и хранятся в базе данных.',pt:'Sim, todas as API keys são criptografadas com Fernet (AES-128-CBC) e armazenadas no banco de dados.'},
+  faq_q10: {de:'Gibt es Zwei-Faktor-Authentifizierung?',en:'Is there two-factor authentication?',es:'¿Hay autenticación de dos factores?',ru:'Есть ли двухфакторная аутентификация?',pt:'Existe autenticação de dois fatores?'},
+  faq_a10: {de:'Ja, TOTP-basierte 2FA mit jeder Authenticator-App (Google Authenticator, Authy, etc.).',en:'Yes, TOTP-based 2FA with any authenticator app (Google Authenticator, Authy, etc.).',es:'Sí, 2FA basado en TOTP con cualquier app autenticadora (Google Authenticator, Authy, etc.).',ru:'Да, 2FA на основе TOTP с любым приложением-аутентификатором (Google Authenticator, Authy и т.д.).',pt:'Sim, 2FA baseado em TOTP com qualquer app autenticador (Google Authenticator, Authy, etc.).'},
+  faq_q11: {de:'Was ist Trade DNA?',en:'What is Trade DNA?',es:'¿Qué es Trade DNA?',ru:'Что такое Trade DNA?',pt:'O que é Trade DNA?'},
+  faq_a11: {de:'Ein 7-dimensionaler Fingerabdruck für jeden Trade, der Muster erkennt und zukünftige Trades optimiert.',en:'A 7-dimensional fingerprint for each trade that detects patterns and optimizes future trades.',es:'Una huella digital de 7 dimensiones para cada operación que detecta patrones y optimiza operaciones futuras.',ru:'7-мерный отпечаток каждой сделки, который распознаёт паттерны и оптимизирует будущие сделки.',pt:'Uma impressão digital de 7 dimensões para cada operação que detecta padrões e otimiza operações futuras.'},
+  faq_q12: {de:'Was sind Smart Exits?',en:'What are Smart Exits?',es:'¿Qué son Smart Exits?',ru:'Что такое Smart Exits?',pt:'O que são Smart Exits?'},
+  faq_a12: {de:'ATR-basierte, volatilitätsadaptive Stop-Loss/Take-Profit Levels, die sich an das Marktregime anpassen.',en:'ATR-based, volatility-adaptive stop-loss/take-profit levels that adapt to market regime.',es:'Niveles de stop-loss/take-profit adaptativos a la volatilidad basados en ATR que se ajustan al régimen del mercado.',ru:'Уровни стоп-лосс/тейк-профит, адаптивные к волатильности на основе ATR, которые адаптируются к режиму рынка.',pt:'Níveis de stop-loss/take-profit adaptativos à volatilidade baseados em ATR que se adaptam ao regime de mercado.'},
+  faq_q13: {de:'Wie funktioniert das Risikomanagement?',en:'How does risk management work?',es:'¿Cómo funciona la gestión de riesgos?',ru:'Как работает управление рисками?',pt:'Como funciona a gestão de risco?'},
+  faq_a13: {de:'Circuit Breaker, Drawdown-Kontrolle, Tages-Verlustlimit, Korrelationsfilter, Liquiditätsprüfung und mehr.',en:'Circuit breaker, drawdown control, daily loss limit, correlation filter, liquidity check, and more.',es:'Circuit breaker, control de drawdown, límite de pérdida diaria, filtro de correlación, verificación de liquidez y más.',ru:'Circuit breaker, контроль просадки, дневной лимит убытков, фильтр корреляции, проверка ликвидности и многое другое.',pt:'Circuit breaker, controle de drawdown, limite de perda diária, filtro de correlação, verificação de liquidez e mais.'},
+  faq_q14: {de:'Kann ich Trevlix mit Docker betreiben?',en:'Can I run Trevlix with Docker?',es:'¿Puedo ejecutar Trevlix con Docker?',ru:'Могу ли я запустить Trevlix через Docker?',pt:'Posso executar o Trevlix com Docker?'},
+  faq_q15: {de:'Welche Datenbank wird verwendet?',en:'Which database is used?',es:'¿Qué base de datos se utiliza?',ru:'Какая база данных используется?',pt:'Qual banco de dados é usado?'},
+  faq_q16: {de:'Gibt es Benachrichtigungen?',en:'Are there notifications?',es:'¿Hay notificaciones?',ru:'Есть ли уведомления?',pt:'Existem notificações?'},
+  faq_a16: {de:'Ja, Discord-Webhooks und Telegram-Bot mit konfigurierbaren Alerts für Trades, Fehler und Reports.',en:'Yes, Discord webhooks and Telegram bot with configurable alerts for trades, errors, and reports.',es:'Sí, webhooks de Discord y bot de Telegram con alertas configurables para operaciones, errores e informes.',ru:'Да, вебхуки Discord и Telegram-бот с настраиваемыми оповещениями о сделках, ошибках и отчётах.',pt:'Sim, webhooks do Discord e bot do Telegram com alertas configuráveis para operações, erros e relatórios.'},
+  faq_q17: {de:'Unterstützt Trevlix mehrere Benutzer?',en:'Does Trevlix support multiple users?',es:'¿Trevlix admite múltiples usuarios?',ru:'Поддерживает ли Trevlix нескольких пользователей?',pt:'O Trevlix suporta múltiplos usuários?'},
+  faq_q18: {de:'Wie aktualisiere ich Trevlix?',en:'How do I update Trevlix?',es:'¿Cómo actualizo Trevlix?',ru:'Как обновить Trevlix?',pt:'Como atualizo o Trevlix?'},
+
+  /* ── ROADMAP PAGE ── */
+  roadmap_h1:       {de:'Roadmap',en:'Roadmap',es:'Hoja de Ruta',ru:'Дорожная карта',pt:'Roteiro'},
+  roadmap_subtitle: {de:'Geplante Features & Meilensteine',en:'Planned features & milestones',es:'Funciones planificadas & hitos',ru:'Запланированные функции и этапы',pt:'Funcionalidades planejadas & marcos'},
+
+  /* ── SECURITY PAGE ── */
+  security_h1:       {de:'Sicherheit',en:'Security',es:'Seguridad',ru:'Безопасность',pt:'Segurança'},
+  security_subtitle: {de:'Wie Trevlix deine Daten schützt',en:'How Trevlix protects your data',es:'Cómo Trevlix protege tus datos',ru:'Как Trevlix защищает ваши данные',pt:'Como o Trevlix protege seus dados'},
+
+  /* ── STRATEGIES PAGE ── */
+  strat_h1:          {de:'Trading-Strategien',en:'Trading Strategies',es:'Estrategias de Trading',ru:'Торговые стратегии',pt:'Estratégias de Trading'},
+  strat_breadcrumb:  {de:'Strategien',en:'Strategies',es:'Estrategias',ru:'Стратегии',pt:'Estratégias'},
+  strat_ensemble_h:  {de:'Ensemble-Voting',en:'Ensemble Voting',es:'Votación Ensemble',ru:'Ансамблевое голосование',pt:'Votação Ensemble'},
+  strat_ensemble_p1: {de:'Alle Strategien stimmen ab: +1 (Kauf), -1 (Verkauf), 0 (Neutral). Gewichtete Mehrheit entscheidet.',en:'All strategies vote: +1 (buy), -1 (sell), 0 (neutral). Weighted majority decides.',es:'Todas las estrategias votan: +1 (compra), -1 (venta), 0 (neutral). La mayoría ponderada decide.',ru:'Все стратегии голосуют: +1 (покупка), -1 (продажа), 0 (нейтрально). Решает взвешенное большинство.',pt:'Todas as estratégias votam: +1 (compra), -1 (venda), 0 (neutro). A maioria ponderada decide.'},
+
+  /* ── DASHBOARD WIZARD ── */
+  loading_label:    {de:'Laden...',en:'Loading...',es:'Cargando...',ru:'Загрузка...',pt:'Carregando...'},
+  wiz_complete_desc:{de:'Setup abgeschlossen! Der Bot ist bereit.',en:'Setup complete! The bot is ready.',es:'¡Configuración completa! El bot está listo.',ru:'Настройка завершена! Бот готов.',pt:'Configuração concluída! O bot está pronto.'},
+  wiz_next_step:    {de:'Nächster Schritt',en:'Next Step',es:'Siguiente Paso',ru:'Следующий шаг',pt:'Próximo Passo'},
+  wiz_paper_hint:   {de:'Empfohlen: Starte mit Paper Trading!',en:'Recommended: Start with paper trading!',es:'Recomendado: ¡Empieza con trading simulado!',ru:'Рекомендуется: начните с бумажной торговли!',pt:'Recomendado: comece com trading simulado!'},
+  wiz_start:        {de:'Setup starten',en:'Start Setup',es:'Iniciar Configuración',ru:'Начать настройку',pt:'Iniciar Configuração'},
 };
 
 /* ════════════════════════════════════════════════════════════

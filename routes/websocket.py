@@ -62,6 +62,10 @@ def register_handlers(
     # ── Rate-Limit-Hilfsfunktion ────────────────────────────────────────────
     _last_cleanup = [0.0]  # Mutable Container für nonlocal-freien Zugriff
 
+    import threading
+
+    _ws_limits_lock = threading.Lock()
+
     def _ws_rate_check(sid: str, action: str, min_interval: float = 2.0) -> bool:
         """Gibt True zurück wenn der Request erlaubt ist.
 
@@ -80,20 +84,21 @@ def register_handlers(
 
         key = f"{sid}:{action}"
         now = time.time()
-        last = _ws_limits.get(key, 0)
-        if now - last < min_interval:
-            return False
-        _ws_limits[key] = now
+        with _ws_limits_lock:
+            last = _ws_limits.get(key, 0)
+            if now - last < min_interval:
+                return False
+            _ws_limits[key] = now
 
-        # Zeitbasierte Eviction alle 60s (statt nur bei >1000 Einträgen)
-        if now - _last_cleanup[0] > 60:
-            _last_cleanup[0] = now
-            cutoff = now - 300  # Einträge älter als 5 Minuten entfernen
-            stale = [k for k, v in _ws_limits.items() if v < cutoff]
-            for k in stale:
-                _ws_limits.pop(k, None)
-            if stale:
-                log.debug(f"WS Rate-Limit: {len(stale)} stale Einträge entfernt")
+            # Zeitbasierte Eviction alle 60s (statt nur bei >1000 Einträgen)
+            if now - _last_cleanup[0] > 60:
+                _last_cleanup[0] = now
+                cutoff = now - 300  # Einträge älter als 5 Minuten entfernen
+                stale = [k for k, v in _ws_limits.items() if v < cutoff]
+                for k in stale:
+                    _ws_limits.pop(k, None)
+                if stale:
+                    log.debug(f"WS Rate-Limit: {len(stale)} stale Einträge entfernt")
 
         return True
 

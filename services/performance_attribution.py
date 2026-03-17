@@ -45,6 +45,7 @@ def _hour_to_session(hour: int) -> str:
 
 def _fg_bucket(value: int) -> str:
     """Ordnet den Fear & Greed Index einem Bucket zu."""
+    value = max(0, min(value, 100))
     if value < 20:
         return "extreme_fear"
     elif value < 40:
