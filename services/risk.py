@@ -116,13 +116,12 @@ class RiskManager:
     def is_correlated(self, symbol: str, open_syms: list[str]) -> bool:
         if not open_syms or self.config.get("max_corr", 0.75) >= 1.0:
             return False
-        h1 = self._price_history.get(symbol, [])
+        with self._lock:
+            h1 = list(self._price_history.get(symbol, []))
+            histories = {s: list(self._price_history.get(s, [])) for s in open_syms if s != symbol}
         if len(h1) < 20:
             return False
-        for s in open_syms:
-            if s == symbol:
-                continue
-            h2 = self._price_history.get(s, [])
+        for s, h2 in histories.items():
             if len(h2) < 20:
                 continue
             n = min(len(h1), len(h2), 100)
@@ -263,8 +262,9 @@ class FundingRateTracker:
         self._lock = threading.Lock()
 
     def update(self, ex=None):
-        if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
-            return
+        with self._lock:
+            if self._last_update and (datetime.now() - self._last_update).total_seconds() < 900:
+                return
         try:
             url = "https://api.bybit.com/v5/market/tickers?category=linear"
             resp = httpx.get(url, timeout=8)

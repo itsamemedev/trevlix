@@ -1962,6 +1962,14 @@ def _security_headers(response):
     return response
 
 
+def _safe_int(val: Any, default: int) -> int:
+    """Sicherer int()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
 def _generate_csrf_token() -> str:
     """[Verbesserung #2] CSRF-Token pro Session generieren."""
     if "_csrf_token" not in session:
@@ -2158,6 +2166,29 @@ class DiscordNotifier:
         self.send(
             f"🧬 Genetik Gen.{gen}",
             f"```\nFitness: {fitness:.3f}\nSL: {genome.get('sl', 0) * 100:.1f}% TP: {genome.get('tp', 0) * 100:.1f}%\n```",
+            "info",
+        )
+
+    def dna_boost(
+        self, symbol: str, action: str, win_rate: float, matches: int, multiplier: float
+    ) -> None:
+        """Benachrichtigung bei DNA-Pattern-Match (Boost oder Block)."""
+        emoji = "🧬✅" if action == "boost" else "🧬⛔"
+        color = "buy" if action == "boost" else "sell_loss"
+        self.send(
+            f"{emoji} DNA-{action.upper()}: {symbol}",
+            f"```\nWin-Rate:    {win_rate:.0f}%\n"
+            f"Matches:     {matches}\n"
+            f"Multiplikator: {multiplier:.2f}x\n```",
+            color,
+        )
+
+    def smart_exit(self, symbol: str, sl: float, tp: float, regime: str, atr_pct: float) -> None:
+        """Benachrichtigung über Smart Exit Level."""
+        self.send(
+            f"📐 Smart Exit: {symbol}",
+            f"```\nRegime:  {regime}\nATR:     {atr_pct:.2f}%\n"
+            f"SL:      {sl:.4f}\nTP:      {tp:.4f}\n```",
             "info",
         )
 
@@ -5331,7 +5362,11 @@ def bot_loop():
                         if s not in state.positions
                     }
                     for fut in as_completed(futures):
-                        res = fut.result()
+                        try:
+                            res = fut.result()
+                        except Exception as scan_err:
+                            log.debug(f"Scan-Future: {scan_err}")
+                            continue
                         if res and res["signal"] == 1:
                             state.add_signal(
                                 {
@@ -5396,7 +5431,7 @@ def api_state():
 @app.route("/api/v1/trades")
 @api_auth_required
 def api_trades():
-    limit = min(int(request.args.get("limit", 100)), 1000)
+    limit = min(_safe_int(request.args.get("limit", 100), 100), 1000)
     symbol = request.args.get("symbol")
     year = request.args.get("year")
     return jsonify(db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id))
@@ -5435,7 +5470,7 @@ def api_backtest():
 @app.route("/api/v1/tax")
 @api_auth_required
 def api_tax_v1():
-    year = int(request.args.get("year", datetime.now().year))
+    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     trades = db.load_trades(limit=10000, year=year, user_id=request.user_id)
     return jsonify(tax.generate(trades, year, method))
@@ -5592,7 +5627,7 @@ def api_knowledge_category(category):
     """Alle Einträge einer Wissens-Kategorie."""
     if category not in KnowledgeBase.CATEGORIES:
         return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
-    limit = min(int(request.args.get("limit", 50)), 200)
+    limit = min(_safe_int(request.args.get("limit", 50), 50), 200)
     return jsonify(knowledge_base.get_category(category, limit))
 
 
@@ -5894,7 +5929,7 @@ def api_heatmap_legacy():
 def api_ohlcv(symbol):
     sym = symbol.replace("-", "/")
     tf = request.args.get("tf", "1h")
-    limit = min(int(request.args.get("limit", 200)), 500)
+    limit = min(_safe_int(request.args.get("limit", 200), 200), 500)
     try:
         ex = create_exchange()
         ohlcv = ex.fetch_ohlcv(sym, tf, limit=limit)
@@ -5907,7 +5942,7 @@ def api_ohlcv(symbol):
 @app.route("/api/tax_report")
 @dashboard_auth
 def api_tax_report():
-    year = int(request.args.get("year", datetime.now().year))
+    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     fmt = request.args.get("format", "json")
     trades = db.load_trades(limit=10000, year=year)
@@ -6294,24 +6329,27 @@ def on_force_optimize():
 @socketio.on("force_genetic")
 def on_force_genetic():
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
-    genetic.evolve(state.closed_trades)
+    threading.Thread(
+        target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
+    ).start()
 
 
 @socketio.on("reset_ai")
 def on_reset_ai():
-    ai_engine.X_raw = []
-    ai_engine.y_raw = []
-    ai_engine.regimes_raw = []
-    ai_engine.X_bull = []
-    ai_engine.y_bull = []
-    ai_engine.X_bear = []
-    ai_engine.y_bear = []
-    ai_engine.is_trained = False
-    ai_engine.global_model = None
-    ai_engine.bull_model = None
-    ai_engine.bear_model = None
-    ai_engine.lstm_model = None
-    ai_engine.progress_pct = 0
+    with ai_engine._lock:
+        ai_engine.X_raw = []
+        ai_engine.y_raw = []
+        ai_engine.regimes_raw = []
+        ai_engine.X_bull = []
+        ai_engine.y_bull = []
+        ai_engine.X_bear = []
+        ai_engine.y_bear = []
+        ai_engine.is_trained = False
+        ai_engine.global_model = None
+        ai_engine.bull_model = None
+        ai_engine.bear_model = None
+        ai_engine.lstm_model = None
+        ai_engine.progress_pct = 0
     emit("status", {"msg": "🔄 KI zurückgesetzt", "type": "warning"})
 
 
@@ -6394,8 +6432,9 @@ def on_send_report():
 
 @socketio.on("reset_circuit_breaker")
 def on_reset_cb():
-    risk.circuit_breaker_until = None
-    risk.consecutive_losses = 0
+    with risk._lock:
+        risk.circuit_breaker_until = None
+        risk.consecutive_losses = 0
     emit("status", {"msg": "⚡ Circuit Breaker zurückgesetzt", "type": "success"}, broadcast=True)
     emit("update", state.snapshot(), broadcast=True)
 
@@ -6996,8 +7035,8 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
 @app.route("/api/v1/risk/monte-carlo")
 @api_auth_required
 def api_monte_carlo():
-    n_sim = min(int(request.args.get("n", 10000)), 50000)
-    n_days = min(int(request.args.get("days", 30)), 365)
+    n_sim = min(_safe_int(request.args.get("n", 10000), 10000), 50000)
+    n_days = min(_safe_int(request.args.get("days", 30), 30), 365)
     result = run_monte_carlo(n_sim, n_days)
     return jsonify(result)
 
@@ -7208,7 +7247,7 @@ funding_tracker = FundingRateTracker(CONFIG)
 @app.route("/api/v1/funding-rates")
 @api_auth_required
 def api_funding_rates():
-    n = int(request.args.get("n", 20))
+    n = _safe_int(request.args.get("n", 20), 20)
     return jsonify(
         {
             "top_rates": funding_tracker.top_rates(n),
@@ -7267,7 +7306,7 @@ def api_trade_dna():
 @api_auth_required
 def api_trade_dna_patterns():
     """Top profitable und schlechteste DNA-Muster."""
-    n = int(request.args.get("n", 10))
+    n = _safe_int(request.args.get("n", 10), 10)
     return jsonify(
         {
             "top": trade_dna.top_patterns(n),
@@ -7294,7 +7333,7 @@ def api_performance_attribution():
 @api_auth_required
 def api_performance_contributors():
     """Top-Contributors und Worst-Performers."""
-    n = int(request.args.get("n", 5))
+    n = _safe_int(request.args.get("n", 5), 5)
     return jsonify(perf_attribution.top_contributors(n))
 
 
@@ -7323,7 +7362,7 @@ def api_cvar():
 @app.route("/api/v1/risk/volatility")
 @api_auth_required
 def api_volatility():
-    return jsonify(adv_risk.volatility_forecast(int(request.args.get("h", 5))))
+    return jsonify(adv_risk.volatility_forecast(_safe_int(request.args.get("h", 5), 5)))
 
 
 @app.route("/api/v1/risk/regime")
