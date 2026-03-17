@@ -172,6 +172,40 @@ const PT = {
   err404_desc:         {de:'Die angeforderte Seite existiert nicht oder wurde verschoben. Kein Grund zur Panik &mdash; dein Portfolio ist sicher!',en:'The requested page does not exist or has been moved. No need to panic &mdash; your portfolio is safe!',es:'La página solicitada no existe o fue movida. ¡No hay razón para entrar en pánico &mdash; tu cartera está segura!',ru:'Запрошенная страница не существует или была перемещена. Нет причин паниковать &mdash; ваш портфель в безопасности!',pt:'A página solicitada não existe ou foi movida. Sem pânico &mdash; seu portfólio está seguro!'},
   err404_home:         {de:'Zur Startseite',en:'Go to Homepage',es:'Ir a Inicio',ru:'На главную',pt:'Ir para Início'},
   err404_dashboard:    {de:'Zum Dashboard',en:'Go to Dashboard',es:'Ir al Dashboard',ru:'К дашборду',pt:'Ir para Dashboard'},
+
+  /* ══════════════════════════════════════════════════════════
+     LOGIN PAGE
+  ══════════════════════════════════════════════════════════ */
+  login_h1:            {de:'Anmelden',en:'Login',es:'Iniciar sesión',ru:'Вход',pt:'Entrar'},
+  login_subtitle:      {de:'Melde dich an, um auf das Dashboard zuzugreifen.',en:'Log in to access the dashboard.',es:'Inicia sesión para acceder al panel.',ru:'Войдите для доступа к панели управления.',pt:'Faça login para acessar o painel.'},
+  login_username:      {de:'Benutzername',en:'Username',es:'Usuario',ru:'Имя пользователя',pt:'Nome de usuário'},
+  login_password:      {de:'Passwort',en:'Password',es:'Contraseña',ru:'Пароль',pt:'Senha'},
+  login_submit:        {de:'Anmelden →',en:'Login →',es:'Iniciar sesión →',ru:'Войти →',pt:'Entrar →'},
+  login_register_link: {de:'Kein Konto? Registrieren',en:'No account? Register',es:'¿Sin cuenta? Registrarse',ru:'Нет аккаунта? Регистрация',pt:'Sem conta? Registrar'},
+  login_2fa_label:     {de:'2FA-Code',en:'2FA Code',es:'Código 2FA',ru:'Код 2FA',pt:'Código 2FA'},
+  login_2fa_placeholder:{de:'6-stelliger Code',en:'6-digit code',es:'Código de 6 dígitos',ru:'6-значный код',pt:'Código de 6 dígitos'},
+  login_remember:      {de:'Angemeldet bleiben',en:'Remember me',es:'Recordarme',ru:'Запомнить меня',pt:'Lembrar-me'},
+  login_forgot:        {de:'Passwort vergessen?',en:'Forgot password?',es:'¿Olvidaste la contraseña?',ru:'Забыли пароль?',pt:'Esqueceu a senha?'},
+
+  /* ── AUTH MESSAGES (Static pages) ── */
+  auth_login_success:       {de:'Erfolgreich angemeldet',en:'Successfully logged in',es:'Inicio de sesión exitoso',ru:'Успешный вход',pt:'Login realizado com sucesso'},
+  auth_login_failed:        {de:'Anmeldung fehlgeschlagen',en:'Login failed',es:'Error de inicio de sesión',ru:'Ошибка входа',pt:'Falha no login'},
+  auth_login_blocked:       {de:'Zu viele Anmeldeversuche. Bitte warte.',en:'Too many login attempts. Please wait.',es:'Demasiados intentos. Por favor, espera.',ru:'Слишком много попыток. Подождите.',pt:'Muitas tentativas. Por favor, aguarde.'},
+  auth_session_expired:     {de:'Deine Sitzung ist abgelaufen. Bitte erneut anmelden.',en:'Your session has expired. Please log in again.',es:'Tu sesión ha expirado. Inicia sesión de nuevo.',ru:'Сессия истекла. Войдите снова.',pt:'Sua sessão expirou. Faça login novamente.'},
+  auth_register_disabled:   {de:'Registrierung ist derzeit deaktiviert.',en:'Registration is currently disabled.',es:'El registro está desactivado actualmente.',ru:'Регистрация в настоящее время отключена.',pt:'O registro está desativado no momento.'},
+  auth_logout:              {de:'Abmelden',en:'Logout',es:'Cerrar sesión',ru:'Выйти',pt:'Sair'},
+
+  /* ── SHARED NAV (additional) ── */
+  nav_login:           {de:'Anmelden',en:'Login',es:'Iniciar sesión',ru:'Войти',pt:'Entrar'},
+  nav_register:        {de:'Registrieren',en:'Register',es:'Registrarse',ru:'Регистрация',pt:'Registrar'},
+  nav_logout:          {de:'Abmelden',en:'Logout',es:'Cerrar sesión',ru:'Выйти',pt:'Sair'},
+  nav_profile:         {de:'Profil',en:'Profile',es:'Perfil',ru:'Профиль',pt:'Perfil'},
+
+  /* ── SHARED FOOTER (additional) ── */
+  footer_legal:        {de:'Rechtliches',en:'Legal',es:'Legal',ru:'Правовая информация',pt:'Legal'},
+  footer_privacy:      {de:'Datenschutz',en:'Privacy',es:'Privacidad',ru:'Конфиденциальность',pt:'Privacidade'},
+  footer_terms:        {de:'Nutzungsbedingungen',en:'Terms of Use',es:'Términos de Uso',ru:'Условия использования',pt:'Termos de Uso'},
+  footer_contact:      {de:'Kontakt',en:'Contact',es:'Contacto',ru:'Контакт',pt:'Contato'},
 };
 
 /* ──────────────────────────────────────────────────────────

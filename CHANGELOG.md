@@ -7,6 +7,59 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.0] – 2026-03-17
+
+### Added — Production-Ready Upgrade
+
+#### Installer v3.0.0 (`install.sh`)
+- **Admin Username/Password Prompt** — Interaktive Eingabe von Admin-Benutzername und -Passwort bei der Installation
+- **CLI-Flags** — `--admin-user NAME` und `--admin-pass PASS` für nicht-interaktive Installationen
+- **Broad Linux OS Support** — Debian, Ubuntu, Raspberry Pi OS, Linux Mint, CentOS Stream, Rocky Linux, AlmaLinux, RHEL, Fedora, openSUSE, Arch Linux
+- **Package Manager Detection** — apt-get, dnf, yum, zypper, pacman mit OS-spezifischen Paketnamen
+- **Auto-MOTD Installation** — motd.sh wird automatisch am Ende der Installation eingerichtet
+- **Credentials-Datei** — Passwörter werden in `.credentials` (chmod 600) gespeichert statt im Terminal angezeigt
+- **requirements.txt First** — Python-Pakete werden primär aus requirements.txt installiert
+- **Repo URL** — Korrekter GitHub-Link: `github.com/itsamemedev/Trevlix`
+
+#### MOTD v2.0.0 (`motd.sh`)
+- **Broad Linux Support** — Debian/Ubuntu via update-motd.d, RHEL/CentOS/Fedora/openSUSE/Arch via profile.d
+- **Raspberry Pi Detection** — Hardware-Modell, CPU-Temperatur mit Warnung bei >75°C
+- **Multi-Exchange Anzeige** — Liest `EXCHANGES_ENABLED` aus .env
+- **Domain-Aware Dashboard URL** — Erkennt Domain aus ALLOWED_ORIGINS
+- **CPU-Info & Architektur** — Prozessor-Modell und Kernanzahl
+- **RAM-Warnung** — Visueller Indikator bei >80% Auslastung
+- **Robuste IP-Erkennung** — 3 Fallback-Methoden (hostname/ip/ifconfig)
+- **TREVLIX_DIR Support** — Benutzerdefiniertes Installationsverzeichnis
+
+#### Professional Login & Registration UI
+- **Glassmorphism Redesign** — Login/Register/Admin-Login komplett neu gestaltet mit modernem Glassmorphism-Design
+- **Animated Gradient Background** — Subtile, animierte Gradient-Mesh-Hintergründe
+- **Inline i18n Engine** — Standalone-Sprachauswahl direkt auf der Login-Seite (5 Sprachen)
+- **Password Visibility Toggle** — Eye-Icon zum Anzeigen/Verbergen des Passworts
+- **Responsive Design** — Optimiert für Desktop und Mobile
+- **Google Fonts Integration** — Barlow Font-Family konsistent mit Dashboard
+
+#### Comprehensive Multi-Exchange `.env.example`
+- **Multi-Exchange Konfiguration** — `EXCHANGES_ENABLED` für gleichzeitigen Betrieb aller 5 Exchanges
+- **Individuelle API-Credentials** — Separate Blöcke für Crypto.com, Binance, Bybit, OKX (mit Passphrase), KuCoin (mit Passphrase)
+- **LLM-Konfiguration** — `LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`, `LLM_MAX_TOKENS`, `LLM_TEMPERATURE`
+- **Performance-Tuning** — `INDICATOR_CACHE_TTL`, `MARKET_DATA_CACHE_TTL`
+- **Backup-Konfiguration** — `BACKUP_INTERVAL_HOURS`, `BACKUP_KEEP_DAYS`
+- **Zweisprachige Dokumentation** — Alle Kommentare auf Deutsch und Englisch
+- **Secret-Generator-Script** — Python-Einzeiler für alle Schlüssel am Ende der Datei
+
+#### Extended i18n Coverage (24+ neue Keys)
+- **Backend (`trevlix_i18n.py`)** — 24 neue Übersetzungskeys: Auth, Orders, Grid Trading, Copy-Trade, Updates, Webhooks, Smart Exit, DNA Pattern, Adaptive Weights, Attribution Report
+- **Dashboard (`trevlix_translations.js`)** — Neue Keys für Login-UI, Wizard-Buttons, Loading-Labels
+- **Static Pages (`page_i18n.js`)** — Login/Register-Seite Keys, Auth-Messages, Navigation, Footer-Erweiterungen
+
+### Changed
+- **Version** — 1.2.0 → 1.3.0 in allen Templates, Dashboard, Auth-Seiten
+- **Dashboard** — Hardcoded German strings durch `data-i18n` Attribute ersetzt (Wizard-Buttons, Loading-Label, Paper-Hint)
+- **Alle Website-Templates** — Version-Bump auf v1.3.0 (index, about, api-docs, changelog, faq, installation, roadmap, security, strategies)
+
+---
+
 ## [1.2.0] – 2026-03-16
 
 ### Added — 2 New Unique Features + Optimizations

@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#020507">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
-<title>TREVLIX v1.2.0 – Algorithmic Trading Intelligence</title>
+<title>TREVLIX v1.3.0 – Algorithmic Trading Intelligence</title>
 <!-- [#36] FOUC-Fix: Theme vor CSS-Load setzen, verhindert weißes Aufblitzen -->
 <script>
 (function(){
@@ -28,7 +28,7 @@
 <!-- [#40] Page-Load Skeleton Overlay -->
 <div id="pageLoadOverlay" aria-hidden="true">
   <div class="load-spinner"></div>
-  <div class="load-label">TREVLIX wird geladen…</div>
+  <div class="load-label" data-i18n="loading_label">TREVLIX wird geladen…</div>
 </div>
 
 <!-- WIZARD OVERLAY -->
@@ -41,8 +41,8 @@
     <div class="wizard-step active" id="wz0">
       <div style="font-size:44px;margin-bottom:12px">⚡</div>
       <div style="font-size:22px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_welcome_title">Willkommen bei</span> <span style="color:var(--cyan)">TREVLIX</span>!</div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.2.0 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
-      <button class="save-btn" onclick="wizNext()">→ Los geht's!</button>
+      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.3.0 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
+      <button class="save-btn" onclick="wizNext()" data-i18n="wiz_start">→ Los geht's!</button>
     </div>
     <div class="wizard-step" id="wz1">
       <div style="font-size:36px;margin-bottom:10px">🌐</div>
@@ -54,15 +54,15 @@
         <button onclick="wizSelEx('okx',this)"       class="btn btn-info" style="padding:13px;font-size:12px">OKX</button>
         <button onclick="wizSelEx('kucoin',this)"    class="btn btn-info" style="padding:13px;font-size:12px" style="grid-column:span 2">KuCoin</button>
       </div>
-      <button class="save-btn" onclick="wizNext()">→ Weiter</button>
+      <button class="save-btn" onclick="wizNext()" data-i18n="wiz_next_step">→ Weiter</button>
     </div>
     <div class="wizard-step" id="wz2">
       <div style="font-size:36px;margin-bottom:10px">🔑</div>
       <div style="font-size:18px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_api_keys">API-Keys</span></div>
-      <div style="font-size:12px;color:var(--sub);margin-bottom:12px">Paper-Mode ist Standard — kein echtes Geld nötig.</div>
+      <div style="font-size:12px;color:var(--sub);margin-bottom:12px" data-i18n="wiz_paper_hint">Paper-Mode ist Standard — kein echtes Geld nötig.</div>
       <input type="password" id="wzKey" placeholder="API Key" class="s-input s-input-full" style="margin-bottom:8px">
       <input type="password" id="wzSecret" placeholder="Secret Key" class="s-input s-input-full" style="margin-bottom:14px">
-      <button class="save-btn" onclick="wizSaveKeys()">→ Speichern & Weiter</button>
+      <button class="save-btn" onclick="wizSaveKeys()" data-i18n="wiz_save_next">→ Speichern & Weiter</button>
     </div>
     <div class="wizard-step" id="wz3">
       <div style="font-size:36px;margin-bottom:10px">⚙️</div>
@@ -77,8 +77,8 @@
     <div class="wizard-step" id="wz4">
       <div style="font-size:44px;margin-bottom:12px">🎉</div>
       <div style="font-size:18px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_complete_title">Alles bereit!</span></div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">TREVLIX ist eingerichtet. Klicke <strong>Start</strong> für Paper-Trading. Echten Handel in Settings aktivieren.</div>
-      <button class="save-btn" onclick="wizFinish()">✅ Dashboard öffnen</button>
+      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px" data-i18n="wiz_complete_desc">TREVLIX ist eingerichtet. Klicke <strong>Start</strong> für Paper-Trading. Echten Handel in Settings aktivieren.</div>
+      <button class="save-btn" onclick="wizFinish()" data-i18n="wiz_open_dashboard">✅ Dashboard öffnen</button>
     </div>
   </div>
 </div>
@@ -88,11 +88,11 @@
     <div class="h-logo-icon">⚡</div>
     <div>
       <div class="h-title">TREV<span style="color:var(--jade)">LIX</span></div>
-      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.2.0</div>
+      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.3.0</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:7px">
-    <div class="h-badge stop" id="statusBadge"><div class="h-dot"></div><span id="statusTxt">Gestoppt</span></div>
+    <div class="h-badge stop" id="statusBadge"><div class="h-dot"></div><span id="statusTxt" data-i18n="status_stopped">Gestoppt</span></div>
     <span class="role-badge" id="roleBadge">user</span>
   <button class="theme-btn" onclick="requestPushPermission()" id="pushBtn" title="Browser-Benachrichtigungen">🔔</button>
   <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Dark/Light Mode">🌙</button>
@@ -147,7 +147,7 @@
 
   <!-- Anomaly Banner -->
   <div id="anomalyBanner" style="display:none">
-    <div class="alert-bar warn"><span style="font-size:18px">🚨</span><div><div style="font-weight:700">Anomalie erkannt — Trading pausiert</div><div id="anomalyTxt" style="font-size:10px;margin-top:2px">—</div></div></div>
+    <div class="alert-bar warn"><span style="font-size:18px">🚨</span><div><div style="font-weight:700" data-i18n="anomaly_detected">Anomalie erkannt — Trading pausiert</div><div id="anomalyTxt" style="font-size:10px;margin-top:2px">—</div></div></div>
   </div>
 
   <!-- Dominanz -->
@@ -231,7 +231,7 @@
     <div class="sg">
       <div class="sc"><div class="sv" id="sDailyPnl">+0</div><div class="sl"><span data-i18n="daily_pnl">Tages-PnL</span></div></div>
       <div class="sc"><div class="sv" id="sPF">—</div><div class="sl"><span data-i18n="profit_factor">Profit Faktor</span></div></div>
-      <div class="sc"><div class="sv" id="sArb">0</div><div class="sl">💹 Arb-Chancen</div></div>
+      <div class="sc"><div class="sv" id="sArb">0</div><div class="sl"><span data-i18n="arb_count">💹 Arb-Chancen</span></div></div>
     </div>
   </div>
 
@@ -252,7 +252,7 @@
 <div class="sec" id="sec-pos">
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="open_positions">Offene Positionen</span></span><span class="card-badge" id="posCount">0</span></div>
-    <div class="card-body" style="padding-top:10px" id="posList"><div class="empty"><div class="empty-ico">📭</div>Keine offenen Positionen</div></div>
+    <div class="card-body" style="padding-top:10px" id="posList"><div class="empty"><div class="empty-ico">📭</div><span data-i18n="no_positions">Keine offenen Positionen</span></div></div>
   </div>
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="trade_history">Trade-Verlauf</span></span><span class="card-badge" id="tradeCount">0</span></div>
@@ -265,7 +265,7 @@
       <button class="filter-btn" onclick="filterTrades('dca',this)"><span data-i18n="filter_dca">📉 DCA</span></button>
     </div>
     <div class="card-body" style="padding-top:8px;max-height:460px;overflow-y:auto" id="tradeLog">
-      <div class="empty"><div class="empty-ico">📋</div>Noch keine Trades</div>
+      <div class="empty"><div class="empty-ico">📋</div><span data-i18n="no_trades">Noch keine Trades</span></div>
     </div>
   </div>
 </div>
@@ -376,7 +376,7 @@
     <div class="card-body">
       <div class="alert-bar info" style="margin-bottom:10px"><span>ℹ️</span><span>Net-Spread nach Fees (~0.16%). Binance ↔ Bybit.</span></div>
       <button class="btn btn-info" style="padding:10px;font-size:12px;width:100%;margin-bottom:10px" onclick="scanArb()"><span data-i18n="btn_scan_now">🔍 Jetzt scannen</span></button>
-      <div id="arbList2"><div class="empty" style="padding:8px">Noch kein Scan</div></div>
+      <div id="arbList2"><div class="empty" style="padding:8px"><span data-i18n="no_scan">Noch kein Scan</span></div></div>
     </div>
   </div>
 
@@ -393,7 +393,7 @@
           <select id="alertDir" class="s-select" style="width:100%"><option value="above">↑ Über</option><option value="below">↓ Unter</option></select></div>
         <button class="btn btn-info" style="padding:8px 12px;font-size:16px" onclick="addAlert()">+</button>
       </div>
-      <div id="alertList"><div class="empty" style="padding:8px">Keine Alerts</div></div>
+      <div id="alertList"><div class="empty" style="padding:8px"><span data-i18n="no_alerts">Keine Alerts</span></div></div>
     </div>
   </div>
 </div>
@@ -412,7 +412,7 @@
         <button onclick="loadChart()" class="btn btn-info" style="padding:8px 14px;font-size:12px;flex:1">📈 Laden</button>
       </div>
       <div id="chartPosBtns" style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px"></div>
-      <div id="tvChart" style="height:310px;background:#020408;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:12px">← Symbol eingeben & Laden</div>
+      <div id="tvChart" style="height:310px;background:#020408;border-radius:10px;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--sub);font-size:12px"><span data-i18n="chart_load">← Symbol eingeben & Laden</span></div>
     </div>
   </div>
 
@@ -436,7 +436,7 @@
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="news_feed">📰 News-Feed</span></span></div>
     <div class="card-body" style="padding-top:8px;max-height:250px;overflow-y:auto" id="newsFeed">
-      <div class="empty"><div class="empty-ico">📰</div>Lade Chart um News zu sehen</div>
+      <div class="empty"><div class="empty-ico">📰</div><span data-i18n="chart_hint">Lade Chart um News zu sehen</span></div>
     </div>
   </div>
 </div>
@@ -480,7 +480,7 @@
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="tax_report">🧾 Steuer-Report</span></span></div>
     <div class="card-body">
-      <div class="alert-bar info" style="margin-bottom:12px"><span>ℹ️</span><span>Kein Ersatz für Steuerberater. Vereinfachte Berechnung.</span></div>
+      <div class="alert-bar info" style="margin-bottom:12px"><span>ℹ️</span><span data-i18n="tax_disclaimer">Kein Ersatz für Steuerberater. Vereinfachte Berechnung.</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
         <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Steuerjahr</div><input type="number" id="taxYear" class="s-input" style="width:100%;text-align:left"></div>
         <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Methode</div><select id="taxMethod" class="s-select" style="width:100%"><option value="fifo">FIFO</option><option value="lifo">LIFO</option></select></div>
@@ -514,7 +514,7 @@
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="system_log">📋 System-Log</span></span>
       <div style="display:flex;gap:5px">
-        <button onclick="clearLog()" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer">Leer</button>
+        <button onclick="clearLog()" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer" data-i18n="btn_clear">Leer</button>
         <button onclick="pauseLog()" id="logPauseBtn" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--cyan);cursor:pointer">⏸</button>
       </div>
     </div>
@@ -536,7 +536,7 @@
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="signal_feed">📡 Signal-Feed</span></span><span class="card-badge" id="sigCount">0</span></div>
     <div class="card-body" style="padding-top:8px;max-height:400px;overflow-y:auto" id="sigList">
-      <div class="empty"><div class="empty-ico">📡</div>Warte auf Signale...</div>
+      <div class="empty"><div class="empty-ico">📡</div><span data-i18n="waiting_signals">Warte auf Signale...</span></div>
     </div>
   </div>
 </div>
@@ -561,7 +561,7 @@
       </div>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_trading">📈 Handel</span></div>
-      <div class="s-row"><div class="s-label"><div class="s-name">Zeitrahmen</div></div><select class="s-select" id="sTf"><option value="5m">5m</option><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option></select></div>
+      <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="timeframe_label">Zeitrahmen</span></div></div><select class="s-select" id="sTf"><option value="5m">5m</option><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option></select></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="max_positions">Max. Positionen</span></div></div><input type="number" class="s-input" id="sMaxTrades" value="5" min="1" max="20"></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="scan_interval">Scan-Intervall (s)</span></div></div><input type="number" class="s-input" id="sInterval" value="60" min="30" step="10"></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="paper_trading">Paper Trading</span></div><div class="s-help">Simulation – kein echtes Geld</div></div><label class="toggle"><input type="checkbox" id="sPaper" checked><span class="tslider"></span></label></div>
@@ -832,7 +832,7 @@
           <button class="btn btn-info" style="padding:5px 10px;font-size:11px" onclick="mexLoadTrades()">↻</button>
         </div>
         <div class="card-body" id="mex-trades-list">
-          <div class="empty"><div class="empty-ico">📋</div>Keine Trades</div>
+          <div class="empty"><div class="empty-ico">📋</div><span data-i18n="no_trades_yet">Keine Trades</span></div>
         </div>
       </div>
     </div>
@@ -961,8 +961,8 @@
   <div class="nb"        id="nb-bt"       onclick="nav('bt',this);loadBtHistory()" title="Backtest [B]"><span class="nb-icon">🔬</span><span data-i18n="nav_backtest">Backtest</span><kbd class="nav-kbd">B</kbd></div>
   <div class="nb"        id="nb-tax"      onclick="nav('tax',this)"  title="Steuer [T]"><span class="nb-icon">🧾</span><span data-i18n="nav_tax">Steuer</span></div>
   <div class="nb"        id="nb-log"      onclick="nav('log',this)"  title="Log [L]"><span class="nb-icon">📋</span><span data-i18n="nav_log">Log</span><kbd class="nav-kbd">L</kbd></div>
-  <div class="nb" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span>Risiko</span><kbd class="nav-kbd">R</kbd></div>
-  <div class="nb admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span>Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
+  <div class="nb" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
+  <div class="nb admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
   <div class="nb"        id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
 </nav>
 
