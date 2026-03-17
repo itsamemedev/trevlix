@@ -72,3 +72,20 @@
 ### Lektion 14: `requests` → `httpx` konsistent halten
 **Problem:** `FundingRateTracker` nutzte noch `requests.get`, während alle anderen Services bereits `httpx` verwendeten. Inkompatible Error-Handling-Muster.
 **Regel:** HTTP-Client einheitlich im Projekt verwenden. Wenn `httpx` der Standard ist, alle Services migrieren. Verhindert Verwirrung bei Exception-Handling (`requests.HTTPError` vs `httpx.HTTPStatusError`).
+
+## Session: update-docs-fix-bugs-NdjFI (2026-03-17)
+
+### Lektion 15: Globale Dicts in Multi-Thread-Umgebungen IMMER mit Lock schützen
+**Problem:** `_ws_limits` und `_login_attempts` Dicts wurden von mehreren Threads gleichzeitig gelesen und geschrieben, ohne Lock-Protection. CPython GIL schützt nicht vor logischen Race Conditions (check-then-act).
+**Regel:** Jedes globale Dict, das von mehreren Threads geändert wird, braucht einen dedizierten `threading.Lock()`. Check-then-act Muster (read → decide → write) müssen atomar unter einem Lock stattfinden.
+**Code:** `server.py:_ws_limits_lock`, `server.py:_login_attempts_lock`
+
+### Lektion 16: Silent Exception Handling kann Security-Checks umgehen
+**Problem:** `except (ValueError, TypeError): pass` beim Session-Timeout-Parsing erlaubte, dass eine korrumpierte `last_active` Session-Variable den Timeout-Check komplett überspringt → User bleibt ewig eingeloggt.
+**Regel:** Bei Security-relevanten Exception-Handlern nie `pass` verwenden. Im Zweifel die sicherere Aktion wählen (Session invalidieren statt stillschweigend fortfahren).
+**Code:** `server.py:_before_request_hooks`
+
+### Lektion 17: i18n-Keys in HTML und JS synchron halten
+**Problem:** 85+ `data-i18n` Keys in HTML-Templates hatten keine Entsprechung in `trevlix_translations.js`. Betroffene UI-Elemente zeigten den Key-Name statt übersetztem Text.
+**Regel:** Bei Hinzufügen neuer `data-i18n` Attribute in Templates IMMER gleichzeitig die Keys in `trevlix_translations.js` für alle 5 Sprachen (de, en, es, ru, pt) ergänzen.
+**Code:** `static/js/trevlix_translations.js`

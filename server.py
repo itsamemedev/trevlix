@@ -564,6 +564,20 @@ _fee_cache: dict[str, dict] = {}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Sicherheitswarnung: Default-Passwort erkennen
+# ═══════════════════════════════════════════════════════════════════════════════
+if not os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "") in (
+    "trevlix",
+    "admin",
+    "password",
+    "test",
+):
+    log.warning(
+        "⚠️  ADMIN_PASSWORD ist nicht gesetzt oder unsicher! "
+        "Setze ein starkes Passwort (min. 12 Zeichen) in .env: ADMIN_PASSWORD=..."
+    )
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #7] Konfigurationsvalidierung beim Start
 # ═══════════════════════════════════════════════════════════════════════════════
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1844,29 +1858,32 @@ class MySQLManager:
 # [Verbesserung #8] AUDIT-LOG HELPER
 # ═══════════════════════════════════════════════════════════════════════════════
 _login_attempts: dict[str, list[float]] = {}  # IP → [timestamps]
+_login_attempts_lock = threading.Lock()
 
 
 def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
     """[Verbesserung #3] Prüft ob IP zu viele Login-Versuche hatte."""
     now = time.time()
-    attempts = _login_attempts.get(ip, [])
-    attempts = [t for t in attempts if now - t < window]
-    if attempts:
-        _login_attempts[ip] = attempts
-    else:
-        # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
-        _login_attempts.pop(ip, None)
-    return len(attempts) < max_attempts
+    with _login_attempts_lock:
+        attempts = _login_attempts.get(ip, [])
+        attempts = [t for t in attempts if now - t < window]
+        if attempts:
+            _login_attempts[ip] = attempts
+        else:
+            # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
+            _login_attempts.pop(ip, None)
+        return len(attempts) < max_attempts
 
 
 def _record_login_attempt(ip: str):
-    _login_attempts.setdefault(ip, []).append(time.time())
-    # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
-    if len(_login_attempts) > 10_000:
-        cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
-        stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
-        for k in stale:
-            _login_attempts.pop(k, None)
+    with _login_attempts_lock:
+        _login_attempts.setdefault(ip, []).append(time.time())
+        # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
+        if len(_login_attempts) > 10_000:
+            cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
+            stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
+            for k in stale:
+                _login_attempts.pop(k, None)
 
 
 def _audit(action: str, detail: str = "", user_id: int = 0):
@@ -1902,7 +1919,13 @@ def _before_request_hooks():
                         abort(401)
                     return redirect("/login")
             except (ValueError, TypeError):
-                pass
+                # Ungültiger Timestamp → Session sicherheitshalber beenden
+                session.clear()
+                if request.path.startswith("/api/"):
+                    from flask import abort
+
+                    abort(401)
+                return redirect("/login")
         session["last_active"] = datetime.now().isoformat()
 
     # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
@@ -6056,6 +6079,7 @@ def prometheus_metrics():
 # ═══════════════════════════════════════════════════════════════════════════════
 _ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
 _ws_limits_last_cleanup: float = 0.0
+_ws_limits_lock = threading.Lock()
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
@@ -6075,17 +6099,18 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     sid = request.sid if hasattr(request, "sid") else "global"
     key = f"{sid}:{action}"
     now = time.time()
-    last = _ws_limits.get(key, 0)
-    if now - last < min_interval:
-        return False
-    _ws_limits[key] = now
-    # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
-    if now - _ws_limits_last_cleanup > 60:
-        _ws_limits_last_cleanup = now
-        cutoff = now - 300
-        stale = [k for k, v in _ws_limits.items() if v < cutoff]
-        for k in stale:
-            del _ws_limits[k]
+    with _ws_limits_lock:
+        last = _ws_limits.get(key, 0)
+        if now - last < min_interval:
+            return False
+        _ws_limits[key] = now
+        # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
+        if now - _ws_limits_last_cleanup > 60:
+            _ws_limits_last_cleanup = now
+            cutoff = now - 300
+            stale = [k for k, v in _ws_limits.items() if v < cutoff]
+            for k in stale:
+                del _ws_limits[k]
     return True
 
 
@@ -6113,10 +6138,11 @@ def on_start_bot():
     if not _ws_rate_check("start_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
-    if state.running:
-        return
-    state.running = True
-    state.paused = False
+    with state._lock:
+        if state.running:
+            return
+        state.running = True
+        state.paused = False
     threading.Thread(target=bot_loop, daemon=True).start()
     emit("status", {"msg": "🤖 TREVLIX gestartet", "type": "success"}, broadcast=True)
     state.add_activity(
