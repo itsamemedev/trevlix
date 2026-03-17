@@ -550,6 +550,8 @@ def create_auth_blueprint(
 
         user = db.get_user(username)
         if user and db.verify_password(user["password_hash"], password):
+            # Session regenerieren um Session Fixation zu verhindern
+            session.clear()
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = user.get("role", "user")
@@ -640,11 +642,11 @@ def create_auth_blueprint(
         if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
             return redirect("/register")
 
-        username = request.form.get("username", "").strip()[:32]
+        username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         password2 = request.form.get("password2", "")
 
-        if len(username) < 3:
+        if len(username) < 3 or len(username) > 32:
             return redirect("/register?err=uname")
         _WEAK_PATTERNS = frozenset(
             {
@@ -768,6 +770,8 @@ def create_auth_blueprint(
                     "admin_login_denied", f"user={username} ip={client_ip} role={user.get('role')}"
                 )
                 return redirect("/admin/login?err=role")
+            # Session regenerieren um Session Fixation zu verhindern
+            session.clear()
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = "admin"
