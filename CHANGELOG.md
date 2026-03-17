@@ -7,6 +7,45 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.1] – 2026-03-17
+
+### Added — Autonome LLM-Optimierungsanfragen
+
+#### KI-Engine: Autonome LLM-Integration (`services/knowledge.py`, `server.py`)
+- **Post-Trade LLM-Analyse** — Nach jedem abgeschlossenen Trade wird automatisch eine LLM-Analyse gestartet (async, non-blocking), die Gewinn-/Verlustursachen identifiziert und als `trade_pattern` im Gemeinschaftswissen speichert
+- **Periodische Marktanalyse** — Alle ~60 Iterationen generiert die LLM eine gecachte Marktanalyse mit Regime-Bewertung, Fear&Greed-Einschätzung und Handlungsempfehlung (15-Minuten-Cache)
+- **Training-Ergebnisse Interpretation** — Nach jedem 3. KI-Training analysiert die LLM Feature-Importance, Accuracy-Werte und Schwellwerte auf Overfitting und Optimierungspotenzial
+- **SL/TP-Optimierungs-Bewertung** — Nach jeder Grid-Search-Optimierung bewertet die LLM die Risk/Reward-Änderungen und speichert die Analyse als `risk_pattern`
+- **LLM-Response Cache** — 15-Minuten-Cache für LLM-Antworten verhindert redundante Anfragen
+- **`/api/v1/knowledge/llm-status`** — Neuer API-Endpunkt zeigt LLM-Status, gecachte Analyse und Anzahl gespeicherter Insights
+- **`llm_enabled` Property** — Schnelle Prüfung ob LLM-Endpunkt konfiguriert und verfügbar ist
+- **Alle LLM-Aufrufe sind async** — Threading-basiert, blockieren weder Bot-Loop noch Trading-Entscheidungen
+- **Graceful Degradation** — Funktioniert ohne LLM-Endpunkt, alle Aufrufe sind optional und fehlerresistent
+
+### Fixed — Bugfixes
+
+- **`get_market_summary()` KeyError-Risiko** — Dict-Zugriff in Top-Symbole und Strategie-Ranking verwendet jetzt konsistent `.get()` statt direktem Bracket-Zugriff (`v["total_trades"]` → `v.get("total_trades", 0)`), verhindert `KeyError` bei korrupten/unvollständigen Daten
+- **`get_market_summary()` None-Safety** — `s.get("value")` wird jetzt mit `or {}` abgesichert, da `.get("value", {})` bei explizitem `None`-Wert nicht den Default zurückgibt
+- **`_optimize()` fehlende Vorher/Nachher-Referenz** — SL/TP-Werte vor der Optimierung werden jetzt korrekt in `prev_sl`/`prev_tp` gespeichert, um sinnvolle Delta-Berechnung für die LLM-Analyse zu ermöglichen
+- **Fourier-Analyse IndexError** — `freqs[1:]` Bounds-Check hinzugefügt, verhindert `np.argmax()` auf leerem Array wenn FFT-Ergebnis zu kurz ist (`server.py:extract_features`)
+- **DCA Division-by-Zero** — `total_qty <= 0` Guard vor Durchschnittspreis-Berechnung verhindert Division durch Null bei Edge Cases (`server.py:try_dca`)
+- **`manage_positions()` TypeError** — `ticker.get("last")` statt `ticker["last"]` mit None-Check, verhindert `float(None)` Crash wenn Exchange keinen Last-Price liefert
+- **Heatmap Race Condition** — `_heatmap_cache` wird jetzt als Kopie unter Lock zurückgegeben, verhindert gleichzeitige Lese-/Schreibzugriffe aus verschiedenen Threads
+- **`LiquidityScorer` KeyError** — `config.get("max_spread_pct", 0.5)` statt `config["max_spread_pct"]` verhindert KeyError bei fehlendem Config-Schlüssel (`services/risk.py`)
+- **`smart_exits.adapt()` KeyError** — `pos.get("entry")` mit None/Zero-Guard statt `pos["entry"]`, verhindert KeyError und Division-by-Zero bei unvollständigen Position-Daten (`services/smart_exits.py`)
+- **`ai_engine.py` Thread-Safety** — `model.classes_` wird jetzt innerhalb des Locks gelesen statt außerhalb, verhindert Race Condition wenn Modell während Prediction ersetzt wird
+- **`snapshot()` Division-by-Zero** — `p["entry"]` Division in Long- und Short-PnL-Berechnung mit Zero-Guard geschützt, verhindert Crash wenn Entry-Price fehlt oder 0 ist
+- **`close_position()` Division-by-Zero** — `pos["entry"]` Division abgesichert, verwendet Fallback auf aktuellen Preis
+- **`close_short()` Division-by-Zero** — Gleicher Fix für Short-Positionen
+- **`update_shorts()` Division-by-Zero** — Short-PnL-Berechnung gegen Zero-Entry geschützt
+- **`manage_positions()` Division-by-Zero** — Break-Even, Smart-Exit ATR-Schätzung und Partial-TP verwenden jetzt sichere `pos_entry`-Variable mit Fallback
+- **`run_backtest()` Division-by-Zero** — Backtest-Simulation prüft `pos.get("entry")` vor Division
+- **Grid-Engine Float-als-Boolean** — `if price:` → `if price is not None:`, verhindert stille Fehler wenn Preis exakt 0.0 ist (falsy in Python)
+- **SHA256-Backup IndexError** — `f.read().split()[0]` mit Leer-Check geschützt, verhindert Crash bei leerer/korrupter Checksum-Datei
+- **LSTM `evaluate()` IndexError** — `lstm.evaluate()[1]` mit Längenprüfung geschützt, verhindert Crash wenn LSTM weniger Metriken zurückgibt als erwartet
+
+---
+
 ## [1.3.0] – 2026-03-17
 
 ### Added — Production-Ready Upgrade

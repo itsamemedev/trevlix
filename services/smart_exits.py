@@ -175,7 +175,9 @@ class SmartExitEngine:
         if not self.enabled or atr <= 0:
             return None, None
 
-        entry = pos["entry"]
+        entry = pos.get("entry")
+        if not entry or entry <= 0:
+            return None, None
         current_sl = pos.get("sl", entry * 0.975)
         current_tp = pos.get("tp", entry * 1.06)
         pnl_pct = (current_price - entry) / entry

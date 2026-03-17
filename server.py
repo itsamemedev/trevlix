@@ -1779,7 +1779,11 @@ class MySQLManager:
                 return result
             # Checksum aus Datei lesen
             with open(sha_path) as f:
-                stored = f.read().split()[0]
+                parts = f.read().split()
+            if not parts:
+                result["error"] = "SHA256-Datei ist leer"
+                return result
+            stored = parts[0]
             result["checksum"] = stored
             # Bei verschlüsselten Backups: entschlüsseln und prüfen
             if backup_path.endswith(".enc"):
@@ -3124,7 +3128,8 @@ class AIEngine:
                             verbose=0,
                         )
                         lstm_m = lstm
-                        lstm_acc = float(lstm.evaluate(Xs_s, ys_s, verbose=0)[1])
+                        eval_result = lstm.evaluate(Xs_s, ys_s, verbose=0)
+                        lstm_acc = float(eval_result[1]) if len(eval_result) > 1 else 0.0
                         log.info(f"🔮 LSTM: {lstm_acc * 100:.1f}%")
                 except Exception as le:
                     log.warning(f"LSTM: {le}")
@@ -3189,6 +3194,18 @@ class AIEngine:
             # Modelle auf Disk persistieren (Neustart = kein Cold-Start)
             self._save_models()
             emit_event("ai_update", self.to_dict())
+            # Autonome LLM-Analyse: Training-Ergebnisse interpretieren
+            try:
+                knowledge_base.analyze_training_async(
+                    training_ver=self.training_ver,
+                    wf_accuracy=wf_acc,
+                    bull_accuracy=bull_acc,
+                    bear_accuracy=bear_acc,
+                    feature_weights=dict(self.weights),
+                    threshold=best_thresh,
+                )
+            except Exception:
+                pass  # LLM-Analyse ist optional
         except Exception as e:
             self.status_msg = f"❌ {e}"
             log.error(f"KI Training: {e}", exc_info=True)
@@ -3262,8 +3279,10 @@ class AIEngine:
             sl_grid = [0.010, 0.015, 0.020, 0.025, 0.030, 0.040, 0.050]
             tp_grid = [0.030, 0.050, 0.060, 0.070, 0.080, 0.100, 0.120, 0.150]
             best_score = -999.0
-            best_sl = CONFIG["stop_loss_pct"]
-            best_tp = CONFIG["take_profit_pct"]
+            prev_sl = CONFIG["stop_loss_pct"]
+            prev_tp = CONFIG["take_profit_pct"]
+            best_sl = prev_sl
+            best_tp = prev_tp
             for sl in sl_grid:
                 for tp in tp_grid:
                     if tp < sl * 1.5:
@@ -3305,6 +3324,17 @@ class AIEngine:
             )
             self.optim_log = self.optim_log[:20]
             log.info(f"🔬 Optimierung: {detail}")
+            # Autonome LLM-Analyse: Optimierungsergebnis bewerten
+            try:
+                knowledge_base.analyze_optimization_async(
+                    best_sl=best_sl,
+                    best_tp=best_tp,
+                    prev_sl=prev_sl,
+                    prev_tp=prev_tp,
+                    trade_count=len(trades[-80:]),
+                )
+            except Exception:
+                pass  # LLM-Analyse ist optional
         except Exception as e:
             log.error(f"Optimierung: {e}")
 
@@ -3384,8 +3414,11 @@ class AIEngine:
             try:
                 freqs = np.abs(np.fft.rfft(pa))
                 total_energy = float(np.sum(freqs**2)) + 1e-9
-                dom_idx = int(np.argmax(freqs[1:]) + 1)
-                dom_freq = float(dom_idx / len(pa))
+                if len(freqs) <= 1:
+                    dom_idx = 0
+                else:
+                    dom_idx = int(np.argmax(freqs[1:]) + 1)
+                dom_freq = float(dom_idx / max(len(pa), 1))
                 spec_energy = float(np.sum(freqs**2) / len(freqs))
                 # Spectral entropy
                 p_spec = freqs**2 / total_energy
@@ -3698,7 +3731,7 @@ class BacktestEngine:
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = float(row["close"])
-                if pos:
+                if pos and pos.get("entry"):
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:
                         pnl = pos["inv"] * pp
@@ -4124,7 +4157,10 @@ class BotState:
                 "qty": round(p["qty"], 4),
                 "pnl": round((self.prices.get(sym, p["entry"]) - p["entry"]) * p["qty"], 2),
                 "pnl_pct": round(
-                    (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100, 2
+                    (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100
+                    if p.get("entry")
+                    else 0.0,
+                    2,
                 ),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
@@ -4150,7 +4186,10 @@ class BotState:
                 "qty": round(p["qty"], 4),
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
-                    (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100, 2
+                    (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100
+                    if p.get("entry")
+                    else 0.0,
+                    2,
                 ),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
@@ -4415,7 +4454,8 @@ class ShortEngine:
         if not pos:
             return
         price = state.prices.get(symbol, pos["entry"])
-        pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+        short_entry = pos.get("entry") or price
+        pnl_pct = (short_entry - price) / short_entry * 100 if short_entry else 0.0
         fee = (
             pos["invested"]
             * get_exchange_fee_rate(CONFIG.get("short_exchange"))
@@ -4470,7 +4510,8 @@ class ShortEngine:
             if not pos:
                 continue
             price = state.prices.get(sym, pos["entry"])
-            pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+            s_entry = pos.get("entry") or price
+            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry else 0.0
             pos["pnl_unrealized"] = pos["invested"] * (pnl_pct / 100)
             if price >= pos["sl"]:
                 self.close_short(sym, "SL 🛑")
@@ -4940,7 +4981,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
     close_qty = pos["qty"] * partial_ratio
     close_invest = pos["invested"] * partial_ratio
-    pnl_pct = (price - pos["entry"]) / pos["entry"] * 100
+    entry = pos.get("entry") or price
+    pnl_pct = (price - entry) / entry * 100 if entry else 0.0
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5036,6 +5078,20 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         knowledge_base.learn_from_trade(trade)
     except Exception:
         pass  # Knowledge-Update ist optional
+    # Autonome LLM-Analyse: Trade per LLM analysieren (async, non-blocking)
+    try:
+        knowledge_base.analyze_trade_async(
+            trade,
+            features={
+                "rsi": pos.get("rsi", "?"),
+                "news_score": pos.get("news_score", 0),
+                "regime": pos.get("regime", "unknown"),
+                "ai_score": pos.get("ai_score", 0),
+                "win_prob": pos.get("win_prob", 0),
+            },
+        )
+    except Exception:
+        pass  # LLM-Analyse ist optional
     emit_event(
         "trade",
         {
@@ -5108,6 +5164,8 @@ def try_dca(ex, symbol):
     add_qty = (dca_invest - fee) / price
     # Neuer Durchschnittspreis
     total_qty = pos["qty"] + add_qty
+    if total_qty <= 0:
+        return
     total_cost = pos["invested"] + dca_invest - fee
     new_entry = total_cost / total_qty
     if CONFIG["paper_trading"]:
@@ -5142,19 +5200,24 @@ def manage_positions(ex):
             continue
         try:
             ticker = ex.fetch_ticker(symbol)
-            price = float(ticker["last"])
+            last_price = ticker.get("last")
+            if last_price is None:
+                continue
+            price = float(last_price)
             state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
             continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
+        pos_entry = pos.get("entry") or price
         if (
-            CONFIG.get("break_even_enabled")
+            pos_entry
+            and CONFIG.get("break_even_enabled")
             and not pos.get("break_even_set")
-            and (price - pos["entry"]) / pos["entry"] >= CONFIG.get("break_even_trigger", 0.015)
+            and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
         ):
-            be_sl = pos["entry"] * (1 + CONFIG.get("break_even_buffer", 0.001))
+            be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
             if be_sl > pos["sl"]:  # Nur nach oben verschieben
                 pos["sl"] = be_sl
                 pos["break_even_set"] = True
@@ -5168,7 +5231,7 @@ def manage_positions(ex):
             atr_val = pos.get("_last_atr", 0)
             # ATR aus letztem Scan oder geschätzt aus Preisbewegung
             if atr_val <= 0:
-                atr_val = abs(price - pos["entry"]) * 0.5  # Grobe Schätzung
+                atr_val = abs(price - pos_entry) * 0.5  # Grobe Schätzung
             exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
             new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
             if new_smart_sl and new_smart_sl > pos["sl"]:
@@ -5191,7 +5254,7 @@ def manage_positions(ex):
             levels_done = pos.get("partial_tp_done", 0)
             if levels_done < len(levels):
                 level = levels[levels_done]
-                if (price - pos["entry"]) / pos["entry"] >= level["pct"]:
+                if pos_entry and (price - pos_entry) / pos_entry >= level["pct"]:
                     close_position(
                         ex,
                         symbol,
@@ -5222,7 +5285,7 @@ def get_heatmap_data(ex) -> list[dict]:
     global _heatmap_cache, _heatmap_ts
     with _heatmap_lock:
         if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
-            return _heatmap_cache
+            return list(_heatmap_cache)
     try:
         syms = state.markets[:60] if state.markets else []
         if not syms:
@@ -5280,6 +5343,16 @@ def bot_loop():
                 threading.Thread(
                     target=lambda ex=ex: funding_tracker.update(ex), daemon=True
                 ).start()
+                # Autonome LLM-Analyse: Periodische Marktanalyse
+                try:
+                    knowledge_base.generate_market_context_async(
+                        regime_is_bull=regime.is_bull,
+                        fg_value=fg_idx.value,
+                        open_positions=len(state.positions),
+                        iteration=state.iteration,
+                    )
+                except Exception:
+                    pass  # LLM-Analyse ist optional
 
             # Positionen verwalten (Long + Short)
             manage_positions(ex)
@@ -5291,7 +5364,7 @@ def bot_loop():
                     if not grid["active"]:
                         continue
                     price = state.prices.get(sym)
-                    if price:
+                    if price is not None:
                         acts = grid_engine.update(sym, price, bal_ref)
                         for act in acts:
                             emit_event(
@@ -5650,6 +5723,22 @@ def api_knowledge_query():
     if answer is None:
         return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
     return jsonify({"answer": answer})
+
+
+@app.route("/api/v1/knowledge/llm-status")
+@api_auth_required
+def api_knowledge_llm_status():
+    """Status der autonomen LLM-Integration."""
+    return jsonify(
+        {
+            "llm_enabled": knowledge_base.llm_enabled,
+            "llm_endpoint": bool(knowledge_base._llm_endpoint),
+            "cached_market_analysis": knowledge_base.cached_market_analysis or None,
+            "trade_patterns": len(knowledge_base.get_category("trade_pattern", limit=100)),
+            "model_analyses": len(knowledge_base.get_category("model_config", limit=100)),
+            "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
+        }
+    )
 
 
 @app.route("/api/v1/admin/exchanges")

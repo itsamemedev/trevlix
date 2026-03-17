@@ -204,11 +204,12 @@ class LiquidityScorer:
             if mid <= 0:
                 return False, 0.0, "Ungültige Preise (mid=0)"
             spread = (ask - bid) / mid * 100
-            if spread > self.config["max_spread_pct"]:
+            max_spread = self.config.get("max_spread_pct", 0.5)
+            if spread > max_spread:
                 return (
                     False,
                     round(spread, 3),
-                    f"Spread {spread:.3f}%>{self.config['max_spread_pct']}%",
+                    f"Spread {spread:.3f}%>{max_spread}%",
                 )
             return True, round(spread, 3), "OK"
         except Exception as e:
