@@ -1779,7 +1779,11 @@ class MySQLManager:
                 return result
             # Checksum aus Datei lesen
             with open(sha_path) as f:
-                stored = f.read().split()[0]
+                parts = f.read().split()
+            if not parts:
+                result["error"] = "SHA256-Datei ist leer"
+                return result
+            stored = parts[0]
             result["checksum"] = stored
             # Bei verschlüsselten Backups: entschlüsseln und prüfen
             if backup_path.endswith(".enc"):
@@ -3124,7 +3128,8 @@ class AIEngine:
                             verbose=0,
                         )
                         lstm_m = lstm
-                        lstm_acc = float(lstm.evaluate(Xs_s, ys_s, verbose=0)[1])
+                        eval_result = lstm.evaluate(Xs_s, ys_s, verbose=0)
+                        lstm_acc = float(eval_result[1]) if len(eval_result) > 1 else 0.0
                         log.info(f"🔮 LSTM: {lstm_acc * 100:.1f}%")
                 except Exception as le:
                     log.warning(f"LSTM: {le}")
@@ -3726,7 +3731,7 @@ class BacktestEngine:
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = float(row["close"])
-                if pos:
+                if pos and pos.get("entry"):
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:
                         pnl = pos["inv"] * pp
@@ -4152,7 +4157,10 @@ class BotState:
                 "qty": round(p["qty"], 4),
                 "pnl": round((self.prices.get(sym, p["entry"]) - p["entry"]) * p["qty"], 2),
                 "pnl_pct": round(
-                    (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100, 2
+                    (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100
+                    if p.get("entry")
+                    else 0.0,
+                    2,
                 ),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
@@ -4178,7 +4186,10 @@ class BotState:
                 "qty": round(p["qty"], 4),
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
-                    (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100, 2
+                    (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100
+                    if p.get("entry")
+                    else 0.0,
+                    2,
                 ),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
@@ -4443,7 +4454,8 @@ class ShortEngine:
         if not pos:
             return
         price = state.prices.get(symbol, pos["entry"])
-        pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+        short_entry = pos.get("entry") or price
+        pnl_pct = (short_entry - price) / short_entry * 100 if short_entry else 0.0
         fee = (
             pos["invested"]
             * get_exchange_fee_rate(CONFIG.get("short_exchange"))
@@ -4498,7 +4510,8 @@ class ShortEngine:
             if not pos:
                 continue
             price = state.prices.get(sym, pos["entry"])
-            pnl_pct = (pos["entry"] - price) / pos["entry"] * 100
+            s_entry = pos.get("entry") or price
+            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry else 0.0
             pos["pnl_unrealized"] = pos["invested"] * (pnl_pct / 100)
             if price >= pos["sl"]:
                 self.close_short(sym, "SL 🛑")
@@ -4968,7 +4981,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
     close_qty = pos["qty"] * partial_ratio
     close_invest = pos["invested"] * partial_ratio
-    pnl_pct = (price - pos["entry"]) / pos["entry"] * 100
+    entry = pos.get("entry") or price
+    pnl_pct = (price - entry) / entry * 100 if entry else 0.0
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5196,12 +5210,14 @@ def manage_positions(ex):
             continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
+        pos_entry = pos.get("entry") or price
         if (
-            CONFIG.get("break_even_enabled")
+            pos_entry
+            and CONFIG.get("break_even_enabled")
             and not pos.get("break_even_set")
-            and (price - pos["entry"]) / pos["entry"] >= CONFIG.get("break_even_trigger", 0.015)
+            and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
         ):
-            be_sl = pos["entry"] * (1 + CONFIG.get("break_even_buffer", 0.001))
+            be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
             if be_sl > pos["sl"]:  # Nur nach oben verschieben
                 pos["sl"] = be_sl
                 pos["break_even_set"] = True
@@ -5215,7 +5231,7 @@ def manage_positions(ex):
             atr_val = pos.get("_last_atr", 0)
             # ATR aus letztem Scan oder geschätzt aus Preisbewegung
             if atr_val <= 0:
-                atr_val = abs(price - pos["entry"]) * 0.5  # Grobe Schätzung
+                atr_val = abs(price - pos_entry) * 0.5  # Grobe Schätzung
             exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
             new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
             if new_smart_sl and new_smart_sl > pos["sl"]:
@@ -5238,7 +5254,7 @@ def manage_positions(ex):
             levels_done = pos.get("partial_tp_done", 0)
             if levels_done < len(levels):
                 level = levels[levels_done]
-                if (price - pos["entry"]) / pos["entry"] >= level["pct"]:
+                if pos_entry and (price - pos_entry) / pos_entry >= level["pct"]:
                     close_position(
                         ex,
                         symbol,
@@ -5348,7 +5364,7 @@ def bot_loop():
                     if not grid["active"]:
                         continue
                     price = state.prices.get(sym)
-                    if price:
+                    if price is not None:
                         acts = grid_engine.update(sym, price, bal_ref)
                         for act in acts:
                             emit_event(

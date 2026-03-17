@@ -34,6 +34,15 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 - **`LiquidityScorer` KeyError** — `config.get("max_spread_pct", 0.5)` statt `config["max_spread_pct"]` verhindert KeyError bei fehlendem Config-Schlüssel (`services/risk.py`)
 - **`smart_exits.adapt()` KeyError** — `pos.get("entry")` mit None/Zero-Guard statt `pos["entry"]`, verhindert KeyError und Division-by-Zero bei unvollständigen Position-Daten (`services/smart_exits.py`)
 - **`ai_engine.py` Thread-Safety** — `model.classes_` wird jetzt innerhalb des Locks gelesen statt außerhalb, verhindert Race Condition wenn Modell während Prediction ersetzt wird
+- **`snapshot()` Division-by-Zero** — `p["entry"]` Division in Long- und Short-PnL-Berechnung mit Zero-Guard geschützt, verhindert Crash wenn Entry-Price fehlt oder 0 ist
+- **`close_position()` Division-by-Zero** — `pos["entry"]` Division abgesichert, verwendet Fallback auf aktuellen Preis
+- **`close_short()` Division-by-Zero** — Gleicher Fix für Short-Positionen
+- **`update_shorts()` Division-by-Zero** — Short-PnL-Berechnung gegen Zero-Entry geschützt
+- **`manage_positions()` Division-by-Zero** — Break-Even, Smart-Exit ATR-Schätzung und Partial-TP verwenden jetzt sichere `pos_entry`-Variable mit Fallback
+- **`run_backtest()` Division-by-Zero** — Backtest-Simulation prüft `pos.get("entry")` vor Division
+- **Grid-Engine Float-als-Boolean** — `if price:` → `if price is not None:`, verhindert stille Fehler wenn Preis exakt 0.0 ist (falsy in Python)
+- **SHA256-Backup IndexError** — `f.read().split()[0]` mit Leer-Check geschützt, verhindert Crash bei leerer/korrupter Checksum-Datei
+- **LSTM `evaluate()` IndexError** — `lstm.evaluate()[1]` mit Längenprüfung geschützt, verhindert Crash wenn LSTM weniger Metriken zurückgibt als erwartet
 
 ---
 
