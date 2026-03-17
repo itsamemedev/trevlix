@@ -3409,8 +3409,11 @@ class AIEngine:
             try:
                 freqs = np.abs(np.fft.rfft(pa))
                 total_energy = float(np.sum(freqs**2)) + 1e-9
-                dom_idx = int(np.argmax(freqs[1:]) + 1)
-                dom_freq = float(dom_idx / len(pa))
+                if len(freqs) <= 1:
+                    dom_idx = 0
+                else:
+                    dom_idx = int(np.argmax(freqs[1:]) + 1)
+                dom_freq = float(dom_idx / max(len(pa), 1))
                 spec_energy = float(np.sum(freqs**2) / len(freqs))
                 # Spectral entropy
                 p_spec = freqs**2 / total_energy
@@ -5147,6 +5150,8 @@ def try_dca(ex, symbol):
     add_qty = (dca_invest - fee) / price
     # Neuer Durchschnittspreis
     total_qty = pos["qty"] + add_qty
+    if total_qty <= 0:
+        return
     total_cost = pos["invested"] + dca_invest - fee
     new_entry = total_cost / total_qty
     if CONFIG["paper_trading"]:
@@ -5181,7 +5186,10 @@ def manage_positions(ex):
             continue
         try:
             ticker = ex.fetch_ticker(symbol)
-            price = float(ticker["last"])
+            last_price = ticker.get("last")
+            if last_price is None:
+                continue
+            price = float(last_price)
             state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
@@ -5261,7 +5269,7 @@ def get_heatmap_data(ex) -> list[dict]:
     global _heatmap_cache, _heatmap_ts
     with _heatmap_lock:
         if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
-            return _heatmap_cache
+            return list(_heatmap_cache)
     try:
         syms = state.markets[:60] if state.markets else []
         if not syms:

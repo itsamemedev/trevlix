@@ -434,14 +434,16 @@ class AIEngine:
                 return 0.5
             model = self.model
             scaler = self.scaler
+            classes = list(model.classes_)
 
         try:
             X_scaled = scaler.transform(features.reshape(1, -1))
             proba = model.predict_proba(X_scaled)[0]
             # Klasse 1 = Gewinn
-            classes = list(self.model.classes_)
-            win_idx = classes.index(1) if 1 in classes else -1
-            win_prob = float(proba[win_idx]) if win_idx >= 0 else 0.5
+            if 1 not in classes:
+                return 0.5
+            win_idx = classes.index(1)
+            win_prob = float(proba[win_idx])
 
             self.predictions_made += 1
             return win_prob

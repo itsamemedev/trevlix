@@ -27,6 +27,13 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 - **`get_market_summary()` KeyError-Risiko** — Dict-Zugriff in Top-Symbole und Strategie-Ranking verwendet jetzt konsistent `.get()` statt direktem Bracket-Zugriff (`v["total_trades"]` → `v.get("total_trades", 0)`), verhindert `KeyError` bei korrupten/unvollständigen Daten
 - **`get_market_summary()` None-Safety** — `s.get("value")` wird jetzt mit `or {}` abgesichert, da `.get("value", {})` bei explizitem `None`-Wert nicht den Default zurückgibt
 - **`_optimize()` fehlende Vorher/Nachher-Referenz** — SL/TP-Werte vor der Optimierung werden jetzt korrekt in `prev_sl`/`prev_tp` gespeichert, um sinnvolle Delta-Berechnung für die LLM-Analyse zu ermöglichen
+- **Fourier-Analyse IndexError** — `freqs[1:]` Bounds-Check hinzugefügt, verhindert `np.argmax()` auf leerem Array wenn FFT-Ergebnis zu kurz ist (`server.py:extract_features`)
+- **DCA Division-by-Zero** — `total_qty <= 0` Guard vor Durchschnittspreis-Berechnung verhindert Division durch Null bei Edge Cases (`server.py:try_dca`)
+- **`manage_positions()` TypeError** — `ticker.get("last")` statt `ticker["last"]` mit None-Check, verhindert `float(None)` Crash wenn Exchange keinen Last-Price liefert
+- **Heatmap Race Condition** — `_heatmap_cache` wird jetzt als Kopie unter Lock zurückgegeben, verhindert gleichzeitige Lese-/Schreibzugriffe aus verschiedenen Threads
+- **`LiquidityScorer` KeyError** — `config.get("max_spread_pct", 0.5)` statt `config["max_spread_pct"]` verhindert KeyError bei fehlendem Config-Schlüssel (`services/risk.py`)
+- **`smart_exits.adapt()` KeyError** — `pos.get("entry")` mit None/Zero-Guard statt `pos["entry"]`, verhindert KeyError und Division-by-Zero bei unvollständigen Position-Daten (`services/smart_exits.py`)
+- **`ai_engine.py` Thread-Safety** — `model.classes_` wird jetzt innerhalb des Locks gelesen statt außerhalb, verhindert Race Condition wenn Modell während Prediction ersetzt wird
 
 ---
 
