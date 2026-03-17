@@ -8,33 +8,42 @@
 # ║     ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                    ║
 # ║     ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 # ║                                                                              ║
-# ║  Algorithmic Trading Intelligence  ·  Installer v2.0.0                      ║
-# ║  Unterstützt: Ubuntu 18.04-24.04 · Debian 10-12                            ║
+# ║  Algorithmic Trading Intelligence  ·  Installer v3.0.0                      ║
+# ║                                                                              ║
+# ║  Supported:                                                                  ║
+# ║    Debian 10-12 · Ubuntu 18.04-24.04 · Raspberry Pi OS · Linux Mint         ║
+# ║    CentOS Stream 8-9 · Rocky Linux 8-9 · AlmaLinux 8-9 · RHEL 8-9          ║
+# ║    Fedora 37+ · openSUSE Leap 15.x / Tumbleweed · Arch Linux               ║
+# ║                                                                              ║
 # ║  Start: sudo bash install.sh                                                ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 set -euo pipefail
 
-# ── Hilfe ──────────────────────────────────────────────────────────────────────
+# ── Help ─────────────────────────────────────────────────────────────────────
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
-    echo "Verwendung: sudo bash install.sh [OPTIONEN]"
+    echo "Usage: sudo bash install.sh [OPTIONS]"
     echo ""
-    echo "Optionen:"
-    echo "  --help, -h       Diese Hilfe anzeigen"
-    echo "  --no-tf          TensorFlow überspringen (kein LSTM)"
-    echo "  --no-shap        SHAP überspringen"
-    echo "  --yes, -y        Alle optionalen Pakete automatisch ablehnen"
-    echo "  --dir DIR        Installationsverzeichnis (Standard: /opt/trevlix)"
+    echo "Options:"
+    echo "  --help, -h         Show this help"
+    echo "  --no-tf            Skip TensorFlow (no LSTM)"
+    echo "  --no-shap          Skip SHAP"
+    echo "  --yes, -y          Auto-decline all optional packages"
+    echo "  --dir DIR          Installation directory (default: /opt/trevlix)"
+    echo "  --admin-user NAME  Set admin username (default: admin, min 3 chars)"
+    echo "  --admin-pass PASS  Set admin password (min 12 chars, mixed case + special)"
     echo ""
-    echo "Beispiel: sudo bash install.sh --no-tf --no-shap"
+    echo "Example: sudo bash install.sh --no-tf --no-shap --admin-user myadmin"
     exit 0
 fi
 
-# ── Flags ──────────────────────────────────────────────────────────────────────
+# ── Flags ────────────────────────────────────────────────────────────────────
 SKIP_TF=false
 SKIP_SHAP=false
 AUTO_NO=false
 CUSTOM_INSTALL_DIR=""
+CLI_ADMIN_USER=""
+CLI_ADMIN_PASS=""
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-tf)   SKIP_TF=true; shift ;;
@@ -45,7 +54,25 @@ while [[ $# -gt 0 ]]; do
                 CUSTOM_INSTALL_DIR="$2"
                 shift 2
             else
-                echo "FEHLER: --dir benötigt ein Argument" >&2
+                echo "ERROR: --dir requires an argument" >&2
+                exit 1
+            fi
+            ;;
+        --admin-user)
+            if [[ -n "${2:-}" ]]; then
+                CLI_ADMIN_USER="$2"
+                shift 2
+            else
+                echo "ERROR: --admin-user requires an argument" >&2
+                exit 1
+            fi
+            ;;
+        --admin-pass)
+            if [[ -n "${2:-}" ]]; then
+                CLI_ADMIN_PASS="$2"
+                shift 2
+            else
+                echo "ERROR: --admin-pass requires an argument" >&2
                 exit 1
             fi
             ;;
@@ -53,33 +80,39 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ── Farben ─────────────────────────────────────────────────────────────────────
+# ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
 CYAN='\033[0;36m'; BOLD='\033[1m'; DIM='\033[2m'; RESET='\033[0m'
 JADE='\033[38;5;47m'
 
-# ── Konfiguration ──────────────────────────────────────────────────────────────
+# ── Configuration ────────────────────────────────────────────────────────────
 INSTALL_DIR="${CUSTOM_INSTALL_DIR:-/opt/trevlix}"
 SERVICE_USER="trevlix"
 SERVICE_NAME="trevlix"
 PYTHON_MIN="3.9"
 LOG_FILE="/tmp/trevlix_install_$(date +%Y%m%d_%H%M%S).log"
-REPO_URL="https://github.com/DEIN_USER/trevlix"  # ← beim Release ersetzen
+REPO_URL="https://github.com/itsamemedev/Trevlix"
 
-# Domain-Variablen (werden später gesetzt)
+# Domain variables (set later)
 USE_DOMAIN=false
 DOMAIN=""
 
-# ── Logging ────────────────────────────────────────────────────────────────────
+# OS family variables (set during detection)
+OS_FAMILY=""          # debian, rhel, fedora, suse, arch
+PKG_MANAGER=""        # apt-get, dnf, yum, zypper, pacman
+PKG_INSTALL=""        # full install command with quiet/yes flags
+PKG_UPDATE=""         # update command
+
+# ── Logging ──────────────────────────────────────────────────────────────────
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 log()  { echo -e "${JADE}[TREVLIX]${RESET} $*"; }
 ok()   { echo -e "${GREEN}  ✓${RESET} $*"; }
 warn() { echo -e "${YELLOW}  ⚠${RESET} $*"; }
-err()  { echo -e "${RED}  ✗ FEHLER:${RESET} $*"; exit 1; }
+err()  { echo -e "${RED}  ✗ ERROR:${RESET} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${CYAN}━━ $* ━━${RESET}"; }
 
-# ── Banner ─────────────────────────────────────────────────────────────────────
+# ── Banner ───────────────────────────────────────────────────────────────────
 clear
 echo -e "${JADE}"
 cat << 'EOF'
@@ -91,145 +124,515 @@ cat << 'EOF'
      ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 EOF
 echo -e "${RESET}"
-echo -e "  ${DIM}Algorithmic Trading Intelligence · Installer v2.0.0${RESET}"
+echo -e "  ${DIM}Algorithmic Trading Intelligence · Installer v3.0.0${RESET}"
 echo -e "  ${DIM}Log: ${LOG_FILE}${RESET}"
 echo ""
 
-# ── Cleanup-Trap bei Fehler ────────────────────────────────────────────────────
+# ── Cleanup trap on error ────────────────────────────────────────────────────
 _CLEANUP_DONE=false
 cleanup_on_error() {
     if [[ "$_CLEANUP_DONE" == "false" ]]; then
-        echo -e "\n${RED}  ✗ Installation abgebrochen! Bereinige...${RESET}"
+        echo -e "\n${RED}  ✗ Installation aborted! Cleaning up...${RESET}"
         systemctl stop "$SERVICE_NAME" 2>/dev/null || true
         systemctl disable "$SERVICE_NAME" 2>/dev/null || true
         rm -f "/etc/systemd/system/${SERVICE_NAME}.service" 2>/dev/null || true
         systemctl daemon-reload 2>/dev/null || true
-        echo -e "${YELLOW}  ⚠ Installationslog: ${LOG_FILE}${RESET}"
+        echo -e "${YELLOW}  ⚠ Installation log: ${LOG_FILE}${RESET}"
         _CLEANUP_DONE=true
     fi
 }
 trap cleanup_on_error ERR
 
-# ── Root check ─────────────────────────────────────────────────────────────────
+# ── Root check ───────────────────────────────────────────────────────────────
 if [[ $EUID -ne 0 ]]; then
-    err "Bitte als root ausführen: sudo bash install.sh"
+    err "Please run as root: sudo bash install.sh"
 fi
 
-# ── Pre-flight checks ──────────────────────────────────────────────────────────
-step "Systemanforderungen prüfen"
+# ── Pre-flight checks ───────────────────────────────────────────────────────
+step "Checking system requirements"
 
-# Freier Speicher (min. 2 GB)
+# Free disk space (min. 2 GB)
 FREE_MB=$(df / | awk 'NR==2 {print int($4/1024)}')
 if [[ $FREE_MB -lt 2048 ]]; then
-    warn "Weniger als 2 GB freier Speicher (${FREE_MB} MB). Installation könnte fehlschlagen."
+    warn "Less than 2 GB free disk space (${FREE_MB} MB). Installation may fail."
 else
-    ok "Freier Speicher: ${FREE_MB} MB"
+    ok "Free disk space: ${FREE_MB} MB"
 fi
 
 # RAM (min. 512 MB)
 if [[ -f /proc/meminfo ]]; then
     TOTAL_RAM_MB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
     if [[ $TOTAL_RAM_MB -lt 512 ]]; then
-        warn "Weniger als 512 MB RAM (${TOTAL_RAM_MB} MB). KI-Training könnte langsam sein."
+        warn "Less than 512 MB RAM (${TOTAL_RAM_MB} MB). AI training may be slow."
     else
         ok "RAM: ${TOTAL_RAM_MB} MB"
     fi
 fi
 
-# ── OS Detection ───────────────────────────────────────────────────────────────
-step "Betriebssystem erkennen"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── OS Detection (broad Linux support) ───────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Detecting operating system"
+
+# Detect Raspberry Pi
+IS_RASPBERRY_PI=false
+if [[ -f /sys/firmware/devicetree/base/model ]]; then
+    PI_MODEL=$(tr -d '\0' < /sys/firmware/devicetree/base/model 2>/dev/null || true)
+    if [[ "$PI_MODEL" == *"Raspberry Pi"* ]]; then
+        IS_RASPBERRY_PI=true
+        log "Raspberry Pi detected: ${PI_MODEL}"
+    fi
+fi
 
 if [[ -f /etc/os-release ]]; then
     . /etc/os-release
     OS_ID="${ID:-unknown}"
     OS_VER="${VERSION_ID:-0}"
     OS_CODENAME="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+    OS_ID_LIKE="${ID_LIKE:-}"
 elif [[ -f /etc/debian_version ]]; then
     OS_ID="debian"
     OS_VER=$(cut -d. -f1 < /etc/debian_version)
+    OS_CODENAME=""
+    OS_ID_LIKE=""
 else
-    err "Unbekanntes Betriebssystem. Nur Ubuntu/Debian wird unterstützt."
+    err "Unknown operating system. Cannot continue."
 fi
 
-log "Erkannt: ${OS_ID} ${OS_VER} (${OS_CODENAME:-})"
+log "Detected: ${OS_ID} ${OS_VER} (${OS_CODENAME:-none})"
 
+# Classify OS into families and set package manager commands
 case "$OS_ID" in
-    ubuntu)
-        VER_MAJOR=$(echo "$OS_VER" | cut -d. -f1)
-        if [[ $VER_MAJOR -lt 18 ]]; then
-            err "Ubuntu ${OS_VER} wird nicht unterstützt. Minimum: Ubuntu 18.04"
-        fi
-        ok "Ubuntu ${OS_VER} wird unterstützt"
-        PKG_MANAGER="apt-get"
-        ;;
+    # ── Debian family ────────────────────────────────────────────────────────
     debian)
         DEB_VER=$(echo "$OS_VER" | cut -d. -f1)
         if [[ $DEB_VER -lt 10 ]]; then
-            err "Debian ${OS_VER} wird nicht unterstützt. Minimum: Debian 10"
+            err "Debian ${OS_VER} is not supported. Minimum: Debian 10"
         fi
-        ok "Debian ${OS_VER} wird unterstützt"
-        PKG_MANAGER="apt-get"
+        ok "Debian ${OS_VER} supported"
+        OS_FAMILY="debian"
         ;;
+    ubuntu)
+        VER_MAJOR=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $VER_MAJOR -lt 18 ]]; then
+            err "Ubuntu ${OS_VER} is not supported. Minimum: Ubuntu 18.04"
+        fi
+        ok "Ubuntu ${OS_VER} supported"
+        OS_FAMILY="debian"
+        ;;
+    raspbian)
+        ok "Raspbian (legacy Pi OS) detected"
+        OS_FAMILY="debian"
+        ;;
+    linuxmint)
+        ok "Linux Mint ${OS_VER} detected (Ubuntu-based)"
+        OS_FAMILY="debian"
+        ;;
+
+    # ── RHEL family ──────────────────────────────────────────────────────────
+    centos)
+        RHEL_VER=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $RHEL_VER -lt 8 ]]; then
+            err "CentOS ${OS_VER} is not supported. Minimum: CentOS 8"
+        fi
+        ok "CentOS Stream ${OS_VER} supported"
+        OS_FAMILY="rhel"
+        ;;
+    rocky)
+        RHEL_VER=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $RHEL_VER -lt 8 ]]; then
+            err "Rocky Linux ${OS_VER} is not supported. Minimum: Rocky 8"
+        fi
+        ok "Rocky Linux ${OS_VER} supported"
+        OS_FAMILY="rhel"
+        ;;
+    almalinux)
+        RHEL_VER=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $RHEL_VER -lt 8 ]]; then
+            err "AlmaLinux ${OS_VER} is not supported. Minimum: AlmaLinux 8"
+        fi
+        ok "AlmaLinux ${OS_VER} supported"
+        OS_FAMILY="rhel"
+        ;;
+    rhel)
+        RHEL_VER=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $RHEL_VER -lt 8 ]]; then
+            err "RHEL ${OS_VER} is not supported. Minimum: RHEL 8"
+        fi
+        ok "RHEL ${OS_VER} supported"
+        OS_FAMILY="rhel"
+        ;;
+
+    # ── Fedora ───────────────────────────────────────────────────────────────
+    fedora)
+        FED_VER=$(echo "$OS_VER" | cut -d. -f1)
+        if [[ $FED_VER -lt 37 ]]; then
+            err "Fedora ${OS_VER} is not supported. Minimum: Fedora 37"
+        fi
+        ok "Fedora ${OS_VER} supported"
+        OS_FAMILY="fedora"
+        ;;
+
+    # ── openSUSE ─────────────────────────────────────────────────────────────
+    opensuse-leap)
+        ok "openSUSE Leap ${OS_VER} supported"
+        OS_FAMILY="suse"
+        ;;
+    opensuse-tumbleweed)
+        ok "openSUSE Tumbleweed supported"
+        OS_FAMILY="suse"
+        ;;
+
+    # ── Arch Linux ───────────────────────────────────────────────────────────
+    arch|manjaro|endeavouros)
+        ok "Arch-based (${OS_ID}) supported"
+        OS_FAMILY="arch"
+        ;;
+
+    # ── Fallback: try to detect by ID_LIKE ───────────────────────────────────
     *)
-        err "Nur Ubuntu und Debian werden unterstützt (erkannt: ${OS_ID})"
+        if [[ "$OS_ID_LIKE" == *"debian"* || "$OS_ID_LIKE" == *"ubuntu"* ]]; then
+            warn "Unknown Debian-derivative '${OS_ID}' — treating as Debian family"
+            OS_FAMILY="debian"
+        elif [[ "$OS_ID_LIKE" == *"rhel"* || "$OS_ID_LIKE" == *"centos"* || "$OS_ID_LIKE" == *"fedora"* ]]; then
+            warn "Unknown RHEL-derivative '${OS_ID}' — treating as RHEL family"
+            OS_FAMILY="rhel"
+        elif [[ "$OS_ID_LIKE" == *"suse"* ]]; then
+            warn "Unknown SUSE-derivative '${OS_ID}' — treating as openSUSE family"
+            OS_FAMILY="suse"
+        elif [[ "$OS_ID_LIKE" == *"arch"* ]]; then
+            warn "Unknown Arch-derivative '${OS_ID}' — treating as Arch family"
+            OS_FAMILY="arch"
+        else
+            err "Unsupported OS: ${OS_ID} (ID_LIKE=${OS_ID_LIKE}). Supported: Debian, Ubuntu, CentOS, Rocky, Alma, RHEL, Fedora, openSUSE, Arch"
+        fi
         ;;
 esac
 
-# ── Domain-Abfrage ────────────────────────────────────────────────────────────
-step "Domain-Konfiguration"
+if [[ "$IS_RASPBERRY_PI" == "true" ]]; then
+    ok "Raspberry Pi optimizations will be applied"
+fi
+
+# ── Set package manager commands per OS family ───────────────────────────────
+case "$OS_FAMILY" in
+    debian)
+        PKG_MANAGER="apt-get"
+        PKG_INSTALL="apt-get install -y -qq"
+        PKG_UPDATE="apt-get update -qq"
+        ;;
+    rhel)
+        if command -v dnf &>/dev/null; then
+            PKG_MANAGER="dnf"
+            PKG_INSTALL="dnf install -y -q"
+            PKG_UPDATE="dnf makecache -q"
+        else
+            PKG_MANAGER="yum"
+            PKG_INSTALL="yum install -y -q"
+            PKG_UPDATE="yum makecache -q"
+        fi
+        ;;
+    fedora)
+        PKG_MANAGER="dnf"
+        PKG_INSTALL="dnf install -y -q"
+        PKG_UPDATE="dnf makecache -q"
+        ;;
+    suse)
+        PKG_MANAGER="zypper"
+        PKG_INSTALL="zypper install -y --no-confirm"
+        PKG_UPDATE="zypper refresh -q"
+        ;;
+    arch)
+        PKG_MANAGER="pacman"
+        PKG_INSTALL="pacman -S --noconfirm --needed"
+        PKG_UPDATE="pacman -Sy --noconfirm"
+        ;;
+esac
+
+ok "Package manager: ${PKG_MANAGER}"
+
+# ── Domain prompt ────────────────────────────────────────────────────────────
+step "Domain configuration"
 echo ""
-echo -e "${YELLOW}Soll Trevlix mit einer Domain verknüpft werden?${RESET}"
-echo -e "${DIM}  Beispiele: example.com, app.example.com, trading.meinedomain.de${RESET}"
-echo -e "${DIM}  Leer lassen = nur über IP:5000 erreichbar${RESET}"
+echo -e "${YELLOW}Should Trevlix be linked to a domain?${RESET}"
+echo -e "${DIM}  Examples: example.com, app.example.com, trading.mydomain.de${RESET}"
+echo -e "${DIM}  Leave empty = accessible only via IP:5000${RESET}"
 echo ""
-read -rp "$(echo -e "${CYAN}Domain (leer = keine): ${RESET}")" DOMAIN
+read -rp "$(echo -e "${CYAN}Domain (empty = none): ${RESET}")" DOMAIN
 
 if [[ -n "$DOMAIN" ]]; then
-    # Domain-Format validieren
+    # Validate domain format
     if [[ "$DOMAIN" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$ ]]; then
         USE_DOMAIN=true
         ok "Domain: ${DOMAIN}"
     else
-        warn "Ungültiges Domain-Format: '${DOMAIN}' — fahre ohne Domain fort"
+        warn "Invalid domain format: '${DOMAIN}' — continuing without domain"
         DOMAIN=""
     fi
 else
-    ok "Keine Domain — Dashboard erreichbar über http://IP:5000"
+    ok "No domain — dashboard accessible at http://IP:5000"
 fi
 
-# ── System-Update ──────────────────────────────────────────────────────────────
-step "System-Pakete aktualisieren"
-export DEBIAN_FRONTEND=noninteractive
-$PKG_MANAGER update -qq || warn "Update-Fehler (wird fortgesetzt)"
-ok "Paketliste aktualisiert"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Admin Username + Password Prompt ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Admin account configuration"
 
-# ── Basis-Abhängigkeiten ───────────────────────────────────────────────────────
-step "Basis-Abhängigkeiten installieren"
-BASE_PKGS="curl wget git ca-certificates gnupg lsb-release software-properties-common \
-           build-essential libssl-dev libffi-dev pkg-config \
-           libmariadb-dev default-libmysqlclient-dev \
-           libxml2-dev libxslt1-dev zlib1g-dev"
-
-for pkg in $BASE_PKGS; do
-    if ! dpkg -s "$pkg" &>/dev/null; then
-        $PKG_MANAGER install -y -qq "$pkg" || warn "Konnte $pkg nicht installieren"
+# ── Helper: validate password complexity ─────────────────────────────────────
+validate_password() {
+    local pass="$1"
+    if [[ ${#pass} -lt 12 ]]; then
+        echo "Password must be at least 12 characters long."
+        return 1
     fi
-done
-ok "Basis-Pakete installiert"
+    if ! [[ "$pass" =~ [a-z] ]]; then
+        echo "Password must contain at least one lowercase letter."
+        return 1
+    fi
+    if ! [[ "$pass" =~ [A-Z] ]]; then
+        echo "Password must contain at least one uppercase letter."
+        return 1
+    fi
+    if ! [[ "$pass" =~ [0-9] ]]; then
+        echo "Password must contain at least one digit."
+        return 1
+    fi
+    if ! [[ "$pass" =~ [^a-zA-Z0-9] ]]; then
+        echo "Password must contain at least one special character."
+        return 1
+    fi
+    return 0
+}
 
-# ── Python Installation (OS-abhängig) ─────────────────────────────────────────
-step "Python 3.11+ installieren"
+# ── Helper: generate a secure random password ────────────────────────────────
+generate_secure_password() {
+    # Generate a password that satisfies complexity requirements
+    local pass=""
+    while true; do
+        if command -v openssl &>/dev/null; then
+            pass=$(openssl rand -base64 24 | tr -d '/\n' | head -c 20)
+        else
+            pass=$(head -c 64 /dev/urandom | tr -dc 'a-zA-Z0-9!@#$%^&*' | head -c 20)
+        fi
+        # Ensure complexity: append guaranteed chars if needed
+        pass="${pass}Aa1!"
+        pass=$(echo "$pass" | head -c 20)
+        if validate_password "$pass" &>/dev/null; then
+            echo "$pass"
+            return 0
+        fi
+    done
+}
 
-install_python_modern() {
-    # deadsnakes PPA für Ubuntu < 22
+# ── Admin username ───────────────────────────────────────────────────────────
+ADMIN_USER=""
+if [[ -n "$CLI_ADMIN_USER" ]]; then
+    # From CLI flag
+    if [[ ${#CLI_ADMIN_USER} -lt 3 ]]; then
+        err "--admin-user must be at least 3 characters"
+    fi
+    ADMIN_USER="$CLI_ADMIN_USER"
+    ok "Admin username (from flag): ${ADMIN_USER}"
+else
+    echo ""
+    echo -e "${YELLOW}Choose an admin username for the dashboard.${RESET}"
+    echo -e "${DIM}  Minimum 3 characters. Press Enter for default: admin${RESET}"
+    echo ""
+    read -rp "$(echo -e "${CYAN}Admin username [admin]: ${RESET}")" ADMIN_USER_INPUT
+    ADMIN_USER="${ADMIN_USER_INPUT:-admin}"
+    if [[ ${#ADMIN_USER} -lt 3 ]]; then
+        warn "Username too short (min 3 chars) — using default: admin"
+        ADMIN_USER="admin"
+    fi
+    ok "Admin username: ${ADMIN_USER}"
+fi
+
+# ── Admin password ───────────────────────────────────────────────────────────
+ADMIN_PASS=""
+ADMIN_PASS_GENERATED=false
+if [[ -n "$CLI_ADMIN_PASS" ]]; then
+    # From CLI flag
+    validation_msg=$(validate_password "$CLI_ADMIN_PASS" 2>&1) || true
+    if ! validate_password "$CLI_ADMIN_PASS" &>/dev/null; then
+        err "--admin-pass does not meet requirements: ${validation_msg}"
+    fi
+    ADMIN_PASS="$CLI_ADMIN_PASS"
+    ok "Admin password set (from flag)"
+else
+    echo ""
+    echo -e "${YELLOW}Set an admin password for the dashboard.${RESET}"
+    echo -e "${DIM}  Requirements: min 12 chars, uppercase + lowercase + digit + special char${RESET}"
+    echo -e "${DIM}  Press Enter to auto-generate a secure random password.${RESET}"
+    echo ""
+
+    MAX_ATTEMPTS=3
+    ATTEMPT=0
+    while [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; do
+        read -rsp "$(echo -e "${CYAN}Admin password (Enter = auto-generate): ${RESET}")" PASS_INPUT
+        echo ""
+
+        if [[ -z "$PASS_INPUT" ]]; then
+            # Auto-generate
+            ADMIN_PASS=$(generate_secure_password)
+            ADMIN_PASS_GENERATED=true
+            ok "Secure admin password auto-generated"
+            break
+        fi
+
+        # Validate complexity
+        validation_msg=$(validate_password "$PASS_INPUT" 2>&1) || true
+        if ! validate_password "$PASS_INPUT" &>/dev/null; then
+            warn "$validation_msg"
+            ATTEMPT=$((ATTEMPT + 1))
+            if [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; then
+                echo -e "${DIM}  Try again (${ATTEMPT}/${MAX_ATTEMPTS})...${RESET}"
+            fi
+            continue
+        fi
+
+        # Confirm password
+        read -rsp "$(echo -e "${CYAN}Confirm password: ${RESET}")" PASS_CONFIRM
+        echo ""
+
+        if [[ "$PASS_INPUT" != "$PASS_CONFIRM" ]]; then
+            warn "Passwords do not match."
+            ATTEMPT=$((ATTEMPT + 1))
+            if [[ $ATTEMPT -lt $MAX_ATTEMPTS ]]; then
+                echo -e "${DIM}  Try again (${ATTEMPT}/${MAX_ATTEMPTS})...${RESET}"
+            fi
+            continue
+        fi
+
+        ADMIN_PASS="$PASS_INPUT"
+        ok "Admin password set"
+        break
+    done
+
+    if [[ -z "$ADMIN_PASS" ]]; then
+        ADMIN_PASS=$(generate_secure_password)
+        ADMIN_PASS_GENERATED=true
+        warn "Max attempts reached — auto-generating secure password"
+    fi
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── System Update ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Updating system packages"
+
+case "$OS_FAMILY" in
+    debian)
+        export DEBIAN_FRONTEND=noninteractive
+        $PKG_UPDATE || warn "Update failed (continuing)"
+        ;;
+    rhel|fedora)
+        $PKG_UPDATE || warn "Cache refresh failed (continuing)"
+        ;;
+    suse)
+        $PKG_UPDATE || warn "Refresh failed (continuing)"
+        ;;
+    arch)
+        $PKG_UPDATE || warn "Sync failed (continuing)"
+        ;;
+esac
+ok "Package list updated"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Base Dependencies (per OS family) ────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing base dependencies"
+
+case "$OS_FAMILY" in
+    debian)
+        BASE_PKGS="build-essential libssl-dev libffi-dev pkg-config \
+                   libmariadb-dev libxml2-dev libxslt1-dev zlib1g-dev \
+                   curl wget git ca-certificates gnupg lsb-release software-properties-common"
+        ;;
+    rhel)
+        BASE_PKGS="gcc gcc-c++ make openssl-devel libffi-devel pkgconfig \
+                   mariadb-devel libxml2-devel libxslt-devel zlib-devel \
+                   curl wget git ca-certificates gnupg2"
+        # Enable EPEL for additional packages
+        $PKG_INSTALL epel-release 2>/dev/null || true
+        ;;
+    fedora)
+        BASE_PKGS="gcc gcc-c++ make openssl-devel libffi-devel pkgconfig \
+                   mariadb-connector-c-devel libxml2-devel libxslt-devel zlib-devel \
+                   curl wget git ca-certificates gnupg2"
+        ;;
+    suse)
+        BASE_PKGS="gcc gcc-c++ make libopenssl-devel libffi-devel pkg-config \
+                   libmariadb-devel libxml2-devel libxslt-devel zlib-devel \
+                   curl wget git ca-certificates gpg2"
+        ;;
+    arch)
+        BASE_PKGS="base-devel openssl libffi pkg-config mariadb-libs \
+                   libxml2 libxslt zlib curl wget git ca-certificates gnupg"
+        ;;
+esac
+
+# Install packages using the appropriate method per OS family
+case "$OS_FAMILY" in
+    debian)
+        for pkg in $BASE_PKGS; do
+            if ! dpkg -s "$pkg" &>/dev/null; then
+                $PKG_INSTALL "$pkg" || warn "Could not install $pkg"
+            fi
+        done
+        ;;
+    rhel|fedora)
+        # dnf/yum can handle multiple packages at once efficiently
+        $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
+        ;;
+    suse)
+        $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
+        ;;
+    arch)
+        $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
+        ;;
+esac
+ok "Base packages installed"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Python Installation (OS-dependent) ───────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing Python 3.11+"
+
+install_python_debian() {
+    # deadsnakes PPA for Ubuntu < 22 / older Debian
     if ! python3.11 --version &>/dev/null 2>&1; then
-        log "Füge deadsnakes PPA hinzu..."
-        $PKG_MANAGER install -y -qq python3-software-properties 2>/dev/null || true
+        log "Adding deadsnakes PPA..."
+        $PKG_INSTALL python3-software-properties 2>/dev/null || true
         add-apt-repository -y ppa:deadsnakes/ppa 2>/dev/null || true
-        $PKG_MANAGER update -qq
-        $PKG_MANAGER install -y -qq python3.11 python3.11-venv python3.11-dev python3.11-distutils 2>/dev/null || true
+        $PKG_UPDATE
+        $PKG_INSTALL python3.11 python3.11-venv python3.11-dev python3.11-distutils 2>/dev/null || true
     fi
     curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11 - 2>/dev/null || true
+}
+
+install_python_rhel() {
+    local rhel_ver
+    rhel_ver=$(echo "$OS_VER" | cut -d. -f1)
+    if [[ $rhel_ver -eq 8 ]]; then
+        # CentOS/RHEL/Rocky/Alma 8: use AppStream module or python39
+        $PKG_INSTALL python39 python39-devel python39-pip 2>/dev/null || \
+        $PKG_INSTALL python3 python3-devel python3-pip 2>/dev/null || true
+    else
+        # RHEL 9+
+        $PKG_INSTALL python3 python3-devel python3-pip 2>/dev/null || true
+    fi
+}
+
+install_python_fedora() {
+    $PKG_INSTALL python3 python3-devel python3-pip 2>/dev/null || true
+}
+
+install_python_suse() {
+    $PKG_INSTALL python311 python311-devel python311-pip 2>/dev/null || \
+    $PKG_INSTALL python3 python3-devel python3-pip 2>/dev/null || true
+}
+
+install_python_arch() {
+    $PKG_INSTALL python python-pip 2>/dev/null || true
 }
 
 detect_python() {
@@ -240,7 +643,7 @@ detect_python() {
             PY_MINOR=$(echo "$PY_VER" | cut -d. -f2)
             if [[ $PY_MAJOR -ge 3 ]] && [[ $PY_MINOR -ge 9 ]]; then
                 PYTHON_BIN="$py"
-                ok "Python ${PY_VER} gefunden: $(command -v "$py")"
+                ok "Python ${PY_VER} found: $(command -v "$py")"
                 return 0
             fi
         fi
@@ -249,89 +652,132 @@ detect_python() {
 }
 
 if ! detect_python; then
-    log "Python 3.9+ nicht gefunden — installiere Python 3.11..."
-    $PKG_MANAGER install -y -qq python3.11 python3.11-venv python3.11-dev 2>/dev/null || \
-    install_python_modern
-    detect_python || err "Python 3.9+ konnte nicht installiert werden"
+    log "Python 3.9+ not found — installing..."
+    case "$OS_FAMILY" in
+        debian)
+            $PKG_INSTALL python3.11 python3.11-venv python3.11-dev 2>/dev/null || \
+            install_python_debian
+            ;;
+        rhel)     install_python_rhel ;;
+        fedora)   install_python_fedora ;;
+        suse)     install_python_suse ;;
+        arch)     install_python_arch ;;
+    esac
+    detect_python || err "Python 3.9+ could not be installed"
+fi
+
+# Ensure venv module is available (needed for Debian-family)
+if [[ "$OS_FAMILY" == "debian" ]]; then
+    if ! "$PYTHON_BIN" -m venv --help &>/dev/null 2>&1; then
+        PY_SHORT=$("$PYTHON_BIN" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+        $PKG_INSTALL "python${PY_SHORT}-venv" 2>/dev/null || \
+        $PKG_INSTALL python3-venv 2>/dev/null || true
+    fi
 fi
 
 # pip
 if ! command -v pip3 &>/dev/null; then
-    curl -sS https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet
+    curl -sS https://bootstrap.pypa.io/get-pip.py | "$PYTHON_BIN" - --quiet 2>/dev/null || true
 fi
 ok "Python: $("$PYTHON_BIN" --version)"
 
+# ══════════════════════════════════════════════════════════════════════════════
 # ── MariaDB Installation ─────────────────────────────────────────────────────
-step "MariaDB installieren & konfigurieren"
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing & configuring MariaDB"
 
 install_mariadb() {
     if command -v mariadb &>/dev/null || command -v mysql &>/dev/null; then
         local db_version
         db_version=$(mariadb --version 2>/dev/null || mysql --version 2>/dev/null)
-        ok "Datenbank bereits installiert: ${db_version}"
+        ok "Database already installed: ${db_version}"
         return
     fi
 
-    log "Installiere MariaDB Server..."
-    if $PKG_MANAGER install -y -qq mariadb-server mariadb-client 2>/dev/null; then
-        ok "MariaDB Server installiert"
-    else
-        err "MariaDB konnte nicht installiert werden. Bitte manuell installieren."
-    fi
+    log "Installing MariaDB Server..."
+    case "$OS_FAMILY" in
+        debian)
+            $PKG_INSTALL mariadb-server mariadb-client 2>/dev/null || \
+                err "MariaDB could not be installed. Please install manually."
+            ;;
+        rhel|fedora)
+            $PKG_INSTALL mariadb-server mariadb 2>/dev/null || \
+                err "MariaDB could not be installed. Please install manually."
+            ;;
+        suse)
+            $PKG_INSTALL mariadb mariadb-client 2>/dev/null || \
+                err "MariaDB could not be installed. Please install manually."
+            ;;
+        arch)
+            $PKG_INSTALL mariadb 2>/dev/null || \
+                err "MariaDB could not be installed. Please install manually."
+            # Arch requires explicit initialization
+            if [[ ! -d /var/lib/mysql/mysql ]]; then
+                mariadb-install-db --user=mysql --basedir=/usr --datadir=/var/lib/mysql 2>/dev/null || true
+            fi
+            ;;
+    esac
+    ok "MariaDB Server installed"
 }
 
 install_mariadb
 
-# MariaDB starten & aktivieren
+# Start & enable MariaDB
 if command -v systemctl &>/dev/null; then
     systemctl enable mariadb 2>/dev/null || systemctl enable mysql 2>/dev/null || true
     systemctl start  mariadb 2>/dev/null || systemctl start  mysql 2>/dev/null || true
 else
     service mariadb start 2>/dev/null || service mysql start 2>/dev/null || true
 fi
-ok "MariaDB läuft"
+ok "MariaDB running"
 
-# ── System-Nutzer ──────────────────────────────────────────────────────────────
-step "System-Nutzer einrichten"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── System User ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Setting up system user"
 if ! id "$SERVICE_USER" &>/dev/null; then
     useradd --system --shell /bin/bash --home "$INSTALL_DIR" --create-home "$SERVICE_USER"
-    ok "Nutzer '${SERVICE_USER}' erstellt"
+    ok "User '${SERVICE_USER}' created"
 else
-    ok "Nutzer '${SERVICE_USER}' existiert bereits"
+    ok "User '${SERVICE_USER}' already exists"
 fi
 
-# ── Installations-Verzeichnis ──────────────────────────────────────────────────
-step "Bot-Dateien installieren"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Installation Directory ───────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing bot files"
 mkdir -p "$INSTALL_DIR"/{backups,logs,static}
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 
-# Herunterladen oder kopieren
+# Download or copy
 if [[ -f "./server.py" ]]; then
-    log "Lokale Dateien erkannt — kopiere..."
-    # Kopiere alle relevanten Dateien und Verzeichnisse
+    log "Local files detected — copying..."
+    # Copy all relevant files and directories
     for f in server.py ai_engine.py trevlix_i18n.py validate_env.py requirements.txt \
-              trevlix_translations.js; do
-        [[ -f "./$f" ]] && cp "./$f" "$INSTALL_DIR/$f" && ok "Kopiert: $f"
+              trevlix_translations.js motd.sh; do
+        [[ -f "./$f" ]] && cp "./$f" "$INSTALL_DIR/$f" && ok "Copied: $f"
     done
     for d in routes services templates static docker tests; do
         if [[ -d "./$d" ]]; then
-            cp -r "./$d" "$INSTALL_DIR/$d" && ok "Kopiert: $d/"
+            cp -r "./$d" "$INSTALL_DIR/$d" && ok "Copied: $d/"
         fi
     done
-elif command -v git &>/dev/null && [[ "$REPO_URL" != *"DEIN_USER"* ]]; then
-    log "Klone Repository: $REPO_URL"
+elif command -v git &>/dev/null; then
+    log "Cloning repository: $REPO_URL"
     git clone --depth 1 "$REPO_URL" "$INSTALL_DIR/src" 2>/dev/null || \
-        warn "Git-Clone fehlgeschlagen — bitte Dateien manuell in $INSTALL_DIR ablegen"
+        warn "Git clone failed — please copy files manually to $INSTALL_DIR"
 else
-    warn "Keine Quelldateien gefunden. Bitte server.py & Co. nach $INSTALL_DIR kopieren."
+    warn "No source files found. Please copy server.py & co. to $INSTALL_DIR."
 fi
 
-# ── Python Virtual Environment ─────────────────────────────────────────────────
-step "Python Virtual Environment erstellen"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Python Virtual Environment ───────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Creating Python virtual environment"
 VENV_DIR="$INSTALL_DIR/venv"
 
 if [[ ! -d "$VENV_DIR" ]]; then
-    "$PYTHON_BIN" -m venv "$VENV_DIR" || err "venv-Erstellung fehlgeschlagen"
+    "$PYTHON_BIN" -m venv "$VENV_DIR" || err "venv creation failed"
 fi
 ok "venv: $VENV_DIR"
 
@@ -341,81 +787,87 @@ VENV_PIP="$VENV_DIR/bin/pip"
 # pip upgrade
 "$VENV_PIP" install --quiet --upgrade pip wheel setuptools
 
-# ── Python-Pakete installieren ─────────────────────────────────────────────────
-step "Python-Abhängigkeiten installieren"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Python Packages ──────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing Python dependencies"
 
-CORE_PKGS=(
-    "flask>=3.0.0"
-    "flask-socketio>=5.3.6"
-    "flask-cors>=4.0.0"
-    "eventlet>=0.35.0"
-    "ccxt>=4.2.0"
-    "PyMySQL>=1.1.0"
-    "cryptography>=41.0.0"
-    "pandas>=2.1.0"
-    "numpy>=1.26.0"
-    "requests>=2.31.0"
-    "scikit-learn>=1.3.0"
-    "xgboost>=2.0.0"
-    "ta>=0.11.0"
-    "PyJWT>=2.8.0"
-    "bcrypt>=4.1.0"
-    "python-dotenv>=1.0.0"
-)
-
+# Always prefer requirements.txt; fall back to hardcoded list only if missing
 if [[ -f "$INSTALL_DIR/requirements.txt" ]]; then
-    "$VENV_PIP" install --quiet -r "$INSTALL_DIR/requirements.txt" && ok "requirements.txt installiert"
+    log "Installing from requirements.txt..."
+    "$VENV_PIP" install --quiet -r "$INSTALL_DIR/requirements.txt" && \
+        ok "requirements.txt installed" || \
+        warn "Some packages from requirements.txt failed"
 else
+    warn "requirements.txt not found — installing core packages individually"
+    # Fallback core packages (eventlet intentionally excluded — server uses threading mode)
+    CORE_PKGS=(
+        "flask>=3.0.0"
+        "flask-socketio>=5.3.6"
+        "flask-cors>=4.0.0"
+        "ccxt>=4.2.0"
+        "PyMySQL>=1.1.0"
+        "cryptography>=41.0.0"
+        "pandas>=2.1.0"
+        "numpy>=1.26.0"
+        "requests>=2.31.0"
+        "scikit-learn>=1.3.0"
+        "xgboost>=2.0.0"
+        "ta>=0.11.0"
+        "PyJWT>=2.8.0"
+        "bcrypt>=4.1.0"
+        "python-dotenv>=1.0.0"
+    )
     for pkg in "${CORE_PKGS[@]}"; do
-        "$VENV_PIP" install --quiet "$pkg" && ok "$pkg"
+        "$VENV_PIP" install --quiet "$pkg" && ok "$pkg" || warn "Failed: $pkg"
     done
 fi
 
 # TensorFlow optional
 if [[ "$SKIP_TF" == "false" && "$AUTO_NO" == "false" ]]; then
     echo ""
-    read -rp "$(echo -e "${YELLOW}TensorFlow installieren? (LSTM + Transformer-KI, ~1.5GB) [j/N]:${RESET} ")" TF_CHOICE
-    [[ "${TF_CHOICE,,}" == "j" ]] && SKIP_TF=false || SKIP_TF=true
+    read -rp "$(echo -e "${YELLOW}Install TensorFlow? (LSTM + Transformer AI, ~1.5GB) [y/N]:${RESET} ")" TF_CHOICE
+    [[ "${TF_CHOICE,,}" == "y" || "${TF_CHOICE,,}" == "j" ]] && SKIP_TF=false || SKIP_TF=true
 fi
 if [[ "$SKIP_TF" == "false" ]]; then
-    log "Installiere TensorFlow (dauert einige Minuten)..."
-    "$VENV_PIP" install --quiet tensorflow && ok "TensorFlow installiert" || warn "TensorFlow fehlgeschlagen — KI läuft ohne LSTM"
+    log "Installing TensorFlow (this may take several minutes)..."
+    "$VENV_PIP" install --quiet tensorflow && ok "TensorFlow installed" || warn "TensorFlow failed — AI will run without LSTM"
 else
-    ok "TensorFlow übersprungen (--no-tf)"
+    ok "TensorFlow skipped (--no-tf)"
 fi
 
 # SHAP optional
 if [[ "$SKIP_SHAP" == "false" && "$AUTO_NO" == "false" ]]; then
     echo ""
-    read -rp "$(echo -e "${YELLOW}SHAP installieren? (KI-Erklärungen, ~200MB) [j/N]:${RESET} ")" SHAP_CHOICE
-    [[ "${SHAP_CHOICE,,}" == "j" ]] && SKIP_SHAP=false || SKIP_SHAP=true
+    read -rp "$(echo -e "${YELLOW}Install SHAP? (AI explanations, ~200MB) [y/N]:${RESET} ")" SHAP_CHOICE
+    [[ "${SHAP_CHOICE,,}" == "y" || "${SHAP_CHOICE,,}" == "j" ]] && SKIP_SHAP=false || SKIP_SHAP=true
 fi
 if [[ "$SKIP_SHAP" == "false" ]]; then
-    "$VENV_PIP" install --quiet shap && ok "SHAP installiert" || warn "SHAP fehlgeschlagen"
+    "$VENV_PIP" install --quiet shap && ok "SHAP installed" || warn "SHAP failed"
 else
-    ok "SHAP übersprungen (--no-shap)"
+    ok "SHAP skipped (--no-shap)"
 fi
 
-# ── Passwörter & Secrets generieren ────────────────────────────────────────────
-step "Sichere Passwörter & Secrets generieren"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Generate Passwords & Secrets ─────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Generating secure passwords & secrets"
 
 if command -v openssl &>/dev/null; then
     DB_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
     DB_ROOT_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 24)
-    ADMIN_PASS=$(openssl rand -base64 18 | tr -d '/+=' | head -c 20)
     JWT_SECRET=$(openssl rand -hex 32)
     FLASK_SECRET=$(openssl rand -hex 32)
     DASH_SECRET=$(openssl rand -hex 32)
 else
     DB_PASS="$(head -c 64 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 24)"
     DB_ROOT_PASS="$(head -c 64 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 24)"
-    ADMIN_PASS="$(head -c 64 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 20)"
     JWT_SECRET="$(head -c 128 /dev/urandom | tr -dc 'a-f0-9' | head -c 64)"
     FLASK_SECRET="$(head -c 128 /dev/urandom | tr -dc 'a-f0-9' | head -c 64)"
     DASH_SECRET="$(head -c 128 /dev/urandom | tr -dc 'a-f0-9' | head -c 64)"
 fi
 
-# Fernet-Key generieren (nach venv-Erstellung, cryptography ist jetzt verfügbar)
+# Generate Fernet key (after venv creation, cryptography is now available)
 if "$VENV_PY" -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())" &>/dev/null 2>&1; then
     ENCRYPTION_KEY=$("$VENV_PY" -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())")
 elif command -v openssl &>/dev/null; then
@@ -423,12 +875,14 @@ elif command -v openssl &>/dev/null; then
 else
     ENCRYPTION_KEY="$(head -c 64 /dev/urandom | base64 | head -c 44)"
 fi
-ok "Alle Secrets generiert"
+ok "All secrets generated"
 
-# ── MariaDB Datenbank & Nutzer einrichten ──────────────────────────────────────
-step "MariaDB Datenbank & Nutzer einrichten"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── MariaDB Database & User Setup ────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Setting up MariaDB database & user"
 
-# Bestimme den MariaDB/MySQL Client-Befehl
+# Determine the MariaDB/MySQL client command
 DB_CLIENT="mariadb"
 if ! command -v mariadb &>/dev/null; then
     DB_CLIENT="mysql"
@@ -445,12 +899,12 @@ SQLEOF
 )
 
 if $DB_CLIENT -u root -e "$SQL_SETUP" 2>/dev/null; then
-    ok "Datenbank 'trevlix' und Nutzer erstellt"
+    ok "Database 'trevlix' and user created"
 else
-    warn "DB-Einrichtung fehlgeschlagen — bitte manuell ausführen: sudo $DB_CLIENT -u root"
+    warn "DB setup failed — please run manually: sudo $DB_CLIENT -u root"
 fi
 
-# Schema importieren, falls mysql-init.sql vorhanden
+# Import schema if mysql-init.sql is present
 INIT_SQL=""
 if [[ -f "$INSTALL_DIR/docker/mysql-init.sql" ]]; then
     INIT_SQL="$INSTALL_DIR/docker/mysql-init.sql"
@@ -460,16 +914,18 @@ fi
 
 if [[ -n "$INIT_SQL" ]]; then
     if $DB_CLIENT -u trevlix -p"${DB_PASS}" trevlix < "$INIT_SQL" 2>/dev/null; then
-        ok "Datenbank-Schema importiert"
+        ok "Database schema imported"
     else
-        warn "Schema-Import fehlgeschlagen — Tabellen werden beim ersten Start automatisch erstellt"
+        warn "Schema import failed — tables will be created automatically on first start"
     fi
 fi
 
-# ── .env erstellen ─────────────────────────────────────────────────────────────
-step ".env Konfigurationsdatei erstellen"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Create .env ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Creating .env configuration file"
 
-# ALLOWED_ORIGINS bestimmen
+# Determine ALLOWED_ORIGINS
 if [[ "$USE_DOMAIN" == "true" ]]; then
     ALLOWED_ORIGINS="https://${DOMAIN}"
 else
@@ -478,23 +934,23 @@ fi
 
 if [[ ! -f "$INSTALL_DIR/.env" ]]; then
     cat > "$INSTALL_DIR/.env" << ENV_EOF
-# TREVLIX v2.0.0 – Auto-generiert am $(date)
-# Niemals in Git committen! (steht in .gitignore)
+# TREVLIX v3.0.0 – Auto-generated on $(date)
+# Never commit to git! (listed in .gitignore)
 
-# ── Exchange (jetzt konfigurieren!) ──────────────────────────────
+# ── Exchange (configure now!) ──────────────────────────────────
 EXCHANGE=cryptocom
 API_KEY=
 API_SECRET=
 
-# ── MariaDB (auto-generiert) ────────────────────────────────────
+# ── MariaDB (auto-generated) ──────────────────────────────────
 MYSQL_HOST=localhost
 MYSQL_PORT=3306
 MYSQL_USER=trevlix
 MYSQL_PASS=${DB_PASS}
-MYSQL_ROOT_PASS=${DB_ROOT_PASS}
 MYSQL_DB=trevlix
 
-# ── Sicherheit (auto-generiert) ─────────────────────────────────
+# ── Security (auto-generated) ─────────────────────────────────
+ADMIN_USERNAME=${ADMIN_USER}
 ADMIN_PASSWORD=${ADMIN_PASS}
 DASHBOARD_SECRET=${DASH_SECRET}
 JWT_SECRET=${JWT_SECRET}
@@ -503,13 +959,13 @@ ENCRYPTION_KEY=${ENCRYPTION_KEY}
 SESSION_TIMEOUT_MIN=30
 ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 
-# ── Trading (Empfehlung: erst mit Paper-Trading starten!) ───────
+# ── Trading (recommendation: start with paper trading!) ────────
 PAPER_TRADING=true
 
-# ── Registrierung ───────────────────────────────────────────────
+# ── Registration ───────────────────────────────────────────────
 ALLOW_REGISTRATION=false
 
-# ── Features (optional) ─────────────────────────────────────────
+# ── Features (optional) ───────────────────────────────────────
 DISCORD_WEBHOOK=
 TELEGRAM_TOKEN=
 TELEGRAM_CHAT_ID=
@@ -519,7 +975,7 @@ BLOCKNATIVE_KEY=
 LLM_ENDPOINT=
 LLM_API_KEY=
 
-# ── Server ──────────────────────────────────────────────────────
+# ── Server ─────────────────────────────────────────────────────
 PORT=5000
 LANGUAGE=de
 AUTO_START=true
@@ -529,19 +985,20 @@ COLOR_LOGS=true
 ENV_EOF
     chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR/.env"
     chmod 600 "$INSTALL_DIR/.env"
-    ok ".env erstellt (Passwörter auto-generiert)"
+    ok ".env created (passwords auto-generated)"
 else
-    ok ".env existiert bereits — wird nicht überschrieben"
+    ok ".env already exists — not overwritten"
 fi
 
-# ── .env.example aktualisieren ─────────────────────────────────────────────────
-# Aktualisiere die .env.example mit den generierten DB-Credentials als Referenz
+# Update .env.example reference if present
 if [[ -f "$INSTALL_DIR/.env.example" ]]; then
-    ok ".env.example vorhanden"
+    ok ".env.example present"
 fi
 
-# ── Systemd Service ────────────────────────────────────────────────────────────
-step "Systemd Service einrichten"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Systemd Service ──────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Setting up systemd service"
 
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" << SERVICE_EOF
 [Unit]
@@ -560,7 +1017,7 @@ RestartSec=10
 StandardOutput=append:${INSTALL_DIR}/logs/trevlix.log
 StandardError=append:${INSTALL_DIR}/logs/trevlix_error.log
 
-# Sicherheit
+# Security
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
@@ -572,29 +1029,55 @@ SERVICE_EOF
 
 systemctl daemon-reload
 systemctl enable "$SERVICE_NAME"
-ok "Systemd Service eingerichtet"
-ok "Bot startet automatisch nach Neustart"
+ok "Systemd service configured"
+ok "Bot will start automatically after reboot"
 
-# ── Berechtigungen ─────────────────────────────────────────────────────────────
-step "Berechtigungen setzen"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Permissions ──────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Setting permissions"
 chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chmod 750 "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/.env"
-ok "Berechtigungen gesetzt"
+ok "Permissions set"
 
-# ── Nginx + SSL (Domain-Setup) ─────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Nginx + SSL (Domain Setup) ───────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 if [[ "$USE_DOMAIN" == "true" ]]; then
-    step "Nginx Reverse Proxy einrichten"
+    step "Setting up Nginx reverse proxy"
 
-    # Nginx installieren
+    # Install Nginx
     if ! command -v nginx &>/dev/null; then
-        $PKG_MANAGER install -y -qq nginx || err "Nginx konnte nicht installiert werden"
+        case "$OS_FAMILY" in
+            debian)  $PKG_INSTALL nginx || err "Nginx could not be installed" ;;
+            rhel|fedora) $PKG_INSTALL nginx || err "Nginx could not be installed" ;;
+            suse)    $PKG_INSTALL nginx || err "Nginx could not be installed" ;;
+            arch)    $PKG_INSTALL nginx || err "Nginx could not be installed" ;;
+        esac
     fi
-    ok "Nginx installiert"
+    ok "Nginx installed"
 
-    # Nginx-Konfiguration erstellen
-    cat > "/etc/nginx/sites-available/trevlix" << NGINX_EOF
-# TREVLIX – Nginx Reverse Proxy (auto-generiert)
+    # Determine sites directory (Debian-style vs conf.d)
+    NGINX_SITES_AVAILABLE="/etc/nginx/sites-available"
+    NGINX_SITES_ENABLED="/etc/nginx/sites-enabled"
+    NGINX_USE_CONFD=false
+
+    if [[ ! -d "$NGINX_SITES_AVAILABLE" ]]; then
+        # RHEL/Fedora/SUSE/Arch use conf.d
+        NGINX_USE_CONFD=true
+        mkdir -p /etc/nginx/conf.d
+    fi
+
+    # Write Nginx configuration
+    if [[ "$NGINX_USE_CONFD" == "true" ]]; then
+        NGINX_CONF="/etc/nginx/conf.d/trevlix.conf"
+    else
+        NGINX_CONF="$NGINX_SITES_AVAILABLE/trevlix"
+    fi
+
+    cat > "$NGINX_CONF" << NGINX_EOF
+# TREVLIX – Nginx Reverse Proxy (auto-generated)
 # Domain: ${DOMAIN}
 
 # Rate-Limiting
@@ -607,7 +1090,7 @@ upstream trevlix_backend {
     keepalive 32;
 }
 
-# HTTP → HTTPS Redirect (wird von Certbot angepasst)
+# HTTP → HTTPS Redirect (adjusted by Certbot)
 server {
     listen 80;
     server_name ${DOMAIN};
@@ -627,7 +1110,7 @@ server {
     listen 443 ssl http2;
     server_name ${DOMAIN};
 
-    # SSL-Zertifikate (werden von Certbot eingefügt)
+    # SSL certificates (inserted by Certbot)
     ssl_certificate     /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
     ssl_protocols       TLSv1.2 TLSv1.3;
@@ -645,7 +1128,7 @@ server {
     add_header Permissions-Policy     "camera=(), microphone=(), geolocation=()" always;
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
 
-    # Allgemeine Proxy-Einstellungen
+    # General proxy settings
     proxy_set_header Host              \$host;
     proxy_set_header X-Real-IP         \$remote_addr;
     proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
@@ -655,7 +1138,7 @@ server {
     proxy_buffers              4 256k;
     proxy_busy_buffers_size    256k;
 
-    # Login & Registrierung (Rate-Limited)
+    # Login & Registration (Rate-Limited)
     location /login {
         limit_req zone=trevlix_login burst=3 nodelay;
         limit_req_status 429;
@@ -688,27 +1171,27 @@ server {
         proxy_send_timeout 3600s;
     }
 
-    # Statische Assets (Cache)
+    # Static Assets (Cache)
     location /static/ {
         proxy_pass http://trevlix_backend;
         proxy_cache_valid 200 1h;
         add_header Cache-Control "public, max-age=3600";
     }
 
-    # Alle anderen Routen
+    # All other routes
     location / {
         proxy_pass         http://trevlix_backend;
         proxy_read_timeout 120s;
     }
 
-    # Fehler-Seiten
+    # Error pages
     error_page 502 503 504 /50x.html;
     location = /50x.html {
         root /usr/share/nginx/html;
         internal;
     }
 
-    # Versteckte Dateien blockieren
+    # Block hidden files
     location ~ /\. {
         deny all;
         return 404;
@@ -716,28 +1199,52 @@ server {
 }
 NGINX_EOF
 
-    # Aktivieren & Default entfernen
-    ln -sf /etc/nginx/sites-available/trevlix /etc/nginx/sites-enabled/trevlix
-    rm -f /etc/nginx/sites-enabled/default 2>/dev/null || true
-    ok "Nginx-Konfiguration erstellt für ${DOMAIN}"
+    # Enable site (Debian-style symlink)
+    if [[ "$NGINX_USE_CONFD" == "false" ]]; then
+        ln -sf "$NGINX_SITES_AVAILABLE/trevlix" "$NGINX_SITES_ENABLED/trevlix"
+        rm -f "$NGINX_SITES_ENABLED/default" 2>/dev/null || true
+    fi
+    ok "Nginx configuration created for ${DOMAIN}"
 
-    # ── Certbot SSL-Zertifikat ─────────────────────────────────────────────
-    step "SSL-Zertifikat mit Let's Encrypt (Certbot)"
+    # ── Certbot SSL Certificate ──────────────────────────────────────────
+    step "SSL certificate with Let's Encrypt (Certbot)"
 
-    # Certbot installieren
+    # Install Certbot
     if ! command -v certbot &>/dev/null; then
-        $PKG_MANAGER install -y -qq certbot python3-certbot-nginx || \
-            warn "Certbot konnte nicht installiert werden"
+        case "$OS_FAMILY" in
+            debian)
+                $PKG_INSTALL certbot python3-certbot-nginx || \
+                    warn "Certbot could not be installed"
+                ;;
+            rhel|fedora)
+                $PKG_INSTALL certbot python3-certbot-nginx || \
+                    warn "Certbot could not be installed"
+                ;;
+            suse)
+                $PKG_INSTALL certbot python3-certbot-nginx || \
+                    warn "Certbot could not be installed"
+                ;;
+            arch)
+                $PKG_INSTALL certbot certbot-nginx || \
+                    warn "Certbot could not be installed"
+                ;;
+        esac
     fi
 
     if command -v certbot &>/dev/null; then
-        log "Erstelle SSL-Zertifikat für ${DOMAIN}..."
+        log "Creating SSL certificate for ${DOMAIN}..."
         echo ""
-        read -rp "$(echo -e "${CYAN}E-Mail für Let's Encrypt (für Erneuerungshinweise): ${RESET}")" LE_EMAIL
+        read -rp "$(echo -e "${CYAN}E-mail for Let's Encrypt (for renewal notices): ${RESET}")" LE_EMAIL
 
         if [[ -n "$LE_EMAIL" ]]; then
-            # Temporäre Nginx-Config ohne SSL für Certbot
-            cat > "/etc/nginx/sites-available/trevlix-temp" << TEMP_EOF
+            # Temporary Nginx config without SSL for Certbot
+            if [[ "$NGINX_USE_CONFD" == "true" ]]; then
+                TEMP_CONF="/etc/nginx/conf.d/trevlix-temp.conf"
+            else
+                TEMP_CONF="$NGINX_SITES_AVAILABLE/trevlix-temp"
+            fi
+
+            cat > "$TEMP_CONF" << TEMP_EOF
 server {
     listen 80;
     server_name ${DOMAIN};
@@ -751,114 +1258,177 @@ server {
     }
 }
 TEMP_EOF
-            ln -sf /etc/nginx/sites-available/trevlix-temp /etc/nginx/sites-enabled/trevlix
+
+            if [[ "$NGINX_USE_CONFD" == "false" ]]; then
+                ln -sf "$TEMP_CONF" "$NGINX_SITES_ENABLED/trevlix"
+            else
+                # Temporarily disable main config
+                mv "$NGINX_CONF" "${NGINX_CONF}.bak" 2>/dev/null || true
+            fi
+
             nginx -t 2>/dev/null && systemctl restart nginx 2>/dev/null || true
 
             if certbot certonly --nginx -d "$DOMAIN" --non-interactive \
                 --agree-tos --email "$LE_EMAIL" --redirect 2>/dev/null; then
-                ok "SSL-Zertifikat erstellt für ${DOMAIN}"
+                ok "SSL certificate created for ${DOMAIN}"
 
-                # Jetzt die vollständige Nginx-Config aktivieren
-                ln -sf /etc/nginx/sites-available/trevlix /etc/nginx/sites-enabled/trevlix
-                rm -f /etc/nginx/sites-available/trevlix-temp
+                # Restore full Nginx config
+                if [[ "$NGINX_USE_CONFD" == "false" ]]; then
+                    ln -sf "$NGINX_SITES_AVAILABLE/trevlix" "$NGINX_SITES_ENABLED/trevlix"
+                    rm -f "$TEMP_CONF"
+                else
+                    mv "${NGINX_CONF}.bak" "$NGINX_CONF" 2>/dev/null || true
+                    rm -f "$TEMP_CONF"
+                fi
 
-                # Certbot Auto-Renewal Timer prüfen
+                # Check Certbot auto-renewal timer
                 if systemctl is-active --quiet certbot.timer 2>/dev/null; then
-                    ok "Certbot Auto-Renewal aktiv"
+                    ok "Certbot auto-renewal active"
                 else
                     systemctl enable --now certbot.timer 2>/dev/null || true
-                    ok "Certbot Auto-Renewal aktiviert"
+                    ok "Certbot auto-renewal enabled"
                 fi
             else
-                warn "SSL-Zertifikat konnte nicht erstellt werden"
-                warn "Stelle sicher, dass die Domain ${DOMAIN} auf diesen Server zeigt (DNS A-Record)"
-                warn "Versuche es später manuell: sudo certbot --nginx -d ${DOMAIN}"
-                # Temporäre Config behalten (funktioniert ohne SSL)
-                ln -sf /etc/nginx/sites-available/trevlix-temp /etc/nginx/sites-enabled/trevlix
+                warn "SSL certificate could not be created"
+                warn "Ensure that domain ${DOMAIN} points to this server (DNS A record)"
+                warn "Try manually later: sudo certbot --nginx -d ${DOMAIN}"
+                # Keep temp config (works without SSL)
+                if [[ "$NGINX_USE_CONFD" == "true" ]]; then
+                    mv "${NGINX_CONF}.bak" "$NGINX_CONF" 2>/dev/null || true
+                    rm -f "$TEMP_CONF"
+                else
+                    ln -sf "$TEMP_CONF" "$NGINX_SITES_ENABLED/trevlix"
+                fi
             fi
         else
-            warn "Keine E-Mail angegeben — SSL-Zertifikat wird nicht erstellt"
-            warn "Manuell nachholen: sudo certbot --nginx -d ${DOMAIN}"
+            warn "No email provided — SSL certificate will not be created"
+            warn "Create manually: sudo certbot --nginx -d ${DOMAIN}"
         fi
     else
-        warn "Certbot nicht verfügbar — SSL muss manuell eingerichtet werden"
+        warn "Certbot not available — SSL must be configured manually"
     fi
 
-    # Nginx starten/neustarten
+    # Start/restart Nginx
     nginx -t 2>/dev/null && systemctl enable nginx && systemctl restart nginx && \
-        ok "Nginx gestartet" || warn "Nginx-Start fehlgeschlagen — Config prüfen: sudo nginx -t"
+        ok "Nginx started" || warn "Nginx start failed — check config: sudo nginx -t"
 fi
 
-# ── UFW Firewall ──────────────────────────────────────────────────────────────
-step "UFW Firewall konfigurieren"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── UFW Firewall ─────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Configuring UFW firewall"
 
 if ! command -v ufw &>/dev/null; then
-    $PKG_MANAGER install -y -qq ufw || warn "UFW konnte nicht installiert werden"
+    case "$OS_FAMILY" in
+        debian)  $PKG_INSTALL ufw || warn "UFW could not be installed" ;;
+        rhel|fedora) $PKG_INSTALL ufw 2>/dev/null || warn "UFW not available — consider using firewalld" ;;
+        suse)    $PKG_INSTALL ufw 2>/dev/null || warn "UFW not available — consider using firewalld" ;;
+        arch)    $PKG_INSTALL ufw || warn "UFW could not be installed" ;;
+    esac
 fi
 
 if command -v ufw &>/dev/null; then
-    # Bestehende Regeln nicht löschen, nur hinzufügen
+    # Don't delete existing rules, only add
     ufw default deny incoming 2>/dev/null || true
     ufw default allow outgoing 2>/dev/null || true
 
-    # SSH immer erlauben (Lockout verhindern!)
+    # Always allow SSH (prevent lockout!)
     ufw allow ssh comment "SSH" 2>/dev/null || true
-    ok "UFW: SSH erlaubt"
+    ok "UFW: SSH allowed"
 
     if [[ "$USE_DOMAIN" == "true" ]]; then
-        # Mit Domain: HTTP/HTTPS für Nginx, kein direkter Port 5000
+        # With domain: HTTP/HTTPS for Nginx, no direct port 5000
         ufw allow 80/tcp comment "HTTP (Nginx)" 2>/dev/null || true
         ufw allow 443/tcp comment "HTTPS (Nginx)" 2>/dev/null || true
-        ok "UFW: HTTP (80) und HTTPS (443) freigegeben"
+        ok "UFW: HTTP (80) and HTTPS (443) opened"
 
-        # Port 5000 nur lokal (Nginx Proxy) — keine externe Freigabe nötig
-        ufw deny 5000/tcp comment "TREVLIX intern (nur via Nginx)" 2>/dev/null || true
-        ok "UFW: Port 5000 nur intern via Nginx erreichbar"
+        # Port 5000 internal only (Nginx proxy) — no external access needed
+        ufw deny 5000/tcp comment "TREVLIX internal (via Nginx only)" 2>/dev/null || true
+        ok "UFW: Port 5000 internal only via Nginx"
     else
-        # Ohne Domain: Port 5000 direkt freigeben
+        # Without domain: open port 5000 directly
         ufw allow 5000/tcp comment "TREVLIX Dashboard" 2>/dev/null || true
-        ok "UFW: Port 5000 freigegeben"
+        ok "UFW: Port 5000 opened"
     fi
 
-    # UFW aktivieren (non-interactive)
+    # Enable UFW (non-interactive)
     echo "y" | ufw enable 2>/dev/null || true
-    ok "UFW Firewall aktiviert"
+    ok "UFW firewall enabled"
 else
-    warn "UFW nicht verfügbar — Firewall manuell konfigurieren"
+    warn "UFW not available — configure firewall manually"
+    # Hint for firewalld users
+    if command -v firewall-cmd &>/dev/null; then
+        log "firewalld detected — applying basic rules..."
+        firewall-cmd --permanent --add-service=ssh 2>/dev/null || true
+        if [[ "$USE_DOMAIN" == "true" ]]; then
+            firewall-cmd --permanent --add-service=http 2>/dev/null || true
+            firewall-cmd --permanent --add-service=https 2>/dev/null || true
+        else
+            firewall-cmd --permanent --add-port=5000/tcp 2>/dev/null || true
+        fi
+        firewall-cmd --reload 2>/dev/null || true
+        ok "firewalld rules applied"
+    fi
 fi
 
-# ── Fail2ban ──────────────────────────────────────────────────────────────────
-step "Fail2ban installieren & konfigurieren"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Fail2ban ─────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing & configuring Fail2ban"
 
 if ! command -v fail2ban-client &>/dev/null; then
-    $PKG_MANAGER install -y -qq fail2ban || warn "Fail2ban konnte nicht installiert werden"
+    case "$OS_FAMILY" in
+        debian)      $PKG_INSTALL fail2ban || warn "Fail2ban could not be installed" ;;
+        rhel|fedora) $PKG_INSTALL fail2ban || warn "Fail2ban could not be installed" ;;
+        suse)        $PKG_INSTALL fail2ban || warn "Fail2ban could not be installed" ;;
+        arch)        $PKG_INSTALL fail2ban || warn "Fail2ban could not be installed" ;;
+    esac
 fi
 
 if command -v fail2ban-client &>/dev/null; then
-    # Jail-Konfiguration für Trevlix + SSH
+    # Determine auth log path (varies by OS)
+    AUTH_LOG="/var/log/auth.log"
+    if [[ ! -f "$AUTH_LOG" ]]; then
+        # RHEL/Fedora/SUSE use /var/log/secure or journald
+        if [[ -f /var/log/secure ]]; then
+            AUTH_LOG="/var/log/secure"
+        fi
+    fi
+
+    # Determine banaction based on available firewall
+    FAIL2BAN_BANACTION="ufw"
+    if ! command -v ufw &>/dev/null; then
+        if command -v firewall-cmd &>/dev/null; then
+            FAIL2BAN_BANACTION="firewallcmd-ipset"
+        else
+            FAIL2BAN_BANACTION="iptables-multiport"
+        fi
+    fi
+
+    # Jail configuration for Trevlix + SSH
     cat > /etc/fail2ban/jail.local << F2B_EOF
-# TREVLIX Fail2ban Konfiguration (auto-generiert)
+# TREVLIX Fail2ban Configuration (auto-generated)
 [DEFAULT]
 bantime  = 3600
 findtime = 600
 maxretry = 5
-banaction = ufw
+banaction = ${FAIL2BAN_BANACTION}
 
-# ── SSH Schutz ──────────────────────────────────────────────────
+# ── SSH Protection ─────────────────────────────────────────────
 [sshd]
 enabled  = true
 port     = ssh
 filter   = sshd
-logpath  = /var/log/auth.log
+logpath  = ${AUTH_LOG}
 maxretry = 3
 bantime  = 7200
 F2B_EOF
 
-    # Nginx-Filter nur bei Domain-Setup
+    # Nginx filter only for domain setup
     if [[ "$USE_DOMAIN" == "true" ]]; then
         cat >> /etc/fail2ban/jail.local << F2B_NGINX_EOF
 
-# ── Nginx Schutz ────────────────────────────────────────────────
+# ── Nginx Protection ──────────────────────────────────────────
 [nginx-http-auth]
 enabled  = true
 port     = http,https
@@ -885,7 +1455,7 @@ bantime  = 3600
 F2B_NGINX_EOF
     fi
 
-    # Trevlix Login-Schutz Filter erstellen
+    # Trevlix login protection filter
     cat > /etc/fail2ban/filter.d/trevlix-login.conf << F2B_FILTER_EOF
 # Fail2ban filter for TREVLIX failed login attempts
 [Definition]
@@ -897,7 +1467,7 @@ F2B_FILTER_EOF
 
     cat >> /etc/fail2ban/jail.local << F2B_TREVLIX_EOF
 
-# ── TREVLIX Login-Schutz ────────────────────────────────────────
+# ── TREVLIX Login Protection ──────────────────────────────────
 [trevlix-login]
 enabled  = true
 port     = 5000
@@ -908,33 +1478,79 @@ bantime  = 3600
 findtime = 300
 F2B_TREVLIX_EOF
 
-    # Fail2ban starten
+    # Start Fail2ban
     systemctl enable fail2ban 2>/dev/null || true
     systemctl restart fail2ban 2>/dev/null || true
-    ok "Fail2ban installiert und konfiguriert"
-    ok "SSH: max 3 Versuche (2h Ban)"
+    ok "Fail2ban installed and configured"
+    ok "SSH: max 3 attempts (2h ban)"
     if [[ "$USE_DOMAIN" == "true" ]]; then
-        ok "Nginx: HTTP-Auth, Bot-Schutz, Rate-Limit"
+        ok "Nginx: HTTP-Auth, bot protection, rate-limit"
     fi
-    ok "Trevlix: max 5 Login-Versuche (1h Ban)"
+    ok "Trevlix: max 5 login attempts (1h ban)"
 else
-    warn "Fail2ban nicht verfügbar"
+    warn "Fail2ban not available"
 fi
 
-# ── Bot starten ────────────────────────────────────────────────────────────────
-step "TREVLIX starten"
-systemctl start "$SERVICE_NAME" && ok "Bot gestartet (systemctl)" || \
-    warn "Start fehlgeschlagen — manuell prüfen: sudo systemctl status trevlix"
+# ══════════════════════════════════════════════════════════════════════════════
+# ── MOTD Installation ────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing MOTD"
 
-# Installation erfolgreich – Trap deaktivieren
+if [[ -f "$INSTALL_DIR/motd.sh" ]]; then
+    if bash "$INSTALL_DIR/motd.sh" --install 2>/dev/null; then
+        ok "MOTD installed successfully"
+    else
+        warn "MOTD installation failed (non-critical)"
+    fi
+else
+    ok "motd.sh not found — skipping MOTD installation"
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Save Credentials to File ─────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Saving credentials"
+
+CREDENTIALS_FILE="$INSTALL_DIR/.credentials"
+cat > "$CREDENTIALS_FILE" << CRED_EOF
+# ══════════════════════════════════════════════════════════════════
+# TREVLIX v3.0.0 – Credentials (auto-generated on $(date))
+# KEEP THIS FILE SAFE! Delete after noting down credentials.
+# ══════════════════════════════════════════════════════════════════
+
+# ── Admin Login ────────────────────────────────────────────────
+Admin Username: ${ADMIN_USER}
+Admin Password: ${ADMIN_PASS}
+
+# ── MariaDB ────────────────────────────────────────────────────
+Database:       trevlix
+DB User:        trevlix
+DB Password:    ${DB_PASS}
+DB Root Pass:   ${DB_ROOT_PASS}
+CRED_EOF
+
+chown "$SERVICE_USER:$SERVICE_USER" "$CREDENTIALS_FILE"
+chmod 600 "$CREDENTIALS_FILE"
+ok "Credentials saved to ${CREDENTIALS_FILE} (chmod 600)"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Start Bot ────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Starting TREVLIX"
+systemctl start "$SERVICE_NAME" && ok "Bot started (systemctl)" || \
+    warn "Start failed — check manually: sudo systemctl status trevlix"
+
+# Installation successful – deactivate trap
 _CLEANUP_DONE=true
 
-# ── Zusammenfassung ────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Summary ──────────────────────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
 IP=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "localhost")
 
 echo ""
 echo -e "${JADE}╔══════════════════════════════════════════════════════════════════╗${RESET}"
-echo -e "${JADE}║${RESET}  ${BOLD}${GREEN}TREVLIX ERFOLGREICH INSTALLIERT!${RESET}                                ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${BOLD}${GREEN}TREVLIX SUCCESSFULLY INSTALLED!${RESET}                                ${JADE}║${RESET}"
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
 
 if [[ "$USE_DOMAIN" == "true" ]]; then
@@ -944,48 +1560,57 @@ else
 fi
 
 echo -e "${JADE}║${RESET}  ${BOLD}Install-Dir:${RESET}  ${INSTALL_DIR}                                         ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${BOLD}OS:${RESET}           ${OS_ID} ${OS_VER} (${OS_FAMILY})                      ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}                                                                  ${JADE}║${RESET}"
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
-echo -e "${JADE}║${RESET}  ${BOLD}${CYAN}ZUGANGSDATEN (BITTE SICHERN!)${RESET}                                  ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${BOLD}${CYAN}CREDENTIALS${RESET}                                                    ${JADE}║${RESET}"
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
-echo -e "${JADE}║${RESET}  ${BOLD}Admin-Login:${RESET}                                                   ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Nutzer:    ${BOLD}admin${RESET}                                                ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Passwort:  ${BOLD}${ADMIN_PASS}${RESET}                                        ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${BOLD}Admin Login:${RESET}                                                   ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    Username:  ${BOLD}${ADMIN_USER}${RESET}                                             ${JADE}║${RESET}"
+
+if [[ "$ADMIN_PASS_GENERATED" == "true" ]]; then
+    echo -e "${JADE}║${RESET}    Password:  ${BOLD}(see ${CREDENTIALS_FILE})${RESET}            ${JADE}║${RESET}"
+else
+    echo -e "${JADE}║${RESET}    Password:  ${BOLD}(as entered)${RESET}                                          ${JADE}║${RESET}"
+fi
+
 echo -e "${JADE}║${RESET}                                                                  ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}  ${BOLD}MariaDB:${RESET}                                                       ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Datenbank: ${BOLD}trevlix${RESET}                                              ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Nutzer:    ${BOLD}trevlix${RESET}                                              ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Passwort:  ${BOLD}${DB_PASS}${RESET}                                          ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    Root-PW:   ${BOLD}${DB_ROOT_PASS}${RESET}                                     ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    Database:  ${BOLD}trevlix${RESET}                                              ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    User:      ${BOLD}trevlix${RESET}                                              ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    Password:  ${BOLD}(see ${CREDENTIALS_FILE})${RESET}            ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}                                                                  ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${YELLOW}All credentials saved to:${RESET}                                      ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${BOLD}${CREDENTIALS_FILE}${RESET}                               ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}                                                                  ${JADE}║${RESET}"
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
-echo -e "${JADE}║${RESET}  ${YELLOW}Naechste Schritte:${RESET}                                             ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}  1. API-Keys eintragen:  nano ${INSTALL_DIR}/.env                 ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}  2. Bot neustarten:       systemctl restart trevlix               ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${YELLOW}Next steps:${RESET}                                                    ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  1. Add API keys:          nano ${INSTALL_DIR}/.env                 ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  2. Restart bot:            systemctl restart trevlix               ${JADE}║${RESET}"
 
 if [[ "$USE_DOMAIN" == "true" ]]; then
-    echo -e "${JADE}║${RESET}  3. DNS pruefen:          ${DOMAIN} -> ${IP}                   ${JADE}║${RESET}"
+    echo -e "${JADE}║${RESET}  3. Check DNS:              ${DOMAIN} -> ${IP}                   ${JADE}║${RESET}"
 fi
 
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
-echo -e "${JADE}║${RESET}  ${DIM}Bot-Befehle:${RESET}                                                   ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}  ${DIM}Bot commands:${RESET}                                                   ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}    systemctl status trevlix    ${DIM}# Status${RESET}                           ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    systemctl restart trevlix   ${DIM}# Neustart${RESET}                         ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    journalctl -u trevlix -f    ${DIM}# Live-Logs${RESET}                        ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    systemctl restart trevlix   ${DIM}# Restart${RESET}                          ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    journalctl -u trevlix -f    ${DIM}# Live logs${RESET}                        ${JADE}║${RESET}"
 
 if [[ "$USE_DOMAIN" == "true" ]]; then
-    echo -e "${JADE}║${RESET}    certbot renew --dry-run    ${DIM}# SSL testen${RESET}                     ${JADE}║${RESET}"
+    echo -e "${JADE}║${RESET}    certbot renew --dry-run    ${DIM}# Test SSL${RESET}                       ${JADE}║${RESET}"
 fi
 
-echo -e "${JADE}║${RESET}    fail2ban-client status      ${DIM}# Firewall-Status${RESET}                  ${JADE}║${RESET}"
-echo -e "${JADE}║${RESET}    ufw status                  ${DIM}# UFW-Regeln${RESET}                       ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    fail2ban-client status      ${DIM}# Firewall status${RESET}                  ${JADE}║${RESET}"
+echo -e "${JADE}║${RESET}    ufw status                  ${DIM}# UFW rules${RESET}                        ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}                                                                  ${JADE}║${RESET}"
 echo -e "${JADE}║${RESET}  ${DIM}Log: ${LOG_FILE}${RESET}                                  ${JADE}║${RESET}"
 echo -e "${JADE}╚══════════════════════════════════════════════════════════════════╝${RESET}"
 echo ""
-echo -e "  ${RED}WICHTIG: Starte zuerst im Paper-Trading Modus!${RESET}"
-echo -e "  ${DIM}PAPER_TRADING=true ist bereits in der .env gesetzt.${RESET}"
+echo -e "  ${RED}IMPORTANT: Start with paper trading mode first!${RESET}"
+echo -e "  ${DIM}PAPER_TRADING=true is already set in .env.${RESET}"
 echo ""
 echo -e "  ${DIM}Multi-Exchange: Crypto.com, Binance, Bybit, OKX, KuCoin${RESET}"
-echo -e "  ${DIM}Aktivieren: nano ${INSTALL_DIR}/.env${RESET}"
+echo -e "  ${DIM}Configure: nano ${INSTALL_DIR}/.env${RESET}"
 echo ""

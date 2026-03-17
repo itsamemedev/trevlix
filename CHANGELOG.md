@@ -11,6 +11,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ### Added — Production-Ready Upgrade
 
+#### Installer v3.0.0 (`install.sh`)
+- **Admin Username/Password Prompt** — Interaktive Eingabe von Admin-Benutzername und -Passwort bei der Installation
+- **CLI-Flags** — `--admin-user NAME` und `--admin-pass PASS` für nicht-interaktive Installationen
+- **Broad Linux OS Support** — Debian, Ubuntu, Raspberry Pi OS, Linux Mint, CentOS Stream, Rocky Linux, AlmaLinux, RHEL, Fedora, openSUSE, Arch Linux
+- **Package Manager Detection** — apt-get, dnf, yum, zypper, pacman mit OS-spezifischen Paketnamen
+- **Auto-MOTD Installation** — motd.sh wird automatisch am Ende der Installation eingerichtet
+- **Credentials-Datei** — Passwörter werden in `.credentials` (chmod 600) gespeichert statt im Terminal angezeigt
+- **requirements.txt First** — Python-Pakete werden primär aus requirements.txt installiert
+- **Repo URL** — Korrekter GitHub-Link: `github.com/itsamemedev/Trevlix`
+
+#### MOTD v2.0.0 (`motd.sh`)
+- **Broad Linux Support** — Debian/Ubuntu via update-motd.d, RHEL/CentOS/Fedora/openSUSE/Arch via profile.d
+- **Raspberry Pi Detection** — Hardware-Modell, CPU-Temperatur mit Warnung bei >75°C
+- **Multi-Exchange Anzeige** — Liest `EXCHANGES_ENABLED` aus .env
+- **Domain-Aware Dashboard URL** — Erkennt Domain aus ALLOWED_ORIGINS
+- **CPU-Info & Architektur** — Prozessor-Modell und Kernanzahl
+- **RAM-Warnung** — Visueller Indikator bei >80% Auslastung
+- **Robuste IP-Erkennung** — 3 Fallback-Methoden (hostname/ip/ifconfig)
+- **TREVLIX_DIR Support** — Benutzerdefiniertes Installationsverzeichnis
+
 #### Professional Login & Registration UI
 - **Glassmorphism Redesign** — Login/Register/Admin-Login komplett neu gestaltet mit modernem Glassmorphism-Design
 - **Animated Gradient Background** — Subtile, animierte Gradient-Mesh-Hintergründe
