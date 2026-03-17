@@ -560,6 +560,7 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
 
 # Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
 _fee_cache: dict[str, dict] = {}
+_fee_cache_lock = threading.Lock()
 # STRATEGY_NAMES importiert aus services.strategies
 
 
@@ -3577,7 +3578,8 @@ class AIEngine:
         # RL lernen
         rl_agent.on_trade_close(p.get("scan", {}), pnl)
         threading.Thread(
-            target=lambda: self.db.save_ai_sample(p["features"], won, regime_str), daemon=True
+            target=lambda f=p["features"], w=won, r=regime_str: self.db.save_ai_sample(f, w, r),
+            daemon=True,
         ).start()
         n = len(self.X_raw)
         self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
@@ -4000,10 +4002,10 @@ class BotState:
         self.prices: dict[str, float] = {}
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
-        self.portfolio_history: list[dict] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
         from collections import deque
 
+        self.portfolio_history: deque = deque(maxlen=500)
         self.signal_log: deque = deque(maxlen=50)
         self.activity_log: deque = deque(maxlen=50)
         self.arb_log: deque = deque(maxlen=20)
@@ -4029,6 +4031,8 @@ class BotState:
 
     def return_pct(self):
         pv = self.portfolio_value()
+        if self.initial_balance <= 0:
+            return 0.0
         return (pv - self.initial_balance) / self.initial_balance * 100
 
     def win_rate(self):
@@ -4188,7 +4192,7 @@ class BotState:
                 }
                 for t in self.closed_trades[:100]
             ],
-            "portfolio_history": self.portfolio_history[-200:],
+            "portfolio_history": list(self.portfolio_history)[-200:],
             "signal_log": list(self.signal_log)[:30],
             "activity_log": list(self.activity_log)[:20],
             "arb_log": list(self.arb_log)[:10],
@@ -4521,9 +4525,10 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
     """
     ex_id = exchange_id or CONFIG.get("exchange", "cryptocom")
     now = time.time()
-    cached = _fee_cache.get(ex_id)
-    if cached and now - cached.get("ts", 0) < 3600:
-        return cached["rate"]
+    with _fee_cache_lock:
+        cached = _fee_cache.get(ex_id)
+        if cached and now - cached.get("ts", 0) < 3600:
+            return cached["rate"]
     # Versuche CCXT-Fee-Abfrage
     try:
         ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
@@ -4533,13 +4538,15 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
             rate = float(
                 fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"]))
             )
-            _fee_cache[ex_id] = {"rate": rate, "ts": now}
+            with _fee_cache_lock:
+                _fee_cache[ex_id] = {"rate": rate, "ts": now}
             return rate
     except Exception:
         pass
     # Fallback: Exchange-Default oder CONFIG
     rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])
-    _fee_cache[ex_id] = {"rate": rate, "ts": now}
+    with _fee_cache_lock:
+        _fee_cache[ex_id] = {"rate": rate, "ts": now}
     return rate
 
 
@@ -5168,12 +5175,14 @@ def manage_positions(ex):
 # ═══════════════════════════════════════════════════════════════════════════════
 _heatmap_cache: list[dict] = []
 _heatmap_ts: datetime | None = None
+_heatmap_lock = threading.Lock()
 
 
 def get_heatmap_data(ex) -> list[dict]:
     global _heatmap_cache, _heatmap_ts
-    if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
-        return _heatmap_cache
+    with _heatmap_lock:
+        if _heatmap_ts and (datetime.now() - _heatmap_ts).total_seconds() < 90:
+            return _heatmap_cache
     try:
         syms = state.markets[:60] if state.markets else []
         if not syms:
@@ -5193,8 +5202,9 @@ def get_heatmap_data(ex) -> list[dict]:
                 }
             )
         result.sort(key=lambda x: x["change"], reverse=True)
-        _heatmap_cache = result
-        _heatmap_ts = datetime.now()
+        with _heatmap_lock:
+            _heatmap_cache = result
+            _heatmap_ts = datetime.now()
         return result
     except Exception as e:
         log.debug(f"Heatmap: {e}")
@@ -5271,7 +5281,6 @@ def bot_loop():
             state.portfolio_history.append(
                 {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
             )
-            state.portfolio_history = state.portfolio_history[-500:]
 
             # Short-Signale – parallelisiert mit ThreadPoolExecutor
             if not regime.is_bull and CONFIG.get("use_shorts"):
