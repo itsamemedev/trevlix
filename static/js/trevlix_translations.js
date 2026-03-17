@@ -680,6 +680,55 @@ const QT = {
   checking_github:        {de:'Prüfe GitHub...',en:'Checking GitHub...',es:'Comprobando GitHub...',ru:'Проверка GitHub...',pt:'Verificando GitHub...'},
   installing_update:      {de:'Update wird installiert...',en:'Installing update...',es:'Instalando actualización...',ru:'Установка обновления...',pt:'Instalando atualização...'},
   close_label:            {de:'Schließen',en:'Close',es:'Cerrar',ru:'Закрыть',pt:'Fechar'},
+
+  /* ── AUTH / LOGIN ── */
+  login_title:            {de:'Anmelden',en:'Login',es:'Iniciar sesión',ru:'Вход',pt:'Entrar'},
+  login_username:         {de:'Benutzername',en:'Username',es:'Usuario',ru:'Имя пользователя',pt:'Nome de usuário'},
+  login_password:         {de:'Passwort',en:'Password',es:'Contraseña',ru:'Пароль',pt:'Senha'},
+  login_submit:           {de:'Anmelden →',en:'Login →',es:'Iniciar sesión →',ru:'Войти →',pt:'Entrar →'},
+  login_register_link:    {de:'Kein Konto? Registrieren',en:'No account? Register',es:'¿Sin cuenta? Registrarse',ru:'Нет аккаунта? Регистрация',pt:'Sem conta? Registrar'},
+  login_2fa_label:        {de:'2FA-Code',en:'2FA Code',es:'Código 2FA',ru:'Код 2FA',pt:'Código 2FA'},
+  nav_logout:             {de:'Abmelden',en:'Logout',es:'Cerrar sesión',ru:'Выйти',pt:'Sair'},
+
+  /* ── AUTH TOAST / NOTIFICATION MESSAGES ── */
+  toast_login_success:       {de:'✅ Erfolgreich angemeldet',en:'✅ Successfully logged in',es:'✅ Inicio de sesión exitoso',ru:'✅ Успешный вход',pt:'✅ Login realizado com sucesso'},
+  toast_login_failed:        {de:'❌ Anmeldung fehlgeschlagen',en:'❌ Login failed',es:'❌ Error de inicio de sesión',ru:'❌ Ошибка входа',pt:'❌ Falha no login'},
+  toast_login_blocked:       {de:'🚫 Zu viele Anmeldeversuche',en:'🚫 Too many login attempts',es:'🚫 Demasiados intentos de inicio de sesión',ru:'🚫 Слишком много попыток входа',pt:'🚫 Muitas tentativas de login'},
+  toast_register_success:    {de:'✅ Konto erstellt',en:'✅ Account created',es:'✅ Cuenta creada',ru:'✅ Аккаунт создан',pt:'✅ Conta criada'},
+  toast_register_disabled:   {de:'🚫 Registrierung deaktiviert',en:'🚫 Registration disabled',es:'🚫 Registro desactivado',ru:'🚫 Регистрация отключена',pt:'🚫 Registro desativado'},
+  toast_session_expired:     {de:'⏰ Sitzung abgelaufen',en:'⏰ Session expired',es:'⏰ Sesión expirada',ru:'⏰ Сессия истекла',pt:'⏰ Sessão expirada'},
+
+  /* ── CONFIG / EXCHANGE TOASTS ── */
+  toast_config_updated:      {de:'✅ Konfiguration aktualisiert',en:'✅ Configuration updated',es:'✅ Configuración actualizada',ru:'✅ Конфигурация обновлена',pt:'✅ Configuração atualizada'},
+  toast_exchange_connected:  {de:'🌐 Exchange verbunden',en:'🌐 Exchange connected',es:'🌐 Exchange conectado',ru:'🌐 Биржа подключена',pt:'🌐 Exchange conectada'},
+  toast_exchange_error:      {de:'❌ Exchange-Fehler',en:'❌ Exchange error',es:'❌ Error del exchange',ru:'❌ Ошибка биржи',pt:'❌ Erro da exchange'},
+  toast_insufficient_balance:{de:'⚠️ Unzureichendes Guthaben',en:'⚠️ Insufficient balance',es:'⚠️ Saldo insuficiente',ru:'⚠️ Недостаточный баланс',pt:'⚠️ Saldo insuficiente'},
+
+  /* ── ORDER TOASTS ── */
+  toast_order_placed:        {de:'📋 Order platziert',en:'📋 Order placed',es:'📋 Orden colocada',ru:'📋 Ордер размещён',pt:'📋 Ordem colocada'},
+  toast_order_failed:        {de:'❌ Order fehlgeschlagen',en:'❌ Order failed',es:'❌ Orden fallida',ru:'❌ Ордер не выполнен',pt:'❌ Ordem falhou'},
+
+  /* ── GRID TRADING TOASTS ── */
+  toast_grid_started:        {de:'📊 Grid Trading gestartet',en:'📊 Grid trading started',es:'📊 Trading en cuadrícula iniciado',ru:'📊 Сеточная торговля запущена',pt:'📊 Grid trading iniciado'},
+  toast_grid_stopped:        {de:'⏹ Grid Trading gestoppt',en:'⏹ Grid trading stopped',es:'⏹ Trading en cuadrícula detenido',ru:'⏹ Сеточная торговля остановлена',pt:'⏹ Grid trading parado'},
+
+  /* ── COPY-TRADE TOASTS ── */
+  toast_copy_trade_signal:   {de:'📡 Copy-Trade Signal empfangen',en:'📡 Copy-trade signal received',es:'📡 Señal de copy-trade recibida',ru:'📡 Сигнал копитрейдинга получен',pt:'📡 Sinal de copy-trade recebido'},
+
+  /* ── UPDATE TOASTS ── */
+  toast_update_available:    {de:'🔄 Update verfügbar',en:'🔄 Update available',es:'🔄 Actualización disponible',ru:'🔄 Доступно обновление',pt:'🔄 Atualização disponível'},
+  toast_update_installed:    {de:'✅ Update installiert',en:'✅ Update installed',es:'✅ Actualización instalada',ru:'✅ Обновление установлено',pt:'✅ Atualização instalada'},
+  toast_maintenance_mode:    {de:'🔧 Wartungsmodus aktiv',en:'🔧 Maintenance mode active',es:'🔧 Modo de mantenimiento activo',ru:'🔧 Режим обслуживания активен',pt:'🔧 Modo de manutenção ativo'},
+
+  /* ── API / WEBHOOK TOASTS ── */
+  toast_api_rate_limited:    {de:'⚠️ API Rate-Limit erreicht',en:'⚠️ API rate limit reached',es:'⚠️ Límite de tasa API alcanzado',ru:'⚠️ Достигнут лимит запросов API',pt:'⚠️ Limite de requisições da API atingido'},
+  toast_webhook_received:    {de:'📥 Webhook empfangen',en:'📥 Webhook received',es:'📥 Webhook recibido',ru:'📥 Вебхук получен',pt:'📥 Webhook recebido'},
+
+  /* ── ADVANCED FEATURE TOASTS ── */
+  toast_smart_exit_triggered:      {de:'🎯 Smart Exit ausgelöst',en:'🎯 Smart exit triggered',es:'🎯 Salida inteligente activada',ru:'🎯 Умный выход сработал',pt:'🎯 Smart exit acionado'},
+  toast_dna_pattern_found:         {de:'🧬 DNA-Muster erkannt',en:'🧬 DNA pattern found',es:'🧬 Patrón DNA encontrado',ru:'🧬 Обнаружен DNA-паттерн',pt:'🧬 Padrão DNA encontrado'},
+  toast_adaptive_weights_updated:  {de:'⚖️ Adaptive Gewichte aktualisiert',en:'⚖️ Adaptive weights updated',es:'⚖️ Pesos adaptativos actualizados',ru:'⚖️ Адаптивные веса обновлены',pt:'⚖️ Pesos adaptativos atualizados'},
+  toast_attribution_report_ready:  {de:'📊 Performance-Report bereit',en:'📊 Performance report ready',es:'📊 Informe de rendimiento listo',ru:'📊 Отчёт о производительности готов',pt:'📊 Relatório de desempenho pronto'},
 };
 
 /* ════════════════════════════════════════════════════════════
