@@ -134,7 +134,7 @@ class RiskManager:
                     if corr > max_corr:
                         log.info(f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}")
                         return True
-                except Exception:
+                except (ValueError, TypeError, IndexError):
                     pass
         return False
 

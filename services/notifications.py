@@ -80,6 +80,7 @@ class DiscordNotifier:
                 embed["fields"] = [
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
                     for f in fields
+                    if len(f) >= 2
                 ]
             httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:

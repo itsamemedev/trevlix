@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.2] – 2026-03-18
+
+### Fixed — Bugfixes & Robustheit
+
+- **`config.py` MYSQL_PORT Crash** — `int(os.getenv("MYSQL_PORT"))` crashte bei nicht-numerischem Wert (z.B. `"abc"`). Neue `_safe_port()` Funktion fängt `ValueError`/`TypeError` ab und fällt auf Port 3306 zurück
+- **`ai_engine.py` None-Guard für recent_trades** — `recent_trades[-10:]` crashte mit `TypeError` wenn `None` übergeben wurde. Jetzt wird `None` zu leerer Liste konvertiert
+- **Discord Embed Fields IndexError** — `f[0]`/`f[1]` Zugriff in `notifications.py` und `server.py` Discord-Embed-Builder konnte bei Tupeln mit < 2 Elementen crashen. Filter `if len(f) >= 2` hinzugefügt
+- **OrderbookImbalance leere Bids/Asks** — `sum(b[1] * b[0] for b in ob["bids"])` crashte wenn Exchange leeres Orderbook lieferte. Expliziter Empty-Check vor Berechnung
+- **`risk.py` Korrelation Exception-Handling** — `except Exception: pass` zu breit, verschluckte echte Fehler. Eingeschränkt auf `(ValueError, TypeError, IndexError)`
+- **SQL Backup Identifier-Quoting** — Table-Name in Backup-Query verwendet jetzt Backtick-Quoting (`` `table` ``) für Defense-in-Depth
+
+### Changed — Versionssynchronisierung
+
+- **BOT_VERSION** auf `1.3.2` aktualisiert (`services/utils.py`)
+- **pyproject.toml** von `1.1.1` auf `1.3.2` synchronisiert
+- **Dockerfile** Versionskommentar von `v1.1.0` auf `v1.3.2` aktualisiert
+- **Alle Templates** (10 Dateien) von hardcoded `v1.3.0` auf `v1.3.2` aktualisiert
+
+---
+
 ## [1.3.1] – 2026-03-17
 
 ### Added — Autonome LLM-Optimierungsanfragen

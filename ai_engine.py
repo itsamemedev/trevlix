@@ -194,6 +194,8 @@ class AIEngine:
         hour_cos = math.cos(2 * math.pi * h / 24)
 
         # 4. Letzte Win-Rate (gleitend, letzte 10 Trades)
+        if not recent_trades:
+            recent_trades = []
         recent_wins = [t for t in recent_trades[-10:] if t.get("pnl", 0) > 0]
         recent_wr = len(recent_wins) / 10 if len(recent_trades) >= 10 else 0.5
 

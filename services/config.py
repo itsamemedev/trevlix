@@ -12,9 +12,22 @@ Verwendung:
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 from typing import Any
+
+log = logging.getLogger(__name__)
+
+
+def _safe_port(val: str) -> int:
+    """Parse port number safely, returning 3306 on invalid input."""
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        log.warning("MYSQL_PORT='%s' ist ungültig, verwende Standard-Port 3306", val)
+        return 3306
+
 
 try:
     from pydantic import Field, field_validator
@@ -175,7 +188,7 @@ if PYDANTIC_AVAILABLE:
                 api_key=os.getenv("API_KEY", ""),
                 secret=os.getenv("API_SECRET", ""),
                 mysql_host=os.getenv("MYSQL_HOST", "localhost"),
-                mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
+                mysql_port=_safe_port(os.getenv("MYSQL_PORT", "3306")),
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
                 mysql_db=os.getenv("MYSQL_DB", "nexus"),
@@ -221,7 +234,7 @@ else:
                 api_key=os.getenv("API_KEY", ""),
                 secret=os.getenv("API_SECRET", ""),
                 mysql_host=os.getenv("MYSQL_HOST", "localhost"),
-                mysql_port=int(os.getenv("MYSQL_PORT", "3306")),
+                mysql_port=_safe_port(os.getenv("MYSQL_PORT", "3306")),
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
                 mysql_db=os.getenv("MYSQL_DB", "nexus"),

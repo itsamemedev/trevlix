@@ -1695,7 +1695,7 @@ class MySQLManager:
                     try:
                         with self._get_conn() as conn:
                             with conn.cursor() as c:
-                                c.execute(f"SELECT * FROM {table} LIMIT 100000")
+                                c.execute(f"SELECT * FROM `{table}` LIMIT 100000")
                                 rows = c.fetchall()
                         data = []
                         for r in rows:
@@ -2068,6 +2068,7 @@ class DiscordNotifier:
                 embed["fields"] = [
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
                     for f in fields
+                    if len(f) >= 2
                 ]
             httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:
@@ -3855,6 +3856,8 @@ class OrderbookImbalance:
     def get(self, ex, symbol) -> tuple[float, str]:
         try:
             ob = ex.fetch_order_book(symbol, limit=20)
+            if not ob.get("bids") or not ob.get("asks"):
+                return 0.5, "Leer"
             bid_vol = sum(b[1] * b[0] for b in ob["bids"][:10])
             ask_vol = sum(a[1] * a[0] for a in ob["asks"][:10])
             total = bid_vol + ask_vol

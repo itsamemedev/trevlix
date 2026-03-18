@@ -7,7 +7,7 @@ Verwendung:
 import re
 
 BOT_NAME = "TREVLIX"
-BOT_VERSION = "1.2.0"
+BOT_VERSION = "1.3.2"
 BOT_FULL = f"{BOT_NAME} v{BOT_VERSION} · Algorithmic Crypto Trading Bot"
 
 # Exchange-Name → ccxt-Klassen-Name

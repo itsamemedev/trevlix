@@ -136,3 +136,41 @@
 
 - **Vorher:** 182 Tests, fixe Strategie-Gewichte, keine Performance-Analyse
 - **Nachher:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | 2 einzigartige Features | README aktuell
+
+---
+
+## Session: fix-bugs-update-versions-xno0f (2026-03-18)
+
+### Aufgaben
+
+- [x] Codebase auf Bugs durchsucht (2 Subagents parallel)
+- [x] 6 Bugs behoben (config.py, ai_engine.py, notifications.py, server.py, risk.py)
+- [x] Versionsnummern synchronisiert (utils.py, pyproject.toml, Dockerfile, 10 Templates)
+- [x] CHANGELOG.md v1.3.2 Eintrag hinzugefügt
+- [x] Lint ✓ | Format ✓ | 249/249 Tests ✓
+
+### Behobene Bugs
+
+| # | Datei | Problem | Fix |
+|---|-------|---------|-----|
+| 1 | `services/config.py:178/224` | `int(MYSQL_PORT)` crasht bei nicht-numerischem Wert | `_safe_port()` mit try/except |
+| 2 | `ai_engine.py:197` | `recent_trades[-10:]` crasht bei None | None-Guard hinzugefügt |
+| 3 | `services/notifications.py:81` | Discord fields-Tupel < 2 Elemente → IndexError | `if len(f) >= 2` Filter |
+| 4 | `server.py:2069` | Gleicher fields-Tupel-Bug (duplizierter Code) | `if len(f) >= 2` Filter |
+| 5 | `server.py:3858` | OrderbookImbalance crasht bei leerem Orderbook | Empty bids/asks Check |
+| 6 | `services/risk.py:137` | `except Exception: pass` zu breit | `(ValueError, TypeError, IndexError)` |
+| 7 | `server.py:1698` | SQL Table-Name ohne Quoting | Backtick-Quoting hinzugefügt |
+
+### Version-Sync
+
+| Datei | Vorher | Nachher |
+|-------|--------|---------|
+| `services/utils.py` | 1.2.0 | 1.3.2 |
+| `pyproject.toml` | 1.1.1 | 1.3.2 |
+| `Dockerfile` | v1.1.0 | v1.3.2 |
+| 10 Templates | v1.3.0 (hardcoded) | v1.3.2 |
+
+### Ergebnis
+
+- **Vorher:** 6 Bugs, Versionen inkonsistent (1.1.1 / 1.2.0 / v1.3.0)
+- **Nachher:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Alle Versionen auf 1.3.2
