@@ -85,7 +85,7 @@ class KnowledgeBase:
         """Entfernt die ältesten Einträge wenn Cache max_size überschreitet."""
         if len(cache) <= max_size:
             return
-        sorted_keys = sorted(ts_dict, key=ts_dict.get)  # type: ignore[arg-type]
+        sorted_keys = sorted(cache.keys(), key=lambda k: ts_dict.get(k, 0))  # type: ignore[arg-type]
         to_remove = len(cache) - max_size
         for k in sorted_keys[:to_remove]:
             cache.pop(k, None)

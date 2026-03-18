@@ -196,8 +196,9 @@ class AIEngine:
         # 4. Letzte Win-Rate (gleitend, letzte 10 Trades)
         if not recent_trades:
             recent_trades = []
-        recent_wins = [t for t in recent_trades[-10:] if t.get("pnl", 0) > 0]
-        recent_wr = len(recent_wins) / 10 if len(recent_trades) >= 10 else 0.5
+        recent_slice = recent_trades[-10:]
+        recent_wins = [t for t in recent_slice if t.get("pnl", 0) > 0]
+        recent_wr = len(recent_wins) / len(recent_slice) if len(recent_slice) > 0 else 0.5
 
         market_features = [
             rsi / 100.0,

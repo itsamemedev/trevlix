@@ -264,3 +264,13 @@
 - [x] update_shorts s_entry div-by-zero
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.5
+
+### Phase 6b: Tiefenanalyse services/ & ai_engine – 5 Bugfixes (v1.3.6)
+
+- [x] market_data.py FearGreed `d["value"]` KeyError → `.get()` mit Fallback
+- [x] ai_engine.py recent_wr Division durch 10 statt tatsächlicher Anzahl
+- [x] knowledge.py Cache-Eviction sortiert über ts_dict statt cache.keys()
+- [x] risk.py `corr != corr` NaN-Check → `np.isnan(corr)`
+- [x] strategies.py strat_vol close=0 Guard
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.6

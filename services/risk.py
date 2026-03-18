@@ -130,7 +130,7 @@ class RiskManager:
             if len(r1) > 3 and len(r1) == len(r2):
                 try:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
-                    if corr != corr:  # NaN check (identical price series)
+                    if np.isnan(corr):  # NaN bei identischen Preisserien
                         continue
                     max_corr = self.config.get("max_corr", 0.75)
                     if corr > max_corr:

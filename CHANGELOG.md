@@ -7,6 +7,16 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.6] – 2026-03-18
+
+### Fixed — Tiefenanalyse Phase 2: 5 Bugfixes in services/ & ai_engine
+
+- **`market_data.py` FearGreed KeyError** — `d["value"]` und `d["value_classification"]` crashten bei geändertem API-Format. Umgestellt auf `.get()` mit Fallback
+- **`ai_engine.py` recent_wr Division-Bug** — Win-Rate wurde immer durch 10 geteilt statt durch tatsächliche Anzahl der Recent-Trades. Fix: `len(recent_slice)` als Divisor
+- **`knowledge.py` Cache-Eviction unvollständig** — `sorted(ts_dict, ...)` evizierte nur Einträge die auch in `ts_dict` vorhanden waren, Cache-Only-Einträge wuchsen unbegrenzt. Fix: Sortierung über `cache.keys()`
+- **`risk.py` NaN-Check fragil** — `corr != corr` idiom für NaN-Check. Umgestellt auf explizites `np.isnan(corr)` für Klarheit und Sicherheit
+- **`strategies.py` strat_vol close=0** — `close > prev_close * 1.005` konnte bei `close=0` ein falsches Signal erzeugen. Guard `close <= 0` hinzugefügt
+
 ## [1.3.5] – 2026-03-18
 
 ### Fixed — Tiefenanalyse: 14 Bugfixes in server.py

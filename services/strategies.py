@@ -202,7 +202,7 @@ def strat_vol(r: Row, p: Row) -> int:
     close = r.get("close", 0.0)
     ema21 = r.get("ema21", 0.0)
     prev_close = p.get("close")
-    if not prev_close or prev_close <= 0:
+    if not prev_close or prev_close <= 0 or close <= 0:
         return 0
 
     above_ema = close > ema21

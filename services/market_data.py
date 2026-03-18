@@ -126,8 +126,8 @@ class FearGreedIndex:
                 log.debug("FearGreed: leere API-Antwort")
                 return
             d = data_list[0]
-            self.value = int(d["value"])
-            self.label = d["value_classification"]
+            self.value = int(d.get("value", 50))
+            self.label = d.get("value_classification", "Neutral")
             self.last_update = datetime.now().strftime("%H:%M")
             self._cache.set("fng", (self.value, self.label))
         except requests.HTTPError as e:
