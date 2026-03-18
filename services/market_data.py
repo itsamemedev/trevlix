@@ -89,7 +89,7 @@ def _make_session(retries: int = 2, backoff: float = 0.3) -> requests.Session:
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    session.headers.update({"User-Agent": "TREVLIX/1.2 market-data-client"})
+    session.headers.update({"User-Agent": "TREVLIX/1.4 market-data-client"})
     return session
 
 

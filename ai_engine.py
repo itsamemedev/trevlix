@@ -54,7 +54,7 @@ except ImportError:
     ML_AVAILABLE = False
     print("⚠️  scikit-learn fehlt! pip install scikit-learn")
 
-log = logging.getLogger("AIEngine")
+log = logging.getLogger("trevlix.ai_engine")
 
 # ═══════════════════════════════════════════════════════════════
 # FEATURE-NAMEN (muss mit extract_features übereinstimmen)

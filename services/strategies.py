@@ -39,7 +39,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
     Returns:
         DataFrame mit Indikatoren oder None bei zu wenig Daten / Fehler.
     """
-    if len(df) < 80:
+    if df is None or df.empty or len(df) < 80:
         return None
     try:
         df = df.copy()
@@ -60,9 +60,11 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
         gain = delta.clip(lower=0).ewm(span=14, adjust=False).mean()
         loss = (-delta.clip(upper=0)).ewm(span=14, adjust=False).mean()
         df["rsi"] = 100 - (100 / (1 + gain / loss.replace(0, np.nan)))
+        df["rsi"] = df["rsi"].fillna(50.0)
         rm = df["rsi"].rolling(14)
         rsi_range = (rm.max() - rm.min()).replace(0, np.nan)
         df["stoch_rsi"] = ((df["rsi"] - rm.min()) / rsi_range) * 100
+        df["stoch_rsi"] = df["stoch_rsi"].fillna(50.0)
 
         # MACD
         e12 = c.ewm(span=12, adjust=False).mean()
@@ -135,10 +137,12 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
 
 def strat_ema_trend(r: Row, p: Row) -> int:
     """EMA-Alignment: alle drei EMAs stacken in Trendrichtung."""
-    ema8 = r.get("ema8", 0.0)
-    ema21 = r.get("ema21", 0.0)
-    ema50 = r.get("ema50", 0.0)
-    close = r.get("close", 0.0)
+    ema8 = float(r.get("ema8", 0.0) or 0.0)
+    ema21 = float(r.get("ema21", 0.0) or 0.0)
+    ema50 = float(r.get("ema50", 0.0) or 0.0)
+    close = float(r.get("close", 0.0) or 0.0)
+    if close <= 0 or ema21 <= 0:
+        return 0
     if ema8 > ema21 > ema50 and close > ema21:
         return 1
     if ema8 < ema21 < ema50 and close < ema21:
@@ -148,8 +152,8 @@ def strat_ema_trend(r: Row, p: Row) -> int:
 
 def strat_rsi_stoch(r: Row, p: Row) -> int:
     """RSI + Stochastic RSI oversold/overbought filter."""
-    rsi = r.get("rsi", 50.0)
-    sr = r.get("stoch_rsi", 50.0)
+    rsi = float(r.get("rsi", 50.0) or 50.0)
+    sr = float(r.get("stoch_rsi", 50.0) or 50.0)
     if rsi < 35 and sr < 25:
         return 1
     if rsi > 65 and sr > 75:
@@ -159,10 +163,10 @@ def strat_rsi_stoch(r: Row, p: Row) -> int:
 
 def strat_macd(r: Row, p: Row) -> int:
     """MACD-Kreuzung: Signal-Linie Crossover mit Null-Linien-Filter."""
-    macd_cur = r.get("macd", 0.0)
-    sig_cur = r.get("macd_signal", 0.0)
-    macd_prev = p.get("macd", macd_cur)
-    sig_prev = p.get("macd_signal", sig_cur)
+    macd_cur = float(r.get("macd", 0.0) or 0.0)
+    sig_cur = float(r.get("macd_signal", 0.0) or 0.0)
+    macd_prev = float(p.get("macd", macd_cur) or macd_cur)
+    sig_prev = float(p.get("macd_signal", sig_cur) or sig_cur)
 
     crossed_up = macd_prev < sig_prev and macd_cur > sig_cur
     crossed_dn = macd_prev > sig_prev and macd_cur < sig_cur
@@ -178,8 +182,8 @@ def strat_macd(r: Row, p: Row) -> int:
 
 def strat_boll(r: Row, p: Row) -> int:
     """Bollinger-Band mean-reversion: near band edges with RSI confirmation."""
-    bp = r.get("bb_pct", 0.5)
-    rsi = r.get("rsi", 50.0)
+    bp = float(r.get("bb_pct", 0.5) or 0.5)
+    rsi = float(r.get("rsi", 50.0) or 50.0)
     if bp < 0.05 and rsi < 40:
         return 1
     if bp > 0.95 and rsi > 60:
@@ -217,10 +221,10 @@ def strat_vol(r: Row, p: Row) -> int:
 
 def strat_obv(r: Row, p: Row) -> int:
     """OBV momentum crossover with EMA."""
-    obv_cur = r.get("obv", 0.0)
-    obv_ema_cur = r.get("obv_ema", obv_cur)
-    obv_prev = p.get("obv", obv_cur)
-    obv_ema_prev = p.get("obv_ema", obv_ema_cur)
+    obv_cur = float(r.get("obv", 0.0) or 0.0)
+    obv_ema_cur = float(r.get("obv_ema", obv_cur) or obv_cur)
+    obv_prev = float(p.get("obv", obv_cur) or obv_cur)
+    obv_ema_prev = float(p.get("obv_ema", obv_ema_cur) or obv_ema_cur)
 
     if obv_cur > obv_ema_cur and obv_prev <= obv_ema_prev:
         return 1
@@ -231,8 +235,8 @@ def strat_obv(r: Row, p: Row) -> int:
 
 def strat_roc(r: Row, p: Row) -> int:
     """ROC-Momentum: dual-timeframe rate-of-change threshold."""
-    r10 = r.get("roc10", 0.0)
-    r20 = r.get("roc20", 0.0)
+    r10 = float(r.get("roc10", 0.0) or 0.0)
+    r20 = float(r.get("roc20", 0.0) or 0.0)
     if r10 > 3 and r20 > 5:
         return 1
     if r10 < -3 and r20 < -5:
@@ -243,9 +247,9 @@ def strat_roc(r: Row, p: Row) -> int:
 def strat_ichimoku(r: Row, p: Row) -> int:
     """Ichimoku cloud: price vs kijun + tenkan/kijun alignment."""
     above = r.get("ichi_above", 0.0)
-    close = r.get("close", 0.0)
-    tenkan = r.get("ichi_tenkan", close)
-    kijun = r.get("ichi_kijun", close)
+    close = float(r.get("close", 0.0) or 0.0)
+    tenkan = float(r.get("ichi_tenkan", close) or close)
+    kijun = float(r.get("ichi_kijun", close) or close)
 
     if above and tenkan > kijun and close > tenkan:
         return 1
@@ -256,8 +260,8 @@ def strat_ichimoku(r: Row, p: Row) -> int:
 
 def strat_vwap(r: Row, p: Row) -> int:
     """VWAP deviation with RSI trend confirmation."""
-    pvw = r.get("price_vs_vwap", 0.0)
-    rsi = r.get("rsi", 50.0)
+    pvw = float(r.get("price_vs_vwap", 0.0) or 0.0)
+    rsi = float(r.get("rsi", 50.0) or 50.0)
     if pvw > 0.01 and rsi > 50:
         return 1
     if pvw < -0.01 and rsi < 50:

@@ -14,6 +14,7 @@ Docker ENTRYPOINT:
 """
 
 import base64
+import binascii
 import os
 import re
 import sys
@@ -75,11 +76,15 @@ def _check_fernet_key(var: str) -> Issue | None:
     val = os.getenv(var, "").strip()
     if not val:
         return Issue("critical", var, "ENCRYPTION_KEY ist nicht gesetzt")
+    if len(val) != 44:
+        return Issue(
+            "warning", var, f"ENCRYPTION_KEY hat {len(val)} Zeichen (erwartet: 44 für Fernet)"
+        )
     try:
-        decoded = base64.urlsafe_b64decode(val.encode())
-        if len(decoded) != 32:
+        decoded = base64.urlsafe_b64decode(val.encode() + b"==")  # Padding-tolerant
+        if len(decoded) < 32:
             return Issue("critical", var, f"ENCRYPTION_KEY muss 32 Bytes sein (hat {len(decoded)})")
-    except Exception:
+    except (ValueError, binascii.Error):
         return Issue(
             "critical", var, "ENCRYPTION_KEY ist kein gültiger Fernet-Key (base64url, 44 Zeichen)"
         )
@@ -105,7 +110,7 @@ def _check_password_policy(var: str, label: str) -> Issue | None:
 
 
 def _check_set(var: str, allowed: set[str], label: str, default: str | None = None) -> Issue | None:
-    val = os.getenv(var, default or "")
+    val = os.getenv(var, default or "").strip().lower()
     if val not in allowed:
         return Issue("warning", var, f"{label} '{val}' ungültig – erlaubt: {sorted(allowed)}")
     return None
@@ -169,6 +174,48 @@ def validate() -> list[Issue]:
         issues.append(Issue("warning", "API_SECRET", "API_KEY gesetzt, aber API_SECRET fehlt"))
     if api_secret and not api_key:
         issues.append(Issue("warning", "API_KEY", "API_SECRET gesetzt, aber API_KEY fehlt"))
+
+    # ── Exchange-Validierung ─────────────────────────────────────────────────
+    exchange = os.getenv("EXCHANGE", "").strip().lower()
+    valid_exchanges = {
+        "cryptocom",
+        "binance",
+        "bybit",
+        "okx",
+        "kucoin",
+        "kraken",
+        "huobi",
+        "coinbase",
+    }
+    if exchange and exchange not in valid_exchanges:
+        issues.append(
+            Issue(
+                "warning",
+                "EXCHANGE",
+                f"EXCHANGE '{exchange}' ist unbekannt – erlaubt: {sorted(valid_exchanges)}",
+            )
+        )
+
+    # ── Session-Timeout ─────────────────────────────────────────────────────
+    timeout_raw = os.getenv("SESSION_TIMEOUT_MIN", "30")
+    try:
+        timeout_val = int(timeout_raw)
+        if timeout_val < 1 or timeout_val > 1440:
+            issues.append(
+                Issue(
+                    "warning",
+                    "SESSION_TIMEOUT_MIN",
+                    f"SESSION_TIMEOUT_MIN={timeout_val} außerhalb 1-1440",
+                )
+            )
+    except ValueError:
+        issues.append(
+            Issue(
+                "warning",
+                "SESSION_TIMEOUT_MIN",
+                f"SESSION_TIMEOUT_MIN '{timeout_raw}' ist keine Zahl",
+            )
+        )
 
     # ── Bekannte schwache Werte ───────────────────────────────────────────────
     # Check exact matches AND whether the value is based on a weak pattern (e.g. "password123")

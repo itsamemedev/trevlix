@@ -63,7 +63,9 @@ class ExchangeManager:
             return None
         try:
             cls_name = EXCHANGE_MAP.get(exchange_name, exchange_name)
-            ex_cls = getattr(ccxt, cls_name)
+            ex_cls = getattr(ccxt, cls_name, None)
+            if ex_cls is None:
+                raise ValueError(f"Exchange class '{cls_name}' not found in ccxt")
             return ex_cls(
                 {
                     "apiKey": api_key,

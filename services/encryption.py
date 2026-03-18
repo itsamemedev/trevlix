@@ -24,7 +24,7 @@ import logging
 import os
 import threading
 
-log = logging.getLogger("Encryption")
+log = logging.getLogger("trevlix.encryption")
 
 _fernet_lock = threading.Lock()
 

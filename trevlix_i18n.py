@@ -1,5 +1,5 @@
 """
-TREVLIX v1.0.0 — i18n Translation Module
+TREVLIX v1.4.0 — i18n Translation Module
 Sprachen: DE | EN | ES | RU | PT
 """
 
@@ -549,7 +549,7 @@ def t(key: str, lang: str = "de", **kwargs) -> str:
     text = entry.get(lang) or entry.get("de") or key
     try:
         return text.format(**kwargs) if kwargs else text
-    except (KeyError, IndexError):
+    except (KeyError, IndexError, ValueError):
         return text
 
 

@@ -210,7 +210,7 @@ class PerformanceAttribution:
         result: dict[str, list[dict[str, Any]]] = {"best": [], "worst": []}
 
         with self._lock:
-            all_factors: list[tuple[str, str, _FactorStats]] = []
+            all_factors: list[tuple[str, str, dict[str, Any]]] = []
             for dim_name, store in [
                 ("strategy", self._by_strategy),
                 ("regime", self._by_regime),
@@ -220,26 +220,30 @@ class PerformanceAttribution:
             ]:
                 for factor_val, stats in store.items():
                     if stats.total_trades >= 3:
-                        all_factors.append((dim_name, factor_val, stats))
+                        all_factors.append((dim_name, factor_val, stats.to_dict()))
 
-            sorted_by_pnl = sorted(all_factors, key=lambda x: x[2].total_pnl, reverse=True)
+        if not all_factors:
+            return result
 
-        for dim_name, factor_val, stats in sorted_by_pnl[:n]:
+        sorted_by_pnl = sorted(all_factors, key=lambda x: x[2]["total_pnl"], reverse=True)
+
+        for dim_name, factor_val, stats_dict in sorted_by_pnl[:n]:
             result["best"].append(
                 {
                     "dimension": dim_name,
                     "value": factor_val,
-                    **stats.to_dict(),
+                    **stats_dict,
                 }
             )
 
-        for dim_name, factor_val, stats in sorted_by_pnl[-n:]:
-            if stats.total_pnl < 0:
+        sorted_worst = sorted(all_factors, key=lambda x: x[2]["total_pnl"])
+        for dim_name, factor_val, stats_dict in sorted_worst[:n]:
+            if stats_dict["total_pnl"] < 0:
                 result["worst"].append(
                     {
                         "dimension": dim_name,
                         "value": factor_val,
-                        **stats.to_dict(),
+                        **stats_dict,
                     }
                 )
 

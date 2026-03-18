@@ -17,7 +17,7 @@ import os
 import secrets
 from typing import Any
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("trevlix.config")
 
 
 def _safe_port(val: str) -> int:
@@ -124,10 +124,10 @@ if PYDANTIC_AVAILABLE:
         mysql_port: int = Field(default=3306, ge=1, le=65535)
         mysql_user: str = Field(default="root")
         mysql_pass: str = Field(default="")
-        mysql_db: str = Field(default="nexus")
+        mysql_db: str = Field(default="trevlix")
 
         # Auth
-        admin_password: str = Field(default="nexus")
+        admin_password: str = Field(default="trevlix")
         jwt_secret: str = Field(default_factory=lambda: secrets.token_hex(32))
         jwt_expiry_hours: int = Field(default=24, ge=1)
 
@@ -191,8 +191,8 @@ if PYDANTIC_AVAILABLE:
                 mysql_port=_safe_port(os.getenv("MYSQL_PORT", "3306")),
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
-                mysql_db=os.getenv("MYSQL_DB", "nexus"),
-                admin_password=os.getenv("ADMIN_PASSWORD", "nexus"),
+                mysql_db=os.getenv("MYSQL_DB", "trevlix"),
+                admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
                 cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
                 telegram_token=os.getenv("TELEGRAM_TOKEN", ""),
@@ -237,8 +237,8 @@ else:
                 mysql_port=_safe_port(os.getenv("MYSQL_PORT", "3306")),
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
-                mysql_db=os.getenv("MYSQL_DB", "nexus"),
-                admin_password=os.getenv("ADMIN_PASSWORD", "nexus"),
+                mysql_db=os.getenv("MYSQL_DB", "trevlix"),
+                admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
                 paper_trading=os.getenv("PAPER_TRADING", "true").lower() in ("true", "1", "yes"),
                 cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
@@ -280,12 +280,12 @@ def load_config() -> TrevlixConfig:
         if warnings:
             import logging
 
-            log = logging.getLogger(__name__)
+            log = logging.getLogger("trevlix.config")
             for w in warnings:
                 log.warning(f"[Config] {w}")
         return cfg
     except Exception as e:
         import logging
 
-        logging.getLogger(__name__).error(f"Konfigurationsfehler: {e}")
+        logging.getLogger("trevlix.config").error(f"Konfigurationsfehler: {e}")
         raise

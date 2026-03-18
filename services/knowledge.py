@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-log = logging.getLogger("NEXUS")
+log = logging.getLogger("trevlix.knowledge")
 
 # Optionale LLM-Anbindung
 try:

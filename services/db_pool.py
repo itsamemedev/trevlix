@@ -28,7 +28,7 @@ import logging
 import threading
 from contextlib import contextmanager
 
-log = logging.getLogger("DBPool")
+log = logging.getLogger("trevlix.db_pool")
 
 try:
     import pymysql
