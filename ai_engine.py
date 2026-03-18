@@ -461,8 +461,6 @@ class AIEngine:
                 return 0.5
             win_prob = float(proba[win_idx])
 
-            with self._lock:
-                self.predictions_made += 1
             return win_prob
         except Exception as e:
             log.debug(f"Vorhersage-Fehler: {e}")

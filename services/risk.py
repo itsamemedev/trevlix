@@ -152,6 +152,11 @@ class RiskManager:
             h.append(price)
             if len(h) > 100:
                 self._price_history[symbol] = h[-100:]
+            # Unbegrenztes Symbol-Wachstum verhindern
+            if len(self._price_history) > 200:
+                oldest_sym = next(iter(self._price_history))
+                if oldest_sym != symbol:
+                    del self._price_history[oldest_sym]
 
     def circuit_status(self) -> dict:
         with self._lock:

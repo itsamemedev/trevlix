@@ -74,6 +74,8 @@ class _FactorStats:
         self.total_pnl += pnl
         self.total_trades += 1
         self.pnl_list.append(pnl)
+        if len(self.pnl_list) > 1000:
+            self.pnl_list = self.pnl_list[-1000:]
         if pnl >= 0:
             self.wins += 1
         else:

@@ -2897,7 +2897,8 @@ class AIEngine:
         """
         if state is None:
             return False
-        trades = state.closed_trades
+        with state._lock:
+            trades = list(state.closed_trades)
         if len(trades) < 40:
             return False
         try:
@@ -3846,8 +3847,12 @@ class BacktestEngine:
                 "profit_factor": round(pf, 2),
                 "max_drawdown": round(dd, 2),
                 "start_balance": start,
-                "final_balance": round(cap, 2),
-                "return_pct": round((cap - start) / start * 100, 2) if start > 0 else 0.0,
+                "final_balance": round(equity[-1]["value"] if equity else cap, 2),
+                "return_pct": round(
+                    ((equity[-1]["value"] if equity else cap) - start) / start * 100, 2
+                )
+                if start > 0
+                else 0.0,
                 "equity_curve": equity[:: max(1, len(equity) // 100)],
                 "trades": trades[-30:],
             }
@@ -3885,7 +3890,8 @@ class MultiTimeframeFilter:
             d = c2.diff()
             g = d.clip(lower=0).ewm(span=14, adjust=False).mean()
             ls = (-d.clip(upper=0)).ewm(span=14, adjust=False).mean()
-            rsi = float((100 - (100 / (1 + g / ls.replace(0, np.nan)))).iloc[-1])
+            rsi_raw = (100 - (100 / (1 + g / ls.replace(0, 1e-10)))).iloc[-1]
+            rsi = float(rsi_raw) if not np.isnan(rsi_raw) else 50.0
             score = (1 if price > e21 else 0) + (1 if e21 > e50 else 0) + (1 if rsi > 45 else 0)
             trend = 1 if score >= 2 else (-1 if score == 0 else 0)
             with self._lock:
@@ -4550,12 +4556,11 @@ class ShortEngine:
         price = state.prices.get(symbol, pos.get("entry", 0))
         short_entry = pos.get("entry") or price
         pnl_pct = (short_entry - price) / short_entry * 100 if short_entry > 0 else 0.0
+        leverage = CONFIG.get("short_leverage", 2)
         fee = (
-            pos.get("invested", 0)
-            * get_exchange_fee_rate(CONFIG.get("short_exchange"))
-            * CONFIG.get("short_leverage", 2)
+            pos.get("invested", 0) * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
         )  # [#29]
-        pnl = pos.get("invested", 0) * (pnl_pct / 100) - fee
+        pnl = pos.get("invested", 0) * (pnl_pct / 100) * leverage - fee
         if CONFIG.get("paper_trading", True):
             state.balance += pos.get("invested", 0) + pnl
         else:
@@ -4801,9 +4806,10 @@ def scan_symbol(ex, symbol) -> dict | None:
         if CONFIG.get("use_adaptive_weights"):
             regime_str = "bull" if regime and regime.is_bull else "bear"
             aw = adaptive_weights.get_weights(regime=regime_str)
-            for nm in aw:
-                if nm in ai_engine.weights:
-                    ai_engine.weights[nm] = aw[nm]
+            with ai_engine._lock:
+                for nm in aw:
+                    if nm in ai_engine.weights:
+                        ai_engine.weights[nm] = aw[nm]
 
         signal, conf = ai_engine.weighted_vote(votes, CONFIG.get("min_vote_score", 0.3))
         ob_ratio, ob_desc = ob.get(ex, symbol)
@@ -4812,14 +4818,13 @@ def scan_symbol(ex, symbol) -> dict | None:
         news_score, news_hl, news_cnt = news_fetcher.get_score(symbol)
         onchain_score, onchain_detail = onchain.get_score(symbol)
 
-        # Anomalie-Check
+        # Anomalie-Check (NaN-Werte filtern, da sie den IsolationForest vergiften)
         price_chg = float(row.get("returns", 0) * 100)
-        anomaly.add_observation(
-            price_chg,
-            float(row.get("vol_ratio", 1)),
-            float(row.get("rsi", 50)),
-            float(row.get("atr_pct", 1)),
-        )
+        _vol_r = float(row.get("vol_ratio", 1))
+        _rsi_v = float(row.get("rsi", 50))
+        _atr_v = float(row.get("atr_pct", 1))
+        if not any(math.isnan(v) for v in (price_chg, _vol_r, _rsi_v, _atr_v)):
+            anomaly.add_observation(price_chg, _vol_r, _rsi_v, _atr_v)
 
         return {
             "symbol": symbol,
@@ -5004,7 +5009,8 @@ def open_position(ex, scan: dict):
         tp = price * (1 + CONFIG.get("take_profit_pct", 0.06))
 
     if CONFIG.get("paper_trading", True):
-        state.balance -= invest
+        with state._lock:
+            state.balance -= invest
     else:
         try:
             ex.create_market_buy_order(symbol, qty)
@@ -5039,7 +5045,8 @@ def open_position(ex, scan: dict):
     # Smart Exits: Regime in Position speichern
     if smart_exits.enabled:
         pos_data["exit_regime"] = smart_exits.classify_regime_from_scan(scan)
-    state.positions[symbol] = pos_data
+    with state._lock:
+        state.positions[symbol] = pos_data
     dna_info = f" | DNA:{dna_mult:.2f}x" if dna_result and dna_mult != 1.0 else ""
     smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
@@ -5279,19 +5286,21 @@ def try_dca(ex, symbol):
     total_cost = pos.get("invested", 0) + dca_invest - fee
     new_entry = total_cost / total_qty
     if CONFIG.get("paper_trading", True):
-        state.balance -= dca_invest
+        with state._lock:
+            state.balance -= dca_invest
     else:
         try:
             ex.create_market_buy_order(symbol, add_qty)
         except Exception as e:
             log.error(f"DCA {symbol}: {e}")
             return
-    pos["qty"] = total_qty
-    pos["invested"] = total_cost
-    pos["entry"] = new_entry
-    pos["dca_level"] = dca_level + 1
-    pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
-    pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
+    with state._lock:
+        pos["qty"] = total_qty
+        pos["invested"] = total_cost
+        pos["entry"] = new_entry
+        pos["dca_level"] = dca_level + 1
+        pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
+        pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
     log.info(
         f"📉 DCA Lvl{dca_level + 1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}"
     )
@@ -6098,6 +6107,11 @@ def api_admin_config():
             "short_api_key",
             "short_secret",
             "cryptopanic_token",
+            "encryption_key",
+            "secret_key",
+            "telegram_token",
+            "extra_exchanges",
+            "funding_rate_cache",
         )
     }
     return jsonify(safe)
@@ -6135,7 +6149,10 @@ def api_admin_config_update():
             continue  # Sensible Werte nur über .env änderbar
         if k in CONFIG:
             original = CONFIG[k]
-            if isinstance(original, bool):
+            if isinstance(original, (list, dict)):
+                if not isinstance(v, type(original)):
+                    continue  # Typ-Mismatch bei komplexen Werten ablehnen
+            elif isinstance(original, bool):
                 v = bool(v)
             elif isinstance(original, int):
                 v = _safe_int(v, original)
@@ -6189,7 +6206,8 @@ def api_tax_report():
         rows = report.get("gains", []) + report.get("losses", [])
         buf = io.StringIO()
         if rows:
-            w = csv.DictWriter(buf, fieldnames=rows[0].keys())
+            all_keys = list(dict.fromkeys(k for r in rows for k in r.keys()))
+            w = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
         return Response(
@@ -6345,6 +6363,7 @@ def api_revoke_token(token_id):
 
 # ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
 @app.route("/metrics")
+@api_auth_required
 def prometheus_metrics():
     """Exportiert Bot-Metriken im Prometheus-Format."""
     lines = []
@@ -6466,6 +6485,9 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     if not _ws_rate_check("update_config", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6555,6 +6577,9 @@ def on_update_config(data):
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
     raw_key = data.get("api_key", "")
     raw_secret = data.get("secret", "")
@@ -6567,6 +6592,9 @@ def on_save_keys(data):
 
 @socketio.on("update_discord")
 def on_update_discord(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     if data.get("webhook"):
         CONFIG["discord_webhook"] = data["webhook"]
     if "on_buy" in data:
@@ -6586,18 +6614,27 @@ def on_update_discord(data):
 
 @socketio.on("force_train")
 def on_force_train():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "type": "info"})
     threading.Thread(target=ai_engine._train, daemon=True).start()
 
 
 @socketio.on("force_optimize")
 def on_force_optimize():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🔬 Optimierung läuft...", "type": "info"})
     threading.Thread(target=ai_engine._optimize, daemon=True).start()
 
 
 @socketio.on("force_genetic")
 def on_force_genetic():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
     threading.Thread(
         target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
@@ -6606,6 +6643,9 @@ def on_force_genetic():
 
 @socketio.on("reset_ai")
 def on_reset_ai():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     with ai_engine._lock:
         ai_engine.X_raw = []
         ai_engine.y_raw = []
@@ -7203,6 +7243,9 @@ def on_save_exchange_keys(data):
 
 @socketio.on("close_exchange_position")
 def on_close_exchange_position(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     ex_name = data.get("exchange", "")
     symbol = data.get("symbol", "")
     if not ex_name or not symbol:
@@ -7458,6 +7501,8 @@ def _set_env_var(key: str, value: str):
     if not _re.match(r"^[A-Z_][A-Z0-9_]*$", key):
         log.warning(f"_set_env_var: Ungültiger Key '{key}'")
         return
+    # Newline-Injection verhindern
+    value = value.replace("\n", "").replace("\r", "")
     with open(env_path) as f:
         txt = f.read()
     escaped_key = _re.escape(key)

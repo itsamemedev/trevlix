@@ -44,15 +44,15 @@ def _get_fernet() -> "Fernet | None":
 
     key_str = os.getenv("ENCRYPTION_KEY", "")
     if not key_str:
-        # Einmalig warnen – ohne Key kein Verschlüsselungsschutz
-        log.warning(
-            "ENCRYPTION_KEY nicht gesetzt! Generiere temporären Key für diese Sitzung. "
-            "Setze ENCRYPTION_KEY in .env für Produktion: "
-            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
-        )
         # Temporärer Key (wird bei Neustart gewechselt → alte verschlüsselte Werte lesbar solange Session läuft)
         with _fernet_lock:
             if not hasattr(_get_fernet, "_temp_key"):
+                # Einmalig warnen – ohne Key kein Verschlüsselungsschutz
+                log.warning(
+                    "ENCRYPTION_KEY nicht gesetzt! Generiere temporären Key für diese Sitzung. "
+                    "Setze ENCRYPTION_KEY in .env für Produktion: "
+                    'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+                )
                 _get_fernet._temp_key = Fernet.generate_key()
             return Fernet(_get_fernet._temp_key)
 

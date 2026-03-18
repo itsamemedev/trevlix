@@ -92,6 +92,7 @@ class CryptoPanicClient:
         self.plan = plan if plan else "free"
         self._base_url = _API_V2_URL.format(plan=self.plan)
         self._cache: dict = {}
+        self._cache_max_size: int = 200
 
     @property
     def is_configured(self) -> bool:
@@ -225,13 +226,17 @@ class CryptoPanicClient:
             posts = self.fetch_posts(coin)
             score, headline, count = self.analyze_sentiment(posts)
 
-        # Caches aktualisieren
+        # Caches aktualisieren (mit Max-Size-Eviction)
         self._cache[symbol] = {
             "score": score,
             "headline": headline,
             "count": count,
             "ts": time.time(),
         }
+        if len(self._cache) > self._cache_max_size:
+            oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
+            if oldest != symbol:
+                del self._cache[oldest]
 
         if db:
             db.save_news(symbol, score, headline, count)
