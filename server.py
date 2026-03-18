@@ -3746,8 +3746,8 @@ class BacktestEngine:
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
             df = compute_indicators(df)
-            if df is None:
-                return {"error": "Indikator-Fehler"}
+            if df is None or len(df) < 3:
+                return {"error": "Nicht genug Daten für Backtest (min. 3 Kerzen)"}
             cap = 10000.0
             start = cap
             pos = None
@@ -3757,7 +3757,7 @@ class BacktestEngine:
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = float(row["close"])
-                if pos and pos.get("entry"):
+                if pos and pos.get("entry") and pos["entry"] > 0:
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:
                         pnl = pos["inv"] * pp
@@ -3813,7 +3813,7 @@ class BacktestEngine:
             for e in equity:
                 if e["value"] > peak:
                     peak = e["value"]
-                dd = max(dd, (peak - e["value"]) / peak * 100)
+                dd = max(dd, (peak - e["value"]) / peak * 100) if peak > 0 else 0.0
             result = {
                 "symbol": symbol,
                 "timeframe": tf,
@@ -3825,7 +3825,7 @@ class BacktestEngine:
                 "max_drawdown": round(dd, 2),
                 "start_balance": start,
                 "final_balance": round(cap, 2),
-                "return_pct": round((cap - start) / start * 100, 2),
+                "return_pct": round((cap - start) / start * 100, 2) if start > 0 else 0.0,
                 "equity_curve": equity[:: max(1, len(equity) // 100)],
                 "trades": trades[-30:],
             }
@@ -4529,7 +4529,7 @@ class ShortEngine:
         }
         state.closed_trades.insert(0, trade)
         db.save_trade(trade)
-        del state.short_positions[symbol]
+        state.short_positions.pop(symbol, None)
         won = pnl >= 0
         risk.record_result(won)
         icon = "✅" if won else "❌"
@@ -4549,7 +4549,7 @@ class ShortEngine:
                 continue
             price = state.prices.get(sym, pos["entry"])
             s_entry = pos.get("entry") or price
-            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry else 0.0
+            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
             pos["pnl_unrealized"] = pos["invested"] * (pnl_pct / 100)
             if price >= pos["sl"]:
                 self.close_short(sym, "SL 🛑")
@@ -5080,7 +5080,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             dca_level=pos.get("dca_level", 0),
         )
         state.closed_trades.insert(0, trade)
-        del state.positions[symbol]
+        state.positions.pop(symbol, None)
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
@@ -5307,7 +5307,10 @@ def manage_positions(ex):
                         continue
                     pos["partial_tp_done"] = levels_done + 1
 
-        # SL / TP
+        # SL / TP – re-check pos in case partial TP removed it
+        pos = state.positions.get(symbol)
+        if not pos:
+            continue
         if price <= pos["sl"]:
             close_position(ex, symbol, "Stop-Loss 🛑")
         elif price >= pos["tp"]:
@@ -5695,7 +5698,7 @@ def api_user_exchanges_upsert():
     ok = db.upsert_user_exchange(
         request.user_id, exchange, api_key, api_secret, enabled, is_primary
     )
-    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}")
+    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
     return jsonify({"ok": ok})
 
 
@@ -5727,7 +5730,7 @@ def api_user_update_keys():
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
-    _audit("api_keys_update", f"Exchange: {exchange}")
+    _audit("api_keys_update", f"Exchange: {exchange}", request.user_id)
     return jsonify({"ok": ok})
 
 
@@ -6052,7 +6055,9 @@ def api_admin_config_update():
         if k in CONFIG:
             CONFIG[k] = v
             updated.append(k)
-    _audit("config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}")
+    _audit(
+        "config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}", request.user_id
+    )
     return jsonify({"ok": True, "updated": updated})
 
 
@@ -6420,9 +6425,40 @@ def on_update_config(data):
         "use_rl",
         "use_lstm",
     }
+    # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
+    _numeric_keys = {
+        "stop_loss_pct",
+        "take_profit_pct",
+        "ai_min_confidence",
+        "max_spread_pct",
+        "risk_per_trade",
+        "news_block_score",
+        "news_boost_score",
+        "dca_drop_pct",
+        "trailing_pct",
+        "break_even_pct",
+        "partial_tp_pct",
+        "portfolio_goal",
+    }
+    _int_keys = {
+        "max_open_trades",
+        "scan_interval",
+        "circuit_breaker_losses",
+        "circuit_breaker_min",
+        "dca_max_levels",
+        "lstm_lookback",
+        "discord_report_hour",
+    }
     for k, v in data.items():
-        if k in allowed:
-            CONFIG[k] = v
+        if k not in allowed:
+            continue
+        if k in _numeric_keys:
+            v = _safe_float(v, CONFIG.get(k, 0.0))
+        elif k in _int_keys:
+            v = _safe_int(v, CONFIG.get(k, 0))
+        elif isinstance(CONFIG.get(k), bool):
+            v = bool(v)
+        CONFIG[k] = v
     emit("status", {"msg": "✅ Einstellungen gespeichert", "type": "success"})
     emit("update", state.snapshot(), broadcast=True)
 
@@ -6450,7 +6486,8 @@ def on_update_discord(data):
     if "daily_report" in data:
         CONFIG["discord_daily_report"] = bool(data["daily_report"])
     if "report_hour" in data:
-        CONFIG["discord_report_hour"] = int(data["report_hour"])
+        rh = _safe_int(data.get("report_hour", 20), 20)
+        CONFIG["discord_report_hour"] = max(0, min(23, rh))
     discord.send(
         "✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info"
     )
@@ -6794,6 +6831,10 @@ class GridTradingEngine:
 
     def update(self, symbol: str, current_price: float, balance_ref: list) -> list:
         """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen."""
+        with self._lock:
+            return self._update_locked(symbol, current_price, balance_ref)
+
+    def _update_locked(self, symbol: str, current_price: float, balance_ref: list) -> list:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
             return []
@@ -7066,15 +7107,24 @@ def on_close_exchange_position(data):
         emit("status", {"msg": "❌ Exchange und Symbol erforderlich", "type": "error"})
         return
     try:
+        # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
+        if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
+            emit("status", {"msg": "❌ Unbekannte Exchange", "type": "error"})
+            return
         ex_cfg = CONFIG.get("extra_exchanges", {}).get(ex_name, {})
-        ex_cls = getattr(ccxt, ex_name, None)
+        ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_name, ex_name), None)
         if ex_cls is None:
-            emit("status", {"msg": f"❌ Unbekannte Exchange: {ex_name}", "type": "error"})
+            emit("status", {"msg": "❌ Exchange nicht verfügbar", "type": "error"})
+            return
+        raw_key = ex_cfg.get("api_key", "")
+        raw_secret = ex_cfg.get("secret", "")
+        if not raw_key or not raw_secret:
+            emit("status", {"msg": "❌ Keine API-Keys für diese Exchange", "type": "error"})
             return
         ex = ex_cls(
             {
-                "apiKey": decrypt_value(ex_cfg.get("api_key", "")),
-                "secret": decrypt_value(ex_cfg.get("secret", "")),
+                "apiKey": decrypt_value(raw_key),
+                "secret": decrypt_value(raw_secret),
                 "password": decrypt_value(ex_cfg.get("passphrase", "")) or None,
                 "enableRateLimit": True,
             }

@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.5] – 2026-03-18
+
+### Fixed — Tiefenanalyse: 14 Bugfixes in server.py
+
+#### Backtest-Engine (4 Fixes)
+- **Drawdown Division-by-Zero** — `(peak - value) / peak * 100` crashte bei `peak=0`. Guard `if peak > 0` hinzugefügt
+- **Return-Prozent Division-by-Zero** — `(cap - start) / start * 100` crashte bei `start=0`. Guard hinzugefügt
+- **Leerer DataFrame** — `df.index[0]` crashte bei leerem/kurzem DataFrame nach `compute_indicators()`. Check `len(df) < 3` hinzugefügt
+- **Entry-Price Division-by-Zero** — `(price - pos["entry"]) / pos["entry"]` crashte bei entry=0. Guard `pos["entry"] > 0` hinzugefügt
+
+#### Thread-Safety & Race Conditions (4 Fixes)
+- **`del state.positions[symbol]` KeyError** — Ungesicherte Löschung bei gleichzeitigem Zugriff. Umgestellt auf `state.positions.pop(symbol, None)`
+- **`del state.short_positions[symbol]` KeyError** — Gleicher Bug bei Short-Positionen. Umgestellt auf `.pop(symbol, None)`
+- **Grid-Engine Race Condition** — `update()` modifizierte `balance_ref[0]` ohne Lock → Overdraft bei parallelen Threads. Lock hinzugefügt via `_update_locked()`
+- **`manage_positions()` SL/TP nach Partial-TP** — `pos["sl"]` Zugriff auf gelöschte Position nach `close_position()`. Re-Fetch mit `state.positions.get()` vor SL/TP-Check
+
+#### Sicherheit (3 Fixes)
+- **`getattr(ccxt, ex_name)` Injection** — Beliebige ccxt-Attribute per User-Input aufrufbar. Jetzt Whitelist-Prüfung gegen EXCHANGE_MAP
+- **Audit-Log ohne User-ID** — 3 API-Endpunkte (exchange_upsert, api_keys_update, config_update) loggten keine `user_id`. Parameter hinzugefügt
+- **`close_exchange_position` leere API-Keys** — `decrypt_value("")` bei fehlender Exchange-Config. Explizite Prüfung vor Decrypt
+
+#### Input-Validierung (3 Fixes)
+- **`update_discord` int(report_hour)** — `int(data["report_hour"])` crashte bei nicht-numerischem Wert. Umgestellt auf `_safe_int()` + Bounds 0-23
+- **`update_config` Typ-Validierung** — CONFIG-Werte wurden ohne Typ-Prüfung direkt zugewiesen. Neue Typ-Validierung: float für Prozente, int für Zähler, bool für Flags
+- **`update_shorts` s_entry Division-by-Zero** — `(s_entry - price) / s_entry` bei s_entry=0. Guard `s_entry > 0` hinzugefügt
+
 ## [1.3.4] – 2026-03-18
 
 ### Fixed — Bugfixes Runde 5 (5 Fixes)

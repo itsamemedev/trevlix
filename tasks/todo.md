@@ -245,3 +245,22 @@
 - [x] notifications.py `split()[0]` IndexError (2 Stellen) → `(split() or ['TREVLIX'])[0]`
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.4
+
+### Phase 6: Tiefenanalyse – 14 Bugfixes (v1.3.5)
+
+- [x] Backtest drawdown div-by-zero (peak=0)
+- [x] Backtest return_pct div-by-zero (start=0)
+- [x] Backtest leerer DataFrame (df.index[0])
+- [x] Backtest entry price div-by-zero
+- [x] del state.positions[symbol] → .pop(symbol, None)
+- [x] del state.short_positions[symbol] → .pop(symbol, None)
+- [x] Grid-Engine update() Race Condition → Lock
+- [x] manage_positions SL/TP nach Partial-TP → Re-Fetch pos
+- [x] getattr(ccxt, ex_name) Injection → EXCHANGE_MAP Whitelist
+- [x] Audit-Log ohne user_id (3 Stellen)
+- [x] close_exchange_position leere API-Keys
+- [x] update_discord int(report_hour) → _safe_int + Bounds
+- [x] update_config Typ-Validierung (float/int/bool)
+- [x] update_shorts s_entry div-by-zero
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.5
