@@ -184,9 +184,16 @@ class RiskManager:
         if len(returns) < 3:
             return 0.0
         r = np.array(returns, dtype=float)
+        if np.all(np.isnan(r)):
+            return 0.0
         exc = r - rf
         std = np.nanstd(exc)
-        return float(np.nanmean(exc) / std * np.sqrt(252)) if std > 0 else 0.0
+        if std <= 0:
+            return 0.0
+        result = float(np.nanmean(exc) / std * np.sqrt(252))
+        if not np.isfinite(result):
+            return 0.0
+        return result
 
 
 class LiquidityScorer:

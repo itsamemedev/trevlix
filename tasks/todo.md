@@ -220,3 +220,18 @@
 - mysql-init.sql fehlende Tabellen (api_tokens, user_exchanges)
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓
+
+### Phase 4: 10 weitere Bugfixes (v1.3.3)
+
+- [x] Goal ETA negative Tage in snapshot() → "Ziel erreicht!" Meldung
+- [x] Heatmap float-Conversion + negative Volumen → _safe_float()
+- [x] close_position entry_price <= 0 → Fallback auf aktuellen Preis
+- [x] validate_env ENCRYPTION_KEY Whitespace → .strip()
+- [x] risk.py Sharpe NaN/Inf → np.isfinite() + np.all(np.isnan()) Guards
+- [x] validate_env schwache Passwort-Erkennung → Substring-Check
+- [x] manage_positions Partial-TP stale Ref → Re-Fetch nach close_position
+- [x] bot_loop create_exchange Error-Handling → Try/except + 30s Backoff
+- [x] portfolio_value stale Shorts → _safe_float() + qty Guard
+- [x] validate_env Passwort-Variablen .strip()
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.3

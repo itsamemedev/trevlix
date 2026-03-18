@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.3] – 2026-03-18
+
+### Fixed — Bugfixes Runde 4 (10 Fixes)
+
+#### Snapshot & Portfolio
+- **Goal ETA negative Tage** — `snapshot()` berechnete negative `days` wenn Portfolio-Wert bereits über Ziel lag → negative Datumsangabe im Frontend. Jetzt: "✅ Ziel erreicht!" wenn `remaining <= 0`
+- **`portfolio_value()` stale Shorts** — `pnl_unrealized` in `short_positions` konnte fehlen oder ungültiger Typ sein. Umgestellt auf `_safe_float()` + Guard für `qty > 0` bei Longs
+
+#### Input-Validierung
+- **Heatmap float-Conversion** — `float(t.get("percentage", 0) or 0)` in `get_heatmap_data()` crashte bei nicht-numerischen Ticker-Werten. Umgestellt auf `_safe_float()`, negative Volumen auf 0 normalisiert
+- **`close_position()` Entry-Price** — `entry <= 0` führte zu Division-by-Zero in PnL-Berechnung. Guard hinzugefügt: Fallback auf aktuellen Preis
+
+#### Validierung & Sicherheit
+- **`validate_env.py` Whitespace ENCRYPTION_KEY** — Führende/nachfolgende Leerzeichen in `.env` führten zu falsch-positivem Fernet-Key-Fehler. `.strip()` hinzugefügt
+- **`validate_env.py` Schwache Passwort-Erkennung** — Nur exakte Matches ("password") wurden erkannt, nicht Varianten ("password123"). Substring-Check mit `any(weak in val_lower ...)` hinzugefügt
+- **`risk.py` Sharpe NaN/Inf** — `sharpe()` konnte NaN/Inf zurückgeben wenn alle Returns NaN waren. Explizite `np.all(np.isnan())` und `np.isfinite()` Guards
+
+#### Stabilität
+- **`manage_positions()` Partial-TP Stale Ref** — Nach `close_position()` mit `partial_ratio` konnte `pos` auf gelöschte Position zeigen → `pos["partial_tp_done"]` KeyError. Re-Fetch mit `state.positions.get(symbol)` nach Close
+- **`bot_loop()` Exchange-Fehler** — `create_exchange()` Fehler ließ `ex=None` und crashte in nächster Iteration. Try/except mit 30s Backoff + `continue`
+- **`validate_env.py` Passwort-Variablen `.strip()`** — Whitespace in Passwort-Variablen führte zu falschen Längenprüfungen. `.strip()` vor Validierung
+
 ## [1.3.2] – 2026-03-18
 
 ### Fixed — Bugfixes & Robustheit (52 Fixes gesamt, 3 Runden)

@@ -4120,8 +4120,14 @@ class BotState:
             log.debug(f"Load trades: {e}")
 
     def portfolio_value(self):
-        longs = sum(p["qty"] * self.prices.get(s, p["entry"]) for s, p in self.positions.items())
-        shorts = sum(p.get("pnl_unrealized", 0) for p in self.short_positions.values())
+        longs = sum(
+            p["qty"] * self.prices.get(s, p.get("entry", 0))
+            for s, p in self.positions.items()
+            if p.get("qty", 0) > 0
+        )
+        shorts = sum(
+            _safe_float(p.get("pnl_unrealized"), 0.0) for p in self.short_positions.values()
+        )
         return self.balance + longs + shorts
 
     def return_pct(self):
@@ -4235,10 +4241,14 @@ class BotState:
             recent_g = sum(t.get("pnl", 0) for t in self.closed_trades[-20:])
             daily_est = recent_g / 20 if recent_g > 0 else 0
             if daily_est > 0:
-                days = int((goal - pv) / daily_est)
-                goal_eta = (
-                    f"~{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')} ({days}d)"
-                )
+                remaining = goal - pv
+                if remaining <= 0:
+                    goal_eta = "✅ Ziel erreicht!"
+                else:
+                    days = int(remaining / daily_est)
+                    goal_eta = (
+                        f"~{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')} ({days}d)"
+                    )
 
         returns = [
             t.get("pnl", 0) / t.get("invested", 1)
@@ -5010,7 +5020,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     close_qty = pos["qty"] * partial_ratio
     close_invest = pos["invested"] * partial_ratio
     entry = pos.get("entry") or price
-    pnl_pct = (price - entry) / entry * 100 if entry else 0.0
+    if entry <= 0:
+        entry = price
+    pnl_pct = (price - entry) / entry * 100 if entry > 0 else 0.0
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5289,6 +5301,10 @@ def manage_positions(ex):
                         f"Partial-TP {level['pct'] * 100:.0f}%",
                         partial_ratio=level["sell_ratio"],
                     )
+                    # Re-fetch pos – close_position may have removed it
+                    pos = state.positions.get(symbol)
+                    if not pos:
+                        continue
                     pos["partial_tp_done"] = levels_done + 1
 
         # SL / TP
@@ -5322,12 +5338,17 @@ def get_heatmap_data(ex) -> list[dict]:
         result = []
         for sym, t in tickers.items():
             ns, _, _ = news_fetcher.get_score(sym)
+            change = _safe_float(t.get("percentage"), 0.0)
+            vol = _safe_float(t.get("quoteVolume"), 0.0)
+            last = _safe_float(t.get("last"), 0.0)
+            if vol < 0:
+                vol = 0.0
             result.append(
                 {
                     "symbol": sym,
-                    "change": round(float(t.get("percentage", 0) or 0), 2),
-                    "volume": round(float(t.get("quoteVolume", 0) or 0) / 1e6, 1),
-                    "price": round(float(t.get("last", 0) or 0), 4),
+                    "change": round(change, 2),
+                    "volume": round(vol / 1e6, 1),
+                    "price": round(last, 4),
                     "in_pos": sym in state.positions,
                     "news_score": round(ns, 2),
                 }
@@ -5353,7 +5374,12 @@ def bot_loop():
             continue
         try:
             if ex is None:
-                ex = create_exchange()
+                try:
+                    ex = create_exchange()
+                except Exception as exc_err:
+                    log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
+                    time.sleep(30)
+                    continue
             state.iteration += 1
             state.last_scan = datetime.now().strftime("%H:%M:%S")
             state.next_scan = (

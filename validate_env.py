@@ -72,7 +72,7 @@ def _check_hex(var: str, min_len: int, label: str) -> Issue | None:
 
 
 def _check_fernet_key(var: str) -> Issue | None:
-    val = os.getenv(var, "")
+    val = os.getenv(var, "").strip()
     if not val:
         return Issue("critical", var, "ENCRYPTION_KEY ist nicht gesetzt")
     try:
@@ -174,9 +174,12 @@ def validate() -> list[Issue]:
     # Check exact matches AND whether the value is based on a weak pattern (e.g. "password123")
     weak_values = {"test", "geheim", "pass", "password", "123456", "admin", "nexus", "secret"}
     for var in ["MYSQL_PASS", "JWT_SECRET", "ADMIN_PASSWORD", "SECRET_KEY"]:
-        val = os.getenv(var, "").lower()
-        if val in weak_values:
+        val = os.getenv(var, "").strip()
+        val_lower = val.lower()
+        if val_lower in weak_values:
             issues.append(Issue("critical", var, f"{var} ist ein bekanntes schwaches Passwort"))
+        elif any(weak in val_lower for weak in weak_values):
+            issues.append(Issue("warning", var, f"{var} enthält ein schwaches Muster"))
         elif len(val) < 8:
             issues.append(Issue("warning", var, f"{var} ist sehr kurz (< 8 Zeichen)"))
 
