@@ -183,7 +183,7 @@ class CryptoPanicClient:
 
             scores.append(float(np.clip(vote_score + kw_score, -1, 1)))
 
-        if scores:
+        if scores and posts:
             score = float(np.clip(np.mean(scores), -1, 1))
             headline = posts[0].get("title", "—")[:200]
         else:

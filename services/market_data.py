@@ -121,7 +121,11 @@ class FearGreedIndex:
         try:
             r = _session.get(self._URL, timeout=8)
             r.raise_for_status()
-            d = r.json()["data"][0]
+            data_list = r.json().get("data", [])
+            if not data_list:
+                log.debug("FearGreed: leere API-Antwort")
+                return
+            d = data_list[0]
             self.value = int(d["value"])
             self.label = d["value_classification"]
             self.last_update = datetime.now().strftime("%H:%M")
@@ -283,7 +287,11 @@ class SentimentFetcher:
             r = _session.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
             r.raise_for_status()
             coins = r.json().get("coins", [])
-            return [f"{c['item']['symbol'].upper()}/USDT" for c in coins[:7]]
+            return [
+                f"{c.get('item', {}).get('symbol', '').upper()}/USDT"
+                for c in coins[:7]
+                if c.get("item", {}).get("symbol")
+            ]
         except Exception as e:
             log.debug(f"Trending: {e}")
             return []

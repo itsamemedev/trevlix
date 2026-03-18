@@ -185,7 +185,7 @@ class DiscordNotifier:
         if not self._cfg("discord_on_error"):
             return
         self.send(
-            f"🔴 {self._bot_full.split()[0]} FEHLER",
+            f"🔴 {(self._bot_full.split() or ['TREVLIX'])[0]} FEHLER",
             f"```\n{msg[:500]}\n```",
             "error",
         )
@@ -329,7 +329,9 @@ class TelegramNotifier:
         if not self._config.get("telegram_on_error"):
             return
         short = msg[:400] if len(msg) > 400 else msg
-        self.send(f"🔴 <b>{self._bot_full.split()[0]} FEHLER</b>\n<code>{short}</code>")
+        self.send(
+            f"🔴 <b>{(self._bot_full.split() or ['TREVLIX'])[0]} FEHLER</b>\n<code>{short}</code>"
+        )
 
     def circuit_breaker(self, losses: int, pause_min: int) -> None:
         self.send(

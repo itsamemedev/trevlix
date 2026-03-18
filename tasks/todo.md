@@ -235,3 +235,13 @@
 - [x] validate_env Passwort-Variablen .strip()
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.3
+
+### Phase 5: 5 weitere Bugfixes (v1.3.4)
+
+- [x] market_data.py FearGreed `["data"][0]` IndexError → `.get("data", [])` + Leerprüfung
+- [x] market_data.py Trending `c['item']['symbol']` KeyError → `.get()` mit Filter
+- [x] cryptopanic.py `posts[0]` IndexError → Guard `if scores and posts`
+- [x] risk.py Conformal-Predict `X_test` IndexError → Shape-Prüfung
+- [x] notifications.py `split()[0]` IndexError (2 Stellen) → `(split() or ['TREVLIX'])[0]`
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.4

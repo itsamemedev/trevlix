@@ -430,7 +430,10 @@ class AdvancedRiskMetrics:
             q_level = math.ceil((len(scores) + 1) * (1 - alpha)) / len(scores)
             q_level = min(q_level, 1.0)
             q_hat = float(np.quantile(scores, q_level))
-            test_prob = float(model.predict_proba(X_test)[:, 1][0])
+            test_proba = model.predict_proba(X_test)
+            if test_proba.shape[0] == 0 or test_proba.shape[1] < 2:
+                return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
+            test_prob = float(test_proba[0, 1])
             lower = max(0.0, test_prob - q_hat)
             upper = min(1.0, test_prob + q_hat)
             return {

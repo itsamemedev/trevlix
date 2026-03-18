@@ -7,6 +7,19 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.4] – 2026-03-18
+
+### Fixed — Bugfixes Runde 5 (5 Fixes)
+
+#### API-Robustheit
+- **`market_data.py` FearGreed IndexError** — `r.json()["data"][0]` crashte bei leerer API-Antwort. Umgestellt auf `.get("data", [])` mit Leerprüfung
+- **`market_data.py` Trending KeyError** — `c['item']['symbol']` in List-Comprehension crashte bei fehlenden Keys. Umgestellt auf `.get()` mit Filter
+- **`cryptopanic.py` posts[0] IndexError** — `posts[0].get("title")` wurde aufgerufen obwohl `posts` leer sein konnte. Guard `if scores and posts` hinzugefügt
+
+#### Prediction & Notifications
+- **`risk.py` Conformal-Predict IndexError** — `model.predict_proba(X_test)[:, 1][0]` crashte bei leerem X_test. Shape-Prüfung vor Zugriff hinzugefügt
+- **`notifications.py` split()[0] IndexError** — `self._bot_full.split()[0]` in Discord `error()` und Telegram `error()` ohne Fallback bei leerem String. `(split() or ['TREVLIX'])[0]` Schutz hinzugefügt (2 Stellen)
+
 ## [1.3.3] – 2026-03-18
 
 ### Fixed — Bugfixes Runde 4 (10 Fixes)
