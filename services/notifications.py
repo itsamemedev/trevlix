@@ -66,15 +66,23 @@ class DiscordNotifier:
         fields: list | None = None,
     ) -> None:
         url = self._cfg("discord_webhook", "")
-        if not url:
+        if not url or not isinstance(url, str):
             return
+        url = url.strip()
+        if not url.startswith("https://"):
+            log.warning("Discord webhook URL must start with https://")
+            return
+        title = str(title or "")[:256]
+        desc = str(desc or "")[:4096]
         try:
+            exchange_name = self._cfg("exchange", "?")
+            exchange_str = str(exchange_name).upper() if exchange_name else "?"
             embed: dict = {
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
                 "timestamp": datetime.now(UTC).isoformat(),
-                "footer": {"text": f"{self._bot_full} · {self._cfg('exchange', '?').upper()}"},
+                "footer": {"text": f"{self._bot_full} · {exchange_str}"},
             }
             if fields:
                 embed["fields"] = [
@@ -98,6 +106,8 @@ class DiscordNotifier:
         if not self._cfg("discord_on_buy"):
             return
         news_txt = f"📰 {news_score:+.2f}" if news_score != 0 else "—"
+        exchange_name = self._cfg("exchange", "?")
+        exchange_str = str(exchange_name).upper() if exchange_name else "?"
         self.send(
             f"🟢 KAUF: {symbol}",
             f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n"
@@ -105,7 +115,7 @@ class DiscordNotifier:
             f"News:       {news_txt}\n```",
             "buy",
             fields=[
-                ("Exchange", self._cfg("exchange", "?").upper()),
+                ("Exchange", exchange_str),
                 ("Modus", "📝 Paper" if self._cfg("paper_trading") else "💰 Live"),
             ],
         )
@@ -201,10 +211,11 @@ class DiscordNotifier:
         )
 
     def genetic_result(self, gen: int, fitness: float, genome: dict) -> None:
+        sl_val = float(genome.get("sl", 0) or 0)
+        tp_val = float(genome.get("tp", 0) or 0)
         self.send(
             f"🧬 Genetik Gen.{gen}",
-            f"```\nFitness: {fitness:.3f}\n"
-            f"SL: {genome.get('sl', 0) * 100:.1f}% TP: {genome.get('tp', 0) * 100:.1f}%\n```",
+            f"```\nFitness: {fitness:.3f}\nSL: {sl_val * 100:.1f}% TP: {tp_val * 100:.1f}%\n```",
             "info",
         )
 
@@ -277,6 +288,9 @@ class TelegramNotifier:
         token = self._token()
         chat_id = self._chat_id()
         if not token or not chat_id:
+            return
+        text = str(text or "")[:4096]
+        if not text.strip():
             return
         try:
             url = self._API_BASE.format(token=token)

@@ -21,7 +21,7 @@ from typing import Any
 
 from flask import Blueprint, redirect, request, send_file, session
 
-log = logging.getLogger("NEXUS.auth")
+log = logging.getLogger("trevlix.auth")
 
 # Auth-Seite HTML-Template (Glassmorphism-Design mit i18n)
 _AUTH_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">

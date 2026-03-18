@@ -154,10 +154,10 @@ class TradeDNA:
         Returns:
             DNA-Dict mit Fingerprint, Hash und allen Dimensionen.
         """
-        atr_pct = scan.get("atr_pct", 1.0)
-        news_score = scan.get("news_score", 0.0)
-        ob_ratio = scan.get("ob_ratio", 0.5)
-        confidence = scan.get("confidence", 0.5)
+        atr_pct = float(scan.get("atr_pct", 1.0) or 1.0)
+        news_score = float(scan.get("news_score", 0.0) or 0.0)
+        ob_ratio = float(scan.get("ob_ratio", 0.5) or 0.5)
+        confidence = float(scan.get("confidence", 0.5) or 0.5)
         hour = datetime.now().hour
 
         dimensions = {
@@ -180,11 +180,11 @@ class TradeDNA:
             "fingerprint": fingerprint_str,
             "dimensions": dimensions,
             "raw_values": {
-                "atr_pct": round(atr_pct, 3),
-                "fg_value": fg_value,
-                "news_score": round(news_score, 3),
-                "ob_ratio": round(ob_ratio, 3),
-                "confidence": round(confidence, 3),
+                "atr_pct": round(float(atr_pct), 3),
+                "fg_value": int(fg_value),
+                "news_score": round(float(news_score), 3),
+                "ob_ratio": round(float(ob_ratio), 3),
+                "confidence": round(float(confidence), 3),
                 "hour": hour,
             },
             "timestamp": datetime.now().isoformat(),
@@ -200,7 +200,15 @@ class TradeDNA:
             Dict mit ``multiplier`` (0.0-1.5), ``win_rate``, ``matches``,
             ``action`` ('boost'/'block'/'neutral') und ``reason``.
         """
-        fp = dna["fingerprint"]
+        fp = dna.get("fingerprint", "")
+        if not fp:
+            return {
+                "multiplier": 1.0,
+                "win_rate": None,
+                "matches": 0,
+                "action": "neutral",
+                "reason": "Kein Fingerprint",
+            }
         with self._lock:
             stats = self._pattern_stats.get(fp)
             if not stats or stats[1] < self._min_matches:
@@ -212,31 +220,33 @@ class TradeDNA:
                     "reason": f"Zu wenig Daten ({stats[1] if stats else 0}/{self._min_matches})",
                 }
 
-            wr = stats[0] / stats[1]
+            wr = stats[0] / stats[1] if stats[1] > 0 else 0.0
+            # Copy values for use outside lock
+            total_matches = stats[1]
 
         if wr >= self._boost_threshold:
             mult = min(1.0 + (wr - self._boost_threshold) * 2, 1.5)
             return {
                 "multiplier": round(mult, 3),
                 "win_rate": round(wr * 100, 1),
-                "matches": stats[1],
+                "matches": total_matches,
                 "action": "boost",
-                "reason": f"DNA-Pattern WR {wr * 100:.0f}% ({stats[1]} Trades)",
+                "reason": f"DNA-Pattern WR {wr * 100:.0f}% ({total_matches} Trades)",
             }
         elif wr <= self._block_threshold:
-            mult = max(wr / self._block_threshold * 0.5, 0.0)
+            mult = max(wr / self._block_threshold * 0.5, 0.0) if self._block_threshold > 0 else 0.0
             return {
                 "multiplier": round(mult, 3),
                 "win_rate": round(wr * 100, 1),
-                "matches": stats[1],
+                "matches": total_matches,
                 "action": "block",
-                "reason": f"DNA-Pattern WR nur {wr * 100:.0f}% ({stats[1]} Trades)",
+                "reason": f"DNA-Pattern WR nur {wr * 100:.0f}% ({total_matches} Trades)",
             }
 
         return {
             "multiplier": 1.0,
             "win_rate": round(wr * 100, 1),
-            "matches": stats[1],
+            "matches": total_matches,
             "action": "neutral",
             "reason": f"DNA-Pattern WR {wr * 100:.0f}% (normal)",
         }
@@ -248,7 +258,10 @@ class TradeDNA:
             dna: DNA-Dict aus ``compute()``.
             won: True wenn der Trade profitabel war.
         """
-        fp = dna["fingerprint"]
+        fp = dna.get("fingerprint", "")
+        if not fp:
+            log.warning("TradeDNA.record: Kein Fingerprint im DNA-Dict")
+            return
         with self._lock:
             stats = self._pattern_stats[fp]
             if won:
@@ -277,15 +290,20 @@ class TradeDNA:
         Returns:
             Liste der ähnlichsten historischen Trades mit Similarity-Score.
         """
-        target_dims = dna["dimensions"]
+        if not dna:
+            return []
+        target_dims = dna.get("dimensions", {})
         n_dims = len(target_dims)
+        if n_dims == 0:
+            return []
         results: list[tuple[float, dict]] = []
 
         with self._lock:
             for entry in self._history:
-                match_count = sum(
-                    1 for k, v in target_dims.items() if entry.get("dimensions", {}).get(k) == v
-                )
+                entry_dims = entry.get("dimensions")
+                if not isinstance(entry_dims, dict):
+                    continue
+                match_count = sum(1 for k, v in target_dims.items() if entry_dims.get(k) == v)
                 similarity = match_count / n_dims
                 if similarity >= 0.5:  # Min. 50% Übereinstimmung
                     results.append((similarity, entry))
@@ -294,8 +312,8 @@ class TradeDNA:
         return [
             {
                 "similarity": round(sim * 100, 0),
-                "hash": e["hash"],
-                "fingerprint": e["fingerprint"],
+                "hash": e.get("hash", ""),
+                "fingerprint": e.get("fingerprint", ""),
                 "symbol": e.get("symbol", "?"),
                 "won": e.get("won"),
                 "timestamp": e.get("timestamp", ""),
@@ -316,7 +334,7 @@ class TradeDNA:
             patterns = [
                 {
                     "fingerprint": fp,
-                    "win_rate": round(stats[0] / stats[1] * 100, 1),
+                    "win_rate": round(stats[0] / stats[1] * 100, 1) if stats[1] > 0 else 0.0,
                     "wins": stats[0],
                     "total": stats[1],
                 }
@@ -339,7 +357,7 @@ class TradeDNA:
             patterns = [
                 {
                     "fingerprint": fp,
-                    "win_rate": round(stats[0] / stats[1] * 100, 1),
+                    "win_rate": round(stats[0] / stats[1] * 100, 1) if stats[1] > 0 else 0.0,
                     "wins": stats[0],
                     "total": stats[1],
                 }
@@ -361,11 +379,15 @@ class TradeDNA:
         Returns:
             Anzahl geladener Trades.
         """
+        if not closed_trades:
+            return 0
         count = 0
         for trade in closed_trades:
+            if not isinstance(trade, dict):
+                continue
             regime = trade.get("regime", "bull")
-            confidence = trade.get("confidence", 0.5)
-            news_score = trade.get("news_score", 0.0)
+            confidence = float(trade.get("confidence", 0.5) or 0.5)
+            news_score = float(trade.get("news_score", 0.0) or 0.0)
             won = trade.get("pnl", 0) > 0
 
             # Rekonstruiere vereinfachte Scan-Daten aus Trade-Metadaten
@@ -393,10 +415,11 @@ class TradeDNA:
             total_trades = sum(s[1] for s in self._pattern_stats.values())
             wr_values = [s[0] / s[1] for s in self._pattern_stats.values() if s[1] > 0]
             avg_wr = float(np.mean(wr_values)) if wr_values else 0.5
+            history_size = len(self._history)
         return {
             "total_patterns": total_patterns,
             "total_trades": total_trades,
-            "history_size": len(self._history),
+            "history_size": history_size,
             "avg_win_rate": round(float(avg_wr) * 100, 1),
             "top_patterns": self.top_patterns(3),
             "worst_patterns": self.worst_patterns(3),

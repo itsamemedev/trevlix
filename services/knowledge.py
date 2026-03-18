@@ -27,7 +27,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-log = logging.getLogger("NEXUS")
+log = logging.getLogger("trevlix.knowledge")
 
 # Optionale LLM-Anbindung
 try:
@@ -203,11 +203,15 @@ class KnowledgeBase:
                     rows = c.fetchall()
             result = []
             for r in rows:
+                try:
+                    val = json.loads(r.get("value_json", "null")) if r.get("value_json") else None
+                except (json.JSONDecodeError, TypeError):
+                    val = None
                 d = {
-                    "key": r["key_name"],
-                    "value": json.loads(r["value_json"]) if r["value_json"] else None,
-                    "confidence": r["confidence"],
-                    "source": r["source"],
+                    "key": r.get("key_name", ""),
+                    "value": val,
+                    "confidence": r.get("confidence", 0.5),
+                    "source": r.get("source", "unknown"),
                     "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
                 }
                 result.append(d)

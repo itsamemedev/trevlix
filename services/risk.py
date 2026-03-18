@@ -152,6 +152,11 @@ class RiskManager:
             h.append(price)
             if len(h) > 100:
                 self._price_history[symbol] = h[-100:]
+            # Unbegrenztes Symbol-Wachstum verhindern
+            if len(self._price_history) > 200:
+                oldest_sym = next(iter(self._price_history))
+                if oldest_sym != symbol:
+                    del self._price_history[oldest_sym]
 
     def circuit_status(self) -> dict:
         with self._lock:
@@ -359,7 +364,7 @@ class AdvancedRiskMetrics:
             if len(self._vol_history) < 5:
                 return self._ewma_vol
             prices = np.array(self._vol_history[-30:])
-            returns = np.diff(np.log(prices + 1e-9))
+            returns = np.diff(np.log(np.maximum(prices, 1e-9)))
             if len(returns) > 0:
                 r2 = float(returns[-1] ** 2)
                 variance = self._lambda * self._ewma_vol**2 + (1 - self._lambda) * r2

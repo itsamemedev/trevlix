@@ -89,7 +89,7 @@ def _make_session(retries: int = 2, backoff: float = 0.3) -> requests.Session:
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("https://", adapter)
     session.mount("http://", adapter)
-    session.headers.update({"User-Agent": "TREVLIX/1.2 market-data-client"})
+    session.headers.update({"User-Agent": "TREVLIX/1.4 market-data-client"})
     return session
 
 
@@ -333,9 +333,17 @@ class OnChainFetcher:
 
             vol_chg = 0.0
             raw_vol = md.get("total_volume")
-            total_vol = raw_vol.get("usd", 0) if isinstance(raw_vol, dict) else (raw_vol or 0)
+            total_vol = (
+                float(raw_vol.get("usd", 0) or 0)
+                if isinstance(raw_vol, dict)
+                else float(raw_vol or 0)
+            )
             raw_cap = md.get("market_cap")
-            market_cap = raw_cap.get("usd", 0) if isinstance(raw_cap, dict) else (raw_cap or 0)
+            market_cap = (
+                float(raw_cap.get("usd", 0) or 0)
+                if isinstance(raw_cap, dict)
+                else float(raw_cap or 0)
+            )
             if total_vol and market_cap:
                 vol_ratio = total_vol / max(market_cap, 1)
                 vol_chg = (vol_ratio - 0.05) * 10

@@ -16,7 +16,7 @@ Verwendung (nach vollständiger Migration):
 
 import logging
 
-log = logging.getLogger("NEXUS.websocket")
+log = logging.getLogger("trevlix.websocket")
 
 
 def register_handlers(

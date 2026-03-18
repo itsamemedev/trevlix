@@ -63,7 +63,9 @@ class ExchangeManager:
             return None
         try:
             cls_name = EXCHANGE_MAP.get(exchange_name, exchange_name)
-            ex_cls = getattr(ccxt, cls_name)
+            ex_cls = getattr(ccxt, cls_name, None)
+            if ex_cls is None:
+                raise ValueError(f"Exchange class '{cls_name}' not found in ccxt")
             return ex_cls(
                 {
                     "apiKey": api_key,
@@ -198,8 +200,16 @@ class ExchangeManager:
             try:
                 bal = inst.fetch_balance()
                 result[name] = {
-                    "total": {k: v for k, v in (bal.get("total") or {}).items() if v and v > 0},
-                    "free": {k: v for k, v in (bal.get("free") or {}).items() if v and v > 0},
+                    "total": {
+                        k: float(v)
+                        for k, v in (bal.get("total") or {}).items()
+                        if isinstance(v, (int, float)) and v > 0
+                    },
+                    "free": {
+                        k: float(v)
+                        for k, v in (bal.get("free") or {}).items()
+                        if isinstance(v, (int, float)) and v > 0
+                    },
                 }
             except Exception as e:
                 result[name] = {"error": str(e)}

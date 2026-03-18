@@ -207,7 +207,7 @@ class SmartExitEngine:
                 new_tp = extended_tp
                 log.debug(f"SmartExit adapt {symbol}: TP {current_tp:.4f} → {extended_tp:.4f}")
 
-        if new_sl or new_tp:
+        if new_sl is not None or new_tp is not None:
             with self._lock:
                 self._adjustments[symbol] = {
                     "regime": regime,
@@ -268,8 +268,8 @@ class SmartExitEngine:
             "config": {
                 "atr_sl_mult": self._config.get("smart_exit_atr_sl_mult", 1.5),
                 "reward_ratio": self._config.get("smart_exit_reward_ratio", 2.0),
-                "min_sl_pct": self._config.get("smart_exit_min_sl_pct", 1.0),
-                "max_sl_pct": self._config.get("smart_exit_max_sl_pct", 8.0),
+                "min_sl_pct": self._config.get("smart_exit_min_sl_pct", 0.01) * 100,
+                "max_sl_pct": self._config.get("smart_exit_max_sl_pct", 0.08) * 100,
                 "squeeze_threshold": self._config.get("smart_exit_squeeze_threshold", 0.03),
             },
             "last_adjustments": adj_copy,

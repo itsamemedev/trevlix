@@ -54,7 +54,7 @@ except ImportError:
     ML_AVAILABLE = False
     print("⚠️  scikit-learn fehlt! pip install scikit-learn")
 
-log = logging.getLogger("AIEngine")
+log = logging.getLogger("trevlix.ai_engine")
 
 # ═══════════════════════════════════════════════════════════════
 # FEATURE-NAMEN (muss mit extract_features übereinstimmen)
@@ -325,8 +325,9 @@ class AIEngine:
                 f"Klassen: {sum(y)} Gewinner / {n - sum(y)} Verlierer"
             )
 
-            # Scaler neu fitten
-            X_scaled = self.scaler.fit_transform(X)
+            # Neuen Scaler erstellen (atomic swap – Thread-Safety)
+            new_scaler = StandardScaler()
+            X_scaled = new_scaler.fit_transform(X)
 
             # Random Forest – robust, schnell, interpretierbar
             rf = RandomForestClassifier(
@@ -346,14 +347,19 @@ class AIEngine:
             n_pos = int(np.sum(y))
             n_neg = n - n_pos
             if n >= 40 and n_pos >= 5 and n_neg >= 5:
-                self.model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
+                new_model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
             else:
-                self.model = rf
+                new_model = rf
 
-            self.model.fit(X_scaled, y)
+            new_model.fit(X_scaled, y)
 
-            # Genauigkeit messen
-            self.accuracy = float(self.model.score(X_scaled, y))
+            # Atomarer Swap unter Lock
+            with self._lock:
+                self.scaler = new_scaler
+                self.model = new_model
+
+            # Genauigkeit messen (auf lokalen Referenzen arbeiten)
+            self.accuracy = float(new_model.score(X_scaled, y))
             if n >= 30:
                 base_rf = RandomForestClassifier(
                     n_estimators=100,
@@ -455,8 +461,6 @@ class AIEngine:
                 return 0.5
             win_prob = float(proba[win_idx])
 
-            with self._lock:
-                self.predictions_made += 1
             return win_prob
         except Exception as e:
             log.debug(f"Vorhersage-Fehler: {e}")

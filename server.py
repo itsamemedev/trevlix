@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.2.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.4.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -628,8 +628,8 @@ def close_db_connection(exc: BaseException | None = None) -> None:
     if conn is not None:
         try:
             conn.close()
-        except Exception:
-            pass
+        except Exception as e:
+            log.debug(f"close_db_connection: {e}")
 
 
 # validate_config importiert aus services.utils
@@ -670,6 +670,8 @@ class MySQLManager:
         conn.close() gibt sie automatisch zurück in den Pool.
         Alle bestehenden conn.close()-Aufrufe funktionieren korrekt ohne Änderung.
         """
+        if not MYSQL_AVAILABLE:
+            raise ConnectionError("PyMySQL nicht installiert – pip install PyMySQL")
         if self._pool is not None:
             return self._pool.acquire()
         return pymysql.connect(
@@ -1626,12 +1628,12 @@ class MySQLManager:
                         (symbol,exchange_buy,price_buy,exchange_sell,price_sell,spread_pct,executed,profit)
                         VALUES(%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
-                            arb["symbol"],
-                            arb["exchange_buy"],
-                            arb["price_buy"],
-                            arb["exchange_sell"],
-                            arb["price_sell"],
-                            arb["spread_pct"],
+                            arb.get("symbol", "UNKNOWN"),
+                            arb.get("exchange_buy", ""),
+                            arb.get("price_buy", 0),
+                            arb.get("exchange_sell", ""),
+                            arb.get("price_sell", 0),
+                            arb.get("spread_pct", 0),
                             arb.get("executed", 0),
                             arb.get("profit", 0),
                         ),
@@ -1683,7 +1685,7 @@ class MySQLManager:
 
     def backup(self) -> str | None:
         try:
-            bdir = CONFIG["backup_dir"]
+            bdir = CONFIG.get("backup_dir", "backups")
             os.makedirs(bdir, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M")
             path = os.path.join(bdir, f"trevlix_backup_{ts}.zip")
@@ -1908,15 +1910,18 @@ def _record_login_attempt(ip: str):
 def _audit(action: str, detail: str = "", user_id: int = 0):
     """[Verbesserung #8] Audit-Log Hilfsfunktion."""
     try:
-        ip = request.remote_addr if request else "system"
+        try:
+            ip = request.remote_addr or "unknown"
+        except RuntimeError:
+            ip = "system"
         with db._get_conn() as conn:
             with conn.cursor() as c:
                 c.execute(
                     "INSERT INTO audit_log (user_id,action,detail,ip) VALUES(%s,%s,%s,%s)",
-                    (user_id, action[:80], detail[:500], ip),
+                    (user_id, str(action)[:80], str(detail)[:500], str(ip)[:45]),
                 )
-    except Exception:
-        pass
+    except Exception as e:
+        log.debug(f"_audit: {e}")
 
 
 @app.before_request
@@ -1953,10 +1958,15 @@ def _before_request_hooks():
         if not auth.startswith("Bearer ") and session.get("user_id"):
             # Ausnahme für Socket.io und statische Assets
             if not request.path.startswith("/socket.io"):
-                token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
+                try:
+                    token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
+                except Exception:
+                    token = None
                 if request.content_type and "application/json" not in request.content_type:
                     expected = session.get("_csrf_token")
-                    if expected and token != expected:
+                    if expected and (
+                        not token or not hmac.compare_digest(str(token), str(expected))
+                    ):
                         _audit("csrf_violation", request.path, session.get("user_id", 0))
                         from flask import abort
 
@@ -1989,10 +1999,10 @@ def _safe_int(val: Any, default: int) -> int:
 
 
 def _safe_float(val: Any, default: float) -> float:
-    """Sicherer float()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
+    """Sicherer float()-Cast für Request-Parameter. Gibt default bei ungültigen/Inf/NaN Werten zurück."""
     try:
         result = float(val)
-        if result != result:  # NaN check
+        if not math.isfinite(result):  # NaN + Inf check
             return default
         return result
     except (ValueError, TypeError):
@@ -2458,7 +2468,7 @@ class GeneticOptimizer:
             population[0] = {
                 "sl": CONFIG["stop_loss_pct"],
                 "tp": CONFIG["take_profit_pct"],
-                "vote": CONFIG["min_vote_score"],
+                "vote": CONFIG.get("min_vote_score", 0.3),
                 "rsi_buy": 35,
                 "rsi_sell": 65,
                 "ema_fast": 8,
@@ -2608,8 +2618,8 @@ class RLAgent:
             self.total_reward += reward
             if self.episodes >= CONFIG.get("rl_min_episodes", 100):
                 self.is_trained = True
-        self._replay.append({"state": state, "action": action, "reward": reward})
-        self._replay = self._replay[-1000:]
+            self._replay.append({"state": state, "action": action, "reward": reward})
+            self._replay = self._replay[-1000:]
 
     def on_trade_close(self, entry_scan: dict, pnl: float):
         """Lernt aus abgeschlossenem Trade."""
@@ -2887,7 +2897,8 @@ class AIEngine:
         """
         if state is None:
             return False
-        trades = state.closed_trades
+        with state._lock:
+            trades = list(state.closed_trades)
         if len(trades) < 40:
             return False
         try:
@@ -3564,7 +3575,7 @@ class AIEngine:
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
         """[26] Erweitert mit Conformal Prediction Intervals."""
         if not self.is_trained or not CONFIG.get("ai_enabled"):
-            return conf >= CONFIG["min_vote_score"], conf, "Vote"
+            return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
         try:
             X_s = self.scaler.transform(features.reshape(1, -1))
             prob = self._predict(X_s, features)
@@ -3730,7 +3741,7 @@ class AIEngine:
             "params": {
                 "sl": round(CONFIG["stop_loss_pct"] * 100, 2),
                 "tp": round(CONFIG["take_profit_pct"] * 100, 2),
-                "vote": round(CONFIG["min_vote_score"] * 100, 1),
+                "vote": round(CONFIG.get("min_vote_score", 0.3) * 100, 1),
             },
         }
 
@@ -3802,7 +3813,11 @@ class BacktestEngine:
                         inv = cap * 0.2
                         cap -= inv
                         pos = {"entry": price, "inv": inv}
-                equity.append({"time": str(row.name)[:16], "value": round(cap, 2)})
+                # Equity inkl. offener Position (korrekte Drawdown-Berechnung)
+                equity_val = cap
+                if pos is not None and pos.get("entry") and pos["entry"] > 0:
+                    equity_val += pos["inv"] * (1 + (price - pos["entry"]) / pos["entry"])
+                equity.append({"time": str(row.name)[:16], "value": round(equity_val, 2)})
             if not trades:
                 return {
                     "error": "Keine Trades – Threshold zu hoch",
@@ -3832,8 +3847,12 @@ class BacktestEngine:
                 "profit_factor": round(pf, 2),
                 "max_drawdown": round(dd, 2),
                 "start_balance": start,
-                "final_balance": round(cap, 2),
-                "return_pct": round((cap - start) / start * 100, 2) if start > 0 else 0.0,
+                "final_balance": round(equity[-1]["value"] if equity else cap, 2),
+                "return_pct": round(
+                    ((equity[-1]["value"] if equity else cap) - start) / start * 100, 2
+                )
+                if start > 0
+                else 0.0,
                 "equity_curve": equity[:: max(1, len(equity) // 100)],
                 "trades": trades[-30:],
             }
@@ -3871,7 +3890,8 @@ class MultiTimeframeFilter:
             d = c2.diff()
             g = d.clip(lower=0).ewm(span=14, adjust=False).mean()
             ls = (-d.clip(upper=0)).ewm(span=14, adjust=False).mean()
-            rsi = float((100 - (100 / (1 + g / ls.replace(0, np.nan)))).iloc[-1])
+            rsi_raw = (100 - (100 / (1 + g / ls.replace(0, 1e-10)))).iloc[-1]
+            rsi = float(rsi_raw) if not np.isnan(rsi_raw) else 50.0
             score = (1 if price > e21 else 0) + (1 if e21 > e50 else 0) + (1 if rsi > 45 else 0)
             trend = 1 if score >= 2 else (-1 if score == 0 else 0)
             with self._lock:
@@ -3997,17 +4017,24 @@ class PriceAlertManager:
     def check(self, prices: dict[str, float]):
         alerts = db.get_active_alerts()
         for a in alerts:
-            sym = a["symbol"]
+            sym = a.get("symbol", "")
+            if not sym:
+                continue
             price = prices.get(sym)
             if price is None:
                 continue
-            target = float(a["target_price"])
-            direction = a["direction"]
+            raw_target = a.get("target_price")
+            if raw_target is None:
+                continue
+            target = _safe_float(raw_target, None)
+            if target is None:
+                continue
+            direction = a.get("direction", "above")
             triggered = (direction == "above" and price >= target) or (
                 direction == "below" and price <= target
             )
             if triggered:
-                db.trigger_alert(a["id"])
+                db.trigger_alert(a.get("id", 0))
                 discord.price_alert(sym, price, target, direction)
                 emit_event(
                     "price_alert",
@@ -4098,8 +4125,8 @@ class BotState:
         self._lock = threading.RLock()  # [Verbesserung #4] Thread-Safety
         self.running = False
         self.paused = False
-        self.balance = CONFIG["paper_balance"]
-        self.initial_balance = CONFIG["paper_balance"]
+        self.balance = CONFIG.get("paper_balance", 10000)
+        self.initial_balance = CONFIG.get("paper_balance", 10000)
         self.positions: dict[str, dict] = {}
         self.short_positions: dict[str, dict] = {}
         self.prices: dict[str, float] = {}
@@ -4122,20 +4149,22 @@ class BotState:
         try:
             t = self.db.load_trades(limit=500)
             if t:
-                self.closed_trades = t
+                with self._lock:
+                    self.closed_trades = t
                 log.info(f"📂 {len(t)} Trades aus DB")
         except Exception as e:
             log.debug(f"Load trades: {e}")
 
     def portfolio_value(self):
+        with self._lock:
+            pos_copy = dict(self.positions)
+            short_copy = dict(self.short_positions)
         longs = sum(
-            p["qty"] * self.prices.get(s, p.get("entry", 0))
-            for s, p in self.positions.items()
+            p.get("qty", 0) * self.prices.get(s, p.get("entry", 0))
+            for s, p in pos_copy.items()
             if p.get("qty", 0) > 0
         )
-        shorts = sum(
-            _safe_float(p.get("pnl_unrealized"), 0.0) for p in self.short_positions.values()
-        )
+        shorts = sum(_safe_float(p.get("pnl_unrealized"), 0.0) for p in short_copy.values())
         return self.balance + longs + shorts
 
     def return_pct(self):
@@ -4145,28 +4174,34 @@ class BotState:
         return (pv - self.initial_balance) / self.initial_balance * 100
 
     def win_rate(self):
-        if not self.closed_trades:
+        with self._lock:
+            trades_copy = list(self.closed_trades)
+        if not trades_copy:
             return 0.0
-        return (
-            sum(1 for t in self.closed_trades if t.get("pnl", 0) > 0)
-            / len(self.closed_trades)
-            * 100
-        )
+        return sum(1 for t in trades_copy if t.get("pnl", 0) > 0) / len(trades_copy) * 100
 
     def total_pnl(self):
-        return sum(t.get("pnl", 0) for t in self.closed_trades)
+        with self._lock:
+            trades_copy = list(self.closed_trades)
+        return sum(t.get("pnl", 0) for t in trades_copy)
 
     def avg_win(self):
-        w = [t.get("pnl", 0) for t in self.closed_trades if t.get("pnl", 0) > 0]
+        with self._lock:
+            trades_copy = list(self.closed_trades)
+        w = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) > 0]
         return sum(w) / len(w) if w else 0
 
     def avg_loss(self):
-        losses = [t.get("pnl", 0) for t in self.closed_trades if t.get("pnl", 0) <= 0]
+        with self._lock:
+            trades_copy = list(self.closed_trades)
+        losses = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) <= 0]
         return sum(losses) / len(losses) if losses else 0
 
     def profit_factor(self):
-        g = sum(t.get("pnl", 0) for t in self.closed_trades if t.get("pnl", 0) > 0)
-        total_loss = abs(sum(t.get("pnl", 0) for t in self.closed_trades if t.get("pnl", 0) < 0))
+        with self._lock:
+            trades_copy = list(self.closed_trades)
+        g = sum(t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) > 0)
+        total_loss = abs(sum(t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) < 0))
         return round(g / total_loss, 2) if total_loss > 0 else 0.0
 
     def add_activity(self, icon, title, detail, atype="info"):
@@ -4188,18 +4223,27 @@ class BotState:
         pv = self.portfolio_value()
         risk.update_peak(pv)
         today = datetime.now().strftime("%Y-%m-%d")
-        trades_today = [t for t in self.closed_trades if str(t.get("closed", ""))[:10] == today]
+        with self._lock:
+            closed_copy = list(self.closed_trades)
+            pos_copy = dict(self.positions)
+            short_copy = dict(self.short_positions)
+        trades_today = [t for t in closed_copy if str(t.get("closed", ""))[:10] == today]
         daily_pnl = sum(t.get("pnl", 0) for t in trades_today)
 
         open_pos = [
             {
                 "symbol": sym,
-                "entry": round(p["entry"], 4),
-                "current": round(self.prices.get(sym, p["entry"]), 4),
-                "qty": round(p["qty"], 4),
-                "pnl": round((self.prices.get(sym, p["entry"]) - p["entry"]) * p["qty"], 2),
+                "entry": round(p.get("entry", 0), 4),
+                "current": round(self.prices.get(sym, p.get("entry", 0)), 4),
+                "qty": round(p.get("qty", 0), 4),
+                "pnl": round(
+                    (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0)) * p.get("qty", 0),
+                    2,
+                ),
                 "pnl_pct": round(
-                    (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100
+                    (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0))
+                    / p.get("entry", 1)
+                    * 100
                     if p.get("entry", 0) > 0
                     else 0.0,
                     2,
@@ -4219,16 +4263,18 @@ class BotState:
                 "dna_boost": p.get("dna_boost", 1.0),
                 "exit_regime": p.get("exit_regime", ""),
             }
-            for sym, p in self.positions.items()
+            for sym, p in pos_copy.items()
         ] + [
             {
                 "symbol": sym,
-                "entry": round(p["entry"], 4),
-                "current": round(self.prices.get(sym, p["entry"]), 4),
-                "qty": round(p["qty"], 4),
+                "entry": round(p.get("entry", 0), 4),
+                "current": round(self.prices.get(sym, p.get("entry", 0)), 4),
+                "qty": round(p.get("qty", 0), 4),
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
-                    (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100
+                    (p.get("entry", 0) - self.prices.get(sym, p.get("entry", 0)))
+                    / p.get("entry", 1)
+                    * 100
                     if p.get("entry", 0) > 0
                     else 0.0,
                     2,
@@ -4238,15 +4284,15 @@ class BotState:
                 "invested": round(p.get("invested", 0), 2),
                 "trade_type": "short",
             }
-            for sym, p in self.short_positions.items()
+            for sym, p in short_copy.items()
         ]
 
         # Goal ETA
         goal = CONFIG.get("portfolio_goal", 0)
         goal_pct = min(100, round(pv / goal * 100, 1)) if goal > 0 else 0
         goal_eta = "—"
-        if goal > 0 and len(self.closed_trades) > 5:
-            recent_g = sum(t.get("pnl", 0) for t in self.closed_trades[-20:])
+        if goal > 0 and len(closed_copy) > 5:
+            recent_g = sum(t.get("pnl", 0) for t in closed_copy[-20:])
             daily_est = recent_g / 20 if recent_g > 0 else 0
             if daily_est > 0:
                 remaining = goal - pv
@@ -4259,9 +4305,7 @@ class BotState:
                     )
 
         returns = [
-            t.get("pnl", 0) / t.get("invested", 1)
-            for t in self.closed_trades
-            if t.get("invested", 0) > 0
+            t.get("pnl", 0) / t.get("invested", 1) for t in closed_copy if t.get("invested", 0) > 0
         ]
 
         return {
@@ -4276,9 +4320,9 @@ class BotState:
             "return_pct": round(self.return_pct(), 2),
             "total_pnl": round(self.total_pnl(), 2),
             "win_rate": round(self.win_rate(), 1),
-            "total_trades": len(self.closed_trades),
+            "total_trades": len(closed_copy),
             "open_trades": len(open_pos),
-            "max_trades": CONFIG["max_open_trades"],
+            "max_trades": CONFIG.get("max_open_trades", 10),
             "avg_win": round(self.avg_win(), 2),
             "avg_loss": round(self.avg_loss(), 2),
             "profit_factor": self.profit_factor(),
@@ -4309,7 +4353,7 @@ class BotState:
                     "dca_level": t.get("dca_level", 0),
                     "news_score": t.get("news_score", 0),
                 }
-                for t in self.closed_trades[:100]
+                for t in closed_copy[:100]
             ],
             "portfolio_history": list(self.portfolio_history)[-200:],
             "signal_log": list(self.signal_log)[:30],
@@ -4324,8 +4368,8 @@ class BotState:
             "anomaly": anomaly.to_dict(),
             "genetic": genetic.to_dict(),
             "rl": rl_agent.to_dict(),
-            "exchange": CONFIG["exchange"],
-            "paper_trading": CONFIG["paper_trading"],
+            "exchange": CONFIG.get("exchange", "cryptocom"),
+            "paper_trading": CONFIG.get("paper_trading", True),
             "goal": {"target": goal, "current": pv, "pct": goal_pct, "eta": goal_eta},
             "price_alerts": db.get_all_alerts()[:20],
             "use_shorts": CONFIG.get("use_shorts", False),
@@ -4342,7 +4386,7 @@ class BotState:
 # ═══════════════════════════════════════════════════════════════════════════════
 class ArbitrageScanner:
     def __init__(self):
-        self._exchanges: dict[str, any] = {}
+        self._exchanges: dict[str, Any] = {}
         self._lock = threading.Lock()
         self.found_today = 0
         self.last_scan = None
@@ -4352,7 +4396,10 @@ class ArbitrageScanner:
             if name not in self._exchanges:
                 try:
                     keys = CONFIG.get("arb_api_keys", {}).get(name, {})
-                    ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
+                    ex_cls_name = EXCHANGE_MAP.get(name, name)
+                    ex_cls = getattr(ccxt, ex_cls_name, None)
+                    if not ex_cls:
+                        return None
                     self._exchanges[name] = ex_cls(
                         {
                             "apiKey": keys.get("key", ""),
@@ -4383,10 +4430,10 @@ class ArbitrageScanner:
                 try:
                     tickers = ex.fetch_tickers(symbols[:30])
                     prices_by_ex[ex_name] = {
-                        s: float(t["last"] or 0) for s, t in tickers.items() if t.get("last")
+                        s: float(t.get("last") or 0) for s, t in tickers.items() if t.get("last")
                     }
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug(f"ARB ticker fetch {ex_name}: {exc}")
 
             ex_names = list(prices_by_ex.keys())
             for sym in symbols[:30]:
@@ -4395,8 +4442,8 @@ class ArbitrageScanner:
                 }
                 if len(sym_prices) < 2:
                     continue
-                buy_ex = min(sym_prices, key=sym_prices.get)
-                sell_ex = max(sym_prices, key=sym_prices.get)
+                buy_ex = min(sym_prices, key=lambda k: sym_prices.get(k, 0))
+                sell_ex = max(sym_prices, key=lambda k: sym_prices.get(k, 0))
                 p_buy = sym_prices[buy_ex]
                 p_sell = sym_prices[sell_ex]
                 if p_buy <= 0:
@@ -4449,7 +4496,10 @@ class ShortEngine:
                 return self._ex
             try:
                 name = CONFIG.get("short_exchange", "bybit")
-                ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
+                ex_cls_name = EXCHANGE_MAP.get(name, name)
+                ex_cls = getattr(ccxt, ex_cls_name, None)
+                if not ex_cls:
+                    return None
                 sk = CONFIG.get("short_api_key", "")
                 ss = CONFIG.get("short_secret", "")
                 raw_key = sk.reveal() if hasattr(sk, "reveal") else sk
@@ -4472,12 +4522,12 @@ class ShortEngine:
             return False
         if not price or price <= 0:
             return False
-        sl = price * (1 + CONFIG["stop_loss_pct"])
-        tp = price * (1 - CONFIG["take_profit_pct"])
+        sl = price * (1 + CONFIG.get("stop_loss_pct", 0.03))
+        tp = price * (1 - CONFIG.get("take_profit_pct", 0.05))
         try:
             ex = self._get_ex()
             qty = invest / price
-            if not CONFIG["paper_trading"] and ex:
+            if not CONFIG.get("paper_trading", True) and ex:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
             state.short_positions[symbol] = {
@@ -4503,45 +4553,45 @@ class ShortEngine:
         pos = state.short_positions.get(symbol)
         if not pos:
             return
-        price = state.prices.get(symbol, pos["entry"])
+        price = state.prices.get(symbol, pos.get("entry", 0))
         short_entry = pos.get("entry") or price
-        pnl_pct = (short_entry - price) / short_entry * 100 if short_entry else 0.0
+        pnl_pct = (short_entry - price) / short_entry * 100 if short_entry > 0 else 0.0
+        leverage = CONFIG.get("short_leverage", 2)
         fee = (
-            pos["invested"]
-            * get_exchange_fee_rate(CONFIG.get("short_exchange"))
-            * CONFIG.get("short_leverage", 2)
+            pos.get("invested", 0) * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
         )  # [#29]
-        pnl = pos["invested"] * (pnl_pct / 100) - fee
-        if CONFIG["paper_trading"]:
-            state.balance += pos["invested"] + pnl
+        pnl = pos.get("invested", 0) * (pnl_pct / 100) * leverage - fee
+        if CONFIG.get("paper_trading", True):
+            state.balance += pos.get("invested", 0) + pnl
         else:
             try:
                 ex = self._get_ex()
                 if ex:
-                    ex.create_market_buy_order(symbol, pos["qty"])
+                    ex.create_market_buy_order(symbol, pos.get("qty", 0))
             except Exception as e:
                 log.error(f"Short close: {e}")
         trade = {
             "symbol": symbol,
-            "entry": round(pos["entry"], 4),
+            "entry": round(pos.get("entry", 0), 4),
             "exit": round(price, 4),
-            "qty": round(pos["qty"], 6),
+            "qty": round(pos.get("qty", 0), 6),
             "pnl": round(pnl, 2),
             "pnl_pct": round(pnl_pct, 2),
             "reason": reason,
             "confidence": 0,
             "ai_score": 0,
             "win_prob": 0,
-            "invested": round(pos["invested"], 2),
-            "opened": pos["opened"],
+            "invested": round(pos.get("invested", 0), 2),
+            "opened": pos.get("opened", ""),
             "closed": datetime.now().isoformat(),
             "exchange": CONFIG.get("short_exchange", "bybit"),
             "regime": "bear",
             "trade_type": "short",
         }
-        state.closed_trades.insert(0, trade)
+        with state._lock:
+            state.closed_trades.insert(0, trade)
+            state.short_positions.pop(symbol, None)
         db.save_trade(trade)
-        state.short_positions.pop(symbol, None)
         won = pnl >= 0
         risk.record_result(won)
         icon = "✅" if won else "❌"
@@ -4559,13 +4609,13 @@ class ShortEngine:
             pos = state.short_positions.get(sym)
             if not pos:
                 continue
-            price = state.prices.get(sym, pos["entry"])
+            price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
             pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
-            pos["pnl_unrealized"] = pos["invested"] * (pnl_pct / 100)
-            if price >= pos["sl"]:
+            pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
+            if price >= pos.get("sl", float("inf")):
                 self.close_short(sym, "SL 🛑")
-            elif price <= pos["tp"]:
+            elif price <= pos.get("tp", 0):
                 self.close_short(sym, "TP 🎯")
 
 
@@ -4615,7 +4665,10 @@ def emit_event(event, data):
 # ═══════════════════════════════════════════════════════════════════════════════
 def create_exchange():
     name = CONFIG.get("exchange", "cryptocom")
-    ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
+    ex_cls_name = EXCHANGE_MAP.get(name, name)
+    ex_cls = getattr(ccxt, ex_cls_name, None)
+    if ex_cls is None:
+        raise ValueError(f"Exchange '{ex_cls_name}' nicht in ccxt verfügbar")
     # API-Keys entschlüsseln und als plain str sicherstellen (kein SecretStr)
     _raw_key = CONFIG.get("api_key", "")
     _raw_sec = CONFIG.get("secret", "")
@@ -4665,7 +4718,9 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
             ex = ex_cls({"enableRateLimit": True})
             fee_info = ex.fetch_trading_fee(symbol)
             rate = float(
-                fee_info.get("taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"]))
+                fee_info.get(
+                    "taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG.get("fee_rate", 0.001))
+                )
             )
             with _fee_cache_lock:
                 _fee_cache[ex_id] = {"rate": rate, "ts": now}
@@ -4673,7 +4728,7 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
     except Exception:
         pass
     # Fallback: Exchange-Default oder CONFIG
-    rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG["fee_rate"])
+    rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG.get("fee_rate", 0.001))
     with _fee_cache_lock:
         _fee_cache[ex_id] = {"rate": rate, "ts": now}
     return rate
@@ -4685,19 +4740,20 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
 def fetch_markets(ex) -> list[str]:
     try:
         markets = ex.load_markets()
-        quote = CONFIG["quote_currency"]
-        bl = set(CONFIG["blacklist"])
+        quote = CONFIG.get("quote_currency", "USDT")
+        bl = set(CONFIG.get("blacklist", []))
         syms = [
             s
             for s, m in markets.items()
             if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
         ]
-        if CONFIG["use_vol_filter"]:
+        if CONFIG.get("use_vol_filter"):
             tickers = ex.fetch_tickers(syms[:150])
             syms = [
                 s
                 for s in syms
-                if tickers.get(s, {}).get("quoteVolume", 0) >= CONFIG["min_volume_usdt"]
+                if tickers.get(s, {}).get("quoteVolume", 0)
+                >= CONFIG.get("min_volume_usdt", 1_000_000)
             ]
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
@@ -4710,7 +4766,9 @@ def fetch_markets(ex) -> list[str]:
 
 def scan_symbol(ex, symbol) -> dict | None:
     try:
-        ohlcv = ex.fetch_ohlcv(symbol, CONFIG["timeframe"], limit=CONFIG["candle_limit"])
+        ohlcv = ex.fetch_ohlcv(
+            symbol, CONFIG.get("timeframe", "1h"), limit=CONFIG.get("candle_limit", 250)
+        )
         if not ohlcv or len(ohlcv) < 100:
             return None
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -4748,25 +4806,25 @@ def scan_symbol(ex, symbol) -> dict | None:
         if CONFIG.get("use_adaptive_weights"):
             regime_str = "bull" if regime and regime.is_bull else "bear"
             aw = adaptive_weights.get_weights(regime=regime_str)
-            for nm in aw:
-                if nm in ai_engine.weights:
-                    ai_engine.weights[nm] = aw[nm]
+            with ai_engine._lock:
+                for nm in aw:
+                    if nm in ai_engine.weights:
+                        ai_engine.weights[nm] = aw[nm]
 
-        signal, conf = ai_engine.weighted_vote(votes, CONFIG["min_vote_score"])
+        signal, conf = ai_engine.weighted_vote(votes, CONFIG.get("min_vote_score", 0.3))
         ob_ratio, ob_desc = ob.get(ex, symbol)
         mtf_ok, mtf_desc = mtf.is_confirmed(ex, symbol, signal)
         sentiment = sentiment_f.get_score(symbol)
         news_score, news_hl, news_cnt = news_fetcher.get_score(symbol)
         onchain_score, onchain_detail = onchain.get_score(symbol)
 
-        # Anomalie-Check
+        # Anomalie-Check (NaN-Werte filtern, da sie den IsolationForest vergiften)
         price_chg = float(row.get("returns", 0) * 100)
-        anomaly.add_observation(
-            price_chg,
-            float(row.get("vol_ratio", 1)),
-            float(row.get("rsi", 50)),
-            float(row.get("atr_pct", 1)),
-        )
+        _vol_r = float(row.get("vol_ratio", 1))
+        _rsi_v = float(row.get("rsi", 50))
+        _atr_v = float(row.get("atr_pct", 1))
+        if not any(math.isnan(v) for v in (price_chg, _vol_r, _rsi_v, _atr_v)):
+            anomaly.add_observation(price_chg, _vol_r, _rsi_v, _atr_v)
 
         return {
             "symbol": symbol,
@@ -4826,7 +4884,7 @@ def open_position(ex, scan: dict):
     if not price or price <= 0:
         log.warning(f"open_position: Ungültiger Preis {price} für {symbol}")
         return
-    if len(state.positions) >= CONFIG["max_open_trades"]:
+    if len(state.positions) >= CONFIG.get("max_open_trades", 5):
         return
     if symbol in state.positions:
         return
@@ -4932,7 +4990,7 @@ def open_position(ex, scan: dict):
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
         if CONFIG["ai_use_kelly"]
-        else state.balance * CONFIG["risk_per_trade"] * fg_boost
+        else state.balance * CONFIG.get("risk_per_trade", 0.015) * fg_boost
     )
     invest *= dna_mult
     invest = min(invest, state.balance * CONFIG["max_position_pct"])
@@ -4947,11 +5005,12 @@ def open_position(ex, scan: dict):
         local_regime = smart_exits.classify_regime_from_scan(scan)
         sl, tp = smart_exits.compute(price, scan, local_regime)
     else:
-        sl = price * (1 - CONFIG["stop_loss_pct"])
-        tp = price * (1 + CONFIG["take_profit_pct"])
+        sl = price * (1 - CONFIG.get("stop_loss_pct", 0.025))
+        tp = price * (1 + CONFIG.get("take_profit_pct", 0.06))
 
-    if CONFIG["paper_trading"]:
-        state.balance -= invest
+    if CONFIG.get("paper_trading", True):
+        with state._lock:
+            state.balance -= invest
     else:
         try:
             ex.create_market_buy_order(symbol, qty)
@@ -4986,7 +5045,8 @@ def open_position(ex, scan: dict):
     # Smart Exits: Regime in Position speichern
     if smart_exits.enabled:
         pos_data["exit_regime"] = smart_exits.classify_regime_from_scan(scan)
-    state.positions[symbol] = pos_data
+    with state._lock:
+        state.positions[symbol] = pos_data
     dna_info = f" | DNA:{dna_mult:.2f}x" if dna_result and dna_mult != 1.0 else ""
     smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
@@ -5029,11 +5089,11 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     pos = state.positions.get(symbol)
     if not pos:
         return
-    price = state.prices.get(symbol, pos["entry"])
+    price = state.prices.get(symbol, pos.get("entry", 0))
     is_partial = partial_ratio < 1.0
 
-    close_qty = pos["qty"] * partial_ratio
-    close_invest = pos["invested"] * partial_ratio
+    close_qty = pos.get("qty", 0) * partial_ratio
+    close_invest = pos.get("invested", 0) * partial_ratio
     entry = pos.get("entry") or price
     if entry <= 0:
         entry = price
@@ -5041,7 +5101,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
-    if CONFIG["paper_trading"]:
+    if CONFIG.get("paper_trading", True):
         state.balance += close_invest + pnl
     else:
         try:
@@ -5077,7 +5137,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         if CONFIG.get("use_trade_dna") and pos.get("dna_fingerprint"):
             dna_entry = {
                 "hash": pos.get("dna_hash", ""),
-                "fingerprint": pos["dna_fingerprint"],
+                "fingerprint": pos.get("dna_fingerprint", {}),
                 "dimensions": {},  # Nicht gespeichert, aber Fingerprint reicht
                 "symbol": symbol,
                 "timestamp": pos.get("opened", ""),
@@ -5094,8 +5154,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             reason,
             dca_level=pos.get("dca_level", 0),
         )
-        state.closed_trades.insert(0, trade)
-        state.positions.pop(symbol, None)
+        with state._lock:
+            state.closed_trades.insert(0, trade)
+            state.positions.pop(symbol, None)
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
@@ -5163,7 +5224,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level=0, partial_sold=0):
     trade = {
         "symbol": symbol,
-        "entry": round(pos["entry"], 4),
+        "entry": round(pos.get("entry", 0), 4),
         "exit": round(price, 4),
         "qty": round(qty, 6),
         "pnl": round(pnl, 2),
@@ -5175,7 +5236,7 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
         "invested": round(invest, 2),
         "opened": pos.get("opened", ""),
         "closed": datetime.now().isoformat(),
-        "exchange": CONFIG["exchange"],
+        "exchange": CONFIG.get("exchange", "cryptocom"),
         "regime": pos.get("regime", "bull"),
         "trade_type": "long",
         "partial_sold": partial_sold,
@@ -5185,7 +5246,7 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
     }
     # Trade DNA Fingerprint anhängen (für historische Analyse)
     if pos.get("dna_hash"):
-        trade["dna_hash"] = pos["dna_hash"]
+        trade["dna_hash"] = pos.get("dna_hash", "")
         trade["dna_boost"] = pos.get("dna_boost", 1.0)
     # Smart Exit Regime anhängen
     if pos.get("exit_regime"):
@@ -5200,43 +5261,46 @@ def try_dca(ex, symbol):
     pos = state.positions.get(symbol)
     if not pos:
         return
-    price = state.prices.get(symbol, pos["entry"])
+    price = state.prices.get(symbol, pos.get("entry", 0))
     dca_level = pos.get("dca_level", 0)
-    if dca_level >= CONFIG["dca_max_levels"]:
+    if dca_level >= CONFIG.get("dca_max_levels", 3):
         return
-    if pos["entry"] <= 0 or price <= 0:
+    if pos.get("entry", 0) <= 0 or price <= 0:
         return
-    drop = (pos["entry"] - price) / pos["entry"]
-    threshold = CONFIG["dca_drop_pct"] * (dca_level + 1)
+    entry_price = pos.get("entry", 0)
+    drop = (entry_price - price) / entry_price if entry_price > 0 else 0.0
+    threshold = CONFIG.get("dca_drop_pct", 0.05) * (dca_level + 1)
     if drop < threshold:
         return
     # Nachkauf
-    dca_invest = pos["invested"] * CONFIG["dca_size_mult"]
+    dca_invest = pos.get("invested", 0) * CONFIG.get("dca_size_mult", 1.0)
     dca_invest = min(dca_invest, state.balance * 0.15)
     if dca_invest < 5:
         return
     fee = dca_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     add_qty = (dca_invest - fee) / price
     # Neuer Durchschnittspreis
-    total_qty = pos["qty"] + add_qty
+    total_qty = pos.get("qty", 0) + add_qty
     if total_qty <= 0:
         return
-    total_cost = pos["invested"] + dca_invest - fee
+    total_cost = pos.get("invested", 0) + dca_invest - fee
     new_entry = total_cost / total_qty
-    if CONFIG["paper_trading"]:
-        state.balance -= dca_invest
+    if CONFIG.get("paper_trading", True):
+        with state._lock:
+            state.balance -= dca_invest
     else:
         try:
             ex.create_market_buy_order(symbol, add_qty)
         except Exception as e:
             log.error(f"DCA {symbol}: {e}")
             return
-    pos["qty"] = total_qty
-    pos["invested"] = total_cost
-    pos["entry"] = new_entry
-    pos["dca_level"] = dca_level + 1
-    pos["sl"] = new_entry * (1 - CONFIG["stop_loss_pct"])
-    pos["tp"] = new_entry * (1 + CONFIG["take_profit_pct"])
+    with state._lock:
+        pos["qty"] = total_qty
+        pos["invested"] = total_cost
+        pos["entry"] = new_entry
+        pos["dca_level"] = dca_level + 1
+        pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
+        pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
     log.info(
         f"📉 DCA Lvl{dca_level + 1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}"
     )
@@ -5262,7 +5326,10 @@ def manage_positions(ex):
             state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
-            continue
+            # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
+            price = state.prices.get(symbol)
+            if price is None:
+                continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
         pos_entry = pos.get("entry") or price
@@ -5273,7 +5340,7 @@ def manage_positions(ex):
             and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
         ):
             be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
-            if be_sl > pos["sl"]:  # Nur nach oben verschieben
+            if be_sl > pos.get("sl", 0):  # Nur nach oben verschieben
                 pos["sl"] = be_sl
                 pos["break_even_set"] = True
                 log.info(
@@ -5289,16 +5356,16 @@ def manage_positions(ex):
                 atr_val = abs(price - pos_entry) * 0.5  # Grobe Schätzung
             exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
             new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
-            if new_smart_sl and new_smart_sl > pos["sl"]:
+            if new_smart_sl and new_smart_sl > pos.get("sl", 0):
                 pos["sl"] = new_smart_sl
-            if new_smart_tp and new_smart_tp > pos["tp"]:
+            if new_smart_tp and new_smart_tp > pos.get("tp", 0):
                 pos["tp"] = new_smart_tp
 
         # Trailing Stop
-        if CONFIG["trailing_stop"] and price > pos.get("highest", price):
+        if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
             pos["highest"] = price
-            new_sl = price * (1 - CONFIG["trailing_pct"])
-            if new_sl > pos["sl"]:  # Trailing Stop nur nach oben verschieben
+            new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
+            if new_sl > pos.get("sl", 0):  # Trailing Stop nur nach oben verschieben
                 pos["sl"] = new_sl
 
         # Partial Take-Profit – pro Level separat prüfen, nicht nur Level 0
@@ -5310,7 +5377,9 @@ def manage_positions(ex):
             if levels_done < len(levels):
                 level = levels[levels_done]
                 pct = level.get("pct", 0)
-                sell_ratio = level.get("sell_ratio", 0.25)
+                sell_ratio = min(
+                    level.get("sell_ratio", 0.25), 0.99
+                )  # Clamp: nie Full-Close via Partial TP
                 if pos_entry and pct > 0 and (price - pos_entry) / pos_entry >= pct:
                     close_position(
                         ex,
@@ -5328,9 +5397,9 @@ def manage_positions(ex):
         pos = state.positions.get(symbol)
         if not pos:
             continue
-        if price <= pos["sl"]:
+        if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
-        elif price >= pos["tp"]:
+        elif price >= pos.get("tp", float("inf")):
             close_position(ex, symbol, "Take-Profit 🎯")
         else:
             # DCA prüfen
@@ -5403,7 +5472,7 @@ def bot_loop():
             state.iteration += 1
             state.last_scan = datetime.now().strftime("%H:%M:%S")
             state.next_scan = (
-                datetime.now() + timedelta(seconds=CONFIG["scan_interval"])
+                datetime.now() + timedelta(seconds=CONFIG.get("scan_interval", 60))
             ).strftime("%H:%M:%S")
 
             risk.reset_daily(state.balance)
@@ -5435,7 +5504,7 @@ def bot_loop():
             if grid_engine.grids:
                 bal_ref = [state.balance]
                 for sym, grid in list(grid_engine.grids.items()):
-                    if not grid["active"]:
+                    if not grid.get("active", False):
                         continue
                     price = state.prices.get(sym)
                     if price is not None:
@@ -5450,7 +5519,7 @@ def bot_loop():
             # Anomalie global prüfen
             if anomaly.is_anomaly:
                 emit_event("update", state.snapshot())
-                time.sleep(CONFIG["scan_interval"])
+                time.sleep(CONFIG.get("scan_interval", 60))
                 continue
 
             # Märkte laden
@@ -5479,7 +5548,7 @@ def bot_loop():
                     and not funding_tracker.is_short_too_expensive(sym)
                 ]
                 if short_candidates:
-                    with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as short_pool:
+                    with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as short_pool:
                         short_futures = {
                             short_pool.submit(scan_symbol, ex, sym): sym for sym in short_candidates
                         }
@@ -5489,20 +5558,21 @@ def bot_loop():
                                 if (
                                     scan
                                     and scan["signal"] == -1
-                                    and scan.get("confidence", 0) >= CONFIG["min_vote_score"]
+                                    and scan.get("confidence", 0)
+                                    >= CONFIG.get("min_vote_score", 0.3)
                                 ):
-                                    invest = state.balance * CONFIG["risk_per_trade"]
+                                    invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
                                     short_engine.open_short(scan["symbol"], invest, scan["price"])
                             except Exception as se:
                                 log.debug(f"Short-Scan: {se}")
 
             # Long-Signale
             if (
-                len(state.positions) < CONFIG["max_open_trades"]
+                len(state.positions) < CONFIG.get("max_open_trades", 5)
                 and not risk.daily_loss_exceeded(state.balance)
                 and not risk.circuit_breaker_active()
             ):
-                with ThreadPoolExecutor(max_workers=CONFIG["max_workers"]) as pool:
+                with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
                     futures = {
                         pool.submit(scan_symbol, ex, s): s
                         for s in state.markets
@@ -5555,7 +5625,7 @@ def bot_loop():
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
             time.sleep(10)
-        time.sleep(CONFIG["scan_interval"])
+        time.sleep(CONFIG.get("scan_interval", 60))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5607,7 +5677,10 @@ def api_backtest():
             _safe_int(data.get("candles", 500), 500),
             _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
             _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
-            _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
+            _safe_float(
+                data.get("vote", CONFIG.get("min_vote_score", 0.3)),
+                CONFIG.get("min_vote_score", 0.3),
+            ),
         )
         return jsonify(result)
     except Exception as e:
@@ -5992,7 +6065,7 @@ def api_arb():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)})
+        return jsonify({"error": str(e)}), 500
 
 
 # Admin Routes
@@ -6034,6 +6107,11 @@ def api_admin_config():
             "short_api_key",
             "short_secret",
             "cryptopanic_token",
+            "encryption_key",
+            "secret_key",
+            "telegram_token",
+            "extra_exchanges",
+            "funding_rate_cache",
         )
     }
     return jsonify(safe)
@@ -6070,6 +6148,16 @@ def api_admin_config_update():
         if k in _PROTECTED_KEYS:
             continue  # Sensible Werte nur über .env änderbar
         if k in CONFIG:
+            original = CONFIG[k]
+            if isinstance(original, (list, dict)):
+                if not isinstance(v, type(original)):
+                    continue  # Typ-Mismatch bei komplexen Werten ablehnen
+            elif isinstance(original, bool):
+                v = bool(v)
+            elif isinstance(original, int):
+                v = _safe_int(v, original)
+            elif isinstance(original, float):
+                v = _safe_float(v, original)
             CONFIG[k] = v
             updated.append(k)
     _audit(
@@ -6094,6 +6182,8 @@ def api_heatmap_legacy():
 def api_ohlcv(symbol):
     sym = symbol.replace("-", "/")
     tf = request.args.get("tf", "1h")
+    if tf not in {"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}:
+        tf = "1h"
     limit = min(_safe_int(request.args.get("limit", 200), 200), 500)
     try:
         ex = create_exchange()
@@ -6116,7 +6206,8 @@ def api_tax_report():
         rows = report.get("gains", []) + report.get("losses", [])
         buf = io.StringIO()
         if rows:
-            w = csv.DictWriter(buf, fieldnames=rows[0].keys())
+            all_keys = list(dict.fromkeys(k for r in rows for k in r.keys()))
+            w = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore")
             w.writeheader()
             w.writerows(rows)
         return Response(
@@ -6167,7 +6258,7 @@ def api_backup_download():
 @dashboard_auth
 def api_backup_verify():
     """[Verbesserung #9] Prüft das neueste Backup auf SHA-256-Integrität."""
-    bdir = CONFIG["backup_dir"]
+    bdir = CONFIG.get("backup_dir", "backups")
     try:
         # Neuestes Backup finden
         files = [os.path.join(bdir, f) for f in os.listdir(bdir) if f.endswith((".zip", ".enc"))]
@@ -6272,6 +6363,7 @@ def api_revoke_token(token_id):
 
 # ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
 @app.route("/metrics")
+@api_auth_required
 def prometheus_metrics():
     """Exportiert Bot-Metriken im Prometheus-Format."""
     lines = []
@@ -6393,6 +6485,9 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     if not _ws_rate_check("update_config", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6482,18 +6577,24 @@ def on_update_config(data):
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
     raw_key = data.get("api_key", "")
     raw_secret = data.get("secret", "")
     CONFIG["api_key"] = encrypt_value(raw_key) if raw_key else ""
     CONFIG["secret"] = encrypt_value(raw_secret) if raw_secret else ""
-    if data.get("exchange"):
+    if data.get("exchange") and data["exchange"] in EXCHANGE_MAP:
         CONFIG["exchange"] = data["exchange"]
     emit("status", {"msg": f"🔑 Keys gespeichert ({CONFIG['exchange']})", "type": "success"})
 
 
 @socketio.on("update_discord")
 def on_update_discord(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     if data.get("webhook"):
         CONFIG["discord_webhook"] = data["webhook"]
     if "on_buy" in data:
@@ -6513,18 +6614,27 @@ def on_update_discord(data):
 
 @socketio.on("force_train")
 def on_force_train():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "type": "info"})
     threading.Thread(target=ai_engine._train, daemon=True).start()
 
 
 @socketio.on("force_optimize")
 def on_force_optimize():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🔬 Optimierung läuft...", "type": "info"})
     threading.Thread(target=ai_engine._optimize, daemon=True).start()
 
 
 @socketio.on("force_genetic")
 def on_force_genetic():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
     threading.Thread(
         target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
@@ -6533,6 +6643,9 @@ def on_force_genetic():
 
 @socketio.on("reset_ai")
 def on_reset_ai():
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     with ai_engine._lock:
         ai_engine.X_raw = []
         ai_engine.y_raw = []
@@ -6580,7 +6693,10 @@ def on_run_backtest(data):
                 _safe_int(data.get("candles", 500), 500),
                 _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
                 _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
-                _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
+                _safe_float(
+                    data.get("vote", CONFIG.get("min_vote_score", 0.3)),
+                    CONFIG.get("min_vote_score", 0.3),
+                ),
             )
             socketio.emit("backtest_result", result)
         except Exception as e:
@@ -6696,7 +6812,10 @@ def fetch_aggregated_balance() -> dict:
     for ex_id in CONFIG.get("arb_exchanges", []):
         try:
             keys = CONFIG.get("arb_api_keys", {}).get(ex_id, {})
-            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id))
+            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
+            if ex_cls is None:
+                result["errors"].append(f"{ex_id}: Exchange class not found")
+                continue
             exchanges_to_check[ex_id] = ex_cls(
                 {
                     "apiKey": keys.get("apiKey", ""),
@@ -6710,7 +6829,11 @@ def fetch_aggregated_balance() -> dict:
     for ex_id, ex in exchanges_to_check.items():
         try:
             bal = ex.fetch_balance()
-            totals = {k: float(v) for k, v in bal.get("total", {}).items() if float(v or 0) > 0}
+            totals = {}
+            for k, v in bal.get("total", {}).items():
+                fv = _safe_float(v, 0.0)
+                if fv > 0:
+                    totals[k] = fv
             result["by_exchange"][ex_id] = totals
             # USDT direkt + Schätzung via last price für andere Coins
             usdt = totals.get(CONFIG.get("quote_currency", "USDT"), 0.0)
@@ -6936,6 +7059,7 @@ def api_grid_list():
 
 
 @app.route("/api/v1/grid", methods=["POST"])
+@api_auth_required
 @admin_required
 def api_grid_create():
     d = request.json or {}
@@ -6952,6 +7076,7 @@ def api_grid_create():
 
 
 @app.route("/api/v1/grid/<symbol>", methods=["DELETE"])
+@api_auth_required
 @admin_required
 def api_grid_delete(symbol):
     grid_engine.delete_grid(symbol)
@@ -7118,6 +7243,9 @@ def on_save_exchange_keys(data):
 
 @socketio.on("close_exchange_position")
 def on_close_exchange_position(data):
+    if session.get("user_role", "user") != "admin":
+        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+        return
     ex_name = data.get("exchange", "")
     symbol = data.get("symbol", "")
     if not ex_name or not symbol:
@@ -7146,9 +7274,8 @@ def on_close_exchange_position(data):
                 "enableRateLimit": True,
             }
         )
-        amount = sum(
-            p.get("amount", 0) for p in state.positions.values() if p.get("symbol") == symbol
-        )
+        pos = state.positions.get(symbol)
+        amount = pos.get("qty", 0) if pos else 0
         if amount > 0:
             ex.create_market_sell_order(symbol, amount)
         emit(
@@ -7192,7 +7319,7 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
             (
                 datetime.now()
                 - datetime.fromisoformat(
-                    str(trades[0].get("opened", datetime.now().isoformat()))[:19]
+                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
                 )
             ).days,
         )
@@ -7201,14 +7328,14 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
         trades_per_day = 1.0
 
     results = []
-    np.random.seed(42)
+    rng = np.random.default_rng(42)
     for _ in range(n_simulations):
         val = start_value
         path = [val]
         for _day in range(n_days):
-            n_trades_today = max(0, int(np.random.poisson(trades_per_day)))
+            n_trades_today = max(0, int(rng.poisson(trades_per_day)))
             for _ in range(n_trades_today):
-                pnl_pct = np.random.normal(mu, sigma)
+                pnl_pct = rng.normal(mu, sigma)
                 invested = val * CONFIG.get("risk_per_trade", 0.015)
                 val = max(0, val + invested * pnl_pct)
             path.append(round(val, 2))
@@ -7267,8 +7394,6 @@ class TelegramNotifier:
     def __init__(self):
         self.token = CONFIG.get("telegram_token", "")
         self.chat_id = CONFIG.get("telegram_chat_id", "")
-        self._queue: list[str] = []
-        self._lock = threading.Lock()
 
     @property
     def enabled(self) -> bool:
@@ -7290,7 +7415,7 @@ class TelegramNotifier:
             )
             return resp.status_code == 200
         except Exception as e:
-            log.debug(f"[TG] {e}")
+            log.warning(f"[TG] Senden fehlgeschlagen: {e}")
             return False
 
     def trade_open(
@@ -7336,6 +7461,7 @@ telegram = TelegramNotifier()
 
 
 @app.route("/api/v1/telegram/test", methods=["POST"])
+@api_auth_required
 @admin_required
 def api_telegram_test():
     ok = telegram.test()
@@ -7343,6 +7469,7 @@ def api_telegram_test():
 
 
 @app.route("/api/v1/telegram/configure", methods=["POST"])
+@api_auth_required
 @admin_required
 def api_telegram_configure():
     d = request.json or {}
@@ -7363,20 +7490,39 @@ def api_telegram_configure():
 
 
 def _set_env_var(key: str, value: str):
-    """Setzt/aktualisiert eine Variable in der .env Datei."""
+    """Setzt/aktualisiert eine Variable in der .env Datei (atomarer Schreibvorgang)."""
     import re as _re
+    import tempfile
 
     env_path = ".env"
     if not os.path.exists(env_path):
         return
+    # Validate key to prevent regex injection
+    if not _re.match(r"^[A-Z_][A-Z0-9_]*$", key):
+        log.warning(f"_set_env_var: Ungültiger Key '{key}'")
+        return
+    # Newline-Injection verhindern
+    value = value.replace("\n", "").replace("\r", "")
     with open(env_path) as f:
         txt = f.read()
-    if _re.search(f"^{key}=", txt, _re.M):
-        txt = _re.sub(f"^{key}=.*$", f"{key}={value}", txt, flags=_re.M)
+    escaped_key = _re.escape(key)
+    if _re.search(f"^{escaped_key}=", txt, _re.M):
+        txt = _re.sub(f"^{escaped_key}=.*$", f"{key}={value}", txt, flags=_re.M)
     else:
         txt += f"\n{key}={value}"
-    with open(env_path, "w") as f:
-        f.write(txt)
+    # Atomic write: write to temp file, then rename
+    env_dir = os.path.dirname(os.path.abspath(env_path))
+    fd, tmp_path = tempfile.mkstemp(dir=env_dir, prefix=".env.tmp.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(txt)
+        os.replace(tmp_path, env_path)
+    except Exception:
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 # SymbolCooldown importiert aus services.risk
@@ -7392,6 +7538,7 @@ def api_cooldowns():
 
 
 @app.route("/api/v1/cooldowns/<symbol>", methods=["DELETE"])
+@api_auth_required
 @admin_required
 def api_cooldown_clear(symbol):
     with symbol_cooldown._lock:
@@ -7400,6 +7547,7 @@ def api_cooldown_clear(symbol):
 
 
 @app.route("/api/v1/admin/ip-whitelist", methods=["GET"])
+@api_auth_required
 @admin_required
 def api_ip_whitelist_get():
     return jsonify(
@@ -7408,6 +7556,7 @@ def api_ip_whitelist_get():
 
 
 @app.route("/api/v1/admin/ip-whitelist", methods=["POST"])
+@api_auth_required
 @admin_required
 def api_ip_whitelist_set():
     ips = (request.json or {}).get("ips", [])
@@ -7418,6 +7567,7 @@ def api_ip_whitelist_set():
 
 
 @app.route("/api/v1/config/news-filter", methods=["GET", "POST"])
+@api_auth_required
 @admin_required
 def api_news_filter():
     if request.method == "POST":
@@ -7474,6 +7624,7 @@ def api_funding_rates():
 
 
 @app.route("/api/v1/funding-rates/config", methods=["POST"])
+@api_auth_required
 @admin_required
 def api_funding_config():
     d = request.json or {}
@@ -7589,7 +7740,9 @@ def api_market_regime():
     if not prices:
         return jsonify({"regime": "UNKNOWN"})
     regime_result = adv_risk.classify_regime(
-        list(state.portfolio_history[-50:]) if state.portfolio_history else prices
+        [e["value"] for e in list(state.portfolio_history)[-50:]]
+        if state.portfolio_history
+        else prices
     )
     return jsonify(
         {
@@ -7654,13 +7807,17 @@ def _graceful_shutdown(signum, _frame):
     log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
     state.running = False
     # DB-Pool schließen
-    if db._pool:
-        db._pool.close_all()
+    try:
+        if db is not None and db._pool is not None:
+            db._pool.close_all()
+    except Exception as e:
+        log.debug(f"Pool-Close bei Shutdown: {e}")
     # [Verbesserung #24] Data Retention bei Shutdown
     try:
-        db.cleanup_old_data()
-    except Exception:
-        pass
+        if db is not None:
+            db.cleanup_old_data()
+    except Exception as e:
+        log.debug(f"Cleanup bei Shutdown: {e}")
     log.info("Shutdown abgeschlossen.")
     raise SystemExit(0)
 
@@ -7699,7 +7856,7 @@ try:
     app.register_blueprint(_dashboard_bp, name="dashboard_bp")
     log.info("✅ Blueprints registriert: auth, dashboard")
 except Exception as _bp_err:
-    log.warning(f"Blueprint-Registrierung übersprungen: {_bp_err}")
+    log.error(f"Blueprint-Registrierung fehlgeschlagen: {_bp_err}", exc_info=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
