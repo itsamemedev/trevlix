@@ -168,7 +168,9 @@ class CryptoPanicClient:
 
         for p in posts[:10]:
             title = p.get("title", "").lower()
-            votes = p.get("votes", {})
+            votes = p.get("votes") or {}
+            if not isinstance(votes, dict):
+                votes = {}
             pos = votes.get("positive", 0) or 0
             neg = votes.get("negative", 0) or 0
 
@@ -181,7 +183,7 @@ class CryptoPanicClient:
 
             scores.append(float(np.clip(vote_score + kw_score, -1, 1)))
 
-        if scores:
+        if scores and posts:
             score = float(np.clip(np.mean(scores), -1, 1))
             headline = posts[0].get("title", "—")[:200]
         else:

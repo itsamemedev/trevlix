@@ -125,7 +125,7 @@ class ExchangeManager:
         result: list[tuple[str, Any]] = []
 
         for ex_data in exchanges:
-            name = ex_data["exchange"]
+            name = ex_data.get("exchange", "unknown")
             cache_key = f"{user_id}:{name}"
 
             with self._lock:

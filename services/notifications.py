@@ -80,6 +80,7 @@ class DiscordNotifier:
                 embed["fields"] = [
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
                     for f in fields
+                    if len(f) >= 2
                 ]
             httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:
@@ -165,7 +166,7 @@ class DiscordNotifier:
             return
         s = report.get("summary", {})
         self.send(
-            f"📊 {self._bot_full.split()[0]} Tages-Report – {report.get('date', '')}",
+            f"📊 {(self._bot_full.split() or ['TREVLIX'])[0]} Tages-Report – {report.get('date', '')}",
             f"```\nPnL heute:  {s.get('daily_pnl', 0):+.2f} USDT\n"
             f"Trades:     {s.get('trades_today', 0)}\n"
             f"Win-Rate:   {s.get('win_rate', 0):.1f}%\n"
@@ -184,7 +185,7 @@ class DiscordNotifier:
         if not self._cfg("discord_on_error"):
             return
         self.send(
-            f"🔴 {self._bot_full.split()[0]} FEHLER",
+            f"🔴 {(self._bot_full.split() or ['TREVLIX'])[0]} FEHLER",
             f"```\n{msg[:500]}\n```",
             "error",
         )
@@ -328,7 +329,9 @@ class TelegramNotifier:
         if not self._config.get("telegram_on_error"):
             return
         short = msg[:400] if len(msg) > 400 else msg
-        self.send(f"🔴 <b>{self._bot_full.split()[0]} FEHLER</b>\n<code>{short}</code>")
+        self.send(
+            f"🔴 <b>{(self._bot_full.split() or ['TREVLIX'])[0]} FEHLER</b>\n<code>{short}</code>"
+        )
 
     def circuit_breaker(self, losses: int, pause_min: int) -> None:
         self.send(

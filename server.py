@@ -53,6 +53,7 @@
 
 import csv
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -252,7 +253,10 @@ if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
     app.config["SESSION_COOKIE_SECURE"] = True
 
 # ── [Verbesserung #1] Session-Timeout ─────────────────────────────────────────
-_SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
+try:
+    _SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
+except (ValueError, TypeError):
+    _SESSION_TIMEOUT_MIN = 30
 
 # ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
@@ -538,7 +542,7 @@ CONFIG: dict[str, Any] = {
     "allow_registration": os.getenv("ALLOW_REGISTRATION", "false").lower() in ("true", "1", "yes"),
     # MySQL
     "mysql_host": os.getenv("MYSQL_HOST", "localhost"),
-    "mysql_port": int(os.getenv("MYSQL_PORT", "3306")),
+    "mysql_port": (lambda v: int(v) if v.isdigit() else 3306)(os.getenv("MYSQL_PORT", "3306")),
     "mysql_user": os.getenv("MYSQL_USER", "root"),
     "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
     "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
@@ -1029,9 +1033,9 @@ class MySQLManager:
                 with conn.cursor() as c:
                     c.execute("SELECT features,label,regime FROM ai_training")
                     rows = c.fetchall()
-            X = [np.array(json.loads(r["features"]), dtype=np.float32) for r in rows]
-            y = [r["label"] for r in rows]
-            regimes = [r["regime"] for r in rows]
+            X = [np.array(json.loads(r.get("features", "[]")), dtype=np.float32) for r in rows]
+            y = [r.get("label", 0) for r in rows]
+            regimes = [r.get("regime", "range") for r in rows]
             return X, y, regimes
         except Exception as e:
             log.error(f"load_ai_samples: {e}")
@@ -1147,7 +1151,8 @@ class MySQLManager:
                 # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
             # Fallback: SHA-256 (Legacy-Hashes oder bcrypt nicht installiert)
-            return hashlib.sha256(pw).hexdigest() == stored_hash
+            log.warning("verify_password: SHA-256 Fallback – bitte bcrypt-Hash verwenden")
+            return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
         except Exception:
             return False
 
@@ -1387,7 +1392,8 @@ class MySQLManager:
             return None
         try:
             payload = pyjwt.decode(token, CONFIG["jwt_secret"], algorithms=["HS256"])
-            return int(payload["sub"])
+            sub = payload.get("sub")
+            return int(sub) if sub is not None else None
         except Exception:
             return None
 
@@ -1535,7 +1541,9 @@ class MySQLManager:
                         (symbol,),
                     )
                     row = c.fetchone()
-            return float(row["score"]) if row else None
+            if row and row.get("score") is not None:
+                return float(row["score"])
+            return None
         except Exception as e:
             log.error(f"get_sentiment({symbol!r}): {e}")
             return None
@@ -1569,6 +1577,8 @@ class MySQLManager:
             return None
 
     def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
+        whale_score = whale_score if whale_score is not None else 0.0
+        flow_score = flow_score if flow_score is not None else 0.0
         net = (whale_score + flow_score) / 2
         try:
             with self._get_conn() as conn:
@@ -1695,7 +1705,7 @@ class MySQLManager:
                     try:
                         with self._get_conn() as conn:
                             with conn.cursor() as c:
-                                c.execute(f"SELECT * FROM {table} LIMIT 100000")
+                                c.execute(f"SELECT * FROM `{table}` LIMIT 100000")
                                 rows = c.fetchall()
                         data = []
                         for r in rows:
@@ -1882,7 +1892,11 @@ def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
 
 def _record_login_attempt(ip: str):
     with _login_attempts_lock:
-        _login_attempts.setdefault(ip, []).append(time.time())
+        attempts = _login_attempts.setdefault(ip, [])
+        attempts.append(time.time())
+        # Timestamps pro IP auf letzte 50 begrenzen (Memory-Leak-Schutz)
+        if len(attempts) > 50:
+            _login_attempts[ip] = attempts[-50:]
         # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
         if len(_login_attempts) > 10_000:
             cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
@@ -1970,6 +1984,17 @@ def _safe_int(val: Any, default: int) -> int:
     """Sicherer int()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
     try:
         return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val: Any, default: float) -> float:
+    """Sicherer float()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
+    try:
+        result = float(val)
+        if result != result:  # NaN check
+            return default
+        return result
     except (ValueError, TypeError):
         return default
 
@@ -2068,6 +2093,7 @@ class DiscordNotifier:
                 embed["fields"] = [
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
                     for f in fields
+                    if len(f) >= 2
                 ]
             httpx.post(url, json={"embeds": [embed]}, timeout=5)
         except Exception as e:
@@ -2390,8 +2416,8 @@ class GeneticOptimizer:
         losses = 0
         total_pnl = 0.0
         for t in trades[-100:]:
-            pp = t.get("pnl_pct", 0) / 100
-            inv = t.get("invested", 100) or 100
+            pp = (t.get("pnl_pct") or 0) / 100
+            inv = t.get("invested") or 100
             if pp <= -genome["sl"]:
                 total_pnl -= genome["sl"] * inv
                 losses += 1
@@ -2866,8 +2892,11 @@ class AIEngine:
             return False
         try:
             half = len(trades) // 2
+            second_half = len(trades) - half
+            if half == 0 or second_half == 0:
+                return False
             old_wr = sum(1 for t in trades[:half] if t.get("pnl", 0) > 0) / half
-            new_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / (len(trades) - half)
+            new_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / second_half
             drift_threshold = 0.20  # >20% Abweichung = Drift
             drift = abs(new_wr - old_wr) > drift_threshold
             if drift:
@@ -3140,8 +3169,9 @@ class AIEngine:
                 fi = rf_raw.feature_importances_
                 n_s = len(STRATEGY_NAMES)
                 sfi = fi[:n_s]
-                if sfi.mean() > 0:
-                    norm = sfi / sfi.mean()
+                mean_sfi = sfi.mean() if len(sfi) > 0 else 0
+                if mean_sfi > 0 and len(sfi) >= len(STRATEGY_NAMES):
+                    norm = sfi / mean_sfi
                     with self._lock:
                         for i, nm in enumerate(STRATEGY_NAMES):
                             self.weights[nm] = float(np.clip(norm[i], 0.15, 3.5))
@@ -3419,7 +3449,7 @@ class AIEngine:
                 else:
                     dom_idx = int(np.argmax(freqs[1:]) + 1)
                 dom_freq = float(dom_idx / max(len(pa), 1))
-                spec_energy = float(np.sum(freqs**2) / len(freqs))
+                spec_energy = float(np.sum(freqs**2) / max(len(freqs), 1))
                 # Spectral entropy
                 p_spec = freqs**2 / total_energy
                 p_spec = p_spec[p_spec > 0]
@@ -3559,9 +3589,9 @@ class AIEngine:
 
     def _predict(self, X_s, features_raw) -> float:
         # Regime-Modell wählen
-        is_bull = bool(regime.is_bull) if regime else True
+        is_bull = bool(regime.is_bull) if regime and hasattr(regime, "is_bull") else True
         regime_p = 0.5
-        if is_bull and self.bull_model is not None:
+        if is_bull and self.bull_model is not None and self.bull_scaler is not None:
             try:
                 Xbs = self.bull_scaler.transform(features_raw.reshape(1, -1))
                 pr = self.bull_model.predict_proba(Xbs)[0]
@@ -3569,7 +3599,7 @@ class AIEngine:
                 regime_p = float(pr[cls.index(1)]) if 1 in cls else 0.5
             except Exception:
                 regime_p = 0.5
-        elif not is_bull and self.bear_model is not None:
+        elif not is_bull and self.bear_model is not None and self.bear_scaler is not None:
             try:
                 Xbrs = self.bear_scaler.transform(features_raw.reshape(1, -1))
                 pr = self.bear_model.predict_proba(Xbrs)[0]
@@ -3720,8 +3750,8 @@ class BacktestEngine:
             df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
             df.set_index("timestamp", inplace=True)
             df = compute_indicators(df)
-            if df is None:
-                return {"error": "Indikator-Fehler"}
+            if df is None or len(df) < 3:
+                return {"error": "Nicht genug Daten für Backtest (min. 3 Kerzen)"}
             cap = 10000.0
             start = cap
             pos = None
@@ -3731,7 +3761,7 @@ class BacktestEngine:
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = float(row["close"])
-                if pos and pos.get("entry"):
+                if pos and pos.get("entry") and pos["entry"] > 0:
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:
                         pnl = pos["inv"] * pp
@@ -3763,7 +3793,11 @@ class BacktestEngine:
                         pos = None
                 if pos is None:
                     votes = {nm: fn(row, prev) for nm, fn in STRATEGIES}
-                    conf = sum(1 for v in votes.values() if v == 1) / len(STRATEGIES)
+                    conf = (
+                        sum(1 for v in votes.values() if v == 1) / len(STRATEGIES)
+                        if STRATEGIES
+                        else 0.0
+                    )
                     if conf >= vote_thr:
                         inv = cap * 0.2
                         cap -= inv
@@ -3787,7 +3821,7 @@ class BacktestEngine:
             for e in equity:
                 if e["value"] > peak:
                     peak = e["value"]
-                dd = max(dd, (peak - e["value"]) / peak * 100)
+                dd = max(dd, (peak - e["value"]) / peak * 100) if peak > 0 else 0.0
             result = {
                 "symbol": symbol,
                 "timeframe": tf,
@@ -3799,7 +3833,7 @@ class BacktestEngine:
                 "max_drawdown": round(dd, 2),
                 "start_balance": start,
                 "final_balance": round(cap, 2),
-                "return_pct": round((cap - start) / start * 100, 2),
+                "return_pct": round((cap - start) / start * 100, 2) if start > 0 else 0.0,
                 "equity_curve": equity[:: max(1, len(equity) // 100)],
                 "trades": trades[-30:],
             }
@@ -3855,6 +3889,8 @@ class OrderbookImbalance:
     def get(self, ex, symbol) -> tuple[float, str]:
         try:
             ob = ex.fetch_order_book(symbol, limit=20)
+            if not ob.get("bids") or not ob.get("asks"):
+                return 0.5, "Leer"
             bid_vol = sum(b[1] * b[0] for b in ob["bids"][:10])
             ask_vol = sum(a[1] * a[0] for a in ob["asks"][:10])
             total = bid_vol + ask_vol
@@ -3905,8 +3941,8 @@ class TaxReportGenerator:
         losses = []
         total_fees = 0.0
         for t in yt:
-            pnl = float(t.get("pnl", 0))
-            fee = float(t.get("invested", 0)) * CONFIG["fee_rate"] * 2
+            pnl = float(t.get("pnl") or 0)
+            fee = float(t.get("invested") or 0) * CONFIG.get("fee_rate", 0.001) * 2
             net = pnl - fee
             total_fees += fee
             entry = {
@@ -4092,8 +4128,14 @@ class BotState:
             log.debug(f"Load trades: {e}")
 
     def portfolio_value(self):
-        longs = sum(p["qty"] * self.prices.get(s, p["entry"]) for s, p in self.positions.items())
-        shorts = sum(p.get("pnl_unrealized", 0) for p in self.short_positions.values())
+        longs = sum(
+            p["qty"] * self.prices.get(s, p.get("entry", 0))
+            for s, p in self.positions.items()
+            if p.get("qty", 0) > 0
+        )
+        shorts = sum(
+            _safe_float(p.get("pnl_unrealized"), 0.0) for p in self.short_positions.values()
+        )
         return self.balance + longs + shorts
 
     def return_pct(self):
@@ -4158,7 +4200,7 @@ class BotState:
                 "pnl": round((self.prices.get(sym, p["entry"]) - p["entry"]) * p["qty"], 2),
                 "pnl_pct": round(
                     (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100
-                    if p.get("entry")
+                    if p.get("entry", 0) > 0
                     else 0.0,
                     2,
                 ),
@@ -4187,7 +4229,7 @@ class BotState:
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
                     (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100
-                    if p.get("entry")
+                    if p.get("entry", 0) > 0
                     else 0.0,
                     2,
                 ),
@@ -4207,10 +4249,14 @@ class BotState:
             recent_g = sum(t.get("pnl", 0) for t in self.closed_trades[-20:])
             daily_est = recent_g / 20 if recent_g > 0 else 0
             if daily_est > 0:
-                days = int((goal - pv) / daily_est)
-                goal_eta = (
-                    f"~{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')} ({days}d)"
-                )
+                remaining = goal - pv
+                if remaining <= 0:
+                    goal_eta = "✅ Ziel erreicht!"
+                else:
+                    days = int(remaining / daily_est)
+                    goal_eta = (
+                        f"~{(datetime.now() + timedelta(days=days)).strftime('%d.%m.%Y')} ({days}d)"
+                    )
 
         returns = [
             t.get("pnl", 0) / t.get("invested", 1)
@@ -4406,10 +4452,12 @@ class ShortEngine:
                 ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
                 sk = CONFIG.get("short_api_key", "")
                 ss = CONFIG.get("short_secret", "")
+                raw_key = sk.reveal() if hasattr(sk, "reveal") else sk
+                raw_sec = ss.reveal() if hasattr(ss, "reveal") else ss
                 self._ex = ex_cls(
                     {
-                        "apiKey": sk.reveal() if hasattr(sk, "reveal") else sk,
-                        "secret": ss.reveal() if hasattr(ss, "reveal") else ss,
+                        "apiKey": decrypt_value(raw_key) if raw_key else "",
+                        "secret": decrypt_value(raw_sec) if raw_sec else "",
                         "enableRateLimit": True,
                         "options": {"defaultType": "swap"},
                     }
@@ -4421,6 +4469,8 @@ class ShortEngine:
 
     def open_short(self, symbol: str, invest: float, price: float) -> bool:
         if not CONFIG.get("use_shorts"):
+            return False
+        if not price or price <= 0:
             return False
         sl = price * (1 + CONFIG["stop_loss_pct"])
         tp = price * (1 - CONFIG["take_profit_pct"])
@@ -4491,7 +4541,7 @@ class ShortEngine:
         }
         state.closed_trades.insert(0, trade)
         db.save_trade(trade)
-        del state.short_positions[symbol]
+        state.short_positions.pop(symbol, None)
         won = pnl >= 0
         risk.record_result(won)
         icon = "✅" if won else "❌"
@@ -4511,7 +4561,7 @@ class ShortEngine:
                 continue
             price = state.prices.get(sym, pos["entry"])
             s_entry = pos.get("entry") or price
-            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry else 0.0
+            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
             pos["pnl_unrealized"] = pos["invested"] * (pnl_pct / 100)
             if price >= pos["sl"]:
                 self.close_short(sym, "SL 🛑")
@@ -4676,7 +4726,7 @@ def scan_symbol(ex, symbol) -> dict | None:
             if df is None:
                 return None
             _ind_set(symbol, _last_ts, df)
-        if df is None:
+        if df is None or len(df) < 2:
             return None
         row = df.iloc[-1]
         prev = df.iloc[-2]
@@ -4773,6 +4823,9 @@ def scan_symbol(ex, symbol) -> dict | None:
 def open_position(ex, scan: dict):
     symbol = scan["symbol"]
     price = scan["price"]
+    if not price or price <= 0:
+        log.warning(f"open_position: Ungültiger Preis {price} für {symbol}")
+        return
     if len(state.positions) >= CONFIG["max_open_trades"]:
         return
     if symbol in state.positions:
@@ -4982,7 +5035,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     close_qty = pos["qty"] * partial_ratio
     close_invest = pos["invested"] * partial_ratio
     entry = pos.get("entry") or price
-    pnl_pct = (price - entry) / entry * 100 if entry else 0.0
+    if entry <= 0:
+        entry = price
+    pnl_pct = (price - entry) / entry * 100 if entry > 0 else 0.0
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5040,7 +5095,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             dca_level=pos.get("dca_level", 0),
         )
         state.closed_trades.insert(0, trade)
-        del state.positions[symbol]
+        state.positions.pop(symbol, None)
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
@@ -5254,16 +5309,25 @@ def manage_positions(ex):
             levels_done = pos.get("partial_tp_done", 0)
             if levels_done < len(levels):
                 level = levels[levels_done]
-                if pos_entry and (price - pos_entry) / pos_entry >= level["pct"]:
+                pct = level.get("pct", 0)
+                sell_ratio = level.get("sell_ratio", 0.25)
+                if pos_entry and pct > 0 and (price - pos_entry) / pos_entry >= pct:
                     close_position(
                         ex,
                         symbol,
-                        f"Partial-TP {level['pct'] * 100:.0f}%",
-                        partial_ratio=level["sell_ratio"],
+                        f"Partial-TP {pct * 100:.0f}%",
+                        partial_ratio=sell_ratio,
                     )
+                    # Re-fetch pos – close_position may have removed it
+                    pos = state.positions.get(symbol)
+                    if not pos:
+                        continue
                     pos["partial_tp_done"] = levels_done + 1
 
-        # SL / TP
+        # SL / TP – re-check pos in case partial TP removed it
+        pos = state.positions.get(symbol)
+        if not pos:
+            continue
         if price <= pos["sl"]:
             close_position(ex, symbol, "Stop-Loss 🛑")
         elif price >= pos["tp"]:
@@ -5294,12 +5358,17 @@ def get_heatmap_data(ex) -> list[dict]:
         result = []
         for sym, t in tickers.items():
             ns, _, _ = news_fetcher.get_score(sym)
+            change = _safe_float(t.get("percentage"), 0.0)
+            vol = _safe_float(t.get("quoteVolume"), 0.0)
+            last = _safe_float(t.get("last"), 0.0)
+            if vol < 0:
+                vol = 0.0
             result.append(
                 {
                     "symbol": sym,
-                    "change": round(float(t.get("percentage", 0) or 0), 2),
-                    "volume": round(float(t.get("quoteVolume", 0) or 0) / 1e6, 1),
-                    "price": round(float(t.get("last", 0) or 0), 4),
+                    "change": round(change, 2),
+                    "volume": round(vol / 1e6, 1),
+                    "price": round(last, 4),
                     "in_pos": sym in state.positions,
                     "news_score": round(ns, 2),
                 }
@@ -5325,7 +5394,12 @@ def bot_loop():
             continue
         try:
             if ex is None:
-                ex = create_exchange()
+                try:
+                    ex = create_exchange()
+                except Exception as exc_err:
+                    log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
+                    time.sleep(30)
+                    continue
             state.iteration += 1
             state.last_scan = datetime.now().strftime("%H:%M:%S")
             state.next_scan = (
@@ -5530,10 +5604,10 @@ def api_backtest():
             ex,
             data.get("symbol", "BTC/USDT"),
             data.get("timeframe", "1h"),
-            int(data.get("candles", 500)),
-            float(data.get("sl", CONFIG["stop_loss_pct"])),
-            float(data.get("tp", CONFIG["take_profit_pct"])),
-            float(data.get("vote", CONFIG["min_vote_score"])),
+            _safe_int(data.get("candles", 500), 500),
+            _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+            _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+            _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
         )
         return jsonify(result)
     except Exception as e:
@@ -5641,7 +5715,7 @@ def api_user_exchanges_upsert():
     ok = db.upsert_user_exchange(
         request.user_id, exchange, api_key, api_secret, enabled, is_primary
     )
-    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}")
+    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
     return jsonify({"ok": ok})
 
 
@@ -5673,7 +5747,7 @@ def api_user_update_keys():
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
-    _audit("api_keys_update", f"Exchange: {exchange}")
+    _audit("api_keys_update", f"Exchange: {exchange}", request.user_id)
     return jsonify({"ok": ok})
 
 
@@ -5938,7 +6012,7 @@ def api_admin_create_user():
         data.get("username", ""),
         data.get("password", ""),
         data.get("role", "user"),
-        float(data.get("balance", 10000)),
+        _safe_float(data.get("balance", 10000), 10000.0),
     )
     return jsonify({"ok": ok})
 
@@ -5998,7 +6072,9 @@ def api_admin_config_update():
         if k in CONFIG:
             CONFIG[k] = v
             updated.append(k)
-    _audit("config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}")
+    _audit(
+        "config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}", request.user_id
+    )
     return jsonify({"ok": True, "updated": updated})
 
 
@@ -6366,9 +6442,40 @@ def on_update_config(data):
         "use_rl",
         "use_lstm",
     }
+    # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
+    _numeric_keys = {
+        "stop_loss_pct",
+        "take_profit_pct",
+        "ai_min_confidence",
+        "max_spread_pct",
+        "risk_per_trade",
+        "news_block_score",
+        "news_boost_score",
+        "dca_drop_pct",
+        "trailing_pct",
+        "break_even_pct",
+        "partial_tp_pct",
+        "portfolio_goal",
+    }
+    _int_keys = {
+        "max_open_trades",
+        "scan_interval",
+        "circuit_breaker_losses",
+        "circuit_breaker_min",
+        "dca_max_levels",
+        "lstm_lookback",
+        "discord_report_hour",
+    }
     for k, v in data.items():
-        if k in allowed:
-            CONFIG[k] = v
+        if k not in allowed:
+            continue
+        if k in _numeric_keys:
+            v = _safe_float(v, CONFIG.get(k, 0.0))
+        elif k in _int_keys:
+            v = _safe_int(v, CONFIG.get(k, 0))
+        elif isinstance(CONFIG.get(k), bool):
+            v = bool(v)
+        CONFIG[k] = v
     emit("status", {"msg": "✅ Einstellungen gespeichert", "type": "success"})
     emit("update", state.snapshot(), broadcast=True)
 
@@ -6396,7 +6503,8 @@ def on_update_discord(data):
     if "daily_report" in data:
         CONFIG["discord_daily_report"] = bool(data["daily_report"])
     if "report_hour" in data:
-        CONFIG["discord_report_hour"] = int(data["report_hour"])
+        rh = _safe_int(data.get("report_hour", 20), 20)
+        CONFIG["discord_report_hour"] = max(0, min(23, rh))
     discord.send(
         "✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info"
     )
@@ -6469,10 +6577,10 @@ def on_run_backtest(data):
                 ex,
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
-                int(data.get("candles", 500)),
-                float(data.get("sl", CONFIG["stop_loss_pct"])),
-                float(data.get("tp", CONFIG["take_profit_pct"])),
-                float(data.get("vote", CONFIG["min_vote_score"])),
+                _safe_int(data.get("candles", 500), 500),
+                _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+                _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+                _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
             )
             socketio.emit("backtest_result", result)
         except Exception as e:
@@ -6486,7 +6594,10 @@ def on_run_backtest(data):
 def on_add_alert(data):
     uid = session.get("user_id", 1)
     db.add_alert(
-        data.get("symbol", ""), float(data.get("target", 0)), data.get("direction", "above"), uid
+        data.get("symbol", ""),
+        _safe_float(data.get("target", 0), 0.0),
+        data.get("direction", "above"),
+        uid,
     )
     emit("status", {"msg": f"🔔 Alert gesetzt für {data.get('symbol')}", "type": "success"})
     emit("update", state.snapshot(), broadcast=True)
@@ -6494,7 +6605,7 @@ def on_add_alert(data):
 
 @socketio.on("delete_price_alert")
 def on_delete_alert(data):
-    db.delete_alert(int(data.get("id", 0)))
+    db.delete_alert(_safe_int(data.get("id", 0), 0))
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -6555,7 +6666,7 @@ def on_admin_create_user(data):
         data.get("username", ""),
         data.get("password", ""),
         data.get("role", "user"),
-        float(data.get("balance", 10000)),
+        _safe_float(data.get("balance", 10000), 10000.0),
     )
     emit(
         "status",
@@ -6737,6 +6848,10 @@ class GridTradingEngine:
 
     def update(self, symbol: str, current_price: float, balance_ref: list) -> list:
         """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen."""
+        with self._lock:
+            return self._update_locked(symbol, current_price, balance_ref)
+
+    def _update_locked(self, symbol: str, current_price: float, balance_ref: list) -> list:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
             return []
@@ -6825,10 +6940,10 @@ def api_grid_list():
 def api_grid_create():
     d = request.json or {}
     symbol = d.get("symbol", "")
-    lower = float(d.get("lower", 0))
-    upper = float(d.get("upper", 0))
-    levels = int(d.get("levels", 10))
-    invest = float(d.get("invest_per_level", 100.0))
+    lower = _safe_float(d.get("lower", 0), 0.0)
+    upper = _safe_float(d.get("upper", 0), 0.0)
+    levels = _safe_int(d.get("levels", 10), 10)
+    invest = _safe_float(d.get("invest_per_level", 100.0), 100.0)
     if not symbol or lower <= 0 or upper <= lower:
         return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
     result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
@@ -6851,10 +6966,10 @@ def ws_create_grid(data):
         return
     grid_engine.create_grid(
         data.get("symbol", ""),
-        float(data.get("lower", 0)),
-        float(data.get("upper", 0)),
-        int(data.get("levels", 10)),
-        float(data.get("invest_per_level", 100)),
+        _safe_float(data.get("lower", 0), 0.0),
+        _safe_float(data.get("upper", 0), 0.0),
+        _safe_int(data.get("levels", 10), 10),
+        _safe_float(data.get("invest_per_level", 100), 100.0),
     )
     emit(
         "status",
@@ -7009,15 +7124,24 @@ def on_close_exchange_position(data):
         emit("status", {"msg": "❌ Exchange und Symbol erforderlich", "type": "error"})
         return
     try:
+        # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
+        if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
+            emit("status", {"msg": "❌ Unbekannte Exchange", "type": "error"})
+            return
         ex_cfg = CONFIG.get("extra_exchanges", {}).get(ex_name, {})
-        ex_cls = getattr(ccxt, ex_name, None)
+        ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_name, ex_name), None)
         if ex_cls is None:
-            emit("status", {"msg": f"❌ Unbekannte Exchange: {ex_name}", "type": "error"})
+            emit("status", {"msg": "❌ Exchange nicht verfügbar", "type": "error"})
+            return
+        raw_key = ex_cfg.get("api_key", "")
+        raw_secret = ex_cfg.get("secret", "")
+        if not raw_key or not raw_secret:
+            emit("status", {"msg": "❌ Keine API-Keys für diese Exchange", "type": "error"})
             return
         ex = ex_cls(
             {
-                "apiKey": decrypt_value(ex_cfg.get("api_key", "")),
-                "secret": decrypt_value(ex_cfg.get("secret", "")),
+                "apiKey": decrypt_value(raw_key),
+                "secret": decrypt_value(raw_secret),
                 "password": decrypt_value(ex_cfg.get("passphrase", "")) or None,
                 "enableRateLimit": True,
             }
@@ -7298,11 +7422,15 @@ def api_ip_whitelist_set():
 def api_news_filter():
     if request.method == "POST":
         d = request.json or {}
-        CONFIG["news_sentiment_min"] = float(d.get("min_score", CONFIG["news_sentiment_min"]))
+        CONFIG["news_sentiment_min"] = _safe_float(
+            d.get("min_score", CONFIG["news_sentiment_min"]), CONFIG["news_sentiment_min"]
+        )
         CONFIG["news_require_positive"] = bool(
             d.get("require_positive", CONFIG["news_require_positive"])
         )
-        CONFIG["news_block_score"] = float(d.get("block_score", CONFIG["news_block_score"]))
+        CONFIG["news_block_score"] = _safe_float(
+            d.get("block_score", CONFIG["news_block_score"]), CONFIG["news_block_score"]
+        )
         db_audit(
             session.get("user_id", 0),
             "news_filter_update",
@@ -7350,7 +7478,7 @@ def api_funding_rates():
 def api_funding_config():
     d = request.json or {}
     CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
-    CONFIG["funding_rate_max"] = float(d.get("max_rate", 0.001))
+    CONFIG["funding_rate_max"] = _safe_float(d.get("max_rate", 0.001), 0.001)
     return jsonify({"success": True, **funding_tracker.status()})
 
 
@@ -7444,7 +7572,7 @@ def api_strategy_weights():
 @app.route("/api/v1/risk/cvar")
 @api_auth_required
 def api_cvar():
-    confidence = float(request.args.get("conf", 0.95))
+    confidence = _safe_float(request.args.get("conf", 0.95), 0.95)
     return jsonify(adv_risk.compute_cvar(state.closed_trades, confidence))
 
 

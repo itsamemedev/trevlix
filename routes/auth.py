@@ -11,6 +11,7 @@ Verwendung:
 
 from __future__ import annotations
 
+import hmac
 import logging
 import os
 import secrets
@@ -532,7 +533,8 @@ def create_auth_blueprint(
             return _AUTH_TEMPLATE % {"page_title": "Login", "msg_display": "none", "body": body}
 
         csrf_submitted = request.form.get("_csrf", "")
-        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+        csrf_expected = session.get("_csrf_token", "")
+        if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
             return redirect("/login?err=1")
 
         username = request.form.get("username", "").strip()
@@ -639,7 +641,8 @@ def create_auth_blueprint(
             }
 
         csrf_submitted = request.form.get("_csrf", "")
-        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+        csrf_expected = session.get("_csrf_token", "")
+        if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
             return redirect("/register")
 
         username = request.form.get("username", "").strip()
@@ -667,6 +670,8 @@ def create_auth_blueprint(
                 "trustno1",
             }
         )
+        if len(password) > 128:
+            return redirect("/register?err=short")
         has_upper = _re.search(r"[A-Z]", password)
         has_lower = _re.search(r"[a-z]", password)
         has_digit = _re.search(r"\d", password)
@@ -679,7 +684,7 @@ def create_auth_blueprint(
             or has_weak
         ):
             return redirect("/register?err=short")
-        if password != password2:
+        if not hmac.compare_digest(password, password2):
             return redirect("/register?err=match")
         if db.get_user(username):
             return redirect("/register?err=exists")
@@ -744,7 +749,8 @@ def create_auth_blueprint(
             }
 
         csrf_submitted = request.form.get("_csrf", "")
-        if not csrf_submitted or csrf_submitted != session.get("_csrf_token"):
+        csrf_expected = session.get("_csrf_token", "")
+        if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
             return redirect("/admin/login?err=1")
 
         username = request.form.get("username", "").strip()

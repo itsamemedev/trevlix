@@ -121,9 +121,13 @@ class FearGreedIndex:
         try:
             r = _session.get(self._URL, timeout=8)
             r.raise_for_status()
-            d = r.json()["data"][0]
-            self.value = int(d["value"])
-            self.label = d["value_classification"]
+            data_list = r.json().get("data", [])
+            if not data_list:
+                log.debug("FearGreed: leere API-Antwort")
+                return
+            d = data_list[0]
+            self.value = int(d.get("value", 50))
+            self.label = d.get("value_classification", "Neutral")
             self.last_update = datetime.now().strftime("%H:%M")
             self._cache.set("fng", (self.value, self.label))
         except requests.HTTPError as e:
@@ -266,7 +270,8 @@ class SentimentFetcher:
             r = _session.get(url, timeout=8)
             r.raise_for_status()
             cd = r.json().get("community_data", {})
-            sentiment_up = cd.get("sentiment_votes_up_percentage", 50) or 50
+            raw = cd.get("sentiment_votes_up_percentage")
+            sentiment_up = raw if raw is not None else 50
             score = float(np.clip(sentiment_up / 100, 0, 1))
             self.db.save_sentiment(symbol, score, "coingecko")
             return score
@@ -282,7 +287,11 @@ class SentimentFetcher:
             r = _session.get("https://api.coingecko.com/api/v3/search/trending", timeout=8)
             r.raise_for_status()
             coins = r.json().get("coins", [])
-            return [f"{c['item']['symbol'].upper()}/USDT" for c in coins[:7]]
+            return [
+                f"{c.get('item', {}).get('symbol', '').upper()}/USDT"
+                for c in coins[:7]
+                if c.get("item", {}).get("symbol")
+            ]
         except Exception as e:
             log.debug(f"Trending: {e}")
             return []
@@ -323,8 +332,10 @@ class OnChainFetcher:
             price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
 
             vol_chg = 0.0
-            total_vol = (md.get("total_volume") or {}).get("usd", 0)
-            market_cap = (md.get("market_cap") or {}).get("usd", 0)
+            raw_vol = md.get("total_volume")
+            total_vol = raw_vol.get("usd", 0) if isinstance(raw_vol, dict) else (raw_vol or 0)
+            raw_cap = md.get("market_cap")
+            market_cap = raw_cap.get("usd", 0) if isinstance(raw_cap, dict) else (raw_cap or 0)
             if total_vol and market_cap:
                 vol_ratio = total_vol / max(market_cap, 1)
                 vol_chg = (vol_ratio - 0.05) * 10

@@ -7,6 +7,199 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.8] – 2026-03-18
+
+### Fixed — Bugfixes Runde 8: Short-Engine, Trade-Execution, Snapshot (7 Fixes)
+
+#### Funktionale Fehler
+- **ShortEngine API-Keys nicht entschlüsselt** — `_get_ex()` übergab verschlüsselte Keys direkt an ccxt statt `decrypt_value()` aufzurufen → Short-Trades funktionierten nie im Live-Modus. `decrypt_value()` hinzugefügt (analog zu `create_exchange()`)
+- **`open_position()` price=0 Div-by-Zero** — `qty = (invest - fee) / price` crashte bei ungültigem Preis. Guard `price <= 0` mit Early-Return
+- **`open_short()` price=0 Div-by-Zero** — `qty = invest / price` gleicher Bug. Guard hinzugefügt
+
+#### Snapshot Division-by-Zero
+- **Long-Positionen pnl_pct** — `/ p["entry"]` bei `p.get("entry")` prüfte nur Existenz (True für 0), nicht Wert > 0. Umgestellt auf `p.get("entry", 0) > 0`
+- **Short-Positionen pnl_pct** — Gleicher Bug bei Short-Position PnL-Berechnung
+
+#### Robustheit
+- **Backtest STRATEGIES leer** — `/ len(STRATEGIES)` Div-by-Zero wenn Strategie-Liste leer. Guard hinzugefügt
+- **partial_tp_levels KeyError** — `level["pct"]` und `level["sell_ratio"]` bei fehlformatierten Config-Einträgen. Umgestellt auf `.get()` mit Defaults
+- **login_attempts Memory-Leak** — Timestamp-Liste pro IP wuchs unbegrenzt. Begrenzt auf letzte 50 Einträge
+
+## [1.3.7] – 2026-03-18
+
+### Fixed — Bugfixes Runde 7: ML-Engine, DB-Pool, LLM-Integration (7 Fixes)
+
+#### ML-Engine (ai_engine.py) – 4 Fixes
+- **predict_proba IndexError (2 Stellen)** — `proba[win_idx]` ohne Bounds-Check konnte IndexError auslösen wenn Klasse 1 nicht in Proba-Array. Guard `0 <= win_idx < len(proba)` hinzugefügt
+- **CalibratedClassifierCV Klassen-Balance** — Kalibrierung mit `cv=3` crashte bei extrem unbalanciertem Datensatz (alle Trades Gewinner oder alle Verlierer). Mindestens 5 Samples pro Klasse erforderlich
+- **Genetischer Optimizer Score-Overflow** — `sim_pnl / 10000.0` konnte unbegrenzt wachsen → Overfitting. `np.clip(-1, 1)` für Normalisierung
+
+#### DB-Pool (db_pool.py) – 2 Fixes
+- **Semaphore-Leak bei release()** — Wenn `_is_alive()` Exception warf, wurde Semaphore nie freigegeben → Pool-Erschöpfung. Umstrukturiert mit try/finally
+- **last_err = None → TypeError** — `raise None` nach allen Retry-Fehlschlägen warf TypeError statt sinnvoller Fehlermeldung. Initialisiert mit TimeoutError-Default
+
+#### LLM-Integration (knowledge.py) – 1 Fix
+- **choices[0] AttributeError** — LLM-API-Antwort konnte `choices[0]` als Non-Dict liefern → `.get()` crashte. isinstance(dict) Prüfung hinzugefügt
+
+### Changed
+- **README.md** — Version 1.2.0 → 1.3.7 (wurde seit v1.2.0 nicht mehr aktualisiert)
+
+## [1.3.6] – 2026-03-18
+
+### Fixed — Tiefenanalyse Phase 2: 5 Bugfixes in services/ & ai_engine
+
+- **`market_data.py` FearGreed KeyError** — `d["value"]` und `d["value_classification"]` crashten bei geändertem API-Format. Umgestellt auf `.get()` mit Fallback
+- **`ai_engine.py` recent_wr Division-Bug** — Win-Rate wurde immer durch 10 geteilt statt durch tatsächliche Anzahl der Recent-Trades. Fix: `len(recent_slice)` als Divisor
+- **`knowledge.py` Cache-Eviction unvollständig** — `sorted(ts_dict, ...)` evizierte nur Einträge die auch in `ts_dict` vorhanden waren, Cache-Only-Einträge wuchsen unbegrenzt. Fix: Sortierung über `cache.keys()`
+- **`risk.py` NaN-Check fragil** — `corr != corr` idiom für NaN-Check. Umgestellt auf explizites `np.isnan(corr)` für Klarheit und Sicherheit
+- **`strategies.py` strat_vol close=0** — `close > prev_close * 1.005` konnte bei `close=0` ein falsches Signal erzeugen. Guard `close <= 0` hinzugefügt
+
+## [1.3.5] – 2026-03-18
+
+### Fixed — Tiefenanalyse: 14 Bugfixes in server.py
+
+#### Backtest-Engine (4 Fixes)
+- **Drawdown Division-by-Zero** — `(peak - value) / peak * 100` crashte bei `peak=0`. Guard `if peak > 0` hinzugefügt
+- **Return-Prozent Division-by-Zero** — `(cap - start) / start * 100` crashte bei `start=0`. Guard hinzugefügt
+- **Leerer DataFrame** — `df.index[0]` crashte bei leerem/kurzem DataFrame nach `compute_indicators()`. Check `len(df) < 3` hinzugefügt
+- **Entry-Price Division-by-Zero** — `(price - pos["entry"]) / pos["entry"]` crashte bei entry=0. Guard `pos["entry"] > 0` hinzugefügt
+
+#### Thread-Safety & Race Conditions (4 Fixes)
+- **`del state.positions[symbol]` KeyError** — Ungesicherte Löschung bei gleichzeitigem Zugriff. Umgestellt auf `state.positions.pop(symbol, None)`
+- **`del state.short_positions[symbol]` KeyError** — Gleicher Bug bei Short-Positionen. Umgestellt auf `.pop(symbol, None)`
+- **Grid-Engine Race Condition** — `update()` modifizierte `balance_ref[0]` ohne Lock → Overdraft bei parallelen Threads. Lock hinzugefügt via `_update_locked()`
+- **`manage_positions()` SL/TP nach Partial-TP** — `pos["sl"]` Zugriff auf gelöschte Position nach `close_position()`. Re-Fetch mit `state.positions.get()` vor SL/TP-Check
+
+#### Sicherheit (3 Fixes)
+- **`getattr(ccxt, ex_name)` Injection** — Beliebige ccxt-Attribute per User-Input aufrufbar. Jetzt Whitelist-Prüfung gegen EXCHANGE_MAP
+- **Audit-Log ohne User-ID** — 3 API-Endpunkte (exchange_upsert, api_keys_update, config_update) loggten keine `user_id`. Parameter hinzugefügt
+- **`close_exchange_position` leere API-Keys** — `decrypt_value("")` bei fehlender Exchange-Config. Explizite Prüfung vor Decrypt
+
+#### Input-Validierung (3 Fixes)
+- **`update_discord` int(report_hour)** — `int(data["report_hour"])` crashte bei nicht-numerischem Wert. Umgestellt auf `_safe_int()` + Bounds 0-23
+- **`update_config` Typ-Validierung** — CONFIG-Werte wurden ohne Typ-Prüfung direkt zugewiesen. Neue Typ-Validierung: float für Prozente, int für Zähler, bool für Flags
+- **`update_shorts` s_entry Division-by-Zero** — `(s_entry - price) / s_entry` bei s_entry=0. Guard `s_entry > 0` hinzugefügt
+
+## [1.3.4] – 2026-03-18
+
+### Fixed — Bugfixes Runde 5 (5 Fixes)
+
+#### API-Robustheit
+- **`market_data.py` FearGreed IndexError** — `r.json()["data"][0]` crashte bei leerer API-Antwort. Umgestellt auf `.get("data", [])` mit Leerprüfung
+- **`market_data.py` Trending KeyError** — `c['item']['symbol']` in List-Comprehension crashte bei fehlenden Keys. Umgestellt auf `.get()` mit Filter
+- **`cryptopanic.py` posts[0] IndexError** — `posts[0].get("title")` wurde aufgerufen obwohl `posts` leer sein konnte. Guard `if scores and posts` hinzugefügt
+
+#### Prediction & Notifications
+- **`risk.py` Conformal-Predict IndexError** — `model.predict_proba(X_test)[:, 1][0]` crashte bei leerem X_test. Shape-Prüfung vor Zugriff hinzugefügt
+- **`notifications.py` split()[0] IndexError** — `self._bot_full.split()[0]` in Discord `error()` und Telegram `error()` ohne Fallback bei leerem String. `(split() or ['TREVLIX'])[0]` Schutz hinzugefügt (2 Stellen)
+
+## [1.3.3] – 2026-03-18
+
+### Fixed — Bugfixes Runde 4 (10 Fixes)
+
+#### Snapshot & Portfolio
+- **Goal ETA negative Tage** — `snapshot()` berechnete negative `days` wenn Portfolio-Wert bereits über Ziel lag → negative Datumsangabe im Frontend. Jetzt: "✅ Ziel erreicht!" wenn `remaining <= 0`
+- **`portfolio_value()` stale Shorts** — `pnl_unrealized` in `short_positions` konnte fehlen oder ungültiger Typ sein. Umgestellt auf `_safe_float()` + Guard für `qty > 0` bei Longs
+
+#### Input-Validierung
+- **Heatmap float-Conversion** — `float(t.get("percentage", 0) or 0)` in `get_heatmap_data()` crashte bei nicht-numerischen Ticker-Werten. Umgestellt auf `_safe_float()`, negative Volumen auf 0 normalisiert
+- **`close_position()` Entry-Price** — `entry <= 0` führte zu Division-by-Zero in PnL-Berechnung. Guard hinzugefügt: Fallback auf aktuellen Preis
+
+#### Validierung & Sicherheit
+- **`validate_env.py` Whitespace ENCRYPTION_KEY** — Führende/nachfolgende Leerzeichen in `.env` führten zu falsch-positivem Fernet-Key-Fehler. `.strip()` hinzugefügt
+- **`validate_env.py` Schwache Passwort-Erkennung** — Nur exakte Matches ("password") wurden erkannt, nicht Varianten ("password123"). Substring-Check mit `any(weak in val_lower ...)` hinzugefügt
+- **`risk.py` Sharpe NaN/Inf** — `sharpe()` konnte NaN/Inf zurückgeben wenn alle Returns NaN waren. Explizite `np.all(np.isnan())` und `np.isfinite()` Guards
+
+#### Stabilität
+- **`manage_positions()` Partial-TP Stale Ref** — Nach `close_position()` mit `partial_ratio` konnte `pos` auf gelöschte Position zeigen → `pos["partial_tp_done"]` KeyError. Re-Fetch mit `state.positions.get(symbol)` nach Close
+- **`bot_loop()` Exchange-Fehler** — `create_exchange()` Fehler ließ `ex=None` und crashte in nächster Iteration. Try/except mit 30s Backoff + `continue`
+- **`validate_env.py` Passwort-Variablen `.strip()`** — Whitespace in Passwort-Variablen führte zu falschen Längenprüfungen. `.strip()` vor Validierung
+
+## [1.3.2] – 2026-03-18
+
+### Fixed — Bugfixes & Robustheit (52 Fixes gesamt, 3 Runden)
+
+#### Input-Validierung & Type-Safety
+- **`config.py` MYSQL_PORT Crash** — `int(os.getenv("MYSQL_PORT"))` crashte bei nicht-numerischem Wert. Neue `_safe_port()` Funktion mit Fallback auf 3306
+- **`server.py` Unguarded float()/int() auf User-Input** — 7 Stellen in API- und WebSocket-Handlern (Backtest, Alert, User-Create) verwendeten `float(data.get(...))` ohne Try/Except. Neue `_safe_float()` Hilfsfunktion eingeführt, alle Stellen auf `_safe_float()`/`_safe_int()` umgestellt
+- **`server.py` JWT Payload KeyError** — `payload["sub"]` in `verify_api_token()` crashte bei fehlendem `sub`-Claim. Umgestellt auf `payload.get("sub")` mit None-Check
+- **`server.py` Training-Daten KeyError** — `r["features"]`, `r["label"]`, `r["regime"]` in `load_ai_samples()` crashten bei fehlenden DB-Spalten. Umgestellt auf `.get()` mit Fallback-Werten
+
+#### Null-Safety & Division-by-Zero
+- **`ai_engine.py` None-Guard für recent_trades** — `recent_trades[-10:]` crashte bei `None`. Konvertiert zu leerer Liste
+- **`ai_engine.py` Scaler None-Check** — `self.scaler.transform()` in `register_trade_open()` und `predict_win_probability()` crashte wenn Scaler nicht initialisiert. Explizite `self.scaler is not None` Prüfung hinzugefügt
+- **`ai_engine.py` strat_importances Division-by-Zero** — `strat_importances / strat_importances.mean()` wurde zweimal aufgerufen (redundant + Race). Zwischenvariable `mean_val` eingeführt, Division nur wenn `mean_val > 0`
+- **`smart_exits.py` entry_price Guard** — `compute()` hatte keinen Guard für `entry_price <= 0`, was zu Division-by-Zero in SL/TP-Berechnung führte. Guard am Funktionsanfang hinzugefügt
+- **`server.py` DataFrame Length-Check** — `df.iloc[-1]`/`df.iloc[-2]` in `scan_symbol()` konnte bei zu kurzem DataFrame nach `compute_indicators()` crashen. Check `len(df) < 2` hinzugefügt
+- **Discord Embed Fields IndexError** — Tupel-Zugriff in `notifications.py` und `server.py` ohne Längenprüfung. Filter `if len(f) >= 2` hinzugefügt
+- **OrderbookImbalance leere Bids/Asks** — Crash bei leerem Orderbook. Expliziter Empty-Check vor Berechnung
+
+#### Sicherheit
+- **CSRF Timing-Attack** — `csrf_submitted != session.get("_csrf_token")` in `routes/auth.py` (Login, Register, Admin-Login) verwendete String-Vergleich statt konstantzeit-Vergleich. Umgestellt auf `hmac.compare_digest()` gegen Timing-basierte Token-Leaks
+- **SQL Backup Identifier-Quoting** — Backtick-Quoting für Defense-in-Depth
+
+#### Thread-Safety & Race Conditions
+- **`ai_engine.py` predictions_made Race Condition** — `self.predictions_made += 1` außerhalb des Locks in `predict_win_probability()`. In Lock verschoben
+- **`risk.py` NaN-Handling in Korrelation** — `np.corrcoef()` bei identischen Preisserien gibt NaN zurück, `NaN > threshold` ist False → stille Fehler. Expliziter NaN-Check hinzugefügt
+
+#### Memory & Performance
+- **`knowledge.py` Unbegrenztes Cache-Wachstum** — `_cache` und `_llm_cache` hatten keine Größenbeschränkung → Memory-Leak bei 24/7-Betrieb. `_evict_cache()` Methode + Max-Size (500/100 Einträge) hinzugefügt
+- **`market_data.py` Falscher `or 50` Fallback** — `cd.get("sentiment_votes_up_percentage", 50) or 50` maskierte legitime `0`-Werte. Umgestellt auf explizite `None`-Prüfung
+
+#### Sonstiges
+- **`risk.py` Exception-Handling** — `except Exception: pass` zu breit. Eingeschränkt auf `(ValueError, TypeError, IndexError)`
+- **`exchange_manager.py` KeyError** — `ex_data["exchange"]` direkter Zugriff ohne `.get()`. Umgestellt auf `.get("exchange", "unknown")`
+
+#### Runde 3: Tiefgehende Analyse (30 weitere Fixes)
+
+**server.py Input-Validierung:**
+- **CONFIG `mysql_port`** — `int(os.getenv("MYSQL_PORT"))` am Modul-Level crashte bei ungültigem Wert. Inline-Validierung mit `.isdigit()` Fallback
+- **`get_sentiment()` float(row["score"])** — Crashte bei NULL-Wert in DB. Explizite `row.get("score") is not None` Prüfung
+- **`save_onchain()` None-Arithmetik** — `(whale_score + flow_score) / 2` crashte wenn Score None war. None→0.0 Konvertierung
+- **`_fitness()` pnl_pct None** — `t.get("pnl_pct", 0) / 100` crashte bei explizitem None-Wert. Umgestellt auf `(t.get("pnl_pct") or 0)`
+- **Grid-Trading API** — 4× `float()`/`int()` auf User-Input in `/api/v1/grid` ohne Validierung → `_safe_float()`/`_safe_int()`
+- **Grid-Trading WebSocket** — 4× gleicher Bug in `ws_create_grid` Socket-Handler
+- **CVaR API** — `float(request.args.get("conf"))` ohne Validierung → `_safe_float()`
+- **News-Filter Config** — 2× `float(d.get(...))` in `/api/v1/config/news-filter` → `_safe_float()`
+- **Funding-Rate Config** — `float(d.get("max_rate"))` → `_safe_float()`
+- **Tax-Report** — `float(t.get("pnl", 0))` und `float(t.get("invested", 0))` crashten bei None. Umgestellt auf `or 0`
+- **SESSION_TIMEOUT_MIN** — `int(os.getenv(...))` am Modul-Level crashte bei ungültigem Wert. Try/except hinzugefügt
+
+**server.py Division-by-Zero & Null-Safety:**
+- **`_detect_concept_drift()`** — Division durch `half=0` bei `len(trades) < 2`. Expliziter Zero-Guard
+- **`_train()` norm[i] Bounds** — `norm[i]` IndexError wenn Feature-Importance-Array kürzer als STRATEGY_NAMES. Längenprüfung + Zwischenvariable `mean_sfi`
+- **`_predict()` regime.is_bull** — `regime.is_bull` AttributeError wenn regime None/uninitialisiert. `hasattr()` Guard
+- **`_predict()` bull/bear_scaler None** — `self.bull_scaler.transform()` crashte ohne Scaler. `is not None` Prüfung für beide
+
+**server.py Sicherheit:**
+- **verify_password SHA-256 Fallback** — Timing-Attack auf Legacy-SHA-256-Hash-Vergleich. Umgestellt auf `hmac.compare_digest()` + Log-Warning für Migration
+
+**services/ Fixes:**
+- **`performance_attribution.py` profit_factor** — Gab 0.0 zurück wenn nur Gewinne (keine Verluste). Jetzt korrekt: gibt `gross_profit` zurück
+- **`trade_dna.py` np.mean() auf leerer Liste** — `np.mean([])` gibt NaN zurück. Explizite leere-Liste-Prüfung
+- **`cryptopanic.py` votes Typ-Check** — `votes.get()` crashte wenn votes kein Dict (z.B. String/None). `isinstance()` Guard
+- **`notifications.py` split()[0] IndexError** — `self._bot_full.split()[0]` crashte bei leerem String. Fallback auf `['TREVLIX']`
+- **`knowledge.py` TypeError in JSON-Parse** — `json.loads()` fängt nur JSONDecodeError, nicht TypeError bei Nicht-String-Input
+- **`adaptive_weights.py` np.sum(weights) Zero** — Division durch Null bei Weights-Summe = 0. Expliziter Zero-Guard
+- **`db_pool.py` Exception-Masking** — `conn.close()` im finally-Block maskierte Original-Exception. Try/except mit Logging
+- **`market_data.py` Nested-Dict-Annahme** — `.get("usd")` crashte wenn API flache statt verschachtelte Struktur lieferte. `isinstance(dict)` Check
+- **`smart_exits.py` Dead Code** — Ungenutzte Variablen `sl_pct`/`tp_pct` vor `return 0.0, 0.0` entfernt
+- **`risk.py` conformal_predict Shape** — `predict_proba()[:, 1]` crashte bei < 2 Klassen. Shape-Validierung + X_test-Leer-Check
+
+**Schema & Security:**
+- **`mysql-init.sql`** — `api_tokens` und `user_exchanges` Tabellen fehlten (nur in server.py erstellt). Per CLAUDE.md müssen Tabellen in BEIDEN Dateien existieren
+- **`routes/auth.py` Passwort-Länge DoS** — Kein Max-Length-Check auf Passwort vor Regex (1MB+ String → CPU-Spike). Limit auf 128 Zeichen
+- **`routes/auth.py` Passwort-Vergleich** — `password != password2` statt `hmac.compare_digest()`. Timing-Attack auf Passwort-Bestätigung
+
+### Changed — Versionssynchronisierung
+
+- **BOT_VERSION** auf `1.3.2` aktualisiert (`services/utils.py`)
+- **pyproject.toml** von `1.1.1` auf `1.3.2` synchronisiert
+- **Dockerfile** Versionskommentar von `v1.1.0` auf `v1.3.2` aktualisiert
+- **Alle Templates** (10 Dateien) von hardcoded `v1.3.0` auf `v1.3.2` aktualisiert
+
+---
+
 ## [1.3.1] – 2026-03-17
 
 ### Added — Autonome LLM-Optimierungsanfragen

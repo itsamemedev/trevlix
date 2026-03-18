@@ -176,7 +176,8 @@ class AdaptiveWeights:
             weights = np.array([self._decay ** (n - 1 - i) for i in range(n)])
             outcomes = np.array([1.0 if won else 0.0 for won, _ in records])
 
-            weighted_wr = float(np.sum(weights * outcomes) / np.sum(weights))
+            weight_sum = np.sum(weights)
+            weighted_wr = float(np.sum(weights * outcomes) / weight_sum) if weight_sum > 0 else 0.5
 
             # Score: Win-Rate von 0.5 (Baseline) abweichen
             # 60% WR → 1.2x, 40% WR → 0.8x, 70% WR → 1.4x

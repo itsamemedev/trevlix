@@ -130,11 +130,13 @@ class RiskManager:
             if len(r1) > 3 and len(r1) == len(r2):
                 try:
                     corr = abs(float(np.corrcoef(r1, r2)[0, 1]))
+                    if np.isnan(corr):  # NaN bei identischen Preisserien
+                        continue
                     max_corr = self.config.get("max_corr", 0.75)
                     if corr > max_corr:
                         log.info(f"Korrelations-Block: {symbol}<->{s} corr={corr:.2f} > {max_corr}")
                         return True
-                except Exception:
+                except (ValueError, TypeError, IndexError):
                     pass
         return False
 
@@ -182,9 +184,16 @@ class RiskManager:
         if len(returns) < 3:
             return 0.0
         r = np.array(returns, dtype=float)
+        if np.all(np.isnan(r)):
+            return 0.0
         exc = r - rf
         std = np.nanstd(exc)
-        return float(np.nanmean(exc) / std * np.sqrt(252)) if std > 0 else 0.0
+        if std <= 0:
+            return 0.0
+        result = float(np.nanmean(exc) / std * np.sqrt(252))
+        if not np.isfinite(result):
+            return 0.0
+        return result
 
 
 class LiquidityScorer:
@@ -410,15 +419,21 @@ class AdvancedRiskMetrics:
         self, model, X_cal: np.ndarray, y_cal: np.ndarray, X_test: np.ndarray, alpha: float = 0.1
     ) -> dict:
         """Conformal Prediction: Liefert garantierte Vorhersage-Intervalle."""
-        if model is None or len(X_cal) < 10:
+        if model is None or len(X_cal) < 10 or len(X_test) == 0:
             return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
         try:
-            probs = model.predict_proba(X_cal)[:, 1]
+            proba_out = model.predict_proba(X_cal)
+            if proba_out.shape[1] < 2:
+                return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
+            probs = proba_out[:, 1]
             scores = np.abs(probs - y_cal)
             q_level = math.ceil((len(scores) + 1) * (1 - alpha)) / len(scores)
             q_level = min(q_level, 1.0)
             q_hat = float(np.quantile(scores, q_level))
-            test_prob = float(model.predict_proba(X_test)[:, 1][0])
+            test_proba = model.predict_proba(X_test)
+            if test_proba.shape[0] == 0 or test_proba.shape[1] < 2:
+                return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
+            test_prob = float(test_proba[0, 1])
             lower = max(0.0, test_prob - q_hat)
             upper = min(1.0, test_prob + q_hat)
             return {

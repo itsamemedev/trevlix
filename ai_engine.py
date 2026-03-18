@@ -194,8 +194,11 @@ class AIEngine:
         hour_cos = math.cos(2 * math.pi * h / 24)
 
         # 4. Letzte Win-Rate (gleitend, letzte 10 Trades)
-        recent_wins = [t for t in recent_trades[-10:] if t.get("pnl", 0) > 0]
-        recent_wr = len(recent_wins) / 10 if len(recent_trades) >= 10 else 0.5
+        if not recent_trades:
+            recent_trades = []
+        recent_slice = recent_trades[-10:]
+        recent_wins = [t for t in recent_slice if t.get("pnl", 0) > 0]
+        recent_wr = len(recent_wins) / len(recent_slice) if len(recent_slice) > 0 else 0.5
 
         market_features = [
             rsi / 100.0,
@@ -228,14 +231,19 @@ class AIEngine:
         with self._lock:
             self._pending_features[symbol] = features
             # Win-Probability für spätere Accuracy-Berechnung speichern
-            if self.is_trained and self.model is not None and ML_AVAILABLE:
+            if (
+                self.is_trained
+                and self.model is not None
+                and self.scaler is not None
+                and ML_AVAILABLE
+            ):
                 try:
                     X_scaled = self.scaler.transform(features.reshape(1, -1))
                     proba = self.model.predict_proba(X_scaled)[0]
                     classes = list(self.model.classes_)
                     win_idx = classes.index(1) if 1 in classes else -1
                     self._pending_predictions[symbol] = (
-                        float(proba[win_idx]) if win_idx >= 0 else 0.5
+                        float(proba[win_idx]) if 0 <= win_idx < len(proba) else 0.5
                     )
                 except Exception:
                     pass
@@ -334,7 +342,10 @@ class AIEngine:
             )
 
             # Wahrscheinlichkeits-Kalibrierung für zuverlässige Prozente
-            if n >= 40:
+            # Nur kalibrieren wenn genug Daten UND beide Klassen vorhanden
+            n_pos = int(np.sum(y))
+            n_neg = n - n_pos
+            if n >= 40 and n_pos >= 5 and n_neg >= 5:
                 self.model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
             else:
                 self.model = rf
@@ -406,11 +417,8 @@ class AIEngine:
                 return
 
             # Normalisieren auf Summe = n_strats (Durchschnitt bleibt 1.0)
-            norm = (
-                strat_importances / strat_importances.mean()
-                if strat_importances.mean() > 0
-                else strat_importances
-            )
+            mean_val = strat_importances.mean()
+            norm = strat_importances / mean_val if mean_val > 0 else strat_importances
             # Clampen: jede Strategie bekommt mindestens 20% und maximal 300% Gewicht
             for i, name in enumerate(STRATEGY_NAMES):
                 self.strategy_weights[name] = float(np.clip(norm[i], 0.2, 3.0))
@@ -430,7 +438,7 @@ class AIEngine:
         Ohne trainiertes Modell: konservatives 0.5 (keine Meinung).
         """
         with self._lock:
-            if not self.is_trained or self.model is None or not ML_AVAILABLE:
+            if not self.is_trained or self.model is None or self.scaler is None or not ML_AVAILABLE:
                 return 0.5
             model = self.model
             scaler = self.scaler
@@ -443,9 +451,12 @@ class AIEngine:
             if 1 not in classes:
                 return 0.5
             win_idx = classes.index(1)
+            if win_idx >= len(proba):
+                return 0.5
             win_prob = float(proba[win_idx])
 
-            self.predictions_made += 1
+            with self._lock:
+                self.predictions_made += 1
             return win_prob
         except Exception as e:
             log.debug(f"Vorhersage-Fehler: {e}")
@@ -617,7 +628,7 @@ class AIEngine:
                 win_rate = sim_wins / n
                 avg_pnl = sim_pnl / n
                 # Score = Kombination aus Win-Rate und Gesamt-PnL (normalisiert)
-                score = win_rate * 0.6 + (sim_pnl / 10000.0) * 0.4
+                score = win_rate * 0.6 + float(np.clip(sim_pnl / 10000.0, -1, 1)) * 0.4
 
                 results.append((sl, tp, win_rate, avg_pnl, score))
                 if score > best_score:

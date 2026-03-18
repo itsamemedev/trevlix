@@ -219,6 +219,33 @@ CREATE TABLE IF NOT EXISTS trade_dna (
     INDEX idx_time   (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ── API Tokens ───────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS api_tokens (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT,
+    token       VARCHAR(500),
+    label       VARCHAR(100),
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_used   DATETIME,
+    expires_at  DATETIME,
+    active      TINYINT DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── User Exchanges (Multi-Exchange pro User) ─────────────────────
+CREATE TABLE IF NOT EXISTS user_exchanges (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    user_id     INT NOT NULL,
+    exchange    VARCHAR(20) NOT NULL,
+    api_key     VARCHAR(500),
+    api_secret  VARCHAR(500),
+    enabled     TINYINT DEFAULT 0,
+    is_primary  TINYINT DEFAULT 0,
+    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_user_exchange(user_id, exchange),
+    INDEX idx_user(user_id),
+    INDEX idx_enabled(user_id, enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ── Shared Knowledge (KI-Gemeinschaftswissen) ───────────────────
 CREATE TABLE IF NOT EXISTS shared_knowledge (
     id          INT AUTO_INCREMENT PRIMARY KEY,
