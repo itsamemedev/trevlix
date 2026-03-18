@@ -174,3 +174,26 @@
 
 - **Vorher:** 6 Bugs, Versionen inkonsistent (1.1.1 / 1.2.0 / v1.3.0)
 - **Nachher:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Alle Versionen auf 1.3.2
+
+### Phase 2: Tiefgehende Bug-Suche (15+ weitere Bugs)
+
+- [x] 3 Subagents parallel: server.py, services/, routes+ai_engine
+- [x] 15+ Bugs in 10 Dateien behoben
+
+| # | Datei | Problem | Fix |
+|---|-------|---------|-----|
+| 1 | `server.py` (7x) | `float(data.get(...))` ohne Validierung | `_safe_float()` Hilfsfunktion |
+| 2 | `server.py` | `payload["sub"]` KeyError in JWT | `.get("sub")` mit None-Check |
+| 3 | `server.py` | `r["features"]` KeyError in Training-Daten | `.get()` mit Fallback |
+| 4 | `server.py` | DataFrame mit < 2 Zeilen → IndexError | `len(df) < 2` Guard |
+| 5 | `ai_engine.py` | `self.scaler` None bei Prediction | `is not None` Check |
+| 6 | `ai_engine.py` | `strat_importances.mean()` doppelt berechnet, div-by-zero | Zwischenvariable |
+| 7 | `ai_engine.py` | `predictions_made += 1` außerhalb Lock | In Lock verschoben |
+| 8 | `routes/auth.py` (3x) | CSRF Token Timing-Attack | `hmac.compare_digest()` |
+| 9 | `services/risk.py` | NaN von `np.corrcoef()` nicht gehandelt | Expliziter NaN-Check |
+| 10 | `services/knowledge.py` | Unbegrenztes Cache-Wachstum (Memory Leak) | `_evict_cache()` + Max-Size |
+| 11 | `services/market_data.py` | `or 50` maskiert legitimem 0-Wert | Explizite None-Prüfung |
+| 12 | `services/exchange_manager.py` | `ex_data["exchange"]` KeyError | `.get("exchange", "unknown")` |
+| 13 | `services/smart_exits.py` | `compute()` ohne entry_price Guard | Guard am Funktionsanfang |
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓

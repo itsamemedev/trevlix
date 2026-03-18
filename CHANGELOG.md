@@ -9,14 +9,38 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ## [1.3.2] – 2026-03-18
 
-### Fixed — Bugfixes & Robustheit
+### Fixed — Bugfixes & Robustheit (22 Fixes)
 
-- **`config.py` MYSQL_PORT Crash** — `int(os.getenv("MYSQL_PORT"))` crashte bei nicht-numerischem Wert (z.B. `"abc"`). Neue `_safe_port()` Funktion fängt `ValueError`/`TypeError` ab und fällt auf Port 3306 zurück
-- **`ai_engine.py` None-Guard für recent_trades** — `recent_trades[-10:]` crashte mit `TypeError` wenn `None` übergeben wurde. Jetzt wird `None` zu leerer Liste konvertiert
-- **Discord Embed Fields IndexError** — `f[0]`/`f[1]` Zugriff in `notifications.py` und `server.py` Discord-Embed-Builder konnte bei Tupeln mit < 2 Elementen crashen. Filter `if len(f) >= 2` hinzugefügt
-- **OrderbookImbalance leere Bids/Asks** — `sum(b[1] * b[0] for b in ob["bids"])` crashte wenn Exchange leeres Orderbook lieferte. Expliziter Empty-Check vor Berechnung
-- **`risk.py` Korrelation Exception-Handling** — `except Exception: pass` zu breit, verschluckte echte Fehler. Eingeschränkt auf `(ValueError, TypeError, IndexError)`
-- **SQL Backup Identifier-Quoting** — Table-Name in Backup-Query verwendet jetzt Backtick-Quoting (`` `table` ``) für Defense-in-Depth
+#### Input-Validierung & Type-Safety
+- **`config.py` MYSQL_PORT Crash** — `int(os.getenv("MYSQL_PORT"))` crashte bei nicht-numerischem Wert. Neue `_safe_port()` Funktion mit Fallback auf 3306
+- **`server.py` Unguarded float()/int() auf User-Input** — 7 Stellen in API- und WebSocket-Handlern (Backtest, Alert, User-Create) verwendeten `float(data.get(...))` ohne Try/Except. Neue `_safe_float()` Hilfsfunktion eingeführt, alle Stellen auf `_safe_float()`/`_safe_int()` umgestellt
+- **`server.py` JWT Payload KeyError** — `payload["sub"]` in `verify_api_token()` crashte bei fehlendem `sub`-Claim. Umgestellt auf `payload.get("sub")` mit None-Check
+- **`server.py` Training-Daten KeyError** — `r["features"]`, `r["label"]`, `r["regime"]` in `load_ai_samples()` crashten bei fehlenden DB-Spalten. Umgestellt auf `.get()` mit Fallback-Werten
+
+#### Null-Safety & Division-by-Zero
+- **`ai_engine.py` None-Guard für recent_trades** — `recent_trades[-10:]` crashte bei `None`. Konvertiert zu leerer Liste
+- **`ai_engine.py` Scaler None-Check** — `self.scaler.transform()` in `register_trade_open()` und `predict_win_probability()` crashte wenn Scaler nicht initialisiert. Explizite `self.scaler is not None` Prüfung hinzugefügt
+- **`ai_engine.py` strat_importances Division-by-Zero** — `strat_importances / strat_importances.mean()` wurde zweimal aufgerufen (redundant + Race). Zwischenvariable `mean_val` eingeführt, Division nur wenn `mean_val > 0`
+- **`smart_exits.py` entry_price Guard** — `compute()` hatte keinen Guard für `entry_price <= 0`, was zu Division-by-Zero in SL/TP-Berechnung führte. Guard am Funktionsanfang hinzugefügt
+- **`server.py` DataFrame Length-Check** — `df.iloc[-1]`/`df.iloc[-2]` in `scan_symbol()` konnte bei zu kurzem DataFrame nach `compute_indicators()` crashen. Check `len(df) < 2` hinzugefügt
+- **Discord Embed Fields IndexError** — Tupel-Zugriff in `notifications.py` und `server.py` ohne Längenprüfung. Filter `if len(f) >= 2` hinzugefügt
+- **OrderbookImbalance leere Bids/Asks** — Crash bei leerem Orderbook. Expliziter Empty-Check vor Berechnung
+
+#### Sicherheit
+- **CSRF Timing-Attack** — `csrf_submitted != session.get("_csrf_token")` in `routes/auth.py` (Login, Register, Admin-Login) verwendete String-Vergleich statt konstantzeit-Vergleich. Umgestellt auf `hmac.compare_digest()` gegen Timing-basierte Token-Leaks
+- **SQL Backup Identifier-Quoting** — Backtick-Quoting für Defense-in-Depth
+
+#### Thread-Safety & Race Conditions
+- **`ai_engine.py` predictions_made Race Condition** — `self.predictions_made += 1` außerhalb des Locks in `predict_win_probability()`. In Lock verschoben
+- **`risk.py` NaN-Handling in Korrelation** — `np.corrcoef()` bei identischen Preisserien gibt NaN zurück, `NaN > threshold` ist False → stille Fehler. Expliziter NaN-Check hinzugefügt
+
+#### Memory & Performance
+- **`knowledge.py` Unbegrenztes Cache-Wachstum** — `_cache` und `_llm_cache` hatten keine Größenbeschränkung → Memory-Leak bei 24/7-Betrieb. `_evict_cache()` Methode + Max-Size (500/100 Einträge) hinzugefügt
+- **`market_data.py` Falscher `or 50` Fallback** — `cd.get("sentiment_votes_up_percentage", 50) or 50` maskierte legitime `0`-Werte. Umgestellt auf explizite `None`-Prüfung
+
+#### Sonstiges
+- **`risk.py` Exception-Handling** — `except Exception: pass` zu breit. Eingeschränkt auf `(ValueError, TypeError, IndexError)`
+- **`exchange_manager.py` KeyError** — `ex_data["exchange"]` direkter Zugriff ohne `.get()`. Umgestellt auf `.get("exchange", "unknown")`
 
 ### Changed — Versionssynchronisierung
 

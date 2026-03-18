@@ -72,11 +72,24 @@ class KnowledgeBase:
         self._cache: dict[str, dict] = {}
         self._cache_ts: dict[str, float] = {}
         self._cache_ttl = 300  # 5 Minuten Cache
+        self._cache_max_size = 500  # Max Einträge
         self._llm_cache: dict[str, str] = {}
         self._llm_cache_ts: dict[str, float] = {}
         self._llm_cache_ttl = 900  # 15 Minuten LLM-Response Cache
+        self._llm_cache_max_size = 100  # Max LLM-Einträge
         self._cached_market_analysis: str = ""
         self._cached_market_analysis_ts: float = 0.0
+
+    @staticmethod
+    def _evict_cache(cache: dict, ts_dict: dict, max_size: int) -> None:
+        """Entfernt die ältesten Einträge wenn Cache max_size überschreitet."""
+        if len(cache) <= max_size:
+            return
+        sorted_keys = sorted(ts_dict, key=ts_dict.get)  # type: ignore[arg-type]
+        to_remove = len(cache) - max_size
+        for k in sorted_keys[:to_remove]:
+            cache.pop(k, None)
+            ts_dict.pop(k, None)
 
     def store(
         self, category: str, key: str, value: Any, confidence: float = 0.5, source: str = "ai"
@@ -162,6 +175,7 @@ class KnowledgeBase:
             }
             self._cache[cache_key] = result
             self._cache_ts[cache_key] = now
+            self._evict_cache(self._cache, self._cache_ts, self._cache_max_size)
             return result
         except Exception as e:
             log.error(f"KnowledgeBase.get: {e}")
@@ -376,6 +390,7 @@ class KnowledgeBase:
         if answer:
             self._llm_cache[cache_key] = answer
             self._llm_cache_ts[cache_key] = now
+            self._evict_cache(self._llm_cache, self._llm_cache_ts, self._llm_cache_max_size)
         return answer
 
     def analyze_trade_async(self, trade: dict, features: dict | None = None) -> None:

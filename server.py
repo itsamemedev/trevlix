@@ -1029,9 +1029,9 @@ class MySQLManager:
                 with conn.cursor() as c:
                     c.execute("SELECT features,label,regime FROM ai_training")
                     rows = c.fetchall()
-            X = [np.array(json.loads(r["features"]), dtype=np.float32) for r in rows]
-            y = [r["label"] for r in rows]
-            regimes = [r["regime"] for r in rows]
+            X = [np.array(json.loads(r.get("features", "[]")), dtype=np.float32) for r in rows]
+            y = [r.get("label", 0) for r in rows]
+            regimes = [r.get("regime", "range") for r in rows]
             return X, y, regimes
         except Exception as e:
             log.error(f"load_ai_samples: {e}")
@@ -1387,7 +1387,8 @@ class MySQLManager:
             return None
         try:
             payload = pyjwt.decode(token, CONFIG["jwt_secret"], algorithms=["HS256"])
-            return int(payload["sub"])
+            sub = payload.get("sub")
+            return int(sub) if sub is not None else None
         except Exception:
             return None
 
@@ -1970,6 +1971,17 @@ def _safe_int(val: Any, default: int) -> int:
     """Sicherer int()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
     try:
         return int(val)
+    except (ValueError, TypeError):
+        return default
+
+
+def _safe_float(val: Any, default: float) -> float:
+    """Sicherer float()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
+    try:
+        result = float(val)
+        if result != result:  # NaN check
+            return default
+        return result
     except (ValueError, TypeError):
         return default
 
@@ -4679,7 +4691,7 @@ def scan_symbol(ex, symbol) -> dict | None:
             if df is None:
                 return None
             _ind_set(symbol, _last_ts, df)
-        if df is None:
+        if df is None or len(df) < 2:
             return None
         row = df.iloc[-1]
         prev = df.iloc[-2]
@@ -5533,10 +5545,10 @@ def api_backtest():
             ex,
             data.get("symbol", "BTC/USDT"),
             data.get("timeframe", "1h"),
-            int(data.get("candles", 500)),
-            float(data.get("sl", CONFIG["stop_loss_pct"])),
-            float(data.get("tp", CONFIG["take_profit_pct"])),
-            float(data.get("vote", CONFIG["min_vote_score"])),
+            _safe_int(data.get("candles", 500), 500),
+            _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+            _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+            _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
         )
         return jsonify(result)
     except Exception as e:
@@ -5941,7 +5953,7 @@ def api_admin_create_user():
         data.get("username", ""),
         data.get("password", ""),
         data.get("role", "user"),
-        float(data.get("balance", 10000)),
+        _safe_float(data.get("balance", 10000), 10000.0),
     )
     return jsonify({"ok": ok})
 
@@ -6472,10 +6484,10 @@ def on_run_backtest(data):
                 ex,
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
-                int(data.get("candles", 500)),
-                float(data.get("sl", CONFIG["stop_loss_pct"])),
-                float(data.get("tp", CONFIG["take_profit_pct"])),
-                float(data.get("vote", CONFIG["min_vote_score"])),
+                _safe_int(data.get("candles", 500), 500),
+                _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+                _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+                _safe_float(data.get("vote", CONFIG["min_vote_score"]), CONFIG["min_vote_score"]),
             )
             socketio.emit("backtest_result", result)
         except Exception as e:
@@ -6489,7 +6501,10 @@ def on_run_backtest(data):
 def on_add_alert(data):
     uid = session.get("user_id", 1)
     db.add_alert(
-        data.get("symbol", ""), float(data.get("target", 0)), data.get("direction", "above"), uid
+        data.get("symbol", ""),
+        _safe_float(data.get("target", 0), 0.0),
+        data.get("direction", "above"),
+        uid,
     )
     emit("status", {"msg": f"🔔 Alert gesetzt für {data.get('symbol')}", "type": "success"})
     emit("update", state.snapshot(), broadcast=True)
@@ -6497,7 +6512,7 @@ def on_add_alert(data):
 
 @socketio.on("delete_price_alert")
 def on_delete_alert(data):
-    db.delete_alert(int(data.get("id", 0)))
+    db.delete_alert(_safe_int(data.get("id", 0), 0))
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -6558,7 +6573,7 @@ def on_admin_create_user(data):
         data.get("username", ""),
         data.get("password", ""),
         data.get("role", "user"),
-        float(data.get("balance", 10000)),
+        _safe_float(data.get("balance", 10000), 10000.0),
     )
     emit(
         "status",

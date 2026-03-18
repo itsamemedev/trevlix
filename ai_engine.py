@@ -230,7 +230,12 @@ class AIEngine:
         with self._lock:
             self._pending_features[symbol] = features
             # Win-Probability für spätere Accuracy-Berechnung speichern
-            if self.is_trained and self.model is not None and ML_AVAILABLE:
+            if (
+                self.is_trained
+                and self.model is not None
+                and self.scaler is not None
+                and ML_AVAILABLE
+            ):
                 try:
                     X_scaled = self.scaler.transform(features.reshape(1, -1))
                     proba = self.model.predict_proba(X_scaled)[0]
@@ -408,11 +413,8 @@ class AIEngine:
                 return
 
             # Normalisieren auf Summe = n_strats (Durchschnitt bleibt 1.0)
-            norm = (
-                strat_importances / strat_importances.mean()
-                if strat_importances.mean() > 0
-                else strat_importances
-            )
+            mean_val = strat_importances.mean()
+            norm = strat_importances / mean_val if mean_val > 0 else strat_importances
             # Clampen: jede Strategie bekommt mindestens 20% und maximal 300% Gewicht
             for i, name in enumerate(STRATEGY_NAMES):
                 self.strategy_weights[name] = float(np.clip(norm[i], 0.2, 3.0))
@@ -432,7 +434,7 @@ class AIEngine:
         Ohne trainiertes Modell: konservatives 0.5 (keine Meinung).
         """
         with self._lock:
-            if not self.is_trained or self.model is None or not ML_AVAILABLE:
+            if not self.is_trained or self.model is None or self.scaler is None or not ML_AVAILABLE:
                 return 0.5
             model = self.model
             scaler = self.scaler
@@ -447,7 +449,8 @@ class AIEngine:
             win_idx = classes.index(1)
             win_prob = float(proba[win_idx])
 
-            self.predictions_made += 1
+            with self._lock:
+                self.predictions_made += 1
             return win_prob
         except Exception as e:
             log.debug(f"Vorhersage-Fehler: {e}")
