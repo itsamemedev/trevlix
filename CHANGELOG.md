@@ -9,7 +9,7 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ## [1.3.2] – 2026-03-18
 
-### Fixed — Bugfixes & Robustheit (22 Fixes)
+### Fixed — Bugfixes & Robustheit (52 Fixes gesamt, 3 Runden)
 
 #### Input-Validierung & Type-Safety
 - **`config.py` MYSQL_PORT Crash** — `int(os.getenv("MYSQL_PORT"))` crashte bei nicht-numerischem Wert. Neue `_safe_port()` Funktion mit Fallback auf 3306
@@ -41,6 +41,47 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 #### Sonstiges
 - **`risk.py` Exception-Handling** — `except Exception: pass` zu breit. Eingeschränkt auf `(ValueError, TypeError, IndexError)`
 - **`exchange_manager.py` KeyError** — `ex_data["exchange"]` direkter Zugriff ohne `.get()`. Umgestellt auf `.get("exchange", "unknown")`
+
+#### Runde 3: Tiefgehende Analyse (30 weitere Fixes)
+
+**server.py Input-Validierung:**
+- **CONFIG `mysql_port`** — `int(os.getenv("MYSQL_PORT"))` am Modul-Level crashte bei ungültigem Wert. Inline-Validierung mit `.isdigit()` Fallback
+- **`get_sentiment()` float(row["score"])** — Crashte bei NULL-Wert in DB. Explizite `row.get("score") is not None` Prüfung
+- **`save_onchain()` None-Arithmetik** — `(whale_score + flow_score) / 2` crashte wenn Score None war. None→0.0 Konvertierung
+- **`_fitness()` pnl_pct None** — `t.get("pnl_pct", 0) / 100` crashte bei explizitem None-Wert. Umgestellt auf `(t.get("pnl_pct") or 0)`
+- **Grid-Trading API** — 4× `float()`/`int()` auf User-Input in `/api/v1/grid` ohne Validierung → `_safe_float()`/`_safe_int()`
+- **Grid-Trading WebSocket** — 4× gleicher Bug in `ws_create_grid` Socket-Handler
+- **CVaR API** — `float(request.args.get("conf"))` ohne Validierung → `_safe_float()`
+- **News-Filter Config** — 2× `float(d.get(...))` in `/api/v1/config/news-filter` → `_safe_float()`
+- **Funding-Rate Config** — `float(d.get("max_rate"))` → `_safe_float()`
+- **Tax-Report** — `float(t.get("pnl", 0))` und `float(t.get("invested", 0))` crashten bei None. Umgestellt auf `or 0`
+- **SESSION_TIMEOUT_MIN** — `int(os.getenv(...))` am Modul-Level crashte bei ungültigem Wert. Try/except hinzugefügt
+
+**server.py Division-by-Zero & Null-Safety:**
+- **`_detect_concept_drift()`** — Division durch `half=0` bei `len(trades) < 2`. Expliziter Zero-Guard
+- **`_train()` norm[i] Bounds** — `norm[i]` IndexError wenn Feature-Importance-Array kürzer als STRATEGY_NAMES. Längenprüfung + Zwischenvariable `mean_sfi`
+- **`_predict()` regime.is_bull** — `regime.is_bull` AttributeError wenn regime None/uninitialisiert. `hasattr()` Guard
+- **`_predict()` bull/bear_scaler None** — `self.bull_scaler.transform()` crashte ohne Scaler. `is not None` Prüfung für beide
+
+**server.py Sicherheit:**
+- **verify_password SHA-256 Fallback** — Timing-Attack auf Legacy-SHA-256-Hash-Vergleich. Umgestellt auf `hmac.compare_digest()` + Log-Warning für Migration
+
+**services/ Fixes:**
+- **`performance_attribution.py` profit_factor** — Gab 0.0 zurück wenn nur Gewinne (keine Verluste). Jetzt korrekt: gibt `gross_profit` zurück
+- **`trade_dna.py` np.mean() auf leerer Liste** — `np.mean([])` gibt NaN zurück. Explizite leere-Liste-Prüfung
+- **`cryptopanic.py` votes Typ-Check** — `votes.get()` crashte wenn votes kein Dict (z.B. String/None). `isinstance()` Guard
+- **`notifications.py` split()[0] IndexError** — `self._bot_full.split()[0]` crashte bei leerem String. Fallback auf `['TREVLIX']`
+- **`knowledge.py` TypeError in JSON-Parse** — `json.loads()` fängt nur JSONDecodeError, nicht TypeError bei Nicht-String-Input
+- **`adaptive_weights.py` np.sum(weights) Zero** — Division durch Null bei Weights-Summe = 0. Expliziter Zero-Guard
+- **`db_pool.py` Exception-Masking** — `conn.close()` im finally-Block maskierte Original-Exception. Try/except mit Logging
+- **`market_data.py` Nested-Dict-Annahme** — `.get("usd")` crashte wenn API flache statt verschachtelte Struktur lieferte. `isinstance(dict)` Check
+- **`smart_exits.py` Dead Code** — Ungenutzte Variablen `sl_pct`/`tp_pct` vor `return 0.0, 0.0` entfernt
+- **`risk.py` conformal_predict Shape** — `predict_proba()[:, 1]` crashte bei < 2 Klassen. Shape-Validierung + X_test-Leer-Check
+
+**Schema & Security:**
+- **`mysql-init.sql`** — `api_tokens` und `user_exchanges` Tabellen fehlten (nur in server.py erstellt). Per CLAUDE.md müssen Tabellen in BEIDEN Dateien existieren
+- **`routes/auth.py` Passwort-Länge DoS** — Kein Max-Length-Check auf Passwort vor Regex (1MB+ String → CPU-Spike). Limit auf 128 Zeichen
+- **`routes/auth.py` Passwort-Vergleich** — `password != password2` statt `hmac.compare_digest()`. Timing-Attack auf Passwort-Bestätigung
 
 ### Changed — Versionssynchronisierung
 

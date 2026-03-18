@@ -391,11 +391,8 @@ class TradeDNA:
         with self._lock:
             total_patterns = len(self._pattern_stats)
             total_trades = sum(s[1] for s in self._pattern_stats.values())
-            avg_wr = (
-                np.mean([s[0] / s[1] for s in self._pattern_stats.values() if s[1] > 0])
-                if self._pattern_stats
-                else 0.5
-            )
+            wr_values = [s[0] / s[1] for s in self._pattern_stats.values() if s[1] > 0]
+            avg_wr = float(np.mean(wr_values)) if wr_values else 0.5
         return {
             "total_patterns": total_patterns,
             "total_trades": total_trades,

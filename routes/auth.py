@@ -670,6 +670,8 @@ def create_auth_blueprint(
                 "trustno1",
             }
         )
+        if len(password) > 128:
+            return redirect("/register?err=short")
         has_upper = _re.search(r"[A-Z]", password)
         has_lower = _re.search(r"[a-z]", password)
         has_digit = _re.search(r"\d", password)
@@ -682,7 +684,7 @@ def create_auth_blueprint(
             or has_weak
         ):
             return redirect("/register?err=short")
-        if password != password2:
+        if not hmac.compare_digest(password, password2):
             return redirect("/register?err=match")
         if db.get_user(username):
             return redirect("/register?err=exists")

@@ -141,7 +141,8 @@ class TestPerformanceAttribution:
     def test_profit_factor_no_losses(self):
         pa = PerformanceAttribution()
         pa.record_trade("BTC/USDT", 100.0, hour=10)
-        assert pa.profit_factor() == 0.0
+        # Keine Verluste → profit_factor gibt gross_profit zurück (kein Divisor)
+        assert pa.profit_factor() == 100.0
 
     def test_expectancy(self):
         pa = PerformanceAttribution()

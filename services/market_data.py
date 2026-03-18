@@ -324,8 +324,10 @@ class OnChainFetcher:
             price_chg = float(md.get("price_change_percentage_24h", 0) or 0)
 
             vol_chg = 0.0
-            total_vol = (md.get("total_volume") or {}).get("usd", 0)
-            market_cap = (md.get("market_cap") or {}).get("usd", 0)
+            raw_vol = md.get("total_volume")
+            total_vol = raw_vol.get("usd", 0) if isinstance(raw_vol, dict) else (raw_vol or 0)
+            raw_cap = md.get("market_cap")
+            market_cap = raw_cap.get("usd", 0) if isinstance(raw_cap, dict) else (raw_cap or 0)
             if total_vol and market_cap:
                 vol_ratio = total_vol / max(market_cap, 1)
                 vol_chg = (vol_ratio - 0.05) * 10

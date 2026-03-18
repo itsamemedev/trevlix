@@ -168,7 +168,9 @@ class CryptoPanicClient:
 
         for p in posts[:10]:
             title = p.get("title", "").lower()
-            votes = p.get("votes", {})
+            votes = p.get("votes") or {}
+            if not isinstance(votes, dict):
+                votes = {}
             pos = votes.get("positive", 0) or 0
             neg = votes.get("negative", 0) or 0
 

@@ -166,7 +166,7 @@ class DiscordNotifier:
             return
         s = report.get("summary", {})
         self.send(
-            f"📊 {self._bot_full.split()[0]} Tages-Report – {report.get('date', '')}",
+            f"📊 {(self._bot_full.split() or ['TREVLIX'])[0]} Tages-Report – {report.get('date', '')}",
             f"```\nPnL heute:  {s.get('daily_pnl', 0):+.2f} USDT\n"
             f"Trades:     {s.get('trades_today', 0)}\n"
             f"Win-Rate:   {s.get('win_rate', 0):.1f}%\n"

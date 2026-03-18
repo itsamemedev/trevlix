@@ -258,7 +258,10 @@ class ConnectionPool:
             # NICHT self.release(conn) aufrufen: das würde den _PooledConnection-
             # Wrapper in den Pool legen (falscher Typ) und bei vollem Pool die
             # Semaphore doppelt freigeben.
-            conn.close()
+            try:
+                conn.close()
+            except Exception as e:
+                log.warning(f"DB-Pool: Fehler beim Verbindungs-Release: {e}")
 
     def close_all(self) -> None:
         """Schließt alle Verbindungen im Pool."""

@@ -164,7 +164,7 @@ class KnowledgeBase:
                 return None
             try:
                 parsed_value = json.loads(row["value_json"]) if row.get("value_json") else None
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 log.warning(f"Korruptes JSON in knowledge '{category}/{key}', verwende None")
                 parsed_value = None
             result = {

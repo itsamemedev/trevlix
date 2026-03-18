@@ -197,3 +197,26 @@
 | 13 | `services/smart_exits.py` | `compute()` ohne entry_price Guard | Guard am Funktionsanfang |
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓
+
+### Phase 3: 30 weitere Bugfixes
+
+- [x] 4 Subagents parallel: server.py (2 Hälften), services/, routes+ai_engine
+- [x] 30 Bugs in 15 Dateien behoben
+
+#### server.py (18 Fixes)
+- CONFIG mysql_port, get_sentiment, save_onchain, _fitness pnl_pct
+- _detect_concept_drift div-by-zero, _train norm bounds
+- _predict regime/scaler None, verify_password timing
+- Grid API+WS, CVaR, News-Filter, Funding-Rate, Tax-Report, SESSION_TIMEOUT
+
+#### services/ (9 Fixes)
+- performance_attribution profit_factor, trade_dna np.mean
+- cryptopanic votes type, notifications split, knowledge TypeError
+- adaptive_weights weight_sum, db_pool exception masking
+- market_data nested dict, smart_exits dead code, risk conformal_predict
+
+#### routes+schema (3 Fixes)
+- auth.py password max length DoS, password compare timing
+- mysql-init.sql fehlende Tabellen (api_tokens, user_exchanges)
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓

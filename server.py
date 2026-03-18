@@ -53,6 +53,7 @@
 
 import csv
 import hashlib
+import hmac
 import io
 import json
 import logging
@@ -252,7 +253,10 @@ if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
     app.config["SESSION_COOKIE_SECURE"] = True
 
 # ── [Verbesserung #1] Session-Timeout ─────────────────────────────────────────
-_SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
+try:
+    _SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
+except (ValueError, TypeError):
+    _SESSION_TIMEOUT_MIN = 30
 
 # ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
 _raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
@@ -538,7 +542,7 @@ CONFIG: dict[str, Any] = {
     "allow_registration": os.getenv("ALLOW_REGISTRATION", "false").lower() in ("true", "1", "yes"),
     # MySQL
     "mysql_host": os.getenv("MYSQL_HOST", "localhost"),
-    "mysql_port": int(os.getenv("MYSQL_PORT", "3306")),
+    "mysql_port": (lambda v: int(v) if v.isdigit() else 3306)(os.getenv("MYSQL_PORT", "3306")),
     "mysql_user": os.getenv("MYSQL_USER", "root"),
     "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
     "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
@@ -1147,7 +1151,8 @@ class MySQLManager:
                 # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
             # Fallback: SHA-256 (Legacy-Hashes oder bcrypt nicht installiert)
-            return hashlib.sha256(pw).hexdigest() == stored_hash
+            log.warning("verify_password: SHA-256 Fallback – bitte bcrypt-Hash verwenden")
+            return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
         except Exception:
             return False
 
@@ -1536,7 +1541,9 @@ class MySQLManager:
                         (symbol,),
                     )
                     row = c.fetchone()
-            return float(row["score"]) if row else None
+            if row and row.get("score") is not None:
+                return float(row["score"])
+            return None
         except Exception as e:
             log.error(f"get_sentiment({symbol!r}): {e}")
             return None
@@ -1570,6 +1577,8 @@ class MySQLManager:
             return None
 
     def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
+        whale_score = whale_score if whale_score is not None else 0.0
+        flow_score = flow_score if flow_score is not None else 0.0
         net = (whale_score + flow_score) / 2
         try:
             with self._get_conn() as conn:
@@ -2403,8 +2412,8 @@ class GeneticOptimizer:
         losses = 0
         total_pnl = 0.0
         for t in trades[-100:]:
-            pp = t.get("pnl_pct", 0) / 100
-            inv = t.get("invested", 100) or 100
+            pp = (t.get("pnl_pct") or 0) / 100
+            inv = t.get("invested") or 100
             if pp <= -genome["sl"]:
                 total_pnl -= genome["sl"] * inv
                 losses += 1
@@ -2879,8 +2888,11 @@ class AIEngine:
             return False
         try:
             half = len(trades) // 2
+            second_half = len(trades) - half
+            if half == 0 or second_half == 0:
+                return False
             old_wr = sum(1 for t in trades[:half] if t.get("pnl", 0) > 0) / half
-            new_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / (len(trades) - half)
+            new_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / second_half
             drift_threshold = 0.20  # >20% Abweichung = Drift
             drift = abs(new_wr - old_wr) > drift_threshold
             if drift:
@@ -3153,8 +3165,9 @@ class AIEngine:
                 fi = rf_raw.feature_importances_
                 n_s = len(STRATEGY_NAMES)
                 sfi = fi[:n_s]
-                if sfi.mean() > 0:
-                    norm = sfi / sfi.mean()
+                mean_sfi = sfi.mean() if len(sfi) > 0 else 0
+                if mean_sfi > 0 and len(sfi) >= len(STRATEGY_NAMES):
+                    norm = sfi / mean_sfi
                     with self._lock:
                         for i, nm in enumerate(STRATEGY_NAMES):
                             self.weights[nm] = float(np.clip(norm[i], 0.15, 3.5))
@@ -3432,7 +3445,7 @@ class AIEngine:
                 else:
                     dom_idx = int(np.argmax(freqs[1:]) + 1)
                 dom_freq = float(dom_idx / max(len(pa), 1))
-                spec_energy = float(np.sum(freqs**2) / len(freqs))
+                spec_energy = float(np.sum(freqs**2) / max(len(freqs), 1))
                 # Spectral entropy
                 p_spec = freqs**2 / total_energy
                 p_spec = p_spec[p_spec > 0]
@@ -3572,9 +3585,9 @@ class AIEngine:
 
     def _predict(self, X_s, features_raw) -> float:
         # Regime-Modell wählen
-        is_bull = bool(regime.is_bull) if regime else True
+        is_bull = bool(regime.is_bull) if regime and hasattr(regime, "is_bull") else True
         regime_p = 0.5
-        if is_bull and self.bull_model is not None:
+        if is_bull and self.bull_model is not None and self.bull_scaler is not None:
             try:
                 Xbs = self.bull_scaler.transform(features_raw.reshape(1, -1))
                 pr = self.bull_model.predict_proba(Xbs)[0]
@@ -3582,7 +3595,7 @@ class AIEngine:
                 regime_p = float(pr[cls.index(1)]) if 1 in cls else 0.5
             except Exception:
                 regime_p = 0.5
-        elif not is_bull and self.bear_model is not None:
+        elif not is_bull and self.bear_model is not None and self.bear_scaler is not None:
             try:
                 Xbrs = self.bear_scaler.transform(features_raw.reshape(1, -1))
                 pr = self.bear_model.predict_proba(Xbrs)[0]
@@ -3920,8 +3933,8 @@ class TaxReportGenerator:
         losses = []
         total_fees = 0.0
         for t in yt:
-            pnl = float(t.get("pnl", 0))
-            fee = float(t.get("invested", 0)) * CONFIG["fee_rate"] * 2
+            pnl = float(t.get("pnl") or 0)
+            fee = float(t.get("invested") or 0) * CONFIG.get("fee_rate", 0.001) * 2
             net = pnl - fee
             total_fees += fee
             entry = {
@@ -6843,10 +6856,10 @@ def api_grid_list():
 def api_grid_create():
     d = request.json or {}
     symbol = d.get("symbol", "")
-    lower = float(d.get("lower", 0))
-    upper = float(d.get("upper", 0))
-    levels = int(d.get("levels", 10))
-    invest = float(d.get("invest_per_level", 100.0))
+    lower = _safe_float(d.get("lower", 0), 0.0)
+    upper = _safe_float(d.get("upper", 0), 0.0)
+    levels = _safe_int(d.get("levels", 10), 10)
+    invest = _safe_float(d.get("invest_per_level", 100.0), 100.0)
     if not symbol or lower <= 0 or upper <= lower:
         return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
     result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
@@ -6869,10 +6882,10 @@ def ws_create_grid(data):
         return
     grid_engine.create_grid(
         data.get("symbol", ""),
-        float(data.get("lower", 0)),
-        float(data.get("upper", 0)),
-        int(data.get("levels", 10)),
-        float(data.get("invest_per_level", 100)),
+        _safe_float(data.get("lower", 0), 0.0),
+        _safe_float(data.get("upper", 0), 0.0),
+        _safe_int(data.get("levels", 10), 10),
+        _safe_float(data.get("invest_per_level", 100), 100.0),
     )
     emit(
         "status",
@@ -7316,11 +7329,15 @@ def api_ip_whitelist_set():
 def api_news_filter():
     if request.method == "POST":
         d = request.json or {}
-        CONFIG["news_sentiment_min"] = float(d.get("min_score", CONFIG["news_sentiment_min"]))
+        CONFIG["news_sentiment_min"] = _safe_float(
+            d.get("min_score", CONFIG["news_sentiment_min"]), CONFIG["news_sentiment_min"]
+        )
         CONFIG["news_require_positive"] = bool(
             d.get("require_positive", CONFIG["news_require_positive"])
         )
-        CONFIG["news_block_score"] = float(d.get("block_score", CONFIG["news_block_score"]))
+        CONFIG["news_block_score"] = _safe_float(
+            d.get("block_score", CONFIG["news_block_score"]), CONFIG["news_block_score"]
+        )
         db_audit(
             session.get("user_id", 0),
             "news_filter_update",
@@ -7368,7 +7385,7 @@ def api_funding_rates():
 def api_funding_config():
     d = request.json or {}
     CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
-    CONFIG["funding_rate_max"] = float(d.get("max_rate", 0.001))
+    CONFIG["funding_rate_max"] = _safe_float(d.get("max_rate", 0.001), 0.001)
     return jsonify({"success": True, **funding_tracker.status()})
 
 
@@ -7462,7 +7479,7 @@ def api_strategy_weights():
 @app.route("/api/v1/risk/cvar")
 @api_auth_required
 def api_cvar():
-    confidence = float(request.args.get("conf", 0.95))
+    confidence = _safe_float(request.args.get("conf", 0.95), 0.95)
     return jsonify(adv_risk.compute_cvar(state.closed_trades, confidence))
 
 

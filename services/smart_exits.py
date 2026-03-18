@@ -86,8 +86,6 @@ class SmartExitEngine:
             Tuple (stop_loss_price, take_profit_price).
         """
         if not entry_price or entry_price <= 0:
-            sl_pct = self._config.get("stop_loss_pct", 0.025)
-            tp_pct = self._config.get("take_profit_pct", 0.060)
             return 0.0, 0.0
 
         if not self.enabled:
