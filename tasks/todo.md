@@ -274,3 +274,15 @@
 - [x] strategies.py strat_vol close=0 Guard
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.6
+
+### Phase 7: ML-Engine, DB-Pool, LLM – 7 Bugfixes (v1.3.7)
+
+- [x] README.md Version 1.2.0 → 1.3.7
+- [x] ai_engine.py predict_proba win_idx Bounds-Check (2 Stellen)
+- [x] ai_engine.py CalibratedClassifierCV Klassen-Balance Prüfung
+- [x] ai_engine.py Genetischer Score np.clip(-1, 1)
+- [x] db_pool.py release() Semaphore try/finally
+- [x] db_pool.py last_err = None → TimeoutError Default
+- [x] knowledge.py LLM choices[0] isinstance(dict) Check
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.7

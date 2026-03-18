@@ -7,6 +7,25 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.7] – 2026-03-18
+
+### Fixed — Bugfixes Runde 7: ML-Engine, DB-Pool, LLM-Integration (7 Fixes)
+
+#### ML-Engine (ai_engine.py) – 4 Fixes
+- **predict_proba IndexError (2 Stellen)** — `proba[win_idx]` ohne Bounds-Check konnte IndexError auslösen wenn Klasse 1 nicht in Proba-Array. Guard `0 <= win_idx < len(proba)` hinzugefügt
+- **CalibratedClassifierCV Klassen-Balance** — Kalibrierung mit `cv=3` crashte bei extrem unbalanciertem Datensatz (alle Trades Gewinner oder alle Verlierer). Mindestens 5 Samples pro Klasse erforderlich
+- **Genetischer Optimizer Score-Overflow** — `sim_pnl / 10000.0` konnte unbegrenzt wachsen → Overfitting. `np.clip(-1, 1)` für Normalisierung
+
+#### DB-Pool (db_pool.py) – 2 Fixes
+- **Semaphore-Leak bei release()** — Wenn `_is_alive()` Exception warf, wurde Semaphore nie freigegeben → Pool-Erschöpfung. Umstrukturiert mit try/finally
+- **last_err = None → TypeError** — `raise None` nach allen Retry-Fehlschlägen warf TypeError statt sinnvoller Fehlermeldung. Initialisiert mit TimeoutError-Default
+
+#### LLM-Integration (knowledge.py) – 1 Fix
+- **choices[0] AttributeError** — LLM-API-Antwort konnte `choices[0]` als Non-Dict liefern → `.get()` crashte. isinstance(dict) Prüfung hinzugefügt
+
+### Changed
+- **README.md** — Version 1.2.0 → 1.3.7 (wurde seit v1.2.0 nicht mehr aktualisiert)
+
 ## [1.3.6] – 2026-03-18
 
 ### Fixed — Tiefenanalyse Phase 2: 5 Bugfixes in services/ & ai_engine

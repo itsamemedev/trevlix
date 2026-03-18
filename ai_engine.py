@@ -243,7 +243,7 @@ class AIEngine:
                     classes = list(self.model.classes_)
                     win_idx = classes.index(1) if 1 in classes else -1
                     self._pending_predictions[symbol] = (
-                        float(proba[win_idx]) if win_idx >= 0 else 0.5
+                        float(proba[win_idx]) if 0 <= win_idx < len(proba) else 0.5
                     )
                 except Exception:
                     pass
@@ -342,7 +342,10 @@ class AIEngine:
             )
 
             # Wahrscheinlichkeits-Kalibrierung für zuverlässige Prozente
-            if n >= 40:
+            # Nur kalibrieren wenn genug Daten UND beide Klassen vorhanden
+            n_pos = int(np.sum(y))
+            n_neg = n - n_pos
+            if n >= 40 and n_pos >= 5 and n_neg >= 5:
                 self.model = CalibratedClassifierCV(rf, cv=3, method="isotonic")
             else:
                 self.model = rf
@@ -448,6 +451,8 @@ class AIEngine:
             if 1 not in classes:
                 return 0.5
             win_idx = classes.index(1)
+            if win_idx >= len(proba):
+                return 0.5
             win_prob = float(proba[win_idx])
 
             with self._lock:
@@ -623,7 +628,7 @@ class AIEngine:
                 win_rate = sim_wins / n
                 avg_pnl = sim_pnl / n
                 # Score = Kombination aus Win-Rate und Gesamt-PnL (normalisiert)
-                score = win_rate * 0.6 + (sim_pnl / 10000.0) * 0.4
+                score = win_rate * 0.6 + float(np.clip(sim_pnl / 10000.0, -1, 1)) * 0.4
 
                 results.append((sl, tp, win_rate, avg_pnl, score))
                 if score > best_score:

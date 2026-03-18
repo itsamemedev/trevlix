@@ -299,7 +299,11 @@ class KnowledgeBase:
                 data = resp.json()
                 # OpenAI-kompatibles Format
                 choices = data.get("choices") or []
-                answer = choices[0].get("message", {}).get("content", "") if choices else ""
+                answer = (
+                    choices[0].get("message", {}).get("content", "")
+                    if choices and isinstance(choices[0], dict)
+                    else ""
+                )
                 if not answer:
                     # Ollama-Format
                     answer = data.get("response", "")

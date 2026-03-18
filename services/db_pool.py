@@ -185,7 +185,7 @@ class ConnectionPool:
             TimeoutError: Wenn kein freier Verbindungsslot im Timeout verfügbar.
             Exception: Wenn die Verbindungserstellung nach allen Retries fehlschlägt.
         """
-        last_err = None
+        last_err: Exception = TimeoutError("Kein freier DB-Connection-Slot")
         for attempt in range(retries + 1):
             try:
                 if not self._semaphore.acquire(timeout=self._timeout):
@@ -229,15 +229,17 @@ class ConnectionPool:
         if conn is None:
             self._semaphore.release()
             return
-        with self._lock:
-            if len(self._pool) < self._pool_size and self._is_alive(conn):
-                self._pool.append(conn)
-            else:
-                try:
-                    conn.close()
-                except Exception:
-                    pass
-        self._semaphore.release()
+        try:
+            with self._lock:
+                if len(self._pool) < self._pool_size and self._is_alive(conn):
+                    self._pool.append(conn)
+                else:
+                    try:
+                        conn.close()
+                    except Exception as e:
+                        log.debug(f"DB-Pool: Verbindung close fehlgeschlagen: {e}")
+        finally:
+            self._semaphore.release()
 
     @contextmanager
     def connection(self):
