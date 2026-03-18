@@ -286,3 +286,16 @@
 - [x] knowledge.py LLM choices[0] isinstance(dict) Check
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.7
+
+### Phase 8: Short-Engine, Trade-Execution, Snapshot – 7 Bugfixes (v1.3.8)
+
+- [x] ShortEngine _get_ex() fehlende decrypt_value() → Short-Trades broken im Live-Modus
+- [x] open_position price=0 → Division-by-Zero Guard
+- [x] open_short price=0 → Division-by-Zero Guard
+- [x] snapshot Long pnl_pct entry=0 → `p.get("entry", 0) > 0`
+- [x] snapshot Short pnl_pct entry=0 → gleicher Fix
+- [x] Backtest STRATEGIES leer → Div-by-Zero Guard
+- [x] partial_tp_levels KeyError → .get() mit Defaults
+- [x] login_attempts Memory-Leak → Timestamps auf 50 begrenzt
+
+- **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.8

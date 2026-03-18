@@ -1892,7 +1892,11 @@ def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
 
 def _record_login_attempt(ip: str):
     with _login_attempts_lock:
-        _login_attempts.setdefault(ip, []).append(time.time())
+        attempts = _login_attempts.setdefault(ip, [])
+        attempts.append(time.time())
+        # Timestamps pro IP auf letzte 50 begrenzen (Memory-Leak-Schutz)
+        if len(attempts) > 50:
+            _login_attempts[ip] = attempts[-50:]
         # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
         if len(_login_attempts) > 10_000:
             cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
@@ -3789,7 +3793,11 @@ class BacktestEngine:
                         pos = None
                 if pos is None:
                     votes = {nm: fn(row, prev) for nm, fn in STRATEGIES}
-                    conf = sum(1 for v in votes.values() if v == 1) / len(STRATEGIES)
+                    conf = (
+                        sum(1 for v in votes.values() if v == 1) / len(STRATEGIES)
+                        if STRATEGIES
+                        else 0.0
+                    )
                     if conf >= vote_thr:
                         inv = cap * 0.2
                         cap -= inv
@@ -4192,7 +4200,7 @@ class BotState:
                 "pnl": round((self.prices.get(sym, p["entry"]) - p["entry"]) * p["qty"], 2),
                 "pnl_pct": round(
                     (self.prices.get(sym, p["entry"]) - p["entry"]) / p["entry"] * 100
-                    if p.get("entry")
+                    if p.get("entry", 0) > 0
                     else 0.0,
                     2,
                 ),
@@ -4221,7 +4229,7 @@ class BotState:
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
                     (p["entry"] - self.prices.get(sym, p["entry"])) / p["entry"] * 100
-                    if p.get("entry")
+                    if p.get("entry", 0) > 0
                     else 0.0,
                     2,
                 ),
@@ -4444,10 +4452,12 @@ class ShortEngine:
                 ex_cls = getattr(ccxt, EXCHANGE_MAP.get(name, name))
                 sk = CONFIG.get("short_api_key", "")
                 ss = CONFIG.get("short_secret", "")
+                raw_key = sk.reveal() if hasattr(sk, "reveal") else sk
+                raw_sec = ss.reveal() if hasattr(ss, "reveal") else ss
                 self._ex = ex_cls(
                     {
-                        "apiKey": sk.reveal() if hasattr(sk, "reveal") else sk,
-                        "secret": ss.reveal() if hasattr(ss, "reveal") else ss,
+                        "apiKey": decrypt_value(raw_key) if raw_key else "",
+                        "secret": decrypt_value(raw_sec) if raw_sec else "",
                         "enableRateLimit": True,
                         "options": {"defaultType": "swap"},
                     }
@@ -4459,6 +4469,8 @@ class ShortEngine:
 
     def open_short(self, symbol: str, invest: float, price: float) -> bool:
         if not CONFIG.get("use_shorts"):
+            return False
+        if not price or price <= 0:
             return False
         sl = price * (1 + CONFIG["stop_loss_pct"])
         tp = price * (1 - CONFIG["take_profit_pct"])
@@ -4811,6 +4823,9 @@ def scan_symbol(ex, symbol) -> dict | None:
 def open_position(ex, scan: dict):
     symbol = scan["symbol"]
     price = scan["price"]
+    if not price or price <= 0:
+        log.warning(f"open_position: Ungültiger Preis {price} für {symbol}")
+        return
     if len(state.positions) >= CONFIG["max_open_trades"]:
         return
     if symbol in state.positions:
@@ -5294,12 +5309,14 @@ def manage_positions(ex):
             levels_done = pos.get("partial_tp_done", 0)
             if levels_done < len(levels):
                 level = levels[levels_done]
-                if pos_entry and (price - pos_entry) / pos_entry >= level["pct"]:
+                pct = level.get("pct", 0)
+                sell_ratio = level.get("sell_ratio", 0.25)
+                if pos_entry and pct > 0 and (price - pos_entry) / pos_entry >= pct:
                     close_position(
                         ex,
                         symbol,
-                        f"Partial-TP {level['pct'] * 100:.0f}%",
-                        partial_ratio=level["sell_ratio"],
+                        f"Partial-TP {pct * 100:.0f}%",
+                        partial_ratio=sell_ratio,
                     )
                     # Re-fetch pos – close_position may have removed it
                     pos = state.positions.get(symbol)

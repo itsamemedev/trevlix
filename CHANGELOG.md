@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.3.8] – 2026-03-18
+
+### Fixed — Bugfixes Runde 8: Short-Engine, Trade-Execution, Snapshot (7 Fixes)
+
+#### Funktionale Fehler
+- **ShortEngine API-Keys nicht entschlüsselt** — `_get_ex()` übergab verschlüsselte Keys direkt an ccxt statt `decrypt_value()` aufzurufen → Short-Trades funktionierten nie im Live-Modus. `decrypt_value()` hinzugefügt (analog zu `create_exchange()`)
+- **`open_position()` price=0 Div-by-Zero** — `qty = (invest - fee) / price` crashte bei ungültigem Preis. Guard `price <= 0` mit Early-Return
+- **`open_short()` price=0 Div-by-Zero** — `qty = invest / price` gleicher Bug. Guard hinzugefügt
+
+#### Snapshot Division-by-Zero
+- **Long-Positionen pnl_pct** — `/ p["entry"]` bei `p.get("entry")` prüfte nur Existenz (True für 0), nicht Wert > 0. Umgestellt auf `p.get("entry", 0) > 0`
+- **Short-Positionen pnl_pct** — Gleicher Bug bei Short-Position PnL-Berechnung
+
+#### Robustheit
+- **Backtest STRATEGIES leer** — `/ len(STRATEGIES)` Div-by-Zero wenn Strategie-Liste leer. Guard hinzugefügt
+- **partial_tp_levels KeyError** — `level["pct"]` und `level["sell_ratio"]` bei fehlformatierten Config-Einträgen. Umgestellt auf `.get()` mit Defaults
+- **login_attempts Memory-Leak** — Timestamp-Liste pro IP wuchs unbegrenzt. Begrenzt auf letzte 50 Einträge
+
 ## [1.3.7] – 2026-03-18
 
 ### Fixed — Bugfixes Runde 7: ML-Engine, DB-Pool, LLM-Integration (7 Fixes)
