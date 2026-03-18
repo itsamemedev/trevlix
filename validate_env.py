@@ -81,8 +81,8 @@ def _check_fernet_key(var: str) -> Issue | None:
             "warning", var, f"ENCRYPTION_KEY hat {len(val)} Zeichen (erwartet: 44 für Fernet)"
         )
     try:
-        decoded = base64.urlsafe_b64decode(val.encode() + b"==")  # Padding-tolerant
-        if len(decoded) < 32:
+        decoded = base64.urlsafe_b64decode(val.encode())
+        if len(decoded) != 32:
             return Issue("critical", var, f"ENCRYPTION_KEY muss 32 Bytes sein (hat {len(decoded)})")
     except (ValueError, binascii.Error):
         return Issue(

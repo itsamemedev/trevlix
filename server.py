@@ -2618,8 +2618,8 @@ class RLAgent:
             self.total_reward += reward
             if self.episodes >= CONFIG.get("rl_min_episodes", 100):
                 self.is_trained = True
-        self._replay.append({"state": state, "action": action, "reward": reward})
-        self._replay = self._replay[-1000:]
+            self._replay.append({"state": state, "action": action, "reward": reward})
+            self._replay = self._replay[-1000:]
 
     def on_trade_close(self, entry_scan: dict, pnl: float):
         """Lernt aus abgeschlossenem Trade."""
@@ -3812,7 +3812,11 @@ class BacktestEngine:
                         inv = cap * 0.2
                         cap -= inv
                         pos = {"entry": price, "inv": inv}
-                equity.append({"time": str(row.name)[:16], "value": round(cap, 2)})
+                # Equity inkl. offener Position (korrekte Drawdown-Berechnung)
+                equity_val = cap
+                if pos is not None and pos.get("entry") and pos["entry"] > 0:
+                    equity_val += pos["inv"] * (1 + (price - pos["entry"]) / pos["entry"])
+                equity.append({"time": str(row.name)[:16], "value": round(equity_val, 2)})
             if not trades:
                 return {
                     "error": "Keine Trades – Threshold zu hoch",
@@ -4016,7 +4020,9 @@ class PriceAlertManager:
             raw_target = a.get("target_price")
             if raw_target is None:
                 continue
-            target = float(raw_target)
+            target = _safe_float(raw_target, None)
+            if target is None:
+                continue
             direction = a.get("direction", "above")
             triggered = (direction == "above" and price >= target) or (
                 direction == "below" and price <= target
@@ -5141,8 +5147,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             reason,
             dca_level=pos.get("dca_level", 0),
         )
-        state.closed_trades.insert(0, trade)
-        state.positions.pop(symbol, None)
+        with state._lock:
+            state.closed_trades.insert(0, trade)
+            state.positions.pop(symbol, None)
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
@@ -5310,7 +5317,10 @@ def manage_positions(ex):
             state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
-            continue
+            # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
+            price = state.prices.get(symbol)
+            if price is None:
+                continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
         pos_entry = pos.get("entry") or price
@@ -5358,7 +5368,9 @@ def manage_positions(ex):
             if levels_done < len(levels):
                 level = levels[levels_done]
                 pct = level.get("pct", 0)
-                sell_ratio = level.get("sell_ratio", 0.25)
+                sell_ratio = min(
+                    level.get("sell_ratio", 0.25), 0.99
+                )  # Clamp: nie Full-Close via Partial TP
                 if pos_entry and pct > 0 and (price - pos_entry) / pos_entry >= pct:
                     close_position(
                         ex,
@@ -6777,7 +6789,11 @@ def fetch_aggregated_balance() -> dict:
     for ex_id, ex in exchanges_to_check.items():
         try:
             bal = ex.fetch_balance()
-            totals = {k: float(v) for k, v in bal.get("total", {}).items() if float(v or 0) > 0}
+            totals = {}
+            for k, v in bal.get("total", {}).items():
+                fv = _safe_float(v, 0.0)
+                if fv > 0:
+                    totals[k] = fv
             result["by_exchange"][ex_id] = totals
             # USDT direkt + Schätzung via last price für andere Coins
             usdt = totals.get(CONFIG.get("quote_currency", "USDT"), 0.0)
@@ -7215,7 +7231,8 @@ def on_close_exchange_position(data):
                 "enableRateLimit": True,
             }
         )
-        amount = sum(p.get("qty", 0) for p in state.positions.values() if p.get("symbol") == symbol)
+        pos = state.positions.get(symbol)
+        amount = pos.get("qty", 0) if pos else 0
         if amount > 0:
             ex.create_market_sell_order(symbol, amount)
         emit(
@@ -7259,7 +7276,7 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
             (
                 datetime.now()
                 - datetime.fromisoformat(
-                    str(trades[0].get("opened", datetime.now().isoformat()))[:19]
+                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
                 )
             ).days,
         )
@@ -7678,7 +7695,9 @@ def api_market_regime():
     if not prices:
         return jsonify({"regime": "UNKNOWN"})
     regime_result = adv_risk.classify_regime(
-        list(state.portfolio_history[-50:]) if state.portfolio_history else prices
+        [e["value"] for e in list(state.portfolio_history)[-50:]]
+        if state.portfolio_history
+        else prices
     )
     return jsonify(
         {

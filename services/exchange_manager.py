@@ -200,8 +200,16 @@ class ExchangeManager:
             try:
                 bal = inst.fetch_balance()
                 result[name] = {
-                    "total": {k: v for k, v in (bal.get("total") or {}).items() if v and v > 0},
-                    "free": {k: v for k, v in (bal.get("free") or {}).items() if v and v > 0},
+                    "total": {
+                        k: float(v)
+                        for k, v in (bal.get("total") or {}).items()
+                        if isinstance(v, (int, float)) and v > 0
+                    },
+                    "free": {
+                        k: float(v)
+                        for k, v in (bal.get("free") or {}).items()
+                        if isinstance(v, (int, float)) and v > 0
+                    },
                 }
             except Exception as e:
                 result[name] = {"error": str(e)}

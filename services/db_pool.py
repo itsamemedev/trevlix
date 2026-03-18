@@ -58,7 +58,7 @@ class _PooledConnection:
         return getattr(object.__getattribute__(self, "_conn"), name)
 
     def __setattr__(self, name: str, value):
-        if name == "_released":
+        if name in ("_released", "_conn", "_pool"):
             object.__setattr__(self, name, value)
             return
         setattr(object.__getattribute__(self, "_conn"), name, value)

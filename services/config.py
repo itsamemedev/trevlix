@@ -230,17 +230,49 @@ else:
         def from_env(cls) -> TrevlixConfig:
             """Erstellt eine Config-Instanz aus Umgebungsvariablen (Pydantic-Fallback)."""
             return cls(
+                # Exchange
                 exchange=os.getenv("EXCHANGE", "cryptocom"),
                 api_key=os.getenv("API_KEY", ""),
                 secret=os.getenv("API_SECRET", ""),
+                quote_currency=os.getenv("QUOTE_CURRENCY", "USDT"),
+                min_volume_usdt=float(os.getenv("MIN_VOLUME_USDT", "1000000")),
+                # Trading
+                timeframe=os.getenv("TIMEFRAME", "1h"),
+                candle_limit=int(os.getenv("CANDLE_LIMIT", "250")),
+                risk_per_trade=float(os.getenv("RISK_PER_TRADE", "0.015")),
+                stop_loss_pct=float(os.getenv("STOP_LOSS_PCT", "0.025")),
+                take_profit_pct=float(os.getenv("TAKE_PROFIT_PCT", "0.060")),
+                max_open_trades=int(os.getenv("MAX_OPEN_TRADES", "5")),
+                max_position_pct=float(os.getenv("MAX_POSITION_PCT", "0.20")),
+                fee_rate=float(os.getenv("FEE_RATE", "0.0004")),
+                paper_trading=os.getenv("PAPER_TRADING", "true").lower() in ("true", "1", "yes"),
+                paper_balance=float(os.getenv("PAPER_BALANCE", "10000")),
+                scan_interval=int(os.getenv("SCAN_INTERVAL", "60")),
+                # Risk
+                max_spread_pct=float(os.getenv("MAX_SPREAD_PCT", "0.5")),
+                max_corr=float(os.getenv("MAX_CORR", "0.75")),
+                circuit_breaker_losses=int(os.getenv("CIRCUIT_BREAKER_LOSSES", "3")),
+                circuit_breaker_min=int(os.getenv("CIRCUIT_BREAKER_MIN", "120")),
+                max_drawdown_pct=float(os.getenv("MAX_DRAWDOWN_PCT", "0.10")),
+                max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", "0.05")),
+                slippage_pct=float(os.getenv("SLIPPAGE_PCT", "0.001")),
+                min_order_usdt=float(os.getenv("MIN_ORDER_USDT", "10")),
+                # AI
+                ai_enabled=os.getenv("AI_ENABLED", "true").lower() in ("true", "1", "yes"),
+                ai_min_samples=int(os.getenv("AI_MIN_SAMPLES", "20")),
+                ai_min_confidence=float(os.getenv("AI_MIN_CONFIDENCE", "0.55")),
+                ai_use_kelly=os.getenv("AI_USE_KELLY", "true").lower() in ("true", "1", "yes"),
+                # MySQL
                 mysql_host=os.getenv("MYSQL_HOST", "localhost"),
                 mysql_port=_safe_port(os.getenv("MYSQL_PORT", "3306")),
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
                 mysql_db=os.getenv("MYSQL_DB", "trevlix"),
+                # Auth
                 admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
-                paper_trading=os.getenv("PAPER_TRADING", "true").lower() in ("true", "1", "yes"),
+                jwt_expiry_hours=int(os.getenv("JWT_EXPIRY_HOURS", "24")),
+                # Notifications
                 cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
                 telegram_token=os.getenv("TELEGRAM_TOKEN", ""),
                 telegram_chat_id=os.getenv("TELEGRAM_CHAT_ID", ""),

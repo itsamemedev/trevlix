@@ -121,7 +121,8 @@ class AdaptiveWeights:
             if len(rh) > self._window:
                 self._regime_history[regime][strategy] = rh[-self._window :]
 
-        # Gewichte neu berechnen
+        # Gewichte neu berechnen (direkt unter Lock weiter oben ist sicherer,
+        # aber _recalculate erwirbt eigenen Lock → hier aufrufen)
         self._recalculate()
 
     def get_weights(self, regime: str | None = None) -> dict[str, float]:
@@ -153,9 +154,11 @@ class AdaptiveWeights:
             # Global
             self._cached_global = self._compute_weights(self._global_history)
 
-            # Pro Regime
-            for regime, strat_history in self._regime_history.items():
-                self._cached_regime[regime] = self._compute_weights(strat_history)
+            # Pro Regime – Snapshot der Keys um RuntimeError bei dict-Änderung zu vermeiden
+            for regime in list(self._regime_history.keys()):
+                strat_history = self._regime_history.get(regime)
+                if strat_history:
+                    self._cached_regime[regime] = self._compute_weights(strat_history)
 
     def _compute_weights(self, history: dict[str, list[tuple[bool, float]]]) -> dict[str, float]:
         """Berechnet Gewichte aus einer History mit Exponential Decay.
