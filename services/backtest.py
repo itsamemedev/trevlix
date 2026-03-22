@@ -77,6 +77,8 @@ class BacktestEngine:
                 row = df.iloc[i]
                 prev = df.iloc[i - 1]
                 price = float(row["close"])
+                if price <= 0:
+                    continue
                 if pos and pos.get("entry") and pos["entry"] > 0:
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:

@@ -3692,9 +3692,10 @@ class AIEngine:
         if win_prob <= 0.5:
             return balance * CONFIG["risk_per_trade"] * fg_boost
         sl_pct = CONFIG["stop_loss_pct"]
-        if sl_pct <= 0:
+        tp_pct = CONFIG["take_profit_pct"]
+        if sl_pct <= 0 or tp_pct <= 0:
             return balance * CONFIG["risk_per_trade"] * fg_boost
-        odds = CONFIG["take_profit_pct"] / sl_pct
+        odds = tp_pct / sl_pct
         kelly = float(np.clip(((win_prob * odds - (1 - win_prob)) / odds) * 0.5, 0.01, 0.25))
         vol_adj = 1.0 / (1 + atr * 10) if atr > 0 else 1.0
         return balance * kelly * vol_adj * fg_boost
@@ -4427,7 +4428,7 @@ class ShortEngine:
         if not pos:
             return
         price = state.prices.get(symbol, pos.get("entry", 0))
-        short_entry = pos.get("entry") or price
+        short_entry = pos.get("entry") if pos.get("entry") is not None else price
         pnl_pct = (short_entry - price) / short_entry * 100 if short_entry > 0 else 0.0
         leverage = CONFIG.get("short_leverage", 2)
         fee = (
@@ -4484,7 +4485,7 @@ class ShortEngine:
             if not pos:
                 continue
             price = state.prices.get(sym, pos.get("entry", 0))
-            s_entry = pos.get("entry") or price
+            s_entry = pos.get("entry") if pos.get("entry") is not None else price
             pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
             pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
             if price >= pos.get("sl", float("inf")):
@@ -5015,7 +5016,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
     close_qty = pos.get("qty", 0) * partial_ratio
     close_invest = pos.get("invested", 0) * partial_ratio
-    entry = pos.get("entry") or price
+    entry = pos.get("entry") if pos.get("entry") is not None else price
     if entry <= 0:
         entry = price
     pnl_pct = (price - entry) / entry * 100 if entry > 0 else 0.0
@@ -5258,7 +5259,7 @@ def manage_positions(ex):
                 continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
-        pos_entry = pos.get("entry") or price
+        pos_entry = pos.get("entry") if pos.get("entry") is not None else price
         if (
             pos_entry
             and CONFIG.get("break_even_enabled")
@@ -6594,8 +6595,10 @@ def on_force_genetic():
         emit("status", {"msg": "❌ Nur Admin", "type": "error"})
         return
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
+    with state._lock:
+        trades_snapshot = list(state.closed_trades)
     threading.Thread(
-        target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
+        target=lambda trades=trades_snapshot: genetic.evolve(trades), daemon=True
     ).start()
 
 

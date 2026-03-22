@@ -10,6 +10,7 @@ Unterstützte Plans: free, pro, developer
 """
 
 import logging
+import threading
 import time
 
 import httpx
@@ -93,6 +94,7 @@ class CryptoPanicClient:
         self._base_url = _API_V2_URL.format(plan=self.plan)
         self._cache: dict = {}
         self._cache_max_size: int = 200
+        self._lock = threading.Lock()
 
     @property
     def is_configured(self) -> bool:
@@ -213,9 +215,10 @@ class CryptoPanicClient:
                 return float(cached["score"]), cached["headline"], cached["article_count"]
 
         # In-Memory-Cache prüfen
-        if self._is_cache_valid(symbol):
-            c = self._cache[symbol]
-            return c["score"], c["headline"], c["count"]
+        with self._lock:
+            if self._is_cache_valid(symbol):
+                c = self._cache[symbol]
+                return c["score"], c["headline"], c["count"]
 
         coin = symbol.replace("/USDT", "").replace("/USD", "").upper()
 
@@ -227,16 +230,17 @@ class CryptoPanicClient:
             score, headline, count = self.analyze_sentiment(posts)
 
         # Caches aktualisieren (mit Max-Size-Eviction)
-        self._cache[symbol] = {
-            "score": score,
-            "headline": headline,
-            "count": count,
-            "ts": time.time(),
-        }
-        if len(self._cache) > self._cache_max_size:
-            oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
-            if oldest != symbol:
-                del self._cache[oldest]
+        with self._lock:
+            self._cache[symbol] = {
+                "score": score,
+                "headline": headline,
+                "count": count,
+                "ts": time.time(),
+            }
+            if len(self._cache) > self._cache_max_size:
+                oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
+                if oldest != symbol:
+                    del self._cache[oldest]
 
         if db:
             db.save_news(symbol, score, headline, count)

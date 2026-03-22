@@ -903,9 +903,10 @@ async function downloadPineScript(){
 async function updateGasFees(){
   try {
     const r = await fetch('/api/v1/gas');
+    if(!r.ok) return;
     const d = await r.json();
     const el = document.getElementById('gasGwei');
-    if(el) el.textContent = d.gwei.toFixed(1) + ' Gwei';
+    if(el && d.gwei != null) el.textContent = d.gwei.toFixed(1) + ' Gwei';
     const sig = document.getElementById('gasSig');
     if(sig) sig.textContent = d.signal===1?'⬆ Hohe Aktivität':d.signal===-1?'⬇ Niedrige Aktivität':'→ Normal';
   } catch(e){}
@@ -1415,7 +1416,7 @@ document.addEventListener('keydown', e => {
     case 't':  toggleTheme(); break;
     case '?':
       const h = document.getElementById('shortcutHelp');
-      h.classList.toggle('show'); break;
+      if(h) h.classList.toggle('show'); break;
   }
 });
 document.addEventListener('click', e => {
