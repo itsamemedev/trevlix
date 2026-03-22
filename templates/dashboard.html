@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#020507">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
-<title>TREVLIX v1.3.8 – Algorithmic Trading Intelligence</title>
+<title>TREVLIX v1.5.0 – Algorithmic Trading Intelligence</title>
 <!-- [#36] FOUC-Fix: Theme vor CSS-Load setzen, verhindert weißes Aufblitzen -->
 <script>
 (function(){
@@ -41,7 +41,7 @@
     <div class="wizard-step active" id="wz0">
       <div style="font-size:44px;margin-bottom:12px">⚡</div>
       <div style="font-size:22px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_welcome_title">Willkommen bei</span> <span style="color:var(--cyan)">TREVLIX</span>!</div>
-      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.3.8 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
+      <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.5.0 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
       <button class="save-btn" onclick="wizNext()" data-i18n="wiz_start">→ Los geht's!</button>
     </div>
     <div class="wizard-step" id="wz1">
@@ -52,7 +52,7 @@
         <button onclick="wizSelEx('binance',this)"   class="btn btn-info" style="padding:13px;font-size:12px">Binance</button>
         <button onclick="wizSelEx('bybit',this)"     class="btn btn-info" style="padding:13px;font-size:12px">Bybit</button>
         <button onclick="wizSelEx('okx',this)"       class="btn btn-info" style="padding:13px;font-size:12px">OKX</button>
-        <button onclick="wizSelEx('kucoin',this)"    class="btn btn-info" style="padding:13px;font-size:12px" style="grid-column:span 2">KuCoin</button>
+        <button onclick="wizSelEx('kucoin',this)"    class="btn btn-info" style="padding:13px;font-size:12px;grid-column:span 2">KuCoin</button>
       </div>
       <button class="save-btn" onclick="wizNext()" data-i18n="wiz_next_step">→ Weiter</button>
     </div>
@@ -88,7 +88,7 @@
     <div class="h-logo-icon">⚡</div>
     <div>
       <div class="h-title">TREV<span style="color:var(--jade)">LIX</span></div>
-      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.3.8</div>
+      <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.5.0</div>
     </div>
   </div>
   <div style="display:flex;align-items:center;gap:7px">
@@ -672,7 +672,7 @@
         <div id="updateAvailableBanner" style="display:none;background:rgba(0,230,118,.1);border:1px solid rgba(0,230,118,.25);border-radius:7px;padding:8px 12px;font-size:12px;color:var(--green);margin-bottom:8px">
           🎉 Update verfügbar! <strong id="updateChangelogShort"></strong>
         </div>
-        <div id="updateUpToDate" style="display:none" class="alert-bar ok" style="margin:0"><span>✅</span><span>Auf dem neuesten Stand</span></div>
+        <div id="updateUpToDate" style="display:none;margin:0" class="alert-bar ok"><span>✅</span><span>Auf dem neuesten Stand</span></div>
         <div style="font-size:10px;color:var(--muted);margin-top:6px;font-family:var(--mono)">Zuletzt geprüft: <span id="updateLastCheck">—</span></div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px">

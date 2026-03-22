@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TREVLIX v1.0.0 – Translations
+   TREVLIX v1.5.0 – Translations
    Languages: de | en | es | ru | pt
    ═══════════════════════════════════════════════════════════ */
 const QLANG_NAMES = {de:'Deutsch',en:'English',es:'Español',ru:'Русский',pt:'Português'};
@@ -275,7 +275,7 @@ const QT = {
   web_nav_install:     {de:'Installation',en:'Installation',es:'Instalación',ru:'Установка',pt:'Instalação'},
   web_nav_specs:       {de:'Spezifikationen',en:'Specifications',es:'Especificaciones',ru:'Технические характеристики',pt:'Especificações'},
   web_nav_download:    {de:'Download',en:'Download',es:'Descargar',ru:'Скачать',pt:'Download'},
-  web_hero_eyebrow:    {de:'v1.0.0 · trevlix.com · Open Source',en:'v1.0.0 · trevlix.com · Open Source',es:'v1.0.0 · trevlix.com · Código Abierto',ru:'v1.0.0 · trevlix.com · Открытый код',pt:'v1.0.0 · trevlix.com · Código Aberto'},
+  web_hero_eyebrow:    {de:'v1.5.0 · trevlix.com · Open Source',en:'v1.5.0 · trevlix.com · Open Source',es:'v1.5.0 · trevlix.com · Código Abierto',ru:'v1.5.0 · trevlix.com · Открытый код',pt:'v1.5.0 · trevlix.com · Código Aberto'},
   web_hero_sub:        {de:'Der fortschrittlichste Crypto Trading Bot. KI-gesteuert, selbstlernend, mit 14 Echtzeit-Features — von Anomalie-Detektion bis Arbitrage.',en:'The most advanced Crypto Trading Bot. AI-powered, self-learning, with 14 real-time features — from anomaly detection to arbitrage.',es:'El bot de trading cripto más avanzado. Impulsado por IA, autoaprendizaje, con 14 características en tiempo real.',ru:'Самый продвинутый крипто-торговый бот. ИИ-управление, самообучение, 14 функций в реальном времени.',pt:'O bot de trading cripto mais avançado. Alimentado por IA, autoaprendizagem, com 14 recursos em tempo real.'},
   web_btn_start:       {de:'⚡ Jetzt starten',en:'⚡ Get started',es:'⚡ Comenzar ahora',ru:'⚡ Начать сейчас',pt:'⚡ Começar agora'},
   web_btn_discover:    {de:'Features entdecken',en:'Explore Features',es:'Explorar Características',ru:'Изучить возможности',pt:'Explorar Recursos'},
@@ -850,6 +850,73 @@ const QT = {
   wiz_next_step:    {de:'Nächster Schritt',en:'Next Step',es:'Siguiente Paso',ru:'Следующий шаг',pt:'Próximo Passo'},
   wiz_paper_hint:   {de:'Empfohlen: Starte mit Paper Trading!',en:'Recommended: Start with paper trading!',es:'Recomendado: ¡Empieza con trading simulado!',ru:'Рекомендуется: начните с бумажной торговли!',pt:'Recomendado: comece com trading simulado!'},
   wiz_start:        {de:'Setup starten',en:'Start Setup',es:'Iniciar Configuración',ru:'Начать настройку',pt:'Iniciar Configuração'},
+  wiz_ready:        {de:'Setup abgeschlossen!',en:'Setup complete!',es:'¡Configuración completa!',ru:'Настройка завершена!',pt:'Configuração concluída!'},
+  wiz_conservative: {de:'🛡️ Konservativ',en:'🛡️ Conservative',es:'🛡️ Conservador',ru:'🛡️ Консервативный',pt:'🛡️ Conservador'},
+  wiz_balanced:     {de:'⚖️ Ausgewogen',en:'⚖️ Balanced',es:'⚖️ Equilibrado',ru:'⚖️ Сбалансированный',pt:'⚖️ Equilibrado'},
+  wiz_aggressive:   {de:'🚀 Aggressiv',en:'🚀 Aggressive',es:'🚀 Agresivo',ru:'🚀 Агрессивный',pt:'🚀 Agressivo'},
+  wiz_save_next:    {de:'Speichern & Weiter',en:'Save & Next',es:'Guardar y seguir',ru:'Сохранить и далее',pt:'Salvar e seguir'},
+
+  /* ── DASHBOARD CONNECTION & STATUS ── */
+  dashboard_connected:    {de:'Dashboard verbunden',en:'Dashboard connected',es:'Panel conectado',ru:'Панель подключена',pt:'Painel conectado'},
+  dashboard_disconnected: {de:'Dashboard getrennt',en:'Dashboard disconnected',es:'Panel desconectado',ru:'Панель отключена',pt:'Painel desconectado'},
+
+  /* ── TRADE LABELS ── */
+  trade_buy:         {de:'Kauf',en:'Buy',es:'Compra',ru:'Покупка',pt:'Compra'},
+  trade_sell:        {de:'Verkauf',en:'Sell',es:'Venta',ru:'Продажа',pt:'Venda'},
+  close_label:       {de:'Schließen',en:'Close',es:'Cerrar',ru:'Закрыть',pt:'Fechar'},
+  no_open_positions: {de:'Keine offenen Positionen',en:'No open positions',es:'Sin posiciones abiertas',ru:'Нет открытых позиций',pt:'Sem posições abertas'},
+  no_trades_yet:     {de:'Noch keine Trades',en:'No trades yet',es:'Sin operaciones aún',ru:'Пока нет сделок',pt:'Ainda sem trades'},
+  waiting_for_signals:{de:'Warte auf Signale...',en:'Waiting for signals...',es:'Esperando señales...',ru:'Ожидание сигналов...',pt:'Aguardando sinais...'},
+
+  /* ── ALERTS ── */
+  alert_triggered:   {de:'Alert ausgelöst',en:'Alert triggered',es:'Alerta activada',ru:'Оповещение сработало',pt:'Alerta acionado'},
+
+  /* ── BUY/SELL STATUS ── */
+  buy_allowed_label: {de:'Kaufen erlaubt',en:'Buying allowed',es:'Compra permitida',ru:'Покупка разрешена',pt:'Compra permitida'},
+  buy_blocked_label: {de:'Kauf blockiert',en:'Buying blocked',es:'Compra bloqueada',ru:'Покупка заблокирована',pt:'Compra bloqueada'},
+
+  /* ── AI TOAST/ACTIONS ── */
+  toast_optimize:    {de:'Optimierung gestartet',en:'Optimization started',es:'Optimización iniciada',ru:'Оптимизация запущена',pt:'Otimização iniciada'},
+  toast_genetic:     {de:'Genetik gestartet',en:'Genetic started',es:'Genético iniciado',ru:'Генетик запущен',pt:'Genético iniciado'},
+  toast_error:       {de:'Fehler aufgetreten',en:'Error occurred',es:'Error ocurrido',ru:'Произошла ошибка',pt:'Erro ocorrido'},
+  toast_news_saved:  {de:'News-Einstellungen gespeichert',en:'News settings saved',es:'Ajustes de noticias guardados',ru:'Настройки новостей сохранены',pt:'Configurações de notícias salvas'},
+  toast_push_unsupported:{de:'Browser unterstützt keine Benachrichtigungen',en:'Browser does not support notifications',es:'El navegador no soporta notificaciones',ru:'Браузер не поддерживает уведомления',pt:'O navegador não suporta notificações'},
+
+  /* ── CONFIRMATION DIALOGS ── */
+  confirm_close_pos:         {de:'Position {sym} wirklich schließen?',en:'Close position {sym}?',es:'¿Cerrar posición {sym}?',ru:'Закрыть позицию {sym}?',pt:'Fechar posição {sym}?'},
+  confirm_reset_ai:          {de:'KI-Modelle wirklich zurücksetzen?',en:'Reset AI models?',es:'¿Restablecer modelos IA?',ru:'Сбросить ИИ-модели?',pt:'Resetar modelos IA?'},
+  confirm_install_update:    {de:'Update jetzt installieren?',en:'Install update now?',es:'¿Instalar actualización ahora?',ru:'Установить обновление сейчас?',pt:'Instalar atualização agora?'},
+  confirm_global_train:      {de:'Globales Training starten?',en:'Start global training?',es:'¿Iniciar entrenamiento global?',ru:'Запустить глобальное обучение?',pt:'Iniciar treinamento global?'},
+  confirm_delete_grid:       {de:'Grid wirklich löschen?',en:'Delete grid?',es:'¿Eliminar cuadrícula?',ru:'Удалить сетку?',pt:'Excluir grade?'},
+  confirm_set_ips:           {de:'IP-Whitelist wirklich setzen?',en:'Set IP whitelist?',es:'¿Establecer lista blanca de IPs?',ru:'Установить белый список IP?',pt:'Definir lista branca de IPs?'},
+  confirm_close_exchange_pos:{de:'Position auf Exchange schließen?',en:'Close exchange position?',es:'¿Cerrar posición en exchange?',ru:'Закрыть позицию на бирже?',pt:'Fechar posição na exchange?'},
+  confirm_rollback:          {de:'Rollback wirklich durchführen?',en:'Perform rollback?',es:'¿Realizar reversión?',ru:'Выполнить откат?',pt:'Realizar rollback?'},
+
+  /* ── UPDATE SYSTEM ── */
+  checking_github:    {de:'Prüfe GitHub...',en:'Checking GitHub...',es:'Verificando GitHub...',ru:'Проверка GitHub...',pt:'Verificando GitHub...'},
+  installing_update:  {de:'Update wird installiert...',en:'Installing update...',es:'Instalando actualización...',ru:'Установка обновления...',pt:'Instalando atualização...'},
+
+  /* ── AUTO-HEALING AGENT ── */
+  healing_title:       {de:'Auto-Healing',en:'Auto-Healing',es:'Auto-Recuperación',ru:'Авто-восстановление',pt:'Auto-Recuperação'},
+  healing_status:      {de:'Status',en:'Status',es:'Estado',ru:'Статус',pt:'Status'},
+  healing_healthy:     {de:'Alle Systeme OK',en:'All systems OK',es:'Todos los sistemas OK',ru:'Все системы ОК',pt:'Todos os sistemas OK'},
+  healing_recovering:  {de:'Wiederherstellung...',en:'Recovering...',es:'Recuperando...',ru:'Восстановление...',pt:'Recuperando...'},
+  healing_incidents:   {de:'Vorfälle',en:'Incidents',es:'Incidentes',ru:'Инциденты',pt:'Incidentes'},
+
+  /* ── REVENUE TRACKING AGENT ── */
+  revenue_title:       {de:'Revenue Tracking',en:'Revenue Tracking',es:'Seguimiento de Ingresos',ru:'Отслеживание доходов',pt:'Rastreamento de Receita'},
+  revenue_daily_pnl:   {de:'Tages-PnL (nach Gebühren)',en:'Daily PnL (after fees)',es:'PnL diario (después de comisiones)',ru:'Дневной PnL (после комиссий)',pt:'PnL diário (após taxas)'},
+  revenue_weekly:      {de:'Wochen-PnL',en:'Weekly PnL',es:'PnL semanal',ru:'Недельный PnL',pt:'PnL semanal'},
+  revenue_monthly:     {de:'Monats-PnL',en:'Monthly PnL',es:'PnL mensual',ru:'Месячный PnL',pt:'PnL mensal'},
+  revenue_roi:         {de:'ROI',en:'ROI',es:'ROI',ru:'ROI',pt:'ROI'},
+  revenue_fees:        {de:'Gebühren gesamt',en:'Total Fees',es:'Comisiones totales',ru:'Всего комиссий',pt:'Taxas totais'},
+
+  /* ── MULTI-SERVER CONTROL AGENT ── */
+  cluster_title:       {de:'Cluster-Verwaltung',en:'Cluster Management',es:'Gestión de Cluster',ru:'Управление кластером',pt:'Gestão de Cluster'},
+  cluster_nodes:       {de:'Knoten',en:'Nodes',es:'Nodos',ru:'Узлы',pt:'Nós'},
+  cluster_online:      {de:'Online',en:'Online',es:'En línea',ru:'Онлайн',pt:'Online'},
+  cluster_offline:     {de:'Offline',en:'Offline',es:'Fuera de línea',ru:'Оффлайн',pt:'Offline'},
+  cluster_deploy:      {de:'Deployment starten',en:'Start Deployment',es:'Iniciar despliegue',ru:'Запустить развёртывание',pt:'Iniciar implantação'},
 };
 
 /* ════════════════════════════════════════════════════════════

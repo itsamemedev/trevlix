@@ -261,6 +261,11 @@ class AIEngine:
             won = pnl > 0
             self.X_raw.append(features)
             self.y_raw.append(1 if won else 0)
+            # Cap training data to prevent unbounded memory growth
+            _MAX_TRAINING_SAMPLES = 2000
+            if len(self.X_raw) > _MAX_TRAINING_SAMPLES:
+                self.X_raw = self.X_raw[-_MAX_TRAINING_SAMPLES:]
+                self.y_raw = self.y_raw[-_MAX_TRAINING_SAMPLES:]
             self.trades_since_retrain += 1
             self.trades_since_optimize += 1
 

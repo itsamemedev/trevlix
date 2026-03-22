@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.4.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.5.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -1170,6 +1170,30 @@ class MySQLManager:
                     c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
         except Exception as e:
             log.warning(f"update_user_login({user_id}): {e}")
+
+    def update_password(self, user_id: int, new_password: str) -> bool:
+        """Setzt das Passwort eines Users neu (bcrypt oder SHA-256 Fallback).
+
+        Args:
+            user_id: Die User-ID.
+            new_password: Das neue Klartext-Passwort.
+
+        Returns:
+            True bei Erfolg, False bei Fehler.
+        """
+        try:
+            pw = new_password.encode()
+            if BCRYPT_AVAILABLE:
+                h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
+            else:
+                h = hashlib.sha256(pw).hexdigest()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("UPDATE users SET password_hash=%s WHERE id=%s", (h, user_id))
+            return True
+        except Exception as e:
+            log.error("update_password(%s): %s", user_id, e)
+            return False
 
     def update_user_balance(self, user_id: int, balance: float) -> None:
         """Aktualisiert den Kontostand eines Users.
@@ -4242,7 +4266,7 @@ class BotState:
                 ),
                 "pnl_pct": round(
                     (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0))
-                    / p.get("entry", 1)
+                    / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
                     else 0.0,
@@ -4273,7 +4297,7 @@ class BotState:
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
                     (p.get("entry", 0) - self.prices.get(sym, p.get("entry", 0)))
-                    / p.get("entry", 1)
+                    / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
                     else 0.0,
@@ -4428,7 +4452,7 @@ class ArbitrageScanner:
                 if not ex:
                     continue
                 try:
-                    tickers = ex.fetch_tickers(symbols[:30])
+                    tickers = safe_fetch_tickers(ex, symbols[:30])
                     prices_by_ex[ex_name] = {
                         s: float(t.get("last") or 0) for s, t in tickers.items() if t.get("last")
                     }
@@ -4530,15 +4554,16 @@ class ShortEngine:
             if not CONFIG.get("paper_trading", True) and ex:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
-            state.short_positions[symbol] = {
-                "entry": price,
-                "qty": qty,
-                "invested": invest,
-                "sl": sl,
-                "tp": tp,
-                "opened": datetime.now().isoformat(),
-                "pnl_unrealized": 0.0,
-            }
+            with state._lock:
+                state.short_positions[symbol] = {
+                    "entry": price,
+                    "qty": qty,
+                    "invested": invest,
+                    "sl": sl,
+                    "tp": tp,
+                    "opened": datetime.now().isoformat(),
+                    "pnl_unrealized": 0.0,
+                }
             discord.short_open(symbol, price, invest)
             state.add_activity(
                 "🔴", f"Short: {symbol}", f"@ {price:.4f} | {invest:.2f} USDT", "warning"
@@ -4562,7 +4587,8 @@ class ShortEngine:
         )  # [#29]
         pnl = pos.get("invested", 0) * (pnl_pct / 100) * leverage - fee
         if CONFIG.get("paper_trading", True):
-            state.balance += pos.get("invested", 0) + pnl
+            with state._lock:
+                state.balance += pos.get("invested", 0) + pnl
         else:
             try:
                 ex = self._get_ex()
@@ -4735,6 +4761,51 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SAFE FETCH TICKERS (Exchange-Kompatibilität)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Einige Exchanges (z.B. crypto.com) unterstützen kein Batch-fetchTickers
+# mit mehreren Symbolen. Diese Hilfsfunktion behandelt diesen Fall.
+_SINGLE_TICKER_EXCHANGES = frozenset({"cryptocom"})
+
+
+def safe_fetch_tickers(ex, symbols: list[str]) -> dict:
+    """Holt Ticker-Daten Exchange-kompatibel.
+
+    Für Exchanges die kein Batch-fetchTickers unterstützen (z.B. crypto.com)
+    wird fetch_tickers() ohne Argumente aufgerufen und das Ergebnis gefiltert.
+
+    Args:
+        ex: CCXT Exchange-Instanz.
+        symbols: Liste der gewünschten Symbole.
+
+    Returns:
+        Dict mit Ticker-Daten {symbol: ticker_dict}.
+    """
+    if not symbols:
+        return {}
+    ex_id = getattr(ex, "id", "")
+    if ex_id in _SINGLE_TICKER_EXCHANGES:
+        # crypto.com: fetch_tickers() ohne Argumente holt alle, dann filtern
+        try:
+            all_tickers = ex.fetch_tickers()
+            sym_set = set(symbols)
+            return {s: t for s, t in all_tickers.items() if s in sym_set}
+        except Exception:
+            # Fallback: einzeln abrufen
+            result = {}
+            for sym in symbols[:30]:
+                try:
+                    t = ex.fetch_ticker(sym)
+                    if t:
+                        result[sym] = t
+                except Exception:
+                    pass
+            return result
+    else:
+        return ex.fetch_tickers(symbols)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MARKT-SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
 def fetch_markets(ex) -> list[str]:
@@ -4748,7 +4819,7 @@ def fetch_markets(ex) -> list[str]:
             if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
         ]
         if CONFIG.get("use_vol_filter"):
-            tickers = ex.fetch_tickers(syms[:150])
+            tickers = safe_fetch_tickers(ex, syms[:150])
             syms = [
                 s
                 for s in syms
@@ -4793,7 +4864,8 @@ def scan_symbol(ex, symbol) -> dict | None:
         ph = list(df["close"].values[-50:])
         adv_risk.classify_regime(ph) if ph else None
         risk.update_prices(symbol, price)
-        state.prices[symbol] = price
+        with state._lock:
+            state.prices[symbol] = price
 
         votes = {}
         for nm, fn in STRATEGIES:
@@ -5102,7 +5174,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     pnl = close_invest * (pnl_pct / 100) - fee
 
     if CONFIG.get("paper_trading", True):
-        state.balance += close_invest + pnl
+        with state._lock:
+            state.balance += close_invest + pnl
     else:
         try:
             ex.create_market_sell_order(symbol, close_qty)
@@ -5313,8 +5386,11 @@ def try_dca(ex, symbol):
 
 
 def manage_positions(ex):
-    for symbol in list(state.positions.keys()):
-        pos = state.positions.get(symbol)
+    with state._lock:
+        position_keys = list(state.positions.keys())
+    for symbol in position_keys:
+        with state._lock:
+            pos = state.positions.get(symbol)
         if not pos:
             continue
         try:
@@ -5323,7 +5399,8 @@ def manage_positions(ex):
             if last_price is None:
                 continue
             price = float(last_price)
-            state.prices[symbol] = price
+            with state._lock:
+                state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
             # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
@@ -5388,10 +5465,11 @@ def manage_positions(ex):
                         partial_ratio=sell_ratio,
                     )
                     # Re-fetch pos – close_position may have removed it
-                    pos = state.positions.get(symbol)
-                    if not pos:
-                        continue
-                    pos["partial_tp_done"] = levels_done + 1
+                    with state._lock:
+                        pos = state.positions.get(symbol)
+                        if not pos:
+                            continue
+                        pos["partial_tp_done"] = levels_done + 1
 
         # SL / TP – re-check pos in case partial TP removed it
         pos = state.positions.get(symbol)
@@ -5423,7 +5501,7 @@ def get_heatmap_data(ex) -> list[dict]:
         syms = state.markets[:60] if state.markets else []
         if not syms:
             return []
-        tickers = ex.fetch_tickers(syms)
+        tickers = safe_fetch_tickers(ex, syms)
         result = []
         for sym, t in tickers.items():
             ns, _, _ = news_fetcher.get_score(sym)
@@ -5469,11 +5547,12 @@ def bot_loop():
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
                     time.sleep(30)
                     continue
-            state.iteration += 1
-            state.last_scan = datetime.now().strftime("%H:%M:%S")
-            state.next_scan = (
-                datetime.now() + timedelta(seconds=CONFIG.get("scan_interval", 60))
-            ).strftime("%H:%M:%S")
+            with state._lock:
+                state.iteration += 1
+                state.last_scan = datetime.now().strftime("%H:%M:%S")
+                state.next_scan = (
+                    datetime.now() + timedelta(seconds=CONFIG.get("scan_interval", 60))
+                ).strftime("%H:%M:%S")
 
             risk.reset_daily(state.balance)
             regime.update(ex)
@@ -5524,7 +5603,9 @@ def bot_loop():
 
             # Märkte laden
             if state.iteration % 10 == 1 or not state.markets:
-                state.markets = fetch_markets(ex)
+                new_markets = fetch_markets(ex)
+                with state._lock:
+                    state.markets = new_markets
 
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
@@ -5534,9 +5615,10 @@ def bot_loop():
 
             # Portfolio History
             pv = state.portfolio_value()
-            state.portfolio_history.append(
-                {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
-            )
+            with state._lock:
+                state.portfolio_history.append(
+                    {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
+                )
 
             # Short-Signale – parallelisiert mit ThreadPoolExecutor
             if not regime.is_bull and CONFIG.get("use_shorts"):
@@ -6425,13 +6507,39 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
 
 
 @socketio.on("connect")
-def on_connect():
-    if not session.get("user_id"):
-        # [Socket.io Fix] Sende Fehler statt stumm abzulehnen
+def on_connect(auth=None):
+    user_id = session.get("user_id")
+    username = session.get("username", "?")
+
+    # JWT-Fallback: Falls Session-Cookie nicht verfügbar (z.B. hinter Proxy)
+    if not user_id and auth and isinstance(auth, dict):
+        token = auth.get("token", "")
+        if token:
+            uid = db.verify_api_token(token)
+            if uid:
+                user_id = uid
+                session["user_id"] = uid
+                username = "jwt-user"
+            else:
+                # JWT im Cookie versuchen
+                try:
+                    payload = pyjwt.decode(
+                        token,
+                        CONFIG.get("jwt_secret", app.config["SECRET_KEY"]),
+                        algorithms=["HS256"],
+                    )
+                    user_id = payload.get("user_id")
+                    if user_id:
+                        session["user_id"] = user_id
+                        username = payload.get("username", "jwt-user")
+                except (pyjwt.InvalidTokenError, Exception):
+                    pass
+
+    if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
     emit("update", state.snapshot())
-    log.info(f"📱 Client verbunden: {session.get('username', '?')}")
+    log.info(f"📱 Client verbunden: {username}")
 
 
 @socketio.on("request_state")
@@ -6977,6 +7085,8 @@ class GridTradingEngine:
     def _update_locked(self, symbol: str, current_price: float, balance_ref: list) -> list:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
+            return []
+        if current_price <= 0:
             return []
         actions = []
         levels = grid["grid_levels"]

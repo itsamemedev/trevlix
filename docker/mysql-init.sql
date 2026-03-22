@@ -1,5 +1,5 @@
 -- ============================================================
---  TREVLIX v1.0.0 – MySQL Initialization
+--  TREVLIX v1.5.0 – MySQL Initialization
 --  Automatically executed on first container start.
 --  The application also creates these tables on startup,
 --  but this file ensures the schema is ready immediately.
