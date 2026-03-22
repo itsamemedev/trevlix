@@ -75,7 +75,7 @@ function renderLog(){
     el.innerHTML=entries.slice(0,120).map(e=>`<div class="log-row ${e.type}">
       <span class="log-time">${e.time}</span>
       <span style="flex-shrink:0;width:14px;text-align:center">${icons[e.cat]||'·'}</span>
-      <span class="log-msg">${esc(e.msg)}</span></div>`).join('')||'<div class="empty" style="padding:12px">Leer</div>';
+      <span class="log-msg">${esc(e.msg)}</span></div>`).join('')||'<div class="empty" style="padding:12px">'+QI18n.t('empty_log')+'</div>';
   }
 }
 function switchLog(tab,el){
@@ -480,24 +480,27 @@ async function loadChart(){
     // News
     try{
       const ndata=await(await fetch(`/api/v1/news/${sym.replace('/USDT','')}`)).json();
+      const nScore=typeof ndata.score==='number'?ndata.score:0;
+      const nCount=typeof ndata.count==='number'?ndata.count:0;
       if(ndata.headline&&ndata.headline!=='—'){
-        const nc=ndata.score>=0?'var(--green)':'var(--red)';
+        const nc=nScore>=0?'var(--green)':'var(--red)';
         document.getElementById('newsFeed').innerHTML=`<div class="news-item">
           <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-            <span style="font-size:11px;font-weight:700;color:${nc}">${ndata.score>=0?'+':''}${(ndata.score).toFixed(2)} Score</span>
-            <span style="font-size:10px;color:var(--sub)">${ndata.count} Artikel</span>
+            <span style="font-size:11px;font-weight:700;color:${nc}">${nScore>=0?'+':''}${nScore.toFixed(2)} Score</span>
+            <span style="font-size:10px;color:var(--sub)">${nCount} Artikel</span>
           </div>
           <div style="font-size:11px;line-height:1.6">${esc(String(ndata.headline||''))}</div>
         </div>`;
-        document.getElementById('cNews').textContent=(ndata.score>=0?'+':'')+ndata.score.toFixed(2);
+        document.getElementById('cNews').textContent=(nScore>=0?'+':'')+nScore.toFixed(2);
         document.getElementById('cNews').style.color=nc;
       }
     }catch(e){}
     // On-chain
     try{
       const oc=await(await fetch(`/api/v1/onchain/${sym.replace('/USDT','')}`)).json();
-      document.getElementById('cOnchain').textContent=(oc.score>=0?'+':'')+oc.score.toFixed(2);
-      document.getElementById('cOnchain').style.color=oc.score>=0?'var(--green)':'var(--red)';
+      const ocScore=typeof oc.score==='number'?oc.score:0;
+      document.getElementById('cOnchain').textContent=(ocScore>=0?'+':'')+ocScore.toFixed(2);
+      document.getElementById('cOnchain').style.color=ocScore>=0?'var(--green)':'var(--red)';
     }catch(e){}
     const sig=lastData?.signal_log?.find(s=>s.symbol===sym);
     if(sig){
@@ -578,13 +581,13 @@ async function loadTax(){
     document.getElementById('taxFees').textContent=fmt(s.total_fees)+' USDT';
     document.getElementById('taxCount').textContent=s.trade_count+'T ('+s.win_count+'G / '+s.loss_count+'V)';
     const wb=document.getElementById('taxWarnBar');
-    if(s.taxable_gains>600){wb.style.display='flex';document.getElementById('taxWarnTxt').textContent='Steuerpflichtige Gewinne > 600 USDT — Steuerberater empfohlen!';}
+    if(s.taxable_gains>600){wb.style.display='flex';document.getElementById('taxWarnTxt').textContent=QI18n.t('msg_tax_warn');}
     else wb.style.display='none';
     document.getElementById('taxTable').innerHTML=data.gains.slice(0,30).map(g=>
       `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);font-size:10px;font-family:var(--mono)">
         <span style="color:var(--sub)">${esc(String(g.date||''))}</span><span>${esc(String(g.symbol||''))}</span>
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
-  }catch(e){toast('Fehler: '+e,'error');}
+  }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
 function exportTaxCSV(){const y=document.getElementById('taxYear').value||new Date().getFullYear();window.open(`/api/tax_report?year=${y}&format=csv`);}
 function exportCSV(){window.open('/api/export/csv');}
@@ -619,7 +622,7 @@ function undoClose(){
   socket.emit('undo_close', {symbol: sym});
   document.getElementById('undoBar').style.display = 'none';
   clearTimeout(_undoTimeout);
-  toast('↩ Undo close '+sym+' — attempting','info');
+  toast('↩ '+QI18n.t('msg_undo_close')+' '+sym,'info');
 }
 // old closePos replaced above
 function _closePos_orig(sym){if(confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) socket.emit('close_position',{symbol:sym});}
@@ -636,7 +639,7 @@ function addAlert(){
   const sym=document.getElementById('alertSym').value.trim().toUpperCase();
   const target=parseFloat(document.getElementById('alertTarget').value);
   const dir=document.getElementById('alertDir').value;
-  if(!sym||isNaN(target)||target<=0){toast('Symbol und gültigen Preis eingeben!','error');return;}
+  if(!sym||isNaN(target)||target<=0){toast(QI18n.t('err_symbol_price'),'error');return;}
   socket.emit('add_price_alert',{symbol:sym,target,direction:dir});
   document.getElementById('alertTarget').value='';
 }
@@ -659,14 +662,14 @@ function applyPreset(name){
   document.getElementById('sMaxTrades').value=p.maxTrades;
   document.getElementById('sInterval').value=p.interval;
   document.getElementById('sAiConf').value=p.conf;
-  toast('✅ Preset "'+name+'" geladen','success');
+  toast('✅ '+QI18n.t('msg_preset_loaded')+': "'+name+'"','success');
 }
 function saveSettings(){
   const _pf=v=>{const n=parseFloat(v);return isNaN(n)?0:n;};
   const _pi=v=>{const n=parseInt(v,10);return isNaN(n)?0:n;};
   const sl=_pf(document.getElementById('sSL').value);
   const tp=_pf(document.getElementById('sTP').value);
-  if(sl<=0||tp<=0||sl>=tp){toast('SL/TP ungültig (SL muss < TP sein)','error');return;}
+  if(sl<=0||tp<=0||sl>=tp){toast(QI18n.t('err_sltp_invalid'),'error');return;}
   socket.emit('update_config',{
     stop_loss_pct:sl/100,
     take_profit_pct:tp/100,
@@ -712,8 +715,8 @@ async function createToken(){
     const data=await res.json();
     const box=document.getElementById('apiTokenBox');
     box.style.display='block'; box.textContent=data.token||'—';
-    toast('🔑 Token erstellt ('+data.expires_hours+'h gültig)','success');
-  }catch(e){toast('Fehler: '+e,'error');}
+    toast('🔑 '+QI18n.t('msg_token_created')+' ('+data.expires_hours+QI18n.t('msg_valid_hours')+')','success');
+  }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
 
 // ── Wizard ───────────────────────────────────────────────────────────
@@ -730,13 +733,13 @@ function wizFinish(){document.getElementById('wizardOverlay').style.display='non
 // ── Socket events ────────────────────────────────────────────────────
 socket.on('connect',()=>{
   addLog(QI18n.t('dashboard_connected'),'success','system');
-  toast('📡 Dashboard verbunden','success');
+  toast('📡 '+QI18n.t('msg_dashboard_conn'),'success');
   // Nach Verbindung sofort State anfragen (bei Reconnect)
   socket.emit('request_state');
 });
 socket.on('connect_error',(err)=>{
-  addLog('Socket-Verbindungsfehler: '+err.message,'error','system');
-  toast('⚠️ Socket-Fehler – Verbindung wird wiederhergestellt...','warning');
+  addLog(QI18n.t('msg_socket_reconnect')+': '+err.message,'error','system');
+  toast('⚠️ '+QI18n.t('msg_socket_reconnect'),'warning');
 });
 socket.on('disconnect',(reason)=>{
   addLog(QI18n.t('dashboard_disconnected')+' ('+reason+')','error','system');
@@ -824,8 +827,8 @@ function renderUpdateStatus(d){
     if(elShort) elShort.textContent = d.changelog.split('\n')[0].slice(0,60);
   }
 }
-socket.on('update_status', d => { renderUpdateStatus(d); toast(d.update_available ? '🎉 Update verfügbar! v'+d.latest : '✅ Aktuell', d.update_available?'success':'info'); });
-socket.on('update_result', d => { toast(d.status==='success'?'✅ Update installiert – Neustart...':'⚠ Update teilweise', d.status==='success'?'success':'warning'); if(d.status==='success') setTimeout(()=>location.reload(),3000); });
+socket.on('update_status', d => { renderUpdateStatus(d); toast(d.update_available ? '🎉 '+QI18n.t('msg_update_avail')+' v'+d.latest : '✅ '+QI18n.t('msg_up_to_date'), d.update_available?'success':'info'); });
+socket.on('update_result', d => { toast(d.status==='success'?'✅ '+QI18n.t('msg_update_installed'):'⚠ '+QI18n.t('msg_update_partial'), d.status==='success'?'success':'warning'); if(d.status==='success') setTimeout(()=>location.reload(),3000); });
 
 
 // ── Theme Toggle ─────────────────────────────────────────────────────────
@@ -850,7 +853,7 @@ async function registerFollower(){
   const name  = document.getElementById('ctName').value.trim();
   const url   = document.getElementById('ctUrl').value.trim();
   const scale = parseFloat(document.getElementById('ctScale').value) || 1.0;
-  if(!name || !url){ toast('Name und URL erforderlich','warning'); return; }
+  if(!name || !url){ toast(QI18n.t('err_name_url'),'warning'); return; }
   const r = await fetch('/api/v1/copy-trading/register', {
     method:'POST',
     headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
@@ -858,9 +861,9 @@ async function registerFollower(){
   });
   const d = await r.json();
   if(d.token){
-    toast('✅ Follower registriert. Token: '+d.token.slice(0,12)+'…','success');
+    toast('✅ '+QI18n.t('msg_follower_reg')+' '+d.token.slice(0,12)+'…','success');
     loadFollowers();
-  } else { toast('Fehler: '+JSON.stringify(d),'error'); }
+  } else { toast(QI18n.t('err_generic')+': '+JSON.stringify(d),'error'); }
 }
 
 async function loadFollowers(){
@@ -869,19 +872,19 @@ async function loadFollowers(){
     const d = await r.json();
     const el = document.getElementById('followersList');
     if(!el) return;
-    if(!d.followers || !d.followers.length){ el.innerHTML='<div style="font-size:11px;color:var(--sub)">Keine Follower registriert</div>'; return; }
+    if(!d.followers || !d.followers.length){ el.innerHTML='<div style="font-size:11px;color:var(--sub)">'+QI18n.t('empty_no_followers')+'</div>'; return; }
     el.innerHTML = d.followers.map(f=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--muted);font-size:12px">
         <span style="color:var(--txt)">${f.name}</span>
         <span style="color:var(--sub)">×${f.scale} · ${f.signals} Signale</span>
-        <span style="color:${f.active?'var(--jade)':'var(--red)'}">${f.active?'aktiv':'inaktiv'}</span>
+        <span style="color:${f.active?'var(--jade)':'var(--red)'}">${f.active?QI18n.t('label_active'):QI18n.t('label_inactive')}</span>
       </div>`).join('');
   } catch(e){}
 }
 
 async function testCopySignal(){
   await fetch('/api/v1/copy-trading/test',{method:'POST',headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-  toast('📡 Test-Signal gesendet','info');
+  toast('📡 '+QI18n.t('msg_test_signal'),'info');
 }
 
 // ── Pine Script ──────────────────────────────────────────────────────────
@@ -893,7 +896,7 @@ async function downloadPineScript(){
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href=url; a.download=`trevlix_${sym.toLowerCase()}.pine`; a.click();
   URL.revokeObjectURL(url);
-  toast('⬇ Pine Script heruntergeladen','success');
+  toast('⬇ '+QI18n.t('msg_pine_download'),'success');
 }
 
 // ── Gas Tracker ─────────────────────────────────────────────────────────
@@ -972,14 +975,14 @@ async function loadUsers() {
           ${(u.balance||0).toFixed(0)} USDT
         </div>
       </div>`).join('');
-  } catch(e){ if(el) el.innerHTML='<div class="empty">Fehler beim Laden</div>'; }
+  } catch(e){ if(el) el.innerHTML='<div class="empty">'+QI18n.t('empty_load_error')+'</div>'; }
 }
 
 async function createUser() {
   const username = document.getElementById('newUsername')?.value?.trim();
   const password = document.getElementById('newPassword')?.value;
   const role     = document.getElementById('newRole')?.value || 'user';
-  if (!username || !password) { toast('Username und Passwort erforderlich','warning'); return; }
+  if (!username || !password) { toast(QI18n.t('err_user_pass'),'warning'); return; }
   socket.emit('admin_create_user', {username, password, role});
   document.getElementById('newUsername').value = '';
   document.getElementById('newPassword').value = '';
@@ -988,13 +991,13 @@ async function createUser() {
 
 async function toggleRegistration(enabled) {
   socket.emit('update_config', {allow_registration: enabled});
-  toast(enabled ? '✅ Registrierung aktiviert' : '🔒 Registrierung deaktiviert', 'info');
+  toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
 }
 
 
 // ── Shared AI Model broadcast ──────────────────────────────────────────────
 socket.on('ai_model_updated', data => {
-  toast(`🧠 Neues KI-Modell v${data.version} von ${data.trained_by} (WF: ${data.wf_accuracy}%)`, 'success');
+  toast(`🧠 ${QI18n.t('msg_ai_model_new')} v${data.version} (WF: ${data.wf_accuracy}%)`, 'success');
   loadSharedAIStatus();
   // Animate version badge
   const badge = document.getElementById('sharedAIVersionBadge');
@@ -1100,12 +1103,12 @@ async function syncSharedModel() {
       method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.updated) {
-      toast(`✅ Modell v${d.version} synchronisiert (${d.accuracy}% WF)`, 'success');
+      toast(`✅ ${QI18n.t('msg_model_synced')} v${d.version} (${d.accuracy}% WF)`, 'success');
       loadSharedAIStatus();
     } else {
-      toast('Kein neues Modell verfügbar', 'info');
+      toast(QI18n.t('msg_no_new_model'), 'info');
     }
-  } catch(e) { toast('Sync-Fehler', 'error'); }
+  } catch(e) { toast(QI18n.t('msg_sync_error'), 'error'); }
   btn.textContent = '↻ Sync';
 }
 
@@ -1116,11 +1119,11 @@ async function adminTrainGlobal() {
       method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.started) {
-      toast(`🧠 Training gestartet: ${d.samples_total} Samples (${d.new_samples} neu)`, 'success');
+      toast(`🧠 ${QI18n.t('msg_training_started')}: ${d.samples_total} Samples (${d.new_samples})`, 'success');
     } else {
       toast(d.error || QI18n.t('toast_error'), 'error');
     }
-  } catch(e) { toast('Training-Fehler', 'error'); }
+  } catch(e) { toast(QI18n.t('msg_training_error'), 'error'); }
 }
 
 async function loadModelHistory() { await loadSharedAIStatus(); }
@@ -1172,7 +1175,7 @@ async function runMonteCarlo() {
   } catch(e) {
     document.getElementById('mcLoading').style.display = 'none';
     document.getElementById('mcEmpty').style.display = 'block';
-    toast('Monte-Carlo-Fehler','error');
+    toast(QI18n.t('msg_monte_error'),'error');
   }
 }
 
@@ -1186,17 +1189,17 @@ async function loadFundingRates() {
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const rates = d.top_rates || [];
-    if (!rates.length) { el.innerHTML='<div class="empty">Keine Daten</div>'; return; }
+    if (!rates.length) { el.innerHTML='<div class="empty">'+QI18n.t('empty_no_data')+'</div>'; return; }
     el.innerHTML = rates.map(f => {
       const pct = parseFloat(f.rate) || 0;
       const col = pct > 0.05 ? 'var(--red)' : pct < -0.05 ? 'var(--jade)' : 'var(--sub)';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
         <span style="font-size:12px;font-weight:600;color:var(--txt);flex:1">${f.symbol}</span>
         <span style="font-family:var(--mono);font-size:12px;color:${col}">${pct > 0 ? '+' : ''}${pct.toFixed(4)}%</span>
-        ${pct > 0.08 ? '<span style="font-size:9px;background:rgba(239,68,68,.1);color:#ef4444;padding:1px 5px;border-radius:4px">HOCH</span>' : ''}
+        ${pct > 0.08 ? '<span style="font-size:9px;background:rgba(239,68,68,.1);color:#ef4444;padding:1px 5px;border-radius:4px">'+QI18n.t('label_high')+'</span>' : ''}
       </div>`;
     }).join('');
-  } catch(e) { el.innerHTML='<div class="empty">Fehler</div>'; }
+  } catch(e) { el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
 async function saveFundingConfig() {
   const enabled = document.getElementById('fundingEnabled')?.checked;
@@ -1205,7 +1208,7 @@ async function saveFundingConfig() {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({enabled, max_rate: maxRate})
   });
-  toast('Funding-Filter gespeichert','success');
+  toast(QI18n.t('msg_funding_saved'),'success');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1219,7 +1222,7 @@ async function loadCooldowns() {
     const d = await r.json();
     const cds = d.cooldowns || {};
     if (!Object.keys(cds).length) {
-      el.innerHTML = '<div class="empty"><div class="empty-ico">✅</div>Keine Sperren aktiv</div>';
+      el.innerHTML = '<div class="empty"><div class="empty-ico">✅</div>'+QI18n.t('empty_no_locks')+'</div>';
       return;
     }
     el.innerHTML = Object.entries(cds).map(([sym, info]) => `
@@ -1228,13 +1231,13 @@ async function loadCooldowns() {
         <span style="font-size:11px;color:var(--sub)">bis ${info.until} (${info.remaining_min} Min.)</span>
         <button onclick="clearCooldown('${esc(sym)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
       </div>`).join('');
-  } catch(e) { el.innerHTML = '<div class="empty">Fehler</div>'; }
+  } catch(e) { el.innerHTML = '<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
 async function clearCooldown(symbol) {
   await fetch('/api/v1/cooldowns/'+symbol, {
     method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
   loadCooldowns();
-  toast(`${symbol} Sperre aufgehoben`, 'info');
+  toast(`${symbol} ${QI18n.t('msg_cooldown_cleared')}`, 'info');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1247,7 +1250,7 @@ async function createGrid() {
   const levels = parseInt(document.getElementById('gridLevels')?.value || 10, 10);
   const invest = parseFloat(document.getElementById('gridInvest')?.value || 100);
   if (!symbol || !lower || !upper || lower >= upper) {
-    toast('Symbol, Unter- und Obergrenze erforderlich (untere < obere)', 'warning'); return;
+    toast(QI18n.t('err_grid_params'), 'warning'); return;
   }
   socket.emit('create_grid', {symbol, lower, upper, levels, invest_per_level: invest});
   setTimeout(loadGrids, 600);
@@ -1259,27 +1262,27 @@ async function loadGrids() {
     const r = await fetch('/api/v1/grid', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const grids = d.grids || [];
-    if (!grids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--sub)">Keine aktiven Grids</div>'; return; }
+    if (!grids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--sub)">'+QI18n.t('empty_no_grids')+'</div>'; return; }
     el.innerHTML = grids.map(g => `
       <div style="background:#091017;border-radius:8px;padding:10px;margin-top:8px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <span style="font-weight:700;color:#e8f4ff">${esc(String(g.symbol||''))}</span>
-          <span style="font-size:9px;padding:2px 6px;border-radius:4px;${g.active?'background:rgba(0,255,136,.08);color:var(--jade)':'background:rgba(255,255,255,.05);color:var(--sub)'}">${g.active?'AKTIV':'INAKTIV'}</span>
+          <span style="font-size:9px;padding:2px 6px;border-radius:4px;${g.active?'background:rgba(0,255,136,.08);color:var(--jade)':'background:rgba(255,255,255,.05);color:var(--sub)'}">${g.active?QI18n.t('label_grid_active'):QI18n.t('label_grid_inactive')}</span>
           <button onclick="deleteGrid('${esc(g.symbol)}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
         </div>
         <div style="font-size:11px;color:var(--sub)">${g.levels} Stufen · ${g.lower}–${g.upper} USDT · Schritt: ${g.step?.toFixed(4) || '—'}</div>
         <div style="font-size:11px;color:var(--sub)">Offene Käufe: ${g.open_buys || 0} · Trades: ${g.total_trades || 0} · PnL: <span style="color:${(g.total_pnl||0)>=0?'var(--jade)':'var(--red)'}">${(g.total_pnl||0)>=0?'+':''}${(g.total_pnl||0).toFixed(4)} USDT</span></div>
       </div>`).join('');
-  } catch(e) { if(el) el.innerHTML = '<div style="font-size:12px;color:var(--red)">Fehler</div>'; }
+  } catch(e) { if(el) el.innerHTML = '<div style="font-size:12px;color:var(--red)">'+QI18n.t('empty_error')+'</div>'; }
 }
 async function deleteGrid(symbol) {
   if (!confirm(QI18n.t('confirm_delete_grid').replace('{sym}',symbol))) return;
   try {
     const r = await fetch('/api/v1/grid/'+encodeURIComponent(symbol), {
       method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||'Fehler beim Löschen','error'); return; }
-    loadGrids(); toast(`Grid ${symbol} gelöscht`, 'info');
-  } catch(e){ toast('Netzwerkfehler: '+e.message,'error'); }
+    if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||QI18n.t('err_delete'),'error'); return; }
+    loadGrids(); toast(`Grid ${symbol} ${QI18n.t('msg_grid_deleted')}`, 'info');
+  } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1288,13 +1291,13 @@ async function deleteGrid(symbol) {
 async function saveTelegram() {
   const token   = document.getElementById('tgToken')?.value?.trim();
   const chat_id = document.getElementById('tgChatId')?.value?.trim();
-  if (!token || !chat_id) { toast('Token und Chat-ID erforderlich','warning'); return; }
+  if (!token || !chat_id) { toast(QI18n.t('err_token_chatid'),'warning'); return; }
   const r = await fetch('/api/v1/telegram/configure', {
     method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({token, chat_id})
   });
   const d = await r.json();
-  toast(d.success ? '✅ Telegram verbunden!' : '❌ Verbindung fehlgeschlagen', d.success?'success':'error');
+  toast(d.success ? '✅ '+QI18n.t('msg_tg_connected') : '❌ '+QI18n.t('msg_tg_failed'), d.success?'success':'error');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1309,7 +1312,7 @@ async function saveIpWhitelist() {
     body: JSON.stringify({ips})
   });
   const d = await r.json();
-  toast(`✅ ${d.whitelist.length} IPs gesetzt`, 'success');
+  toast(`✅ ${d.whitelist.length} ${QI18n.t('msg_ips_set')}`, 'success');
 }
 async function loadIpWhitelist() {
   try {
@@ -1358,7 +1361,7 @@ function saveBreakEven() {
     break_even_trigger: trigger,
     break_even_buffer:  buffer,
   });
-  toast('✅ Break-Even Einstellungen gespeichert', 'success');
+  toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1371,7 +1374,7 @@ async function loadAuditLog() {
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const logs = d.logs || [];
-    if (!logs.length) { el.innerHTML='<div class="empty">Keine Einträge</div>'; return; }
+    if (!logs.length) { el.innerHTML='<div class="empty">'+QI18n.t('empty_no_entries')+'</div>'; return; }
     const icons = {login:'🔑',trade:'💹',config:'⚙️',admin:'👑','2fa':'🔐',default:'📋'};
     el.innerHTML = logs.map(l => {
       const ico = Object.entries(icons).find(([k])=>l.action?.includes(k))?.[1] || icons.default;
@@ -1387,7 +1390,7 @@ async function loadAuditLog() {
         </div>
       </div>`;
     }).join('');
-  } catch(e) { el.innerHTML='<div class="empty">Fehler</div>'; }
+  } catch(e) { el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
 
 // Load data when switching to risk/admin tabs
@@ -1458,19 +1461,19 @@ async function loadFeatureImportance(){
           <span style="color:var(--jade)">${w.weight}× &nbsp; WR: ${w.win_rate}%</span>
         </div>`).join('');
     }
-  } catch(e){ toast('Feature Importance Fehler','error'); }
+  } catch(e){ toast(QI18n.t('msg_fi_error'),'error'); }
 }
 
 function showReliabilityDiagram(){
-  toast('Kalibrierungs-Diagramm: In Kürze verfügbar','info');
+  toast(QI18n.t('msg_calibration'),'info');
 }
 
 // ── Markowitz Optimization ─────────────────────────────────────────────────
 async function runMarkowitz(){
   const syms = document.getElementById('markowitzSymbols')?.value?.split(',').map(s=>s.trim()).filter(Boolean);
-  if(!syms||syms.length<2){ toast('Mindestens 2 Symbole','warning'); return; }
+  if(!syms||syms.length<2){ toast(QI18n.t('err_min2_symbols'),'warning'); return; }
   const el = document.getElementById('markowitzResults');
-  if(el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--sub)">⏳ Berechne Markowitz...</div>';
+  if(el) el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--sub)">⏳ '+QI18n.t('msg_markowitz_calc')+'</div>';
   try {
     const r = await fetch('/api/v1/portfolio/optimize',{
       method:'POST',
@@ -1495,7 +1498,7 @@ async function runMarkowitz(){
           </div>
           <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${d.allocations[s]}%</span>
         </div>`).join('')}`;
-  } catch(e){ toast('Markowitz Fehler: '+e.message,'error'); }
+  } catch(e){ toast(QI18n.t('msg_markowitz_error')+': '+e.message,'error'); }
 }
 
 // ── Backtest Compare ────────────────────────────────────────────────────────
@@ -1504,8 +1507,8 @@ async function runCompareBacktest(){
   const tf   = document.getElementById('compareTf')?.value || '1h';
   const can  = parseInt(document.getElementById('compareCandles')?.value, 10) || 500;
   const el   = document.getElementById('compareResults');
-  if(!syms||syms.length<1){ toast('Mindestens 1 Symbol','warning'); return; }
-  if(el) el.innerHTML='<div style="text-align:center;padding:20px;color:var(--sub)">⏳ Backtest läuft...</div>';
+  if(!syms||syms.length<1){ toast(QI18n.t('err_min1_symbol'),'warning'); return; }
+  if(el) el.innerHTML='<div style="text-align:center;padding:20px;color:var(--sub)">⏳ '+QI18n.t('msg_bt_running')+'</div>';
   try {
     const r = await fetch('/api/v1/backtest/compare',{
       method:'POST',
@@ -1529,7 +1532,7 @@ async function runCompareBacktest(){
         </tr>`;
       }).join('')}
       </table></div>`;
-  } catch(e){ toast('Vergleich Fehler','error'); }
+  } catch(e){ toast(QI18n.t('msg_compare_error'),'error'); }
 }
 
 // ── Backtest History ────────────────────────────────────────────────────────
@@ -1538,7 +1541,7 @@ async function loadBtHistory(){
   try {
     const r = await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
-    if(!d.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-ico">📊</div>Keine Backtests</div>'; return; }
+    if(!d.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>'; return; }
     if(el) el.innerHTML = d.slice(0,10).map(b=>`
       <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
         <div>
@@ -1554,7 +1557,7 @@ async function loadBtHistory(){
           <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
         </div>
       </div>`).join('');
-  } catch(e){ if(el) el.innerHTML='<div class="empty">Laden fehlgeschlagen</div>'; }
+  } catch(e){ if(el) el.innerHTML='<div class="empty">'+QI18n.t('msg_bt_load_fail')+'</div>'; }
 }
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
@@ -1563,7 +1566,7 @@ async function adjustSL(symbol, entryPrice){
   if(!raw) return;
   const pct = parseFloat(raw);
   if(isNaN(pct) || pct <= 0 || pct > 50){
-    toast('Ungültiger SL-Wert (muss zwischen 0 und 50% liegen)','error');
+    toast(QI18n.t('err_sl_invalid'),'error');
     return;
   }
   try {
@@ -1574,9 +1577,9 @@ async function adjustSL(symbol, entryPrice){
     });
     const d = await r.json();
     if(d.new_sl) toast(`✅ SL ${symbol}: ${d.new_sl.toFixed(4)}`,'success');
-    else toast(d.error||'Fehler','error');
+    else toast(d.error||QI18n.t('err_generic'),'error');
   } catch(e) {
-    toast('Netzwerkfehler: '+e.message,'error');
+    toast(QI18n.t('err_network')+': '+e.message,'error');
   }
 }
 
@@ -1586,7 +1589,7 @@ async function requestPushPermission(){
   if(!('Notification' in window)){ toast(QI18n.t('toast_push_unsupported'),'warning'); return; }
   const perm = await Notification.requestPermission();
   if(perm === 'granted'){
-    toast('🔔 Browser-Benachrichtigungen aktiviert','success');
+    toast('🔔 '+QI18n.t('msg_push_enabled'),'success');
     document.getElementById('pushBtn').style.color='var(--jade)';
     document.getElementById('pushBtn').style.borderColor='var(--jade)';
     localStorage.setItem('trevlix_push','1');
@@ -1597,7 +1600,7 @@ async function requestPushPermission(){
       } catch(e){}
     }
   } else {
-    toast('Benachrichtigungen verweigert','warning');
+    toast(QI18n.t('msg_push_denied'),'warning');
   }
 }
 
@@ -1773,7 +1776,7 @@ function mexSaveKeys() {
   const api_key    = document.getElementById('mex-key-apikey').value.trim();
   const secret     = document.getElementById('mex-key-secret').value.trim();
   const passphrase = document.getElementById('mex-key-passphrase')?.value?.trim() || '';
-  if (!api_key || !secret) { toast('API-Key und Secret erforderlich', 'warning'); return; }
+  if (!api_key || !secret) { toast(QI18n.t('err_apikey_secret'), 'warning'); return; }
   socket.emit('save_exchange_keys', {exchange, api_key, secret, passphrase});
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
@@ -1792,7 +1795,7 @@ async function mexLoadTrades() {
     const d = await r.json();
     const trades = d.trades || [];
     if (!trades.length) {
-      el.innerHTML = '<div class="empty"><div class="empty-ico">📋</div>Keine Trades</div>';
+      el.innerHTML = '<div class="empty"><div class="empty-ico">📋</div>'+QI18n.t('empty_no_trades')+'</div>';
       return;
     }
     el.innerHTML = trades.slice(0,50).map(t => {
