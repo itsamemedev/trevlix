@@ -875,8 +875,8 @@ async function loadFollowers(){
     if(!d.followers || !d.followers.length){ el.innerHTML='<div style="font-size:11px;color:var(--sub)">'+QI18n.t('empty_no_followers')+'</div>'; return; }
     el.innerHTML = d.followers.map(f=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--muted);font-size:12px">
-        <span style="color:var(--txt)">${f.name}</span>
-        <span style="color:var(--sub)">×${f.scale} · ${f.signals} Signale</span>
+        <span style="color:var(--txt)">${esc(String(f.name||''))}</span>
+        <span style="color:var(--sub)">×${esc(String(f.scale||0))} · ${esc(String(f.signals||0))} Signale</span>
         <span style="color:${f.active?'var(--jade)':'var(--red)'}">${f.active?QI18n.t('label_active'):QI18n.t('label_inactive')}</span>
       </div>`).join('');
   } catch(e){}
