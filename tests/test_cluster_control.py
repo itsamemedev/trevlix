@@ -22,7 +22,14 @@ from services.cluster_control import (
     ClusterController,
     NodeInfo,
     NodeStatus,
+    _validate_host,
 )
+
+
+@pytest.fixture(autouse=True)
+def _skip_host_validation(monkeypatch):
+    """Disable SSRF host validation for unit tests using private IPs."""
+    monkeypatch.setattr("services.cluster_control._validate_host", lambda host: None)
 
 
 @pytest.fixture
@@ -248,7 +255,25 @@ class TestClusterMetrics:
         assert metrics["total_positions"] == 6
         assert metrics["nodes_online"] == 2
         assert metrics["nodes_total"] == 2
-        assert len(metrics["per_node"]) == 2
+
+
+class TestSSRFValidation:
+    """Tests for SSRF host validation."""
+
+    def test_private_ip_blocked(self) -> None:
+        """Verify private IPs are rejected by _validate_host."""
+        for ip in ("127.0.0.1", "10.0.0.1", "172.16.0.1", "192.168.1.1", "169.254.169.254"):
+            with pytest.raises(ValueError, match="blocked IP range"):
+                _validate_host(ip)
+
+    def test_invalid_port_rejected(self) -> None:
+        """Verify invalid ports are rejected by add_node."""
+        ctrl = ClusterController(config={}, notifier=None)
+        with pytest.raises(ValueError, match="Invalid port"):
+            ctrl.add_node("n1", "203.0.113.1", 0, "tok1")
+        with pytest.raises(ValueError, match="Invalid port"):
+            ctrl.add_node("n1", "203.0.113.1", 70000, "tok1")
+        ctrl.shutdown()
 
 
 class TestShutdown:

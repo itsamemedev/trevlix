@@ -4455,6 +4455,8 @@ class ShortEngine:
             return False
         if not price or price <= 0:
             return False
+        if invest <= 0 or invest > state.balance:
+            return False
         sl = price * (1 + CONFIG.get("stop_loss_pct", 0.03))
         tp = price * (1 - CONFIG.get("take_profit_pct", 0.05))
         try:
@@ -4464,6 +4466,8 @@ class ShortEngine:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
             with state._lock:
+                if CONFIG.get("paper_trading", True):
+                    state.balance -= invest
                 state.short_positions[symbol] = {
                     "entry": price,
                     "qty": qty,
@@ -5744,7 +5748,8 @@ def api_heatmap_v1():
         ex = create_exchange()
         return jsonify(get_heatmap_data(ex))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/backtest", methods=["POST"])
@@ -5767,7 +5772,8 @@ def api_backtest():
         )
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/tax")
@@ -5994,7 +6000,8 @@ def api_admin_exchanges():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/admin/exchanges/<int:exchange_id>/toggle", methods=["POST"])
@@ -6012,7 +6019,8 @@ def api_admin_exchange_toggle(exchange_id):
                 )
         return jsonify({"ok": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/signal", methods=["POST"])
@@ -6108,7 +6116,8 @@ def api_balance_all():
         data = fetch_aggregated_balance()
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/fees")
@@ -6148,7 +6157,8 @@ def api_arb():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # Admin Routes
@@ -6257,7 +6267,8 @@ def api_heatmap_legacy():
         ex = create_exchange()
         return jsonify(get_heatmap_data(ex))
     except Exception as e:
-        return jsonify({"error": str(e)})
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"})
 
 
 @app.route("/api/ohlcv/<path:symbol>")
@@ -6274,7 +6285,8 @@ def api_ohlcv(symbol):
         trades = [t for t in state.closed_trades if t.get("symbol") == sym][:20]
         return jsonify({"ohlcv": ohlcv, "trades": trades})
     except Exception as e:
-        return jsonify({"error": str(e)})
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"})
 
 
 @app.route("/api/tax_report")
@@ -6351,7 +6363,8 @@ def api_backup_verify():
         result = db.verify_backup(latest)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/docs")
@@ -6441,7 +6454,8 @@ def api_revoke_token(token_id):
         _audit("token_revoked", f"token_id={token_id}", request.user_id)
         return jsonify({"success": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
@@ -6887,10 +6901,25 @@ def on_admin_create_user(data):
     if session.get("user_role") != "admin":
         emit("status", {"msg": "❌ Kein Admin", "type": "error"})
         return
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+    role = str(data.get("role", "user")).strip()
+    if not username or len(username) < 3 or len(username) > 64:
+        emit("status", {"msg": "❌ Username muss 3-64 Zeichen haben", "type": "error"})
+        return
+    if not username.replace("_", "").replace("-", "").isalnum():
+        emit("status", {"msg": "❌ Username: nur Buchstaben, Zahlen, -, _", "type": "error"})
+        return
+    if len(password) < 8:
+        emit("status", {"msg": "❌ Passwort muss mind. 8 Zeichen haben", "type": "error"})
+        return
+    if role not in ("admin", "user", "viewer"):
+        emit("status", {"msg": "❌ Ungültige Rolle", "type": "error"})
+        return
     ok = db.create_user(
-        data.get("username", ""),
-        data.get("password", ""),
-        data.get("role", "user"),
+        username,
+        password,
+        role,
         _safe_float(data.get("balance", 10000), 10000.0),
     )
     emit(
@@ -7025,7 +7054,8 @@ def api_audit_log():
                 rows = c.fetchall()
         return jsonify({"logs": [dict(r) for r in rows]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -8034,7 +8064,8 @@ def api_exchanges():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/copy-trading/register", methods=["POST"])
@@ -8175,7 +8206,8 @@ def api_portfolio_optimize():
             }
         )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/backtest/compare", methods=["POST"])

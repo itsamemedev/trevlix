@@ -183,8 +183,8 @@ class AdaptiveWeights:
             weighted_wr = float(np.sum(weights * outcomes) / weight_sum) if weight_sum > 0 else 0.5
 
             # Score: Win-Rate von 0.5 (Baseline) abweichen
-            # 60% WR → 1.2x, 40% WR → 0.8x, 70% WR → 1.4x
-            score = 0.5 + (weighted_wr - 0.5) * 2.0
+            # 60% WR → 1.25x, 40% WR → 0.75x, 70% WR → 1.5x
+            score = 0.5 + (weighted_wr - 0.5) * 2.5
             score = max(self._min_w, min(score, self._max_w))
             raw_scores[strategy] = score
 

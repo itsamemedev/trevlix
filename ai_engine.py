@@ -47,6 +47,7 @@ try:
     from sklearn.calibration import CalibratedClassifierCV
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.model_selection import cross_val_score
+    from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
 
     ML_AVAILABLE = True
@@ -305,6 +306,9 @@ class AIEngine:
             if v == 1:  # Strategie hat Kauf empfohlen
                 old = self.strategy_win_rates.get(name, 0.5)
                 self.strategy_win_rates[name] = (1 - alpha) * old + alpha * float(won)
+            elif v == -1:  # Strategie hat Verkauf empfohlen → invertierte Auswertung
+                old = self.strategy_win_rates.get(name, 0.5)
+                self.strategy_win_rates[name] = (1 - alpha) * old + alpha * float(not won)
 
     # ═══════════════════════════════════════════════════════════
     # MODELL TRAINING
@@ -366,15 +370,19 @@ class AIEngine:
             # Genauigkeit messen (auf lokalen Referenzen arbeiten)
             self.accuracy = float(new_model.score(X_scaled, y))
             if n >= 30:
-                base_rf = RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=6,
-                    class_weight="balanced",
-                    random_state=42,
-                    n_jobs=-1,
+                # Pipeline mit eigenem Scaler pro CV-Fold verhindert Data Leakage
+                cv_pipeline = make_pipeline(
+                    StandardScaler(),
+                    RandomForestClassifier(
+                        n_estimators=100,
+                        max_depth=6,
+                        class_weight="balanced",
+                        random_state=42,
+                        n_jobs=-1,
+                    ),
                 )
                 cv_scores = cross_val_score(
-                    base_rf, X_scaled, y, cv=min(5, n // 5), scoring="accuracy"
+                    cv_pipeline, X, y, cv=min(5, n // 5), scoring="accuracy"
                 )
                 self.cv_accuracy = float(cv_scores.mean())
             else:
