@@ -8,6 +8,7 @@ flask>=3.0.0,<4.0.0
 flask-socketio>=5.3.6,<6.0.0
 flask-cors>=4.0.0,<5.0.0
 flask-limiter>=3.5.0,<4.0.0
+simple-websocket>=1.0.0,<2.0.0   # WebSocket-Transport für async_mode="threading"
 # eventlet entfernt: Server nutzt async_mode="threading" + Werkzeug (allow_unsafe_werkzeug=True)
 
 # ── Exchange Connectivity ──────────────────────────────────────

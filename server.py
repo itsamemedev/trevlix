@@ -7613,7 +7613,7 @@ def api_exchanges():
         with db._get_conn() as conn:
             with conn.cursor() as c:
                 c.execute(
-                    "SELECT id, exchange, is_active, created_at FROM user_exchanges "
+                    "SELECT id, exchange, enabled, created_at FROM user_exchanges "
                     "WHERE user_id = %s ORDER BY exchange",
                     (uid,),
                 )
