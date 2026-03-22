@@ -58,17 +58,25 @@ class KnowledgeBase:
         }
     )
 
-    def __init__(self, db_manager, llm_endpoint: str = "", llm_api_key: str = ""):
+    def __init__(
+        self,
+        db_manager,
+        llm_endpoint: str = "",
+        llm_api_key: str = "",
+        llm_model: str = "",
+    ):
         """Initialisiert die KnowledgeBase.
 
         Args:
             db_manager: MySQLManager-Instanz für DB-Zugriff.
             llm_endpoint: URL einer lokalen LLM-API (z.B. Ollama, LM Studio).
             llm_api_key: API-Key für die LLM-API (falls nötig).
+            llm_model: Modellname (z.B. llama3, mistral). Pflicht für Ollama.
         """
         self._db = db_manager
         self._llm_endpoint = llm_endpoint
         self._llm_api_key = llm_api_key
+        self._llm_model = llm_model
         self._cache: dict[str, dict] = {}
         self._cache_ts: dict[str, float] = {}
         self._cache_ttl = 300  # 5 Minuten Cache
@@ -269,6 +277,11 @@ class KnowledgeBase:
             swr = sd["wins"] / sd["trades"] if sd["trades"] > 0 else 0
             self.store("strategy_perf", strat_key, sd, confidence=swr, source="trade")
 
+    @property
+    def _is_ollama(self) -> bool:
+        """Erkennt ob der Endpunkt eine Ollama-Instanz ist."""
+        return "11434" in self._llm_endpoint or "/api/chat" in self._llm_endpoint
+
     def query_llm(self, prompt: str, context: str = "") -> str | None:
         """Fragt eine lokale LLM-Instanz nach Analyse/Empfehlung.
 
@@ -293,14 +306,39 @@ class KnowledgeBase:
             if self._llm_api_key:
                 headers["Authorization"] = f"Bearer {self._llm_api_key}"
 
+            # Ollama erwartet zwingend "model" und "stream": false
+            if self._is_ollama:
+                model = self._llm_model or "llama3"
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"temperature": 0.3, "num_predict": 500},
+                }
+            else:
+                # OpenAI-kompatibles Format (LM Studio, vLLM, etc.)
+                payload = {
+                    "messages": messages,
+                    "temperature": 0.3,
+                    "max_tokens": 500,
+                }
+                if self._llm_model:
+                    payload["model"] = self._llm_model
+
             resp = httpx.post(
                 self._llm_endpoint,
-                json={"messages": messages, "temperature": 0.3, "max_tokens": 500},
+                json=payload,
                 headers=headers,
                 timeout=30,
             )
             if resp.status_code == 200:
                 data = resp.json()
+                # Ollama /api/chat Format: {"message": {"content": "..."}}
+                if self._is_ollama:
+                    answer = data.get("message", {}).get("content", "")
+                    if not answer:
+                        answer = data.get("response", "")
+                    return answer or None
                 # OpenAI-kompatibles Format
                 choices = data.get("choices") or []
                 answer = (
@@ -308,10 +346,7 @@ class KnowledgeBase:
                     if choices and isinstance(choices[0], dict)
                     else ""
                 )
-                if not answer:
-                    # Ollama-Format
-                    answer = data.get("response", "")
-                return answer
+                return answer or None
             log.warning(f"LLM Query fehlgeschlagen: HTTP {resp.status_code}")
             return None
         except Exception as e:

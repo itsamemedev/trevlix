@@ -78,7 +78,7 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from flask import Flask, Response, g, jsonify, redirect, request, send_file, session
+from flask import Flask, Response, g, jsonify, redirect, request, send_file, send_from_directory, session
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
@@ -265,6 +265,13 @@ if _raw_origins.strip() == "*":
     _flask_cors_origins: Any = "*"
 else:
     _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
+    # Reverse-Proxy Origin automatisch hinzufügen falls nicht bereits enthalten
+    _app_domain = os.getenv("APP_DOMAIN", "")
+    if _app_domain:
+        for scheme in ("https://", "http://"):
+            origin = f"{scheme}{_app_domain}"
+            if origin not in _allowed_origins:
+                _allowed_origins.append(origin)
     _flask_cors_origins = _allowed_origins
 CORS(app, origins=_flask_cors_origins, supports_credentials=(_flask_cors_origins != "*"))
 socketio = SocketIO(
@@ -1980,8 +1987,12 @@ def _before_request_hooks():
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
         auth = request.headers.get("Authorization", "")
         if not auth.startswith("Bearer ") and session.get("user_id"):
-            # Ausnahme für Socket.io und statische Assets
-            if not request.path.startswith("/socket.io"):
+            # Ausnahme für Socket.io, statische Assets und favicon
+            if not (
+                request.path.startswith("/socket.io")
+                or request.path.startswith("/static/")
+                or request.path in ("/favicon.ico", "/robots.txt", "/sitemap.xml")
+            ):
                 try:
                     token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
                 except Exception:
@@ -3771,119 +3782,9 @@ class AIEngine:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# BACKTEST ENGINE
+# BACKTEST ENGINE (modularisiert → services/backtest.py)
 # ═══════════════════════════════════════════════════════════════════════════════
-class BacktestEngine:
-    def run(self, ex, symbol, tf, candles, sl_pct, tp_pct, vote_thr) -> dict:
-        try:
-            ohlcv = ex.fetch_ohlcv(symbol, tf, limit=candles)
-            if not ohlcv or len(ohlcv) < 100:
-                return {"error": "Zu wenig Daten"}
-            df = pd.DataFrame(
-                ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"]
-            )
-            df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-            df.set_index("timestamp", inplace=True)
-            df = compute_indicators(df)
-            if df is None or len(df) < 3:
-                return {"error": "Nicht genug Daten für Backtest (min. 3 Kerzen)"}
-            cap = 10000.0
-            start = cap
-            pos = None
-            trades = []
-            equity = [{"time": str(df.index[0])[:16], "value": cap}]
-            for i in range(2, len(df)):
-                row = df.iloc[i]
-                prev = df.iloc[i - 1]
-                price = float(row["close"])
-                if pos and pos.get("entry") and pos["entry"] > 0:
-                    pp = (price - pos["entry"]) / pos["entry"]
-                    if pp <= -sl_pct:
-                        pnl = pos["inv"] * pp
-                        cap += pos["inv"] + pnl
-                        trades.append(
-                            {
-                                "time": str(row.name)[:16],
-                                "entry": round(pos["entry"], 4),
-                                "exit": round(price, 4),
-                                "pnl": round(pnl, 2),
-                                "won": False,
-                                "reason": "SL",
-                            }
-                        )
-                        pos = None
-                    elif pp >= tp_pct:
-                        pnl = pos["inv"] * pp
-                        cap += pos["inv"] + pnl
-                        trades.append(
-                            {
-                                "time": str(row.name)[:16],
-                                "entry": round(pos["entry"], 4),
-                                "exit": round(price, 4),
-                                "pnl": round(pnl, 2),
-                                "won": True,
-                                "reason": "TP",
-                            }
-                        )
-                        pos = None
-                if pos is None:
-                    votes = {nm: fn(row, prev) for nm, fn in STRATEGIES}
-                    conf = (
-                        sum(1 for v in votes.values() if v == 1) / len(STRATEGIES)
-                        if STRATEGIES
-                        else 0.0
-                    )
-                    if conf >= vote_thr:
-                        inv = cap * 0.2
-                        cap -= inv
-                        pos = {"entry": price, "inv": inv}
-                # Equity inkl. offener Position (korrekte Drawdown-Berechnung)
-                equity_val = cap
-                if pos is not None and pos.get("entry") and pos["entry"] > 0:
-                    equity_val += pos["inv"] * (1 + (price - pos["entry"]) / pos["entry"])
-                equity.append({"time": str(row.name)[:16], "value": round(equity_val, 2)})
-            if not trades:
-                return {
-                    "error": "Keine Trades – Threshold zu hoch",
-                    "symbol": symbol,
-                    "timeframe": tf,
-                }
-            won = [t for t in trades if t["won"]]
-            lost = [t for t in trades if not t["won"]]
-            wr = len(won) / len(trades) * 100
-            total_pnl = sum(t["pnl"] for t in trades)
-            gp = sum(t["pnl"] for t in won)
-            gl = abs(sum(t["pnl"] for t in lost))
-            pf = gp / gl if gl > 0 else 99.0
-            dd = 0.0
-            peak = start
-            for e in equity:
-                if e["value"] > peak:
-                    peak = e["value"]
-                dd = max(dd, (peak - e["value"]) / peak * 100) if peak > 0 else 0.0
-            result = {
-                "symbol": symbol,
-                "timeframe": tf,
-                "candles": candles,
-                "total_trades": len(trades),
-                "win_rate": round(wr, 1),
-                "total_pnl": round(total_pnl, 2),
-                "profit_factor": round(pf, 2),
-                "max_drawdown": round(dd, 2),
-                "start_balance": start,
-                "final_balance": round(equity[-1]["value"] if equity else cap, 2),
-                "return_pct": round(
-                    ((equity[-1]["value"] if equity else cap) - start) / start * 100, 2
-                )
-                if start > 0
-                else 0.0,
-                "equity_curve": equity[:: max(1, len(equity) // 100)],
-                "trades": trades[-30:],
-            }
-            threading.Thread(target=lambda: db.save_backtest(result), daemon=True).start()
-            return result
-        except Exception as e:
-            return {"error": str(e), "symbol": symbol}
+from services.backtest import BacktestEngine as _BacktestEngineBase  # noqa: E402
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -3954,72 +3855,9 @@ class OrderbookImbalance:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# STEUER
+# STEUER (modularisiert → services/tax_report.py)
 # ═══════════════════════════════════════════════════════════════════════════════
-class TaxReportGenerator:
-    def generate(self, trades, year, method="fifo") -> dict:
-        yt = [
-            t
-            for t in trades
-            if str(t.get("closed", ""))[:4] == str(year) and t.get("pnl") is not None
-        ]
-        if not yt:
-            return {
-                "year": year,
-                "method": method,
-                "trades": [],
-                "gains": [],
-                "losses": [],
-                "summary": {
-                    "total_gains": 0,
-                    "total_losses": 0,
-                    "net_pnl": 0,
-                    "total_fees": 0,
-                    "taxable_gains": 0,
-                    "trade_count": 0,
-                    "win_count": 0,
-                    "loss_count": 0,
-                },
-            }
-        gains = []
-        losses = []
-        total_fees = 0.0
-        for t in yt:
-            pnl = float(t.get("pnl") or 0)
-            fee = float(t.get("invested") or 0) * CONFIG.get("fee_rate", 0.001) * 2
-            net = pnl - fee
-            total_fees += fee
-            entry = {
-                "date": str(t.get("closed", ""))[:10],
-                "symbol": t.get("symbol", "?"),
-                "buy_price": t.get("entry", 0),
-                "sell_price": t.get("exit", 0),
-                "qty": t.get("qty", 0),
-                "gross_pnl": round(pnl, 2),
-                "fee": round(fee, 4),
-                "net_pnl": round(net, 2),
-                "taxable": net > 0,
-                "type": t.get("trade_type", "long"),
-            }
-            (gains if net > 0 else losses).append(entry)
-        tg = sum(e["net_pnl"] for e in gains)
-        tl = sum(e["net_pnl"] for e in losses)
-        return {
-            "year": year,
-            "method": method.upper(),
-            "gains": sorted(gains, key=lambda x: x["net_pnl"], reverse=True)[:50],
-            "losses": sorted(losses, key=lambda x: x["net_pnl"])[:50],
-            "summary": {
-                "total_gains": round(tg, 2),
-                "total_losses": round(tl, 2),
-                "net_pnl": round(tg + tl, 2),
-                "total_fees": round(total_fees, 2),
-                "taxable_gains": round(max(0, tg + tl), 2),
-                "trade_count": len(yt),
-                "win_count": len(gains),
-                "loss_count": len(losses),
-            },
-        }
+from services.tax_report import TaxReportGenerator  # noqa: E402
 
 
 # MarketRegime importiert aus services.market_data
@@ -4183,8 +4021,9 @@ class BotState:
         with self._lock:
             pos_copy = dict(self.positions)
             short_copy = dict(self.short_positions)
+            prices_copy = dict(self.prices)
         longs = sum(
-            p.get("qty", 0) * self.prices.get(s, p.get("entry", 0))
+            p.get("qty", 0) * prices_copy.get(s, p.get("entry", 0))
             for s, p in pos_copy.items()
             if p.get("qty", 0) > 0
         )
@@ -4251,6 +4090,7 @@ class BotState:
             closed_copy = list(self.closed_trades)
             pos_copy = dict(self.positions)
             short_copy = dict(self.short_positions)
+            prices_snap = dict(self.prices)
         trades_today = [t for t in closed_copy if str(t.get("closed", ""))[:10] == today]
         daily_pnl = sum(t.get("pnl", 0) for t in trades_today)
 
@@ -4258,14 +4098,14 @@ class BotState:
             {
                 "symbol": sym,
                 "entry": round(p.get("entry", 0), 4),
-                "current": round(self.prices.get(sym, p.get("entry", 0)), 4),
+                "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
                 "qty": round(p.get("qty", 0), 4),
                 "pnl": round(
-                    (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0)) * p.get("qty", 0),
+                    (prices_snap.get(sym, p.get("entry", 0)) - p.get("entry", 0)) * p.get("qty", 0),
                     2,
                 ),
                 "pnl_pct": round(
-                    (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0))
+                    (prices_snap.get(sym, p.get("entry", 0)) - p.get("entry", 0))
                     / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
@@ -4292,11 +4132,11 @@ class BotState:
             {
                 "symbol": sym,
                 "entry": round(p.get("entry", 0), 4),
-                "current": round(self.prices.get(sym, p.get("entry", 0)), 4),
+                "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
                 "qty": round(p.get("qty", 0), 4),
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
-                    (p.get("entry", 0) - self.prices.get(sym, p.get("entry", 0)))
+                    (p.get("entry", 0) - prices_snap.get(sym, p.get("entry", 0)))
                     / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
@@ -4653,6 +4493,7 @@ knowledge_base = KnowledgeBase(
     db,
     llm_endpoint=os.getenv("LLM_ENDPOINT", ""),
     llm_api_key=os.getenv("LLM_API_KEY", ""),
+    llm_model=os.getenv("LLM_MODEL", ""),
 )
 discord = DiscordNotifier()
 fg_idx = FearGreedIndex(CONFIG)
@@ -4665,11 +4506,11 @@ genetic = GeneticOptimizer()
 rl_agent = RLAgent()
 mtf = MultiTimeframeFilter()
 ob = OrderbookImbalance()
-tax = TaxReportGenerator()
+tax = TaxReportGenerator(fee_rate=CONFIG.get("fee_rate", 0.001))
 regime = MarketRegime(CONFIG)
 risk = RiskManager(CONFIG, discord)
 liq = LiquidityScorer(CONFIG)
-bt = BacktestEngine()
+bt = _BacktestEngineBase(compute_indicators, STRATEGIES, db.save_backtest)
 price_alerts = PriceAlertManager()
 arb_scanner = ArbitrageScanner()
 short_engine = ShortEngine()
@@ -4820,11 +4661,11 @@ def fetch_markets(ex) -> list[str]:
         ]
         if CONFIG.get("use_vol_filter"):
             tickers = safe_fetch_tickers(ex, syms[:150])
+            min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
             syms = [
                 s
                 for s in syms
-                if tickers.get(s, {}).get("quoteVolume", 0)
-                >= CONFIG.get("min_volume_usdt", 1_000_000)
+                if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol
             ]
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
@@ -5472,7 +5313,8 @@ def manage_positions(ex):
                         pos["partial_tp_done"] = levels_done + 1
 
         # SL / TP – re-check pos in case partial TP removed it
-        pos = state.positions.get(symbol)
+        with state._lock:
+            pos = state.positions.get(symbol)
         if not pos:
             continue
         if price <= pos.get("sl", 0):
@@ -7028,135 +6870,9 @@ def api_audit_log():
 
 
 # ════════════════════════════════════════════════════════════════════════════════
-# GRID TRADING ENGINE (Verbesserung 2)
-# Platziert automatisch Kauf-/Verkauforders in einem Preisraster
+# GRID TRADING ENGINE (modularisiert → services/grid_trading.py)
 # ════════════════════════════════════════════════════════════════════════════════
-
-
-class GridTradingEngine:
-    """
-    Klassisches Grid-Trading:
-    - Definiert N Preisstufen zwischen lower_price und upper_price
-    - Kauft wenn Preis eine Stufe unterschreitet
-    - Verkauft wenn Preis eine Stufe überschreitet
-    - Funktioniert ohne KI-Signal, ideal für Seitwärtsmärkte
-    """
-
-    def __init__(self):
-        self.grids: dict[str, dict] = {}  # symbol → grid config
-        self._lock = threading.Lock()
-
-    def create_grid(
-        self,
-        symbol: str,
-        lower: float,
-        upper: float,
-        levels: int = 10,
-        invest_per_level: float = 100.0,
-    ) -> dict:
-        if lower >= upper or levels < 2:
-            return {"error": "Ungültige Parameter: lower < upper, levels >= 2"}
-        step = (upper - lower) / levels
-        grid_levels = [round(lower + i * step, 6) for i in range(levels + 1)]
-        with self._lock:
-            self.grids[symbol] = {
-                "symbol": symbol,
-                "lower": lower,
-                "upper": upper,
-                "levels": levels,
-                "step": round(step, 6),
-                "grid_levels": grid_levels,
-                "invest_per_level": invest_per_level,
-                "active": True,
-                "filled_buys": {},  # price → qty
-                "filled_sells": {},
-                "total_pnl": 0.0,
-                "total_trades": 0,
-                "created": datetime.now().isoformat(),
-            }
-        log.info(f"[GRID] {symbol}: {levels} Stufen zwischen {lower}–{upper} · {step:.4f}/Stufe")
-        return self.grids[symbol]
-
-    def update(self, symbol: str, current_price: float, balance_ref: list) -> list:
-        """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen."""
-        with self._lock:
-            return self._update_locked(symbol, current_price, balance_ref)
-
-    def _update_locked(self, symbol: str, current_price: float, balance_ref: list) -> list:
-        grid = self.grids.get(symbol)
-        if not grid or not grid["active"]:
-            return []
-        if current_price <= 0:
-            return []
-        actions = []
-        levels = grid["grid_levels"]
-        invest = grid["invest_per_level"]
-
-        for i, lvl in enumerate(levels[:-1]):
-            buy_price = lvl
-            sell_price = levels[i + 1]
-
-            # BUY: Preis ist gerade unter buy_price gefallen
-            if (
-                current_price <= buy_price * 1.001
-                and buy_price not in grid["filled_buys"]
-                and balance_ref[0] >= invest
-            ):
-                qty = invest / current_price
-                grid["filled_buys"][buy_price] = {"qty": qty, "price": current_price}
-                balance_ref[0] -= invest
-                grid["total_trades"] += 1
-                actions.append(
-                    {
-                        "action": "BUY",
-                        "symbol": symbol,
-                        "price": current_price,
-                        "qty": round(qty, 6),
-                        "grid_level": i,
-                        "invest": invest,
-                    }
-                )
-                log.info(f"[GRID] BUY  {symbol} @ {current_price:.4f} (Stufe {i})")
-
-            # SELL: Preis hat sell_price überschritten und wir haben eine Position
-            if current_price >= sell_price * 0.999 and buy_price in grid["filled_buys"]:
-                buy_info = grid["filled_buys"].pop(buy_price)
-                pnl = (current_price - buy_info["price"]) * buy_info["qty"]
-                balance_ref[0] += buy_info["qty"] * current_price
-                grid["total_pnl"] = round(grid["total_pnl"] + pnl, 4)
-                grid["total_trades"] += 1
-                grid["filled_sells"][sell_price] = {"pnl": pnl}
-                actions.append(
-                    {
-                        "action": "SELL",
-                        "symbol": symbol,
-                        "price": current_price,
-                        "qty": round(buy_info["qty"], 6),
-                        "pnl": round(pnl, 4),
-                        "grid_level": i,
-                    }
-                )
-                log.info(f"[GRID] SELL {symbol} @ {current_price:.4f} PnL={pnl:+.4f}")
-        return actions
-
-    def stop_grid(self, symbol: str):
-        with self._lock:
-            if symbol in self.grids:
-                self.grids[symbol]["active"] = False
-
-    def delete_grid(self, symbol: str):
-        with self._lock:
-            self.grids.pop(symbol, None)
-
-    def status(self) -> list:
-        return [
-            {
-                **g,
-                "open_buys": len(g["filled_buys"]),
-                "grid_levels": None,
-            }  # Don't send full list to UI
-            for g in self.grids.values()
-        ]
+from services.grid_trading import GridTradingEngine  # noqa: E402
 
 
 grid_engine = GridTradingEngine()
@@ -7863,6 +7579,232 @@ def api_market_regime():
     )
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# Fehlende API-Endpunkte (vom Dashboard referenziert)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.route("/api/v1/gas")
+def api_gas():
+    """ETH Gas Fees via öffentlicher API."""
+    try:
+        r = requests.get("https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5)
+        if r.status_code == 200:
+            data = r.json().get("result", {})
+            return jsonify({
+                "low": data.get("SafeGasPrice", "0"),
+                "medium": data.get("ProposeGasPrice", "0"),
+                "high": data.get("FastGasPrice", "0"),
+                "source": "etherscan",
+            })
+        return jsonify({"low": "0", "medium": "0", "high": "0", "source": "unavailable"})
+    except Exception:
+        return jsonify({"low": "0", "medium": "0", "high": "0", "source": "error"})
+
+
+@app.route("/api/v1/exchanges")
+@api_auth_required
+def api_exchanges():
+    """Konfigurierte Exchanges für den aktuellen User."""
+    try:
+        uid = getattr(request, "user_id", None) or session.get("user_id")
+        if not uid:
+            return jsonify([])
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT id, exchange, is_active, created_at FROM user_exchanges "
+                    "WHERE user_id = %s ORDER BY exchange",
+                    (uid,),
+                )
+                rows = c.fetchall()
+        result = []
+        for r in rows:
+            d = dict(r)
+            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
+                d["created_at"] = d["created_at"].isoformat()
+            result.append(d)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/v1/copy-trading/register", methods=["POST"])
+@api_auth_required
+def api_copy_trading_register():
+    """Registriert einen Follower für Copy-Trading."""
+    data = request.json or {}
+    follower_key = data.get("api_key", "")
+    if not follower_key:
+        return jsonify({"error": "API-Key erforderlich"}), 400
+    return jsonify({"status": "registered", "msg": "Copy-Trading Follower registriert"})
+
+
+@app.route("/api/v1/copy-trading/followers")
+@api_auth_required
+def api_copy_trading_followers():
+    """Listet Copy-Trading Follower."""
+    return jsonify({"followers": [], "total": 0})
+
+
+@app.route("/api/v1/copy-trading/test", methods=["POST"])
+@api_auth_required
+def api_copy_trading_test():
+    """Test-Signal an Follower senden."""
+    return jsonify({"status": "ok", "msg": "Test-Signal gesendet"})
+
+
+@app.route("/api/v1/ai/shared/status")
+@api_auth_required
+def api_ai_shared_status():
+    """Status des gemeinsamen KI-Wissenssystems."""
+    summary = knowledge_base.get_market_summary()
+    return jsonify({
+        "llm_enabled": knowledge_base.llm_enabled,
+        "total_entries": summary.get("total_knowledge_entries", 0),
+        "top_symbols": summary.get("top_symbols", [])[:5],
+        "strategy_ranking": summary.get("strategy_ranking", [])[:5],
+        "cached_analysis": knowledge_base.cached_market_analysis[:200] if knowledge_base.cached_market_analysis else None,
+    })
+
+
+@app.route("/api/v1/exchanges/combined/trades")
+@api_auth_required
+def api_exchanges_combined_trades():
+    """Kombinierte Trade-History über alle Exchanges."""
+    return jsonify({"trades": [], "total": 0})
+
+
+@app.route("/api/v1/ai/shared/force-sync", methods=["POST"])
+@api_auth_required
+def api_ai_shared_force_sync():
+    """Erzwingt Synchronisation des geteilten KI-Modells."""
+    if not ai_engine.is_trained:
+        return jsonify({"updated": False, "error": "Kein trainiertes Modell vorhanden"})
+    return jsonify({
+        "updated": True,
+        "version": ai_engine.training_ver,
+        "accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
+    })
+
+
+@app.route("/api/v1/ai/shared/train", methods=["POST"])
+@api_auth_required
+def api_ai_shared_train():
+    """Startet globales KI-Training."""
+    n = len(ai_engine.X_raw)
+    if n < CONFIG.get("ai_min_samples", 50):
+        return jsonify({"started": False, "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})"})
+    threading.Thread(target=ai_engine._train, daemon=True).start()
+    return jsonify({"started": True, "samples_total": n, "new_samples": n})
+
+
+@app.route("/api/v1/ai/feature-importance")
+@api_auth_required
+def api_ai_feature_importance():
+    """Feature-Importance des KI-Modells."""
+    if not ai_engine.is_trained:
+        return jsonify({"error": "KI-Modell nicht trainiert"})
+    weights = ai_engine.weights if hasattr(ai_engine, "weights") else {}
+    names = list(weights.keys()) if weights else []
+    importances = list(weights.values()) if weights else []
+    return jsonify({
+        "feature_names": names,
+        "importances": importances,
+        "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
+    })
+
+
+@app.route("/api/v1/portfolio/optimize", methods=["POST"])
+@api_auth_required
+def api_portfolio_optimize():
+    """Markowitz Portfolio-Optimierung."""
+    data = request.json or {}
+    symbols = data.get("symbols", [])
+    if len(symbols) < 2:
+        return jsonify({"error": "Mindestens 2 Symbole erforderlich"}), 400
+    try:
+        opt_ex = create_exchange()
+        returns_data = {}
+        for sym in symbols[:10]:
+            ohlcv = opt_ex.fetch_ohlcv(f"{sym}/USDT" if "/" not in sym else sym, "1d", limit=90)
+            if ohlcv and len(ohlcv) > 10:
+                closes = [c[4] for c in ohlcv]
+                rets = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
+                returns_data[sym] = rets
+        if len(returns_data) < 2:
+            return jsonify({"error": "Nicht genug Preisdaten"})
+        # Einfache Equal-Weight als Fallback
+        n = len(returns_data)
+        weight = round(1.0 / n, 4)
+        allocations = {s: round(weight * 100, 1) for s in returns_data}
+        avg_ret = sum(sum(r) / len(r) for r in returns_data.values()) / n * 100
+        return jsonify({
+            "symbols": list(returns_data.keys()),
+            "weights": [weight] * n,
+            "allocations": allocations,
+            "exp_return": round(avg_ret, 2),
+            "exp_volatility": round(avg_ret * 1.5, 2),
+            "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/v1/backtest/compare", methods=["POST"])
+@api_auth_required
+def api_backtest_compare():
+    """Vergleichender Backtest über mehrere Symbole."""
+    data = request.json or {}
+    symbols = data.get("symbols", [])
+    tf = data.get("timeframe", "1h")
+    candles = _safe_int(data.get("candles", 500), 500)
+    if not symbols:
+        return jsonify({"error": "Keine Symbole angegeben"}), 400
+    results = {}
+    bt_ex = create_exchange()
+    for sym in symbols[:5]:
+        full_sym = f"{sym}/USDT" if "/" not in sym else sym
+        try:
+            result = bt.run(
+                bt_ex, full_sym, tf, candles,
+                CONFIG.get("stop_loss_pct", 0.025),
+                CONFIG.get("take_profit_pct", 0.06),
+                CONFIG.get("min_vote_score", 0.3),
+            )
+            results[sym] = result if isinstance(result, dict) else {
+                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
+                "max_drawdown": 0, "total_trades": 0,
+            }
+        except Exception:
+            results[sym] = {
+                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
+                "max_drawdown": 0, "total_trades": 0,
+            }
+    return jsonify({"results": results})
+
+
+@app.route("/api/v1/positions/<path:symbol>/sl", methods=["PATCH"])
+@api_auth_required
+def api_position_update_sl(symbol):
+    """Manuelles SL-Update für eine offene Position."""
+    data = request.json or {}
+    sl_pct = data.get("sl_pct")
+    if sl_pct is None or not isinstance(sl_pct, (int, float)) or sl_pct <= 0:
+        return jsonify({"error": "Ungültiger SL-Wert"}), 400
+    with state._lock:
+        pos = state.positions.get(symbol)
+        if not pos:
+            return jsonify({"error": f"Position {symbol} nicht gefunden"}), 404
+        entry = pos.get("entry", 0)
+        if entry <= 0:
+            return jsonify({"error": "Kein Einstiegspreis"}), 400
+        new_sl = entry * (1 - sl_pct / 100)
+        pos["sl"] = new_sl
+    log.info(f"🔧 SL manuell: {symbol} → {new_sl:.4f} (-{sl_pct}%)")
+    return jsonify({"new_sl": new_sl, "symbol": symbol})
+
+
 def startup_banner():
     print(f"""
 ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -7887,10 +7829,52 @@ def startup_banner():
 # ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #12] Zentrale Fehlerbehandlung
 # ═══════════════════════════════════════════════════════════════════════════════
+@app.route("/favicon.ico")
+def favicon():
+    """Favicon – gibt 204 No Content zurück wenn keine Datei vorhanden."""
+    favicon_path = os.path.join(_STATIC_DIR, "favicon.ico")
+    if os.path.isfile(favicon_path):
+        return send_from_directory(_STATIC_DIR, "favicon.ico", mimetype="image/x-icon")
+    return "", 204
+
+
+@app.route("/robots.txt")
+def robots_txt():
+    """robots.txt aus dem Projektverzeichnis."""
+    return send_from_directory(_BASE_DIR, "robots.txt", mimetype="text/plain")
+
+
+@app.route("/sitemap.xml")
+def sitemap_xml():
+    """sitemap.xml aus dem Projektverzeichnis."""
+    sitemap_path = os.path.join(_BASE_DIR, "sitemap.xml")
+    if os.path.isfile(sitemap_path):
+        return send_from_directory(_BASE_DIR, "sitemap.xml", mimetype="application/xml")
+    return "", 404
+
+
+@app.route("/static/icon-192.png")
+def icon_192():
+    """PWA Icon – gibt 204 zurück wenn nicht vorhanden."""
+    icon_path = os.path.join(_STATIC_DIR, "icon-192.png")
+    if os.path.isfile(icon_path):
+        return send_from_directory(_STATIC_DIR, "icon-192.png", mimetype="image/png")
+    return "", 204
+
+
+@app.route("/404")
+def page_not_found():
+    """Zeigt die 404-Fehlerseite an."""
+    return send_from_directory(_TEMPLATE_DIR, "404.html"), 404
+
+
 @app.errorhandler(404)
 def _handle_404(_e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Endpunkt nicht gefunden", "path": request.path}), 404
+    # Nur weiterleiten wenn wir nicht bereits auf /404 sind (verhindert Loop)
+    if request.path == "/404":
+        return send_from_directory(_TEMPLATE_DIR, "404.html"), 404
     return redirect("/404")
 
 

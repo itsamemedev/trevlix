@@ -561,6 +561,7 @@ def create_auth_blueprint(
             session["username"] = user["username"]
             session["user_role"] = user.get("role", "user")
             session["last_active"] = datetime.now().isoformat()
+            _ensure_csrf()  # CSRF-Token nach Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "login", f"Login · {client_ip}", client_ip)
             return redirect("/")
@@ -784,6 +785,7 @@ def create_auth_blueprint(
             session["username"] = user["username"]
             session["user_role"] = "admin"
             session["last_active"] = datetime.now().isoformat()
+            _ensure_csrf()  # CSRF-Token nach Admin-Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "admin_login", f"Admin-Login · {client_ip}", client_ip)
             return redirect("/")

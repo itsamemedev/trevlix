@@ -95,7 +95,7 @@ class _FactorStats:
             "avg_pnl": round(avg_pnl, 2),
             "best_trade": round(float(pnl_arr.max()), 2),
             "worst_trade": round(float(pnl_arr.min()), 2),
-            "std_pnl": round(float(np.std(pnl_arr)), 2) if len(pnl_arr) > 1 else 0,
+            "std_pnl": round(float(np.std(pnl_arr)), 2) if len(pnl_arr) > 1 and not np.isnan(np.std(pnl_arr)) else 0,
         }
 
 
