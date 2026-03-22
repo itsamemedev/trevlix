@@ -272,6 +272,14 @@ else:
             origin = f"{scheme}{_app_domain}"
             if origin not in _allowed_origins:
                 _allowed_origins.append(origin)
+    # Lokale Entwicklungs-Origins immer hinzufügen (Dev-Server, localhost)
+    _port = os.getenv("PORT", "5000")
+    for _dev_origin in [
+        f"http://localhost:{_port}",
+        f"http://127.0.0.1:{_port}",
+    ]:
+        if _dev_origin not in _allowed_origins:
+            _allowed_origins.append(_dev_origin)
     _flask_cors_origins = _allowed_origins
 CORS(app, origins=_flask_cors_origins, supports_credentials=(_flask_cors_origins != "*"))
 socketio = SocketIO(
