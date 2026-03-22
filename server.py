@@ -5358,8 +5358,11 @@ def try_dca(ex, symbol):
 
 
 def manage_positions(ex):
-    for symbol in list(state.positions.keys()):
-        pos = state.positions.get(symbol)
+    with state._lock:
+        position_keys = list(state.positions.keys())
+    for symbol in position_keys:
+        with state._lock:
+            pos = state.positions.get(symbol)
         if not pos:
             continue
         try:
@@ -5368,7 +5371,8 @@ def manage_positions(ex):
             if last_price is None:
                 continue
             price = float(last_price)
-            state.prices[symbol] = price
+            with state._lock:
+                state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
         except Exception:
             # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
@@ -5514,11 +5518,12 @@ def bot_loop():
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
                     time.sleep(30)
                     continue
-            state.iteration += 1
-            state.last_scan = datetime.now().strftime("%H:%M:%S")
-            state.next_scan = (
-                datetime.now() + timedelta(seconds=CONFIG.get("scan_interval", 60))
-            ).strftime("%H:%M:%S")
+            with state._lock:
+                state.iteration += 1
+                state.last_scan = datetime.now().strftime("%H:%M:%S")
+                state.next_scan = (
+                    datetime.now() + timedelta(seconds=CONFIG.get("scan_interval", 60))
+                ).strftime("%H:%M:%S")
 
             risk.reset_daily(state.balance)
             regime.update(ex)
@@ -5569,7 +5574,9 @@ def bot_loop():
 
             # Märkte laden
             if state.iteration % 10 == 1 or not state.markets:
-                state.markets = fetch_markets(ex)
+                new_markets = fetch_markets(ex)
+                with state._lock:
+                    state.markets = new_markets
 
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
@@ -5579,9 +5586,10 @@ def bot_loop():
 
             # Portfolio History
             pv = state.portfolio_value()
-            state.portfolio_history.append(
-                {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
-            )
+            with state._lock:
+                state.portfolio_history.append(
+                    {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
+                )
 
             # Short-Signale – parallelisiert mit ThreadPoolExecutor
             if not regime.is_bull and CONFIG.get("use_shorts"):

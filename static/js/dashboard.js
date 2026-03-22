@@ -28,6 +28,8 @@ let logEntries=[], logPaused=false, currentHmSort='change';
 let wizStep=0, wizEx='cryptocom';
 
 // ── Nav ──────────────────────────────────────────────────────────────
+const _navHooks=[];
+function onNav(fn){_navHooks.push(fn);}
 function nav(id,el){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
@@ -35,6 +37,7 @@ function nav(id,el){
   el.classList.add('active');
   if(id==='stats' && lastData) updateStats(lastData);
   if(id==='ai' && lastData?.ai) updateAI(lastData.ai);
+  _navHooks.forEach(fn=>{try{fn(id);}catch(e){}});
 }
 
 // ── Format ───────────────────────────────────────────────────────────
@@ -459,7 +462,7 @@ async function loadHeatmap(sortBy){
         <div class="hm-news">${nc}</div>
       </div>`;
     }).join('');
-  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">Fehler: '+e+'</div>';}
+  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">Fehler: '+esc(String(e))+'</div>';}
 }
 
 // ── Chart ────────────────────────────────────────────────────────────
@@ -501,7 +504,7 @@ async function loadChart(){
       document.getElementById('cMTF').textContent=sig.mtf_desc||'—';
       document.getElementById('cVol').textContent=sig.confidence?Math.round(sig.confidence*100)+'%':'—';
     }
-  }catch(e){chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Fehler: '+e+'</div>';}
+  }catch(e){chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Fehler: '+esc(String(e))+'</div>';}
 }
 function openChart(sym){document.getElementById('chartSym').value=sym;nav('chart',document.getElementById('nb-chart'));loadChart();}
 function renderTVChart(data, el){
@@ -1378,22 +1381,11 @@ async function loadAuditLog() {
 }
 
 // Load data when switching to risk/admin tabs
-const _navBefore = nav;
-function nav(id, el) {
-  _navBefore(id, el);
-  if (id === 'risk') {
-    loadFundingRates();
-    loadCooldowns();
-  }
-  if (id === 'admin') {
-    loadAuditLog();
-    loadGrids();
-    loadIpWhitelist();
-  }
-  if (id === 'settings') {
-    loadNewsFilter();
-  }
-}
+onNav(id => {
+  if (id === 'risk') { loadFundingRates(); loadCooldowns(); }
+  if (id === 'admin') { loadAuditLog(); loadGrids(); loadIpWhitelist(); }
+  if (id === 'settings') { loadNewsFilter(); }
+});
 // Initial data load
 setTimeout(() => { loadFundingRates(); }, 3000);
 
@@ -1439,7 +1431,7 @@ async function loadFeatureImportance(){
       const w = Math.round(v/max*100);
       return `<div style="margin-bottom:5px">
         <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
-          <span style="color:var(--txt)">${n}</span>
+          <span style="color:var(--txt)">${esc(n)}</span>
           <span style="font-family:var(--mono);color:var(--jade)">${(v*100).toFixed(2)}%</span>
         </div>
         <div style="height:4px;background:var(--bg3);border-radius:2px">
@@ -1813,11 +1805,7 @@ async function mexLoadTrades() {
 }
 
 // Beim Wechsel auf Exchanges-Tab: Trades laden
-const _origNav = nav;
-function nav(id, el) {
-  _origNav(id, el);
-  if (id === 'exchanges') mexLoadTrades();
-}
+onNav(id => { if (id === 'exchanges') mexLoadTrades(); });
 
 // Beim Start: Exchange-Status laden
 fetch('/api/v1/exchanges', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}})

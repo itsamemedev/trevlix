@@ -90,9 +90,11 @@ class DiscordNotifier:
                     for f in fields
                     if len(f) >= 2
                 ]
-            httpx.post(url, json={"embeds": [embed]}, timeout=5)
+            resp = httpx.post(url, json={"embeds": [embed]}, timeout=5)
+            if resp.status_code >= 400:
+                log.warning("Discord webhook HTTP %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            log.debug(f"Discord send failed: {e}")
+            log.warning("Discord send failed: %s", e)
 
     def trade_buy(
         self,
@@ -294,13 +296,15 @@ class TelegramNotifier:
             return
         try:
             url = self._API_BASE.format(token=token)
-            httpx.post(
+            resp = httpx.post(
                 url,
                 json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
                 timeout=5,
             )
+            if resp.status_code >= 400:
+                log.warning("Telegram HTTP %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            log.debug(f"Telegram send failed: {e}")
+            log.warning("Telegram send failed: %s", e)
 
     def trade_buy(
         self,

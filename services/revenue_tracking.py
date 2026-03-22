@@ -393,7 +393,7 @@ class RevenueTracker:
         total_wins = sum(wins)
         total_losses = abs(sum(losses))
         if total_losses == 0:
-            return 0.0 if total_wins == 0 else float("inf")
+            return 0.0 if total_wins == 0 else 999.99
         return round(total_wins / total_losses, 4)
 
     def _persist_trade(self, trade: dict) -> None:

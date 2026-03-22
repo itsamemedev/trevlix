@@ -348,25 +348,27 @@ class AutoHealingAgent:
     # ------------------------------------------------------------------
 
     def _attempt_db_recovery(self) -> None:
-        """Try to re-establish the database connection pool."""
+        """Try to re-establish the database connection pool.
+
+        Uses public methods where available to avoid breaking encapsulation.
+        Falls back to connection test via ping as verification.
+        """
         log.info("Attempting database recovery...")
         try:
-            if hasattr(self._db, "_build_pool"):
-                new_pool = self._db._build_pool()
-                if new_pool is not None:
-                    with self._lock:
-                        self._db._pool = new_pool
-                        self._db.db_available = True
-                    log.info("Database recovery successful")
-                    self._mark_healthy(ServiceName.DATABASE)
-                    return
-            if hasattr(self._db, "_init_db"):
+            # Prefer public reconnect/init methods
+            if hasattr(self._db, "reconnect"):
+                self._db.reconnect()
+            elif hasattr(self._db, "_init_db"):
                 self._db._init_db()
-                if getattr(self._db, "db_available", False):
-                    log.info("Database recovery successful (full re-init)")
-                    self._mark_healthy(ServiceName.DATABASE)
-                    return
-            log.warning("Database recovery: no suitable method found")
+            else:
+                # Last resort: test with a simple query to trigger reconnection
+                self._db.execute_query("SELECT 1")
+
+            if getattr(self._db, "db_available", False):
+                log.info("Database recovery successful")
+                self._mark_healthy(ServiceName.DATABASE)
+                return
+            log.warning("Database recovery: db_available still False")
         except Exception as exc:
             log.error("Database recovery failed: %s", exc)
 

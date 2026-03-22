@@ -273,7 +273,7 @@ class PerformanceAttribution:
             gross_loss = abs(sum(s.total_pnl for s in self._by_symbol.values() if s.total_pnl < 0))
         if gross_loss > 0:
             return round(gross_profit / gross_loss, 2)
-        return round(gross_profit, 2) if gross_profit > 0 else 0.0
+        return 999.99 if gross_profit > 0 else 0.0
 
     def expectancy(self) -> float:
         """Berechnet die mathematische Erwartung pro Trade.
