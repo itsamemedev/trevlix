@@ -259,7 +259,7 @@ function updatePositions(positions){
       <div class="pos-top">
         <div style="width:32px;height:32px;border-radius:8px;background:${pos?'rgba(0,255,136,.1)':'rgba(255,61,113,.1)'};display:flex;align-items:center;justify-content:center;font-size:16px">${isShort?'📉':(pos?'📈':'📊')}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:5px;flex-wrap:wrap">${p.symbol} ${dcaBadge}${newsBadge}${shortBadge}</div>
+          <div style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:5px;flex-wrap:wrap">${esc(String(p.symbol||''))} ${dcaBadge}${newsBadge}${shortBadge}</div>
           <div style="font-size:10px;color:var(--sub);font-family:var(--mono);margin-top:2px">${(p.entry||0).toFixed(4)} → ${(p.current||0).toFixed(4)}</div>
           <div style="font-size:10px;margin-top:2px;color:var(--sub)">KI: <span style="color:var(--cyan)">${p.ai_score||'—'}%</span> · Win: <span style="color:var(--cyan)">${p.win_prob||'—'}%</span></div>
         </div>
@@ -327,7 +327,7 @@ function updateStats(d){
   allTrades.forEach(t=>{coinPnl[t.symbol]=(coinPnl[t.symbol]||0)+(t.pnl||0);});
   document.getElementById('topCoins').innerHTML=Object.entries(coinPnl).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([sym,pnl])=>
     `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
-       <span style="font-weight:600">${sym}</span>
+       <span style="font-weight:600">${esc(String(sym))}</span>
        <span style="font-family:var(--mono);font-weight:700;color:${clr(pnl)}">${fmtS(pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   // Hour chart
   if(hourChart && allTrades.length){
@@ -487,7 +487,7 @@ async function loadChart(){
             <span style="font-size:11px;font-weight:700;color:${nc}">${ndata.score>=0?'+':''}${(ndata.score).toFixed(2)} Score</span>
             <span style="font-size:10px;color:var(--sub)">${ndata.count} Artikel</span>
           </div>
-          <div style="font-size:11px;line-height:1.6">${ndata.headline}</div>
+          <div style="font-size:11px;line-height:1.6">${esc(String(ndata.headline||''))}</div>
         </div>`;
         document.getElementById('cNews').textContent=(ndata.score>=0?'+':'')+ndata.score.toFixed(2);
         document.getElementById('cNews').style.color=nc;
@@ -582,7 +582,7 @@ async function loadTax(){
     else wb.style.display='none';
     document.getElementById('taxTable').innerHTML=data.gains.slice(0,30).map(g=>
       `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);font-size:10px;font-family:var(--mono)">
-        <span style="color:var(--sub)">${g.date}</span><span>${g.symbol}</span>
+        <span style="color:var(--sub)">${esc(String(g.date||''))}</span><span>${esc(String(g.symbol||''))}</span>
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   }catch(e){toast('Fehler: '+e,'error');}
 }
@@ -819,8 +819,9 @@ function renderUpdateStatus(d){
   document.getElementById('btnApplyUpdate').disabled = !avail;
   if(d.changelog){
     const el = document.getElementById('updateChangelog');
-    el.style.display='block'; el.textContent=d.changelog;
-    document.getElementById('updateChangelogShort').textContent = d.changelog.split('\n')[0].slice(0,60);
+    if(el){el.style.display='block'; el.textContent=d.changelog;}
+    const elShort = document.getElementById('updateChangelogShort');
+    if(elShort) elShort.textContent = d.changelog.split('\n')[0].slice(0,60);
   }
 }
 socket.on('update_status', d => { renderUpdateStatus(d); toast(d.update_available ? '🎉 Update verfügbar! v'+d.latest : '✅ Aktuell', d.update_available?'success':'info'); });
@@ -1262,7 +1263,7 @@ async function loadGrids() {
     el.innerHTML = grids.map(g => `
       <div style="background:#091017;border-radius:8px;padding:10px;margin-top:8px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-          <span style="font-weight:700;color:#e8f4ff">${g.symbol}</span>
+          <span style="font-weight:700;color:#e8f4ff">${esc(String(g.symbol||''))}</span>
           <span style="font-size:9px;padding:2px 6px;border-radius:4px;${g.active?'background:rgba(0,255,136,.08);color:var(--jade)':'background:rgba(255,255,255,.05);color:var(--sub)'}">${g.active?'AKTIV':'INAKTIV'}</span>
           <button onclick="deleteGrid('${esc(g.symbol)}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
         </div>
@@ -1689,7 +1690,7 @@ function mexUpdate(data) {
 
     const posHtml = positions.length ? positions.map(p => `
       <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px">
-        <span style="color:var(--txt);font-weight:600">${p.symbol}</span>
+        <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
         <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
         <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${p.pnl?.toFixed(2)} USDT</span>
         <button onclick="mexClosePos('${esc(id)}','${esc(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>

@@ -168,6 +168,8 @@ class MarketRegime:
             ohlcv = ex.fetch_ohlcv("BTC/USDT", self.config.get("btc_regime_tf", "4h"), limit=200)
             df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
             c = df["close"]
+            if len(c) == 0:
+                return
             e50 = c.ewm(span=50, adjust=False).mean().iloc[-1]
             e200 = c.ewm(span=200, adjust=False).mean().iloc[-1] if len(c) >= 200 else e50
             cur = float(c.iloc[-1])

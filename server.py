@@ -4554,15 +4554,16 @@ class ShortEngine:
             if not CONFIG.get("paper_trading", True) and ex:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
-            state.short_positions[symbol] = {
-                "entry": price,
-                "qty": qty,
-                "invested": invest,
-                "sl": sl,
-                "tp": tp,
-                "opened": datetime.now().isoformat(),
-                "pnl_unrealized": 0.0,
-            }
+            with state._lock:
+                state.short_positions[symbol] = {
+                    "entry": price,
+                    "qty": qty,
+                    "invested": invest,
+                    "sl": sl,
+                    "tp": tp,
+                    "opened": datetime.now().isoformat(),
+                    "pnl_unrealized": 0.0,
+                }
             discord.short_open(symbol, price, invest)
             state.add_activity(
                 "🔴", f"Short: {symbol}", f"@ {price:.4f} | {invest:.2f} USDT", "warning"
@@ -4586,7 +4587,8 @@ class ShortEngine:
         )  # [#29]
         pnl = pos.get("invested", 0) * (pnl_pct / 100) * leverage - fee
         if CONFIG.get("paper_trading", True):
-            state.balance += pos.get("invested", 0) + pnl
+            with state._lock:
+                state.balance += pos.get("invested", 0) + pnl
         else:
             try:
                 ex = self._get_ex()
@@ -4862,7 +4864,8 @@ def scan_symbol(ex, symbol) -> dict | None:
         ph = list(df["close"].values[-50:])
         adv_risk.classify_regime(ph) if ph else None
         risk.update_prices(symbol, price)
-        state.prices[symbol] = price
+        with state._lock:
+            state.prices[symbol] = price
 
         votes = {}
         for nm, fn in STRATEGIES:
@@ -5171,7 +5174,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     pnl = close_invest * (pnl_pct / 100) - fee
 
     if CONFIG.get("paper_trading", True):
-        state.balance += close_invest + pnl
+        with state._lock:
+            state.balance += close_invest + pnl
     else:
         try:
             ex.create_market_sell_order(symbol, close_qty)
@@ -5461,10 +5465,11 @@ def manage_positions(ex):
                         partial_ratio=sell_ratio,
                     )
                     # Re-fetch pos – close_position may have removed it
-                    pos = state.positions.get(symbol)
-                    if not pos:
-                        continue
-                    pos["partial_tp_done"] = levels_done + 1
+                    with state._lock:
+                        pos = state.positions.get(symbol)
+                        if not pos:
+                            continue
+                        pos["partial_tp_done"] = levels_done + 1
 
         # SL / TP – re-check pos in case partial TP removed it
         pos = state.positions.get(symbol)
@@ -7080,6 +7085,8 @@ class GridTradingEngine:
     def _update_locked(self, symbol: str, current_price: float, balance_ref: list) -> list:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
+            return []
+        if current_price <= 0:
             return []
         actions = []
         levels = grid["grid_levels"]
