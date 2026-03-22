@@ -69,7 +69,9 @@ class GridTradingEngine:
         log.info(f"[GRID] {symbol}: {levels} Stufen zwischen {lower}–{upper} · {step:.4f}/Stufe")
         return self.grids[symbol]
 
-    def update(self, symbol: str, current_price: float, balance_ref: list[float]) -> list[dict[str, Any]]:
+    def update(
+        self, symbol: str, current_price: float, balance_ref: list[float]
+    ) -> list[dict[str, Any]]:
         """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen.
 
         Args:
@@ -83,7 +85,9 @@ class GridTradingEngine:
         with self._lock:
             return self._update_locked(symbol, current_price, balance_ref)
 
-    def _update_locked(self, symbol: str, current_price: float, balance_ref: list[float]) -> list[dict[str, Any]]:
+    def _update_locked(
+        self, symbol: str, current_price: float, balance_ref: list[float]
+    ) -> list[dict[str, Any]]:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
             return []

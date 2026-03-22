@@ -16,6 +16,36 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 - **Revenue Tracking Agent** (`services/revenue_tracking.py`) — Real PnL calculation after fees and slippage. Daily/weekly/monthly aggregation, ROI tracking, drawdown monitoring, and losing strategy detection.
 - **Multi-Server Control Agent** (`services/cluster_control.py`) — Register and manage remote TREVLIX nodes via API. Health-check, start/stop/deploy, aggregated cluster-wide metrics.
 
+#### Full Server Integration
+- All 3 agents initialized in `server.py` with database, config, and notifier
+- `healer.heartbeat()` wired into main bot loop for liveness detection
+- `revenue_tracker.record_trade()` wired into `close_position()` and `close_short()` for real PnL tracking
+- `healer.start()` on startup, `healer.stop()` + `cluster_ctrl.shutdown()` on graceful shutdown
+- WebSocket events: `healing_update`, `revenue_update`, `cluster_update` emitted every 10 iterations
+
+#### Alert Escalation Manager (Bonus)
+- **Alert Escalation** (`services/alert_escalation.py`) — Tiered alert system (INFO → WARNING → CRITICAL → EMERGENCY). Auto-escalation on repeated failures. Alert acknowledgement, auto-resolve after silence, history tracking.
+
+#### REST API Endpoints (25+ new)
+- `/api/v1/health/basic` — Cluster node health check
+- `/api/v1/health/snapshot` — Auto-Healing status
+- `/api/v1/health/incidents` — Incident history
+- `/api/v1/revenue/snapshot|daily|weekly|monthly` — Revenue tracking
+- `/api/v1/revenue/strategies|losing` — Strategy performance & detection
+- `/api/v1/cluster/snapshot|nodes|metrics` — Cluster management
+- `/api/v1/cluster/nodes/<name>/start|stop|restart|deploy` — Remote node control
+- `/api/v1/alerts/active|history|snapshot` — Alert escalation
+- `/api/v1/alerts/<id>/acknowledge|resolve` — Alert lifecycle
+- `/api/v1/metrics` — Local node metrics for cluster aggregation
+
+#### Database Schema
+- 4 new tables: `revenue_trades`, `healing_incidents`, `cluster_nodes`, `alert_escalations`
+- Added to both `server.py:_init_db_once()` and `docker/mysql-init.sql`
+
+#### Tests
+- 52 new tests across 4 test modules (test_auto_healing, test_revenue_tracking, test_cluster_control, test_alert_escalation)
+- Total: 282 passing, 19 skipped
+
 #### Bugfixes
 - **crypto.com fetchTickers() Fix** — crypto.com only supports single-symbol fetchTickers. Added `safe_fetch_tickers()` helper that auto-detects exchange limitations and fetches all tickers then filters, preventing the "symbols argument cannot contain more than 1 symbol" error.
 - **Socket.IO Dashboard Connection** — Added JWT auth fallback for Socket.IO connect handler. Dashboard buttons now work even when session cookies aren't forwarded (e.g. behind reverse proxy). Client passes JWT token via `auth` parameter and `withCredentials: true`.

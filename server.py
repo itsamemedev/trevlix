@@ -78,11 +78,24 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from flask import Flask, Response, g, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import (
+    Flask,
+    Response,
+    g,
+    jsonify,
+    redirect,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+)
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 from services.adaptive_weights import AdaptiveWeights
+from services.alert_escalation import AlertEscalationManager
+from services.auto_healing import AutoHealingAgent
+from services.cluster_control import ClusterController
 from services.cryptopanic import CryptoPanicClient
 from services.db_pool import ConnectionPool
 
@@ -99,6 +112,7 @@ from services.market_data import (
     SentimentFetcher,
 )
 from services.performance_attribution import PerformanceAttribution
+from services.revenue_tracking import RevenueTracker
 from services.risk import (
     AdvancedRiskMetrics,
     FundingRateTracker,
@@ -930,6 +944,62 @@ class MySQLManager:
                     INDEX idx_hash(dna_hash),
                     INDEX idx_symbol(symbol),
                     INDEX idx_time(created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Revenue Tracking (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS revenue_trades (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    symbol VARCHAR(20),
+                    side VARCHAR(10),
+                    amount DOUBLE,
+                    price DOUBLE,
+                    fee DOUBLE DEFAULT 0,
+                    slippage_est DOUBLE DEFAULT 0,
+                    funding_fee DOUBLE DEFAULT 0,
+                    strategy VARCHAR(80),
+                    gross_pnl DOUBLE DEFAULT 0,
+                    net_pnl DOUBLE DEFAULT 0,
+                    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_time(recorded_at),
+                    INDEX idx_strategy(strategy),
+                    INDEX idx_symbol(symbol)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Healing Incidents (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS healing_incidents (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    service VARCHAR(30) NOT NULL,
+                    severity VARCHAR(20) NOT NULL,
+                    message VARCHAR(500),
+                    recovered TINYINT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_service(service),
+                    INDEX idx_time(created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Cluster Nodes (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS cluster_nodes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(50) UNIQUE NOT NULL,
+                    host VARCHAR(255) NOT NULL,
+                    port INT DEFAULT 5000,
+                    api_token VARCHAR(500),
+                    status VARCHAR(20) DEFAULT 'offline',
+                    last_check DATETIME,
+                    last_error VARCHAR(500),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_status(status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Alert Escalations (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS alert_escalations (
+                    alert_id VARCHAR(100) PRIMARY KEY,
+                    message VARCHAR(500),
+                    source VARCHAR(50) DEFAULT 'system',
+                    level INT DEFAULT 1,
+                    occurrence_count INT DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    escalated_at DATETIME,
+                    acknowledged TINYINT DEFAULT 0,
+                    resolved_at DATETIME,
+                    INDEX idx_level(level),
+                    INDEX idx_source(source)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
                 c.execute("SELECT id FROM users WHERE username='admin'")
@@ -3859,7 +3929,6 @@ class OrderbookImbalance:
 # ═══════════════════════════════════════════════════════════════════════════════
 from services.tax_report import TaxReportGenerator  # noqa: E402
 
-
 # MarketRegime importiert aus services.market_data
 
 
@@ -4469,6 +4538,22 @@ class ShortEngine:
         )
         discord.trade_sell(symbol, price, pnl, pnl_pct, f"SHORT-{reason}")
         log.info(f"{icon} SHORT CLOSE {symbol} @ {price:.4f} | {pnl:+.2f} USDT")
+        # Revenue Tracking: Record short trade
+        try:
+            revenue_tracker.record_trade(
+                {
+                    "symbol": symbol,
+                    "side": "sell",
+                    "amount": pos.get("qty", 0),
+                    "price": price,
+                    "fee": fee,
+                    "strategy": f"SHORT-{reason}",
+                    "pnl": pnl,
+                    "timestamp": datetime.now(),
+                }
+            )
+        except Exception:
+            pass
 
     def update_shorts(self):
         for sym in list(state.short_positions.keys()):
@@ -4518,6 +4603,38 @@ daily_sched = DailyReportScheduler()
 backup_sched = BackupScheduler()
 state = BotState(db)
 ai_engine = AIEngine(db)
+
+# ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
+
+
+def _agent_notifier(msg: str) -> None:
+    """Unified notifier callback for autonomous agents."""
+    try:
+        discord.send("Agent Alert", msg, "alert")
+    except Exception:
+        pass
+    try:
+        telegram = TelegramNotifier(CONFIG)
+        telegram.send(f"<b>Agent Alert</b>\n{msg}")
+    except Exception:
+        pass
+
+
+alert_escalation = AlertEscalationManager(
+    db=db,
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
+revenue_tracker = RevenueTracker(db=db, config=CONFIG)
+healer = AutoHealingAgent(
+    db=db,
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
+cluster_ctrl = ClusterController(
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
 
 
 def emit_event(event, data):
@@ -4662,11 +4779,7 @@ def fetch_markets(ex) -> list[str]:
         if CONFIG.get("use_vol_filter"):
             tickers = safe_fetch_tickers(ex, syms[:150])
             min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
-            syms = [
-                s
-                for s in syms
-                if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol
-            ]
+            syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
@@ -5122,6 +5235,22 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
     except Exception:
         pass  # LLM-Analyse ist optional
+    # Revenue Tracking: Record trade with fees/slippage for real PnL
+    try:
+        revenue_tracker.record_trade(
+            {
+                "symbol": symbol,
+                "side": "sell",
+                "amount": close_qty,
+                "price": price,
+                "fee": fee,
+                "strategy": reason,
+                "pnl": pnl,
+                "timestamp": datetime.now(),
+            }
+        )
+    except Exception:
+        pass  # Revenue tracking is optional
     emit_event(
         "trade",
         {
@@ -5381,6 +5510,11 @@ def bot_loop():
         if state.paused:
             time.sleep(5)
             continue
+        # Auto-Healing: Signal that bot loop is alive
+        try:
+            healer.heartbeat()
+        except Exception:
+            pass
         try:
             if ex is None:
                 try:
@@ -5527,6 +5661,26 @@ def bot_loop():
                             open_position(ex, res)
 
             emit_event("update", state.snapshot())
+
+            # Autonomous agent updates (every 10 iterations)
+            if state.iteration % 10 == 0:
+                try:
+                    emit_event("healing_update", healer.health_snapshot())
+                except Exception:
+                    pass
+                try:
+                    emit_event("revenue_update", revenue_tracker.snapshot())
+                except Exception:
+                    pass
+                try:
+                    emit_event("cluster_update", cluster_ctrl.snapshot())
+                except Exception:
+                    pass
+                # Auto-resolve stale alerts
+                try:
+                    alert_escalation.auto_resolve_stale()
+                except Exception:
+                    pass
 
         # [Verbesserung #5] Differenzierte ccxt-Fehlerbehandlung
         except ccxt.RateLimitExceeded as e:
@@ -6874,7 +7028,6 @@ def api_audit_log():
 # ════════════════════════════════════════════════════════════════════════════════
 from services.grid_trading import GridTradingEngine  # noqa: E402
 
-
 grid_engine = GridTradingEngine()
 
 
@@ -7580,6 +7733,252 @@ def api_market_regime():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# AUTONOMOUS AGENT API ENDPOINTS (v1.5)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ── Auto-Healing Agent ──────────────────────────────────────────────────────
+
+
+@app.route("/api/v1/health/basic")
+def api_health_basic():
+    """Basic health check endpoint (used by cluster nodes)."""
+    return jsonify(
+        {
+            "status": "ok",
+            "running": state.running,
+            "version": BOT_VERSION,
+        }
+    )
+
+
+@app.route("/api/v1/health/snapshot")
+@api_auth_required
+def api_health_snapshot():
+    """Auto-Healing Agent: current health status."""
+    return jsonify(healer.health_snapshot())
+
+
+@app.route("/api/v1/health/incidents")
+@api_auth_required
+def api_health_incidents():
+    """Auto-Healing Agent: recent incident history."""
+    snap = healer.health_snapshot()
+    return jsonify({"incidents": snap.get("incidents", [])})
+
+
+# ── Revenue Tracking Agent ──────────────────────────────────────────────────
+
+
+@app.route("/api/v1/revenue/snapshot")
+@api_auth_required
+def api_revenue_snapshot():
+    """Revenue Tracking Agent: full performance snapshot."""
+    return jsonify(revenue_tracker.snapshot())
+
+
+@app.route("/api/v1/revenue/daily")
+@api_auth_required
+def api_revenue_daily():
+    """Revenue Tracking Agent: daily PnL summary."""
+    date_str = request.args.get("date")
+    dt = None
+    if date_str:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
+    return jsonify(revenue_tracker.get_daily_summary(dt))
+
+
+@app.route("/api/v1/revenue/weekly")
+@api_auth_required
+def api_revenue_weekly():
+    """Revenue Tracking Agent: weekly PnL summary."""
+    return jsonify(revenue_tracker.get_weekly_summary())
+
+
+@app.route("/api/v1/revenue/monthly")
+@api_auth_required
+def api_revenue_monthly():
+    """Revenue Tracking Agent: monthly PnL summary."""
+    return jsonify(revenue_tracker.get_monthly_summary())
+
+
+@app.route("/api/v1/revenue/strategies")
+@api_auth_required
+def api_revenue_strategies():
+    """Revenue Tracking Agent: per-strategy performance."""
+    return jsonify(revenue_tracker.get_strategy_performance())
+
+
+@app.route("/api/v1/revenue/losing")
+@api_auth_required
+def api_revenue_losing():
+    """Revenue Tracking Agent: detect losing strategies."""
+    return jsonify({"losing_strategies": revenue_tracker.detect_losing_strategies()})
+
+
+# ── Multi-Server Cluster Control Agent ──────────────────────────────────────
+
+
+@app.route("/api/v1/cluster/snapshot")
+@api_auth_required
+def api_cluster_snapshot():
+    """Cluster Control: full cluster state snapshot."""
+    return jsonify(cluster_ctrl.snapshot())
+
+
+@app.route("/api/v1/cluster/nodes", methods=["GET"])
+@api_auth_required
+def api_cluster_nodes_list():
+    """Cluster Control: list all registered nodes."""
+    nodes = cluster_ctrl.get_nodes()
+    return jsonify({"nodes": [n.to_dict() for n in nodes]})
+
+
+@app.route("/api/v1/cluster/nodes", methods=["POST"])
+@api_auth_required
+def api_cluster_nodes_add():
+    """Cluster Control: register a new remote node."""
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    host = data.get("host", "").strip()
+    port = _safe_int(data.get("port", 5000), 5000)
+    api_token = data.get("api_token", "")
+    if not name or not host:
+        return jsonify({"error": "name and host are required"}), 400
+    try:
+        node = cluster_ctrl.add_node(name, host, port, api_token)
+        return jsonify({"ok": True, "node": node.to_dict()}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+
+
+@app.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
+@api_auth_required
+def api_cluster_nodes_remove(name):
+    """Cluster Control: remove a registered node."""
+    try:
+        cluster_ctrl.remove_node(name)
+        return jsonify({"ok": True})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/start", methods=["POST"])
+@api_auth_required
+def api_cluster_node_start(name):
+    """Cluster Control: start trading bot on remote node."""
+    try:
+        result = cluster_ctrl.start_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/stop", methods=["POST"])
+@api_auth_required
+def api_cluster_node_stop(name):
+    """Cluster Control: stop trading bot on remote node."""
+    try:
+        result = cluster_ctrl.stop_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/restart", methods=["POST"])
+@api_auth_required
+def api_cluster_node_restart(name):
+    """Cluster Control: restart trading bot on remote node."""
+    try:
+        result = cluster_ctrl.restart_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/deploy", methods=["POST"])
+@api_auth_required
+def api_cluster_node_deploy(name):
+    """Cluster Control: deploy update to remote node."""
+    try:
+        result = cluster_ctrl.deploy_update(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/metrics")
+@api_auth_required
+def api_metrics():
+    """Local node metrics (used by cluster controller for aggregation)."""
+    return jsonify(
+        {
+            "portfolio_value": state.portfolio_value(),
+            "positions": len(state.positions),
+            "short_positions": len(state.short_positions),
+            "balance": state.balance,
+            "running": state.running,
+            "iteration": state.iteration,
+        }
+    )
+
+
+@app.route("/api/v1/cluster/metrics")
+@api_auth_required
+def api_cluster_metrics():
+    """Cluster Control: aggregated metrics across all nodes."""
+    return jsonify(cluster_ctrl.get_cluster_metrics())
+
+
+# ── Alert Escalation ────────────────────────────────────────────────────────
+
+
+@app.route("/api/v1/alerts/active")
+@api_auth_required
+def api_alerts_active():
+    """Alert Escalation: active alerts sorted by severity."""
+    return jsonify({"alerts": alert_escalation.get_active_alerts()})
+
+
+@app.route("/api/v1/alerts/history")
+@api_auth_required
+def api_alerts_history():
+    """Alert Escalation: recent alert history."""
+    limit = _safe_int(request.args.get("limit", 50), 50)
+    return jsonify({"history": alert_escalation.get_history(limit)})
+
+
+@app.route("/api/v1/alerts/snapshot")
+@api_auth_required
+def api_alerts_snapshot():
+    """Alert Escalation: full escalation state snapshot."""
+    return jsonify(alert_escalation.snapshot())
+
+
+@app.route("/api/v1/alerts/<alert_id>/acknowledge", methods=["POST"])
+@api_auth_required
+def api_alert_acknowledge(alert_id):
+    """Alert Escalation: acknowledge an active alert."""
+    ok = alert_escalation.acknowledge(alert_id)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
+
+
+@app.route("/api/v1/alerts/<alert_id>/resolve", methods=["POST"])
+@api_auth_required
+def api_alert_resolve(alert_id):
+    """Alert Escalation: resolve an active alert."""
+    ok = alert_escalation.resolve(alert_id)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Fehlende API-Endpunkte (vom Dashboard referenziert)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7588,15 +7987,19 @@ def api_market_regime():
 def api_gas():
     """ETH Gas Fees via öffentlicher API."""
     try:
-        r = requests.get("https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5)
+        r = requests.get(
+            "https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5
+        )
         if r.status_code == 200:
             data = r.json().get("result", {})
-            return jsonify({
-                "low": data.get("SafeGasPrice", "0"),
-                "medium": data.get("ProposeGasPrice", "0"),
-                "high": data.get("FastGasPrice", "0"),
-                "source": "etherscan",
-            })
+            return jsonify(
+                {
+                    "low": data.get("SafeGasPrice", "0"),
+                    "medium": data.get("ProposeGasPrice", "0"),
+                    "high": data.get("FastGasPrice", "0"),
+                    "source": "etherscan",
+                }
+            )
         return jsonify({"low": "0", "medium": "0", "high": "0", "source": "unavailable"})
     except Exception:
         return jsonify({"low": "0", "medium": "0", "high": "0", "source": "error"})
@@ -7659,13 +8062,17 @@ def api_copy_trading_test():
 def api_ai_shared_status():
     """Status des gemeinsamen KI-Wissenssystems."""
     summary = knowledge_base.get_market_summary()
-    return jsonify({
-        "llm_enabled": knowledge_base.llm_enabled,
-        "total_entries": summary.get("total_knowledge_entries", 0),
-        "top_symbols": summary.get("top_symbols", [])[:5],
-        "strategy_ranking": summary.get("strategy_ranking", [])[:5],
-        "cached_analysis": knowledge_base.cached_market_analysis[:200] if knowledge_base.cached_market_analysis else None,
-    })
+    return jsonify(
+        {
+            "llm_enabled": knowledge_base.llm_enabled,
+            "total_entries": summary.get("total_knowledge_entries", 0),
+            "top_symbols": summary.get("top_symbols", [])[:5],
+            "strategy_ranking": summary.get("strategy_ranking", [])[:5],
+            "cached_analysis": knowledge_base.cached_market_analysis[:200]
+            if knowledge_base.cached_market_analysis
+            else None,
+        }
+    )
 
 
 @app.route("/api/v1/exchanges/combined/trades")
@@ -7681,11 +8088,15 @@ def api_ai_shared_force_sync():
     """Erzwingt Synchronisation des geteilten KI-Modells."""
     if not ai_engine.is_trained:
         return jsonify({"updated": False, "error": "Kein trainiertes Modell vorhanden"})
-    return jsonify({
-        "updated": True,
-        "version": ai_engine.training_ver,
-        "accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
-    })
+    return jsonify(
+        {
+            "updated": True,
+            "version": ai_engine.training_ver,
+            "accuracy": round(ai_engine.wf_accuracy * 100, 1)
+            if hasattr(ai_engine, "wf_accuracy")
+            else 0,
+        }
+    )
 
 
 @app.route("/api/v1/ai/shared/train", methods=["POST"])
@@ -7694,7 +8105,12 @@ def api_ai_shared_train():
     """Startet globales KI-Training."""
     n = len(ai_engine.X_raw)
     if n < CONFIG.get("ai_min_samples", 50):
-        return jsonify({"started": False, "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})"})
+        return jsonify(
+            {
+                "started": False,
+                "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})",
+            }
+        )
     threading.Thread(target=ai_engine._train, daemon=True).start()
     return jsonify({"started": True, "samples_total": n, "new_samples": n})
 
@@ -7708,11 +8124,15 @@ def api_ai_feature_importance():
     weights = ai_engine.weights if hasattr(ai_engine, "weights") else {}
     names = list(weights.keys()) if weights else []
     importances = list(weights.values()) if weights else []
-    return jsonify({
-        "feature_names": names,
-        "importances": importances,
-        "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
-    })
+    return jsonify(
+        {
+            "feature_names": names,
+            "importances": importances,
+            "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1)
+            if hasattr(ai_engine, "wf_accuracy")
+            else 0,
+        }
+    )
 
 
 @app.route("/api/v1/portfolio/optimize", methods=["POST"])
@@ -7739,14 +8159,16 @@ def api_portfolio_optimize():
         weight = round(1.0 / n, 4)
         allocations = {s: round(weight * 100, 1) for s in returns_data}
         avg_ret = sum(sum(r) / len(r) for r in returns_data.values()) / n * 100
-        return jsonify({
-            "symbols": list(returns_data.keys()),
-            "weights": [weight] * n,
-            "allocations": allocations,
-            "exp_return": round(avg_ret, 2),
-            "exp_volatility": round(avg_ret * 1.5, 2),
-            "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
-        })
+        return jsonify(
+            {
+                "symbols": list(returns_data.keys()),
+                "weights": [weight] * n,
+                "allocations": allocations,
+                "exp_return": round(avg_ret, 2),
+                "exp_volatility": round(avg_ret * 1.5, 2),
+                "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
+            }
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -7767,19 +8189,32 @@ def api_backtest_compare():
         full_sym = f"{sym}/USDT" if "/" not in sym else sym
         try:
             result = bt.run(
-                bt_ex, full_sym, tf, candles,
+                bt_ex,
+                full_sym,
+                tf,
+                candles,
                 CONFIG.get("stop_loss_pct", 0.025),
                 CONFIG.get("take_profit_pct", 0.06),
                 CONFIG.get("min_vote_score", 0.3),
             )
-            results[sym] = result if isinstance(result, dict) else {
-                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
-                "max_drawdown": 0, "total_trades": 0,
-            }
+            results[sym] = (
+                result
+                if isinstance(result, dict)
+                else {
+                    "return_pct": 0,
+                    "win_rate": 0,
+                    "sharpe_ratio": 0,
+                    "max_drawdown": 0,
+                    "total_trades": 0,
+                }
+            )
         except Exception:
             results[sym] = {
-                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
-                "max_drawdown": 0, "total_trades": 0,
+                "return_pct": 0,
+                "win_rate": 0,
+                "sharpe_ratio": 0,
+                "max_drawdown": 0,
+                "total_trades": 0,
             }
     return jsonify({"results": results})
 
@@ -7900,6 +8335,15 @@ def _graceful_shutdown(signum, _frame):
     sig_name = signal.Signals(signum).name
     log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
     state.running = False
+    # Stop autonomous agents
+    try:
+        healer.stop()
+    except Exception as e:
+        log.debug(f"Healer stop: {e}")
+    try:
+        cluster_ctrl.shutdown()
+    except Exception as e:
+        log.debug(f"Cluster shutdown: {e}")
     # DB-Pool schließen
     try:
         if db is not None and db._pool is not None:
@@ -7975,6 +8419,13 @@ if __name__ == "__main__":
     threading.Thread(target=fg_idx.update, daemon=True).start()
     threading.Thread(target=dominance.update, daemon=True).start()
     threading.Thread(target=safety_scan, daemon=True).start()
+
+    # Start autonomous agents
+    try:
+        healer.start()
+        log.info("🩺 Auto-Healing Agent gestartet")
+    except Exception as e:
+        log.warning(f"Auto-Healing Agent Start fehlgeschlagen: {e}")
 
     # Auto-Start: Bot sofort starten ohne Login
     if _AUTO_START:

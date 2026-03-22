@@ -17,7 +17,9 @@ class TaxReportGenerator:
     def __init__(self, fee_rate: float = 0.001) -> None:
         self._fee_rate = fee_rate
 
-    def generate(self, trades: list[dict[str, Any]], year: int, method: str = "fifo") -> dict[str, Any]:
+    def generate(
+        self, trades: list[dict[str, Any]], year: int, method: str = "fifo"
+    ) -> dict[str, Any]:
         """Generiert einen Steuer-Report für das angegebene Jahr.
 
         Args:

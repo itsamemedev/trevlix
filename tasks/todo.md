@@ -299,3 +299,43 @@
 - [x] login_attempts Memory-Leak → Timestamps auf 50 begrenzt
 
 - **Ergebnis:** 249/249 Tests ✓ | Lint ✓ | Format ✓ | Version 1.3.8
+
+---
+
+## Session: autonomous-trading-system-oSnGz (2026-03-22)
+
+### Aufgaben – Autonomous Agent Integration v1.5
+
+- [x] DB Schema: 4 neue Tabellen (revenue_trades, healing_incidents, cluster_nodes, alert_escalations)
+- [x] server.py: Import + Initialisierung aller 3 Agents + AlertEscalationManager
+- [x] Bot Loop: healer.heartbeat() + WebSocket Agent-Updates (healing/revenue/cluster)
+- [x] close_position + close_short: revenue_tracker.record_trade() Integration
+- [x] Graceful Shutdown: healer.stop() + cluster_ctrl.shutdown()
+- [x] Startup: healer.start() als Daemon-Thread
+- [x] 25+ REST API Endpunkte (health, revenue, cluster, alerts)
+- [x] AlertEscalationManager: Tiered Escalation (INFO→WARNING→CRITICAL→EMERGENCY)
+- [x] docker/mysql-init.sql: Alle 4 neuen Tabellen gespiegelt
+- [x] 52 neue Tests (test_auto_healing, test_revenue_tracking, test_cluster_control, test_alert_escalation)
+- [x] Lint ✓ | Format ✓ | 282/282 Tests ✓
+
+### Neue Dateien
+
+| Datei | Beschreibung |
+|-------|-------------|
+| `services/alert_escalation.py` | Alert Escalation Manager – Tiered Alerts mit Auto-Escalation |
+| `tests/test_auto_healing.py` | 10 Tests für Auto-Healing Agent |
+| `tests/test_revenue_tracking.py` | 14 Tests für Revenue Tracker |
+| `tests/test_cluster_control.py` | 14 Tests für Cluster Controller |
+| `tests/test_alert_escalation.py` | 13 Tests für Alert Escalation |
+
+### Geänderte Dateien
+
+| Datei | Änderung |
+|-------|----------|
+| `server.py` | Imports, Initialisierung, bot_loop, close_position, close_short, shutdown, 25+ API Endpunkte |
+| `docker/mysql-init.sql` | 4 neue Tabellen |
+| `CHANGELOG.md` | v1.5.0 Agent Integration dokumentiert |
+
+### Ergebnis
+
+- **282/282 Tests ✓ | Lint ✓ | Format ✓ | Version 1.5.0**

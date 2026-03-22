@@ -219,33 +219,6 @@ CREATE TABLE IF NOT EXISTS trade_dna (
     INDEX idx_time   (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ── API Tokens ───────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    user_id     INT,
-    token       VARCHAR(500),
-    label       VARCHAR(100),
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_used   DATETIME,
-    expires_at  DATETIME,
-    active      TINYINT DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ── User Exchanges (Multi-Exchange pro User) ─────────────────────
-CREATE TABLE IF NOT EXISTS user_exchanges (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    user_id     INT NOT NULL,
-    exchange    VARCHAR(20) NOT NULL,
-    api_key     VARCHAR(500),
-    api_secret  VARCHAR(500),
-    enabled     TINYINT DEFAULT 0,
-    is_primary  TINYINT DEFAULT 0,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_user_exchange(user_id, exchange),
-    INDEX idx_user(user_id),
-    INDEX idx_enabled(user_id, enabled)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 -- ── Shared Knowledge (KI-Gemeinschaftswissen) ───────────────────
 CREATE TABLE IF NOT EXISTS shared_knowledge (
     id          INT AUTO_INCREMENT PRIMARY KEY,
@@ -258,4 +231,64 @@ CREATE TABLE IF NOT EXISTS shared_knowledge (
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_cat_key(category, key_name),
     INDEX idx_category(category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Revenue Trades (Revenue Tracking Agent v1.5) ──────────────────
+CREATE TABLE IF NOT EXISTS revenue_trades (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    symbol       VARCHAR(20),
+    side         VARCHAR(10),
+    amount       DOUBLE,
+    price        DOUBLE,
+    fee          DOUBLE DEFAULT 0,
+    slippage_est DOUBLE DEFAULT 0,
+    funding_fee  DOUBLE DEFAULT 0,
+    strategy     VARCHAR(80),
+    gross_pnl    DOUBLE DEFAULT 0,
+    net_pnl      DOUBLE DEFAULT 0,
+    recorded_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_time     (recorded_at),
+    INDEX idx_strategy (strategy),
+    INDEX idx_symbol   (symbol)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Healing Incidents (Auto-Healing Agent v1.5) ───────────────────
+CREATE TABLE IF NOT EXISTS healing_incidents (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    service    VARCHAR(30) NOT NULL,
+    severity   VARCHAR(20) NOT NULL,
+    message    VARCHAR(500),
+    recovered  TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_service (service),
+    INDEX idx_time    (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Cluster Nodes (Multi-Server Control Agent v1.5) ───────────────
+CREATE TABLE IF NOT EXISTS cluster_nodes (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(50) UNIQUE NOT NULL,
+    host       VARCHAR(255) NOT NULL,
+    port       INT DEFAULT 5000,
+    api_token  VARCHAR(500),
+    status     VARCHAR(20) DEFAULT 'offline',
+    last_check DATETIME,
+    last_error VARCHAR(500),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Alert Escalations (Alert Escalation Manager v1.5) ─────────────
+CREATE TABLE IF NOT EXISTS alert_escalations (
+    alert_id         VARCHAR(100) PRIMARY KEY,
+    message          VARCHAR(500),
+    source           VARCHAR(50) DEFAULT 'system',
+    level            INT DEFAULT 1,
+    occurrence_count INT DEFAULT 1,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    escalated_at     DATETIME,
+    acknowledged     TINYINT DEFAULT 0,
+    resolved_at      DATETIME,
+    INDEX idx_level  (level),
+    INDEX idx_source (source)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

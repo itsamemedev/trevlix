@@ -6,7 +6,8 @@ Berechnet Win-Rate, PnL, Drawdown und weitere Kennzahlen.
 
 import logging
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
