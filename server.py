@@ -1171,6 +1171,30 @@ class MySQLManager:
         except Exception as e:
             log.warning(f"update_user_login({user_id}): {e}")
 
+    def update_password(self, user_id: int, new_password: str) -> bool:
+        """Setzt das Passwort eines Users neu (bcrypt oder SHA-256 Fallback).
+
+        Args:
+            user_id: Die User-ID.
+            new_password: Das neue Klartext-Passwort.
+
+        Returns:
+            True bei Erfolg, False bei Fehler.
+        """
+        try:
+            pw = new_password.encode()
+            if BCRYPT_AVAILABLE:
+                h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
+            else:
+                h = hashlib.sha256(pw).hexdigest()
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("UPDATE users SET password_hash=%s WHERE id=%s", (h, user_id))
+            return True
+        except Exception as e:
+            log.error("update_password(%s): %s", user_id, e)
+            return False
+
     def update_user_balance(self, user_id: int, balance: float) -> None:
         """Aktualisiert den Kontostand eines Users.
 
@@ -4242,7 +4266,7 @@ class BotState:
                 ),
                 "pnl_pct": round(
                     (self.prices.get(sym, p.get("entry", 0)) - p.get("entry", 0))
-                    / p.get("entry", 1)
+                    / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
                     else 0.0,
@@ -4273,7 +4297,7 @@ class BotState:
                 "pnl": round(p.get("pnl_unrealized", 0), 2),
                 "pnl_pct": round(
                     (p.get("entry", 0) - self.prices.get(sym, p.get("entry", 0)))
-                    / p.get("entry", 1)
+                    / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
                     else 0.0,

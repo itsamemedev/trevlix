@@ -537,15 +537,18 @@ def create_auth_blueprint(
         if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
             return redirect("/login?err=1")
 
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip()[:64]
         password = request.form.get("password", "")
-        if not username or not password:
+        if not username or not password or len(password) > 128:
             return redirect("/login?err=1")
 
         client_ip = request.remote_addr or "unknown"
         if not check_login_rate_fn(client_ip):
             db_audit_fn(
-                0, "login_blocked", f"Brute-Force-Schutz: {username} von {client_ip}", client_ip
+                0,
+                "login_blocked",
+                f"Brute-Force-Schutz: {username[:32]} von {client_ip}",
+                client_ip,
             )
             return redirect("/login?err=1")
         record_login_attempt_fn(client_ip)
@@ -725,9 +728,7 @@ def create_auth_blueprint(
         if request.method == "GET":
             err = request.args.get("err", "")
             msg_cls = "msg msg-err"
-            if err == "role":
-                msg_txt = "Kein Admin-Zugang für diesen Benutzer"
-            elif err:
+            if err:
                 msg_txt = "Falsches Passwort oder Benutzer nicht gefunden"
             else:
                 msg_txt = ""
@@ -741,7 +742,8 @@ def create_auth_blueprint(
     <input type="password" name="password" required autofocus autocomplete="current-password">
     <button type="submit">Admin-Anmeldung &rarr;</button>
   </form>
-  <div class="alt-link"><a href="/login">&larr; Zum normalen Login</a></div>"""
+  <div class="alt-link"><a href="/login">&larr; Zum normalen Login</a></div>
+  <div class="alt-link" style="margin-top:8px"><a href="/admin/reset-password">Passwort vergessen?</a></div>"""
             return _ADMIN_AUTH_TEMPLATE % {
                 "page_title": "Admin Login",
                 "msg_display": "none",
@@ -753,9 +755,9 @@ def create_auth_blueprint(
         if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
             return redirect("/admin/login?err=1")
 
-        username = request.form.get("username", "").strip()
+        username = request.form.get("username", "").strip()[:64]
         password = request.form.get("password", "")
-        if not username or not password:
+        if not username or not password or len(password) > 128:
             return redirect("/admin/login?err=1")
 
         client_ip = request.remote_addr or "unknown"
@@ -763,7 +765,7 @@ def create_auth_blueprint(
             db_audit_fn(
                 0,
                 "admin_login_blocked",
-                f"Brute-Force-Schutz (Admin): {username} von {client_ip}",
+                f"Brute-Force-Schutz (Admin): {username[:32]} von {client_ip}",
                 client_ip,
             )
             return redirect("/admin/login?err=1")
@@ -775,7 +777,7 @@ def create_auth_blueprint(
                 audit_fn(
                     "admin_login_denied", f"user={username} ip={client_ip} role={user.get('role')}"
                 )
-                return redirect("/admin/login?err=role")
+                return redirect("/admin/login?err=1")
             # Session regenerieren um Session Fixation zu verhindern
             session.clear()
             session["user_id"] = user["id"]
@@ -788,6 +790,127 @@ def create_auth_blueprint(
 
         audit_fn("admin_login_failed", f"user={username} ip={client_ip}")
         return redirect("/admin/login?err=1")
+
+    @bp.route("/admin/reset-password", methods=["GET", "POST"])
+    @limiter.limit("5 per minute")
+    def admin_reset_password():
+        """Admin-Passwort zurücksetzen ohne E-Mail-Bestätigung.
+
+        Verifiziert den Benutzer über das aktuelle ADMIN_PASSWORD aus
+        der Umgebungsvariable. Kein E-Mail-Workflow nötig.
+
+        GET: Zeigt Passwort-Reset-Formular.
+        POST: Setzt das Admin-Passwort nach Verifizierung zurück.
+
+        Returns:
+            Reset-Seite (HTML) oder Redirect nach Erfolg.
+        """
+        import re as _re
+
+        if request.method == "GET":
+            err = request.args.get("err", "")
+            ok = request.args.get("ok", "")
+            if ok:
+                msg_txt = "Passwort erfolgreich geändert! Bitte neu anmelden."
+                msg_cls = "msg msg-ok"
+                show = "block"
+            elif err == "verify":
+                msg_txt = "Master-Passwort ungültig."
+                msg_cls = "msg msg-err"
+                show = "block"
+            elif err == "policy":
+                msg_txt = (
+                    "Neues Passwort muss mind. 12 Zeichen mit Groß+Klein+Zahl+Sonderzeichen haben."
+                )
+                msg_cls = "msg msg-err"
+                show = "block"
+            elif err == "match":
+                msg_txt = "Passwörter stimmen nicht überein."
+                msg_cls = "msg msg-err"
+                show = "block"
+            elif err:
+                msg_txt = "Fehler beim Zurücksetzen."
+                msg_cls = "msg msg-err"
+                show = "block"
+            else:
+                msg_txt = ""
+                msg_cls = "msg msg-err"
+                show = "none"
+
+            csrf = _ensure_csrf()
+            body = f"""  <form method="POST" action="/admin/reset-password">
+    <input type="hidden" name="_csrf" value="{csrf}">
+    <div class="{msg_cls}" style="display:{show}">{msg_txt}</div>
+    <label>Admin Benutzername</label>
+    <input type="text" name="username" required autocomplete="username">
+    <label>Master-Passwort (ADMIN_PASSWORD)</label>
+    <input type="password" name="master_password" required autocomplete="off">
+    <label>Neues Passwort</label>
+    <input type="password" name="new_password" required autocomplete="new-password" minlength="12">
+    <label>Neues Passwort bestätigen</label>
+    <input type="password" name="new_password2" required autocomplete="new-password" minlength="12">
+    <button type="submit">Passwort zurücksetzen &rarr;</button>
+  </form>
+  <div class="alt-link"><a href="/admin/login">&larr; Zum Admin-Login</a></div>"""
+            return _ADMIN_AUTH_TEMPLATE % {
+                "page_title": "Passwort zurücksetzen",
+                "msg_display": "none",
+                "body": body,
+            }
+
+        # POST
+        csrf_submitted = request.form.get("_csrf", "")
+        csrf_expected = session.get("_csrf_token", "")
+        if not csrf_submitted or not hmac.compare_digest(csrf_submitted, csrf_expected):
+            return redirect("/admin/reset-password?err=1")
+
+        username = request.form.get("username", "").strip()[:64]
+        master_password = request.form.get("master_password", "")
+        new_password = request.form.get("new_password", "")
+        new_password2 = request.form.get("new_password2", "")
+
+        if not username or not master_password or not new_password:
+            return redirect("/admin/reset-password?err=1")
+
+        client_ip = request.remote_addr or "unknown"
+        if not check_login_rate_fn(client_ip):
+            return redirect("/admin/reset-password?err=1")
+        record_login_attempt_fn(client_ip)
+
+        # Verifiziere Master-Passwort gegen ADMIN_PASSWORD aus Config
+        admin_pw = config.get("admin_password", "")
+        if not admin_pw or not hmac.compare_digest(master_password, admin_pw):
+            audit_fn("admin_reset_failed", f"user={username[:32]} ip={client_ip} reason=master_pw")
+            return redirect("/admin/reset-password?err=verify")
+
+        # Verifiziere, dass der User existiert und Admin ist
+        user = db.get_user(username)
+        if not user or user.get("role") != "admin":
+            audit_fn("admin_reset_failed", f"user={username[:32]} ip={client_ip} reason=not_admin")
+            return redirect("/admin/reset-password?err=verify")
+
+        # Passwort-Policy prüfen
+        if len(new_password) > 128:
+            return redirect("/admin/reset-password?err=policy")
+        has_upper = _re.search(r"[A-Z]", new_password)
+        has_lower = _re.search(r"[a-z]", new_password)
+        has_digit = _re.search(r"\d", new_password)
+        has_special = _re.search(r"[!@#$%^&*(),.?\":{}|<>\-_=+\[\]\\;'/`~]", new_password)
+        if len(new_password) < 12 or not (has_upper and has_lower and has_digit and has_special):
+            return redirect("/admin/reset-password?err=policy")
+
+        if not hmac.compare_digest(new_password, new_password2):
+            return redirect("/admin/reset-password?err=match")
+
+        # Passwort aktualisieren
+        if db.update_password(user["id"], new_password):
+            db_audit_fn(
+                user["id"], "admin_password_reset", f"Admin-PW-Reset · {client_ip}", client_ip
+            )
+            session.clear()
+            return redirect("/admin/reset-password?ok=1")
+
+        return redirect("/admin/reset-password?err=1")
 
     @bp.route("/admin/logout")
     def admin_logout():

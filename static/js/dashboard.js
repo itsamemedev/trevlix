@@ -49,6 +49,7 @@ const clr=n=>n>=0?'var(--green)':'var(--red)';
 // ── Toast ────────────────────────────────────────────────────────────
 function toast(msg, type='info'){
   const c=document.getElementById('toasts');
+  if(!c) return;
   /* [Verbesserung #39] Max 5 Toasts gleichzeitig anzeigen */
   while(c.children.length >= 5){ c.removeChild(c.firstChild); }
   const t=document.createElement('div');
@@ -369,17 +370,17 @@ function updateAI(ai){
   if(ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
     const pct=Math.min(100,Math.round(w.weight/3.5*100));
     const c=w.weight>1.2?'var(--green)':w.weight<0.5?'var(--red)':'var(--cyan)';
-    return `<div class="weight-row"><span class="weight-name">${w.name}</span>
+    return `<div class="weight-row"><span class="weight-name">${esc(String(w.name||''))}</span>
       <div class="weight-bar-wrap"><div class="weight-bar" style="width:${pct}%;background:${c}"></div></div>
-      <span class="weight-val" style="color:${c}">${w.weight}×</span>
-      <span style="font-size:9px;color:var(--sub);width:32px;flex-shrink:0;text-align:right">${w.win_rate}%</span></div>`;
+      <span class="weight-val" style="color:${c}">${esc(String(w.weight||0))}×</span>
+      <span style="font-size:9px;color:var(--sub);width:32px;flex-shrink:0;text-align:right">${esc(String(w.win_rate||0))}%</span></div>`;
   }).join('');
   // AI log
   const dl=document.getElementById('aiDecLog');
   if(ai.ai_log?.length) dl.innerHTML=ai.ai_log.map(e=>
     `<div class="log-row ${e.allowed?'success':'error'}">
-      <span class="log-time">${e.time}</span>
-      <span class="log-msg">${e.reason||'—'} (${e.prob||0}%)</span></div>`).join('');
+      <span class="log-time">${esc(String(e.time||''))}</span>
+      <span class="log-msg">${esc(String(e.reason||'—'))} (${esc(String(e.prob||0))}%)</span></div>`).join('');
 }
 
 function updateSignals(sigs){
@@ -419,9 +420,9 @@ function renderAlerts(alerts){
   if(!alerts.length){el.innerHTML='<div class="empty" style="padding:8px">Keine Alerts</div>';return;}
   el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
     <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
-    <div style="flex:1"><div style="font-size:12px;font-weight:700">${a.symbol}</div>
-      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?'↑ Über':'↓ Unter'} ${a.target_price}</div></div>
-    ${!a.triggered?`<button onclick="deleteAlert(${a.id})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px">🗑</button>`:''}`).join('');
+    <div style="flex:1"><div style="font-size:12px;font-weight:700">${esc(String(a.symbol||''))}</div>
+      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?'↑ Über':'↓ Unter'} ${esc(String(a.target_price||''))}</div></div>
+    ${!a.triggered?`<button onclick="deleteAlert(${parseInt(a.id,10)||0})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px">🗑</button>`:''}`).join('');
 }
 
 function renderArbLog(arb){
@@ -431,10 +432,10 @@ function renderArbLog(arb){
   document.getElementById('arbCard').style.display=cnt>0?'block':'none';
   const html=arb.slice(0,5).map(a=>`<div class="arb-item">
     <div style="display:flex;justify-content:space-between;align-items:center">
-      <span style="font-size:13px;font-weight:700">${a.symbol}</span>
-      <span style="font-family:var(--mono);font-weight:900;font-size:13px;color:var(--yellow)">+${a.spread}%</span>
+      <span style="font-size:13px;font-weight:700">${esc(String(a.symbol||''))}</span>
+      <span style="font-family:var(--mono);font-weight:900;font-size:13px;color:var(--yellow)">+${esc(String(a.spread||0))}%</span>
     </div>
-    <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${a.buy} → Verkauf: ${a.sell} · ${a.time||'—'}</div>
+    <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${esc(String(a.buy||''))} → Verkauf: ${esc(String(a.sell||''))} · ${esc(String(a.time||'—'))}</div>
   </div>`).join('');
   document.getElementById('arbLogHome').innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
   document.getElementById('arbList2').innerHTML=html||'<div class="empty" style="padding:8px">Noch kein Scan</div>';
@@ -635,7 +636,7 @@ function addAlert(){
   const sym=document.getElementById('alertSym').value.trim().toUpperCase();
   const target=parseFloat(document.getElementById('alertTarget').value);
   const dir=document.getElementById('alertDir').value;
-  if(!sym||!target){toast('Symbol und Preis eingeben!','error');return;}
+  if(!sym||isNaN(target)||target<=0){toast('Symbol und gültigen Preis eingeben!','error');return;}
   socket.emit('add_price_alert',{symbol:sym,target,direction:dir});
   document.getElementById('alertTarget').value='';
 }
@@ -661,17 +662,22 @@ function applyPreset(name){
   toast('✅ Preset "'+name+'" geladen','success');
 }
 function saveSettings(){
+  const _pf=v=>{const n=parseFloat(v);return isNaN(n)?0:n;};
+  const _pi=v=>{const n=parseInt(v,10);return isNaN(n)?0:n;};
+  const sl=_pf(document.getElementById('sSL').value);
+  const tp=_pf(document.getElementById('sTP').value);
+  if(sl<=0||tp<=0||sl>=tp){toast('SL/TP ungültig (SL muss < TP sein)','error');return;}
   socket.emit('update_config',{
-    stop_loss_pct:parseFloat(document.getElementById('sSL').value)/100,
-    take_profit_pct:parseFloat(document.getElementById('sTP').value)/100,
-    max_open_trades:parseInt(document.getElementById('sMaxTrades').value, 10),
-    scan_interval:parseInt(document.getElementById('sInterval').value, 10),
+    stop_loss_pct:sl/100,
+    take_profit_pct:tp/100,
+    max_open_trades:_pi(document.getElementById('sMaxTrades').value),
+    scan_interval:_pi(document.getElementById('sInterval').value),
     paper_trading:document.getElementById('sPaper').checked,
     trailing_stop:document.getElementById('sTrailing').checked,
-    ai_min_confidence:parseFloat(document.getElementById('sAiConf').value)/100,
-    circuit_breaker_losses:parseInt(document.getElementById('sCBLosses').value, 10),
-    circuit_breaker_min:parseInt(document.getElementById('sCBMin').value, 10),
-    max_spread_pct:parseFloat(document.getElementById('sSpread').value),
+    ai_min_confidence:_pf(document.getElementById('sAiConf').value)/100,
+    circuit_breaker_losses:_pi(document.getElementById('sCBLosses').value),
+    circuit_breaker_min:_pi(document.getElementById('sCBMin').value),
+    max_spread_pct:_pf(document.getElementById('sSpread').value),
     use_fear_greed:document.getElementById('sFG').checked,
     ai_use_kelly:document.getElementById('sKelly').checked,
     mtf_enabled:document.getElementById('sMTF').checked,
@@ -680,16 +686,16 @@ function saveSettings(){
     use_dominance:document.getElementById('sDom').checked,
     use_anomaly:document.getElementById('sAnomaly').checked,
     use_dca:document.getElementById('sDCA').checked,
-    dca_max_levels:parseInt(document.getElementById('sDCALvl').value, 10),
+    dca_max_levels:_pi(document.getElementById('sDCALvl').value),
     use_partial_tp:document.getElementById('sPartialTP').checked,
     use_shorts:document.getElementById('sShorts').checked,
     use_arbitrage:document.getElementById('sArb').checked,
-    arb_min_spread_pct:parseFloat(document.getElementById('sArbSpread').value),
+    arb_min_spread_pct:_pf(document.getElementById('sArbSpread').value),
     genetic_enabled:document.getElementById('sGenetic').checked,
     rl_enabled:document.getElementById('sRL').checked,
     backup_enabled:document.getElementById('sBackup').checked,
-    portfolio_goal:parseFloat(document.getElementById('sGoal').value)||0,
-    news_block_score:parseFloat(document.getElementById('sNewsBlock').value),
+    portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
+    news_block_score:_pf(document.getElementById('sNewsBlock').value),
   });
 }
 function saveKeys(){
@@ -743,8 +749,11 @@ socket.on('auth_error',(d)=>{
 socket.on('update', d=>{updateUI(d);});
 socket.on('ai_update', ai=>{updateAI(ai);});
 socket.on('genetic_update', g=>{
-  document.getElementById('genFitness').textContent=(g.fitness||0).toFixed(3);
-  document.getElementById('genGenCount').textContent='Gen.'+g.gen+'/'+g.total;
+  if(!g) return;
+  const gf=document.getElementById('genFitness');
+  const gc=document.getElementById('genGenCount');
+  if(gf) gf.textContent=(g.fitness||0).toFixed(3);
+  if(gc) gc.textContent='Gen.'+(g.gen||0)+'/'+(g.total||0);
 });
 socket.on('status', d=>{
   toast(d.msg, d.type||'info');
@@ -952,12 +961,12 @@ async function loadUsers() {
       <div style="display:flex;align-items:center;justify-content:space-between;
         padding:8px 0;border-bottom:1px solid var(--muted);gap:8px">
         <div>
-          <div style="font-size:13px;font-weight:600;color:var(--txt)">${u.username}</div>
+          <div style="font-size:13px;font-weight:600;color:var(--txt)">${esc(String(u.username||''))}</div>
           <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">
-            ${u.created_at?.slice?.(0,10)||''} · ${u.role}
+            ${esc(String(u.created_at?.slice?.(0,10)||''))} · ${esc(String(u.role||'user'))}
           </div>
         </div>
-        <span class="role-badge ${u.role}">${u.role}</span>
+        <span class="role-badge ${esc(String(u.role||'user'))}">${esc(String(u.role||'user'))}</span>
         <div style="font-family:var(--mono);font-size:12px;color:var(--jade)">
           ${(u.balance||0).toFixed(0)} USDT
         </div>
