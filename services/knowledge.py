@@ -220,7 +220,7 @@ class KnowledgeBase:
                     "value": val,
                     "confidence": r.get("confidence", 0.5),
                     "source": r.get("source", "unknown"),
-                    "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
+                    "updated_at": r.get("updated_at").isoformat() if r.get("updated_at") else None,
                 }
                 result.append(d)
             return result

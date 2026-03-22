@@ -2824,7 +2824,7 @@ class AIEngine:
                     self.X_bear.append(xi)
                     self.y_bear.append(yi)
             n = len(self.X_raw)
-            self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
+            self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
             if n >= CONFIG["ai_min_samples"] and not models_loaded:
                 # Nur neu trainieren wenn kein gespeichertes Modell vorhanden
                 threading.Thread(target=self._train, daemon=True).start()
@@ -3795,7 +3795,7 @@ class AIEngine:
             daemon=True,
         ).start()
         n = len(self.X_raw)
-        self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
+        self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
         if (
             n >= CONFIG["ai_min_samples"]
             and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
@@ -5112,6 +5112,7 @@ def open_position(ex, scan: dict):
 
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
+    partial_ratio = max(0.01, min(partial_ratio, 1.0))
     pos = state.positions.get(symbol)
     if not pos:
         return
@@ -5139,9 +5140,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
     if is_partial:
         # Teilverkauf → Position aktualisieren
-        pos["qty"] -= close_qty
-        pos["invested"] -= close_invest
-        pos["partial_sold"] = pos.get("partial_sold", 0) + partial_ratio
+        with state._lock:
+            pos["qty"] -= close_qty
+            pos["invested"] -= close_invest
+            pos["partial_sold"] = pos.get("partial_sold", 0) + partial_ratio
         log.info(f"🔶 PARTIAL {symbol} {partial_ratio * 100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
         state.add_activity(
             "🔶",
@@ -5372,48 +5374,50 @@ def manage_positions(ex):
             with state._lock:
                 state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
-        except Exception:
-            # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
+        except (ccxt.BaseError, OSError, TimeoutError) as ticker_err:
+            log.debug(f"Ticker {symbol}: {ticker_err}")
             price = state.prices.get(symbol)
             if price is None:
                 continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
         pos_entry = pos.get("entry") or price
-        if (
-            pos_entry
-            and CONFIG.get("break_even_enabled")
-            and not pos.get("break_even_set")
-            and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
-        ):
-            be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
-            if be_sl > pos.get("sl", 0):  # Nur nach oben verschieben
-                pos["sl"] = be_sl
-                pos["break_even_set"] = True
-                log.info(
-                    f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
-                    f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
-                )
+        if pos_entry and pos_entry > 0:
+            with state._lock:
+                if (
+                    CONFIG.get("break_even_enabled")
+                    and not pos.get("break_even_set")
+                    and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
+                ):
+                    be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
+                    if be_sl > pos.get("sl", 0):
+                        pos["sl"] = be_sl
+                        pos["break_even_set"] = True
+                        log.info(
+                            f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
+                            f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
+                        )
 
         # Smart Exits: Dynamische SL/TP-Anpassung basierend auf aktueller Volatilität
         if smart_exits.enabled:
             atr_val = pos.get("_last_atr", 0)
-            # ATR aus letztem Scan oder geschätzt aus Preisbewegung
-            if atr_val <= 0:
-                atr_val = abs(price - pos_entry) * 0.5  # Grobe Schätzung
+            if atr_val <= 0 and pos_entry:
+                atr_val = abs(price - pos_entry) * 0.5
             exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
             new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
-            if new_smart_sl and new_smart_sl > pos.get("sl", 0):
-                pos["sl"] = new_smart_sl
-            if new_smart_tp and new_smart_tp > pos.get("tp", 0):
-                pos["tp"] = new_smart_tp
+            with state._lock:
+                if new_smart_sl and new_smart_sl > pos.get("sl", 0):
+                    pos["sl"] = new_smart_sl
+                if new_smart_tp and new_smart_tp > pos.get("tp", 0):
+                    pos["tp"] = new_smart_tp
 
         # Trailing Stop
-        if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
-            pos["highest"] = price
-            new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
-            if new_sl > pos.get("sl", 0):  # Trailing Stop nur nach oben verschieben
-                pos["sl"] = new_sl
+        with state._lock:
+            if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
+                pos["highest"] = price
+                new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
+                if new_sl > pos.get("sl", 0):
+                    pos["sl"] = new_sl
 
         # Partial Take-Profit – pro Level separat prüfen, nicht nur Level 0
         # Jedes Level hat einen eigenen Index. "partial_tp_done" speichert,
@@ -5568,7 +5572,8 @@ def bot_loop():
                             emit_event(
                                 "trade", {**act, "type": act["action"].lower(), "source": "grid"}
                             )
-                state.balance = bal_ref[0]
+                with state._lock:
+                    state.balance = bal_ref[0]
             price_alerts.check(state.prices)
 
             # Anomalie global prüfen
