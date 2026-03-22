@@ -1,5 +1,5 @@
 """
-TREVLIX v1.4.0 — i18n Translation Module
+TREVLIX v1.5.0 — i18n Translation Module
 Sprachen: DE | EN | ES | RU | PT
 """
 
@@ -538,6 +538,72 @@ TRANSLATIONS = {
         "es": "📊 Informe de rendimiento listo",
         "ru": "📊 Отчёт о производительности готов",
         "pt": "📊 Relatório de desempenho pronto",
+    },
+    # ── AUTO-HEALING AGENT ───────────────────────────────────────────────
+    "healing_started": {
+        "de": "🏥 Auto-Healing gestartet",
+        "en": "🏥 Auto-Healing started",
+        "es": "🏥 Auto-Recuperación iniciada",
+        "ru": "🏥 Авто-восстановление запущено",
+        "pt": "🏥 Auto-Recuperação iniciada",
+    },
+    "healing_recovered": {
+        "de": "✅ Service wiederhergestellt: {service}",
+        "en": "✅ Service recovered: {service}",
+        "es": "✅ Servicio recuperado: {service}",
+        "ru": "✅ Сервис восстановлен: {service}",
+        "pt": "✅ Serviço recuperado: {service}",
+    },
+    "healing_escalated": {
+        "de": "🚨 Eskalation: {service} konnte nicht wiederhergestellt werden",
+        "en": "🚨 Escalation: {service} could not be recovered",
+        "es": "🚨 Escalación: {service} no pudo ser recuperado",
+        "ru": "🚨 Эскалация: {service} не удалось восстановить",
+        "pt": "🚨 Escalação: {service} não pôde ser recuperado",
+    },
+    "healing_check_ok": {
+        "de": "💚 Health-Check bestanden",
+        "en": "💚 Health check passed",
+        "es": "💚 Verificación de salud pasada",
+        "ru": "💚 Проверка здоровья пройдена",
+        "pt": "💚 Verificação de saúde OK",
+    },
+    # ── REVENUE TRACKING AGENT ───────────────────────────────────────────
+    "revenue_summary": {
+        "de": "📈 Revenue: {pnl} USDT (Gebühren: {fees} USDT)",
+        "en": "📈 Revenue: {pnl} USDT (Fees: {fees} USDT)",
+        "es": "📈 Ingresos: {pnl} USDT (Comisiones: {fees} USDT)",
+        "ru": "📈 Доход: {pnl} USDT (Комиссии: {fees} USDT)",
+        "pt": "📈 Receita: {pnl} USDT (Taxas: {fees} USDT)",
+    },
+    "revenue_losing_strategy": {
+        "de": "⚠️ Verluststrategie erkannt: {strategy}",
+        "en": "⚠️ Losing strategy detected: {strategy}",
+        "es": "⚠️ Estrategia perdedora detectada: {strategy}",
+        "ru": "⚠️ Обнаружена убыточная стратегия: {strategy}",
+        "pt": "⚠️ Estratégia perdedora detectada: {strategy}",
+    },
+    # ── MULTI-SERVER CONTROL AGENT ───────────────────────────────────────
+    "cluster_node_online": {
+        "de": "🟢 Knoten online: {node}",
+        "en": "🟢 Node online: {node}",
+        "es": "🟢 Nodo en línea: {node}",
+        "ru": "🟢 Узел онлайн: {node}",
+        "pt": "🟢 Nó online: {node}",
+    },
+    "cluster_node_offline": {
+        "de": "🔴 Knoten offline: {node}",
+        "en": "🔴 Node offline: {node}",
+        "es": "🔴 Nodo fuera de línea: {node}",
+        "ru": "🔴 Узел оффлайн: {node}",
+        "pt": "🔴 Nó offline: {node}",
+    },
+    "cluster_deploy_started": {
+        "de": "🚀 Deployment gestartet auf {node}",
+        "en": "🚀 Deployment started on {node}",
+        "es": "🚀 Despliegue iniciado en {node}",
+        "ru": "🚀 Развёртывание запущено на {node}",
+        "pt": "🚀 Implantação iniciada em {node}",
     },
 }
 

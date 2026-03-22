@@ -7,6 +7,28 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.5.0] – 2026-03-22
+
+### Added — Autonomous Agents & System Improvements
+
+#### New Agents
+- **Auto-Healing Agent** (`services/auto_healing.py`) — Monitors trading processes, APIs, database, and notification services. Auto-recovers on failure with soft recovery first, escalation after 3 failures. Background health-check thread with configurable interval.
+- **Revenue Tracking Agent** (`services/revenue_tracking.py`) — Real PnL calculation after fees and slippage. Daily/weekly/monthly aggregation, ROI tracking, drawdown monitoring, and losing strategy detection.
+- **Multi-Server Control Agent** (`services/cluster_control.py`) — Register and manage remote TREVLIX nodes via API. Health-check, start/stop/deploy, aggregated cluster-wide metrics.
+
+#### Bugfixes
+- **crypto.com fetchTickers() Fix** — crypto.com only supports single-symbol fetchTickers. Added `safe_fetch_tickers()` helper that auto-detects exchange limitations and fetches all tickers then filters, preventing the "symbols argument cannot contain more than 1 symbol" error.
+- **Socket.IO Dashboard Connection** — Added JWT auth fallback for Socket.IO connect handler. Dashboard buttons now work even when session cookies aren't forwarded (e.g. behind reverse proxy). Client passes JWT token via `auth` parameter and `withCredentials: true`.
+
+#### Translations
+- Added 35+ missing dashboard translation keys (confirmations, toasts, status labels, agent UI) in all 5 languages (DE, EN, ES, RU, PT)
+- Added translations for new agents (Auto-Healing, Revenue Tracking, Cluster Control)
+
+#### Version Updates
+- Bumped version from 1.4.0 → 1.5.0 across all files (server.py, pyproject.toml, README.md, templates, routes, static assets, Docker config)
+
+---
+
 ## [1.3.8] – 2026-03-18
 
 ### Fixed — Bugfixes Runde 8: Short-Engine, Trade-Execution, Snapshot (7 Fixes)

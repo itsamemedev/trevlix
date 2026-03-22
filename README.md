@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.4.0**
+**Algorithmic Crypto Trading Bot — v1.5.0**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-250+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.4.0-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -70,6 +70,11 @@
 - **News Sentiment** — CryptoPanic real-time news as AI signal
 - **On-Chain Data** — Whale alerts, exchange flows (CryptoQuant)
 
+### Autonomous Agents (NEW v1.5)
+- **Auto-Healing Agent** — Self-healing system: monitors processes, APIs, DB; auto-recovers on failure with escalation
+- **Revenue Tracking Agent** — Real PnL tracking after fees, slippage; daily/weekly/monthly summaries; losing strategy detection
+- **Multi-Server Control Agent** — Cluster management: remote node monitoring, start/stop/deploy, aggregated metrics
+
 ### Infrastructure
 - **Real-time Dashboard** — WebSocket-powered live UI with Socket.IO
 - **Full REST API** — 85+ JWT-authenticated endpoints
@@ -80,6 +85,7 @@
 - **GitHub Updater** — In-dashboard one-click update & rollback
 - **Auto-Backup** — Regular data backup with SHA-256 verification
 - **Copy Trading** — Followers receive all signals in real time
+- **Exchange Compatibility** — Safe ticker fetching for all exchanges including Crypto.com
 
 ---
 
@@ -167,8 +173,10 @@ trevlix/
 │   ├── dashboard.py                   # Static page routes
 │   └── websocket.py                   # WebSocket event handlers
 │
-├── services/                          # Modular business logic (16 modules)
-│   ├── adaptive_weights.py            # Self-learning strategy weights [NEW]
+├── services/                          # Modular business logic (19 modules)
+│   ├── adaptive_weights.py            # Self-learning strategy weights
+│   ├── auto_healing.py                # Auto-Healing Agent (system recovery) [NEW v1.5]
+│   ├── cluster_control.py             # Multi-Server Control Agent [NEW v1.5]
 │   ├── config.py                      # Pydantic BaseSettings configuration
 │   ├── cryptopanic.py                 # CryptoPanic news sentiment client
 │   ├── db_pool.py                     # Thread-safe MySQL connection pooling
@@ -178,7 +186,8 @@ trevlix/
 │   ├── knowledge.py                   # AI knowledge base + LLM integration
 │   ├── market_data.py                 # FearGreed, dominance, sentiment, on-chain
 │   ├── notifications.py               # Discord & Telegram alerts
-│   ├── performance_attribution.py     # Profit/loss factor analysis [NEW]
+│   ├── performance_attribution.py     # Profit/loss factor analysis
+│   ├── revenue_tracking.py            # Revenue Tracking Agent (PnL/ROI) [NEW v1.5]
 │   ├── risk.py                        # Circuit breaker, VaR, correlation filter
 │   ├── smart_exits.py                 # Volatility-adaptive SL/TP
 │   ├── strategies.py                  # 9 voting trading strategies

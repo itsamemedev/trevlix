@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.4.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.5.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -4428,7 +4428,7 @@ class ArbitrageScanner:
                 if not ex:
                     continue
                 try:
-                    tickers = ex.fetch_tickers(symbols[:30])
+                    tickers = safe_fetch_tickers(ex, symbols[:30])
                     prices_by_ex[ex_name] = {
                         s: float(t.get("last") or 0) for s, t in tickers.items() if t.get("last")
                     }
@@ -4735,6 +4735,51 @@ def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USD
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# SAFE FETCH TICKERS (Exchange-Kompatibilität)
+# ═══════════════════════════════════════════════════════════════════════════════
+# Einige Exchanges (z.B. crypto.com) unterstützen kein Batch-fetchTickers
+# mit mehreren Symbolen. Diese Hilfsfunktion behandelt diesen Fall.
+_SINGLE_TICKER_EXCHANGES = frozenset({"cryptocom"})
+
+
+def safe_fetch_tickers(ex, symbols: list[str]) -> dict:
+    """Holt Ticker-Daten Exchange-kompatibel.
+
+    Für Exchanges die kein Batch-fetchTickers unterstützen (z.B. crypto.com)
+    wird fetch_tickers() ohne Argumente aufgerufen und das Ergebnis gefiltert.
+
+    Args:
+        ex: CCXT Exchange-Instanz.
+        symbols: Liste der gewünschten Symbole.
+
+    Returns:
+        Dict mit Ticker-Daten {symbol: ticker_dict}.
+    """
+    if not symbols:
+        return {}
+    ex_id = getattr(ex, "id", "")
+    if ex_id in _SINGLE_TICKER_EXCHANGES:
+        # crypto.com: fetch_tickers() ohne Argumente holt alle, dann filtern
+        try:
+            all_tickers = ex.fetch_tickers()
+            sym_set = set(symbols)
+            return {s: t for s, t in all_tickers.items() if s in sym_set}
+        except Exception:
+            # Fallback: einzeln abrufen
+            result = {}
+            for sym in symbols[:30]:
+                try:
+                    t = ex.fetch_ticker(sym)
+                    if t:
+                        result[sym] = t
+                except Exception:
+                    pass
+            return result
+    else:
+        return ex.fetch_tickers(symbols)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # MARKT-SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
 def fetch_markets(ex) -> list[str]:
@@ -4748,7 +4793,7 @@ def fetch_markets(ex) -> list[str]:
             if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
         ]
         if CONFIG.get("use_vol_filter"):
-            tickers = ex.fetch_tickers(syms[:150])
+            tickers = safe_fetch_tickers(ex, syms[:150])
             syms = [
                 s
                 for s in syms
@@ -5423,7 +5468,7 @@ def get_heatmap_data(ex) -> list[dict]:
         syms = state.markets[:60] if state.markets else []
         if not syms:
             return []
-        tickers = ex.fetch_tickers(syms)
+        tickers = safe_fetch_tickers(ex, syms)
         result = []
         for sym, t in tickers.items():
             ns, _, _ = news_fetcher.get_score(sym)
@@ -6425,13 +6470,39 @@ def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
 
 
 @socketio.on("connect")
-def on_connect():
-    if not session.get("user_id"):
-        # [Socket.io Fix] Sende Fehler statt stumm abzulehnen
+def on_connect(auth=None):
+    user_id = session.get("user_id")
+    username = session.get("username", "?")
+
+    # JWT-Fallback: Falls Session-Cookie nicht verfügbar (z.B. hinter Proxy)
+    if not user_id and auth and isinstance(auth, dict):
+        token = auth.get("token", "")
+        if token:
+            uid = db.verify_api_token(token)
+            if uid:
+                user_id = uid
+                session["user_id"] = uid
+                username = "jwt-user"
+            else:
+                # JWT im Cookie versuchen
+                try:
+                    payload = pyjwt.decode(
+                        token,
+                        CONFIG.get("jwt_secret", app.config["SECRET_KEY"]),
+                        algorithms=["HS256"],
+                    )
+                    user_id = payload.get("user_id")
+                    if user_id:
+                        session["user_id"] = user_id
+                        username = payload.get("username", "jwt-user")
+                except (pyjwt.InvalidTokenError, Exception):
+                    pass
+
+    if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
     emit("update", state.snapshot())
-    log.info(f"📱 Client verbunden: {session.get('username', '?')}")
+    log.info(f"📱 Client verbunden: {username}")
 
 
 @socketio.on("request_state")

@@ -19,6 +19,8 @@ const socket = io({
   reconnectionDelay: 2000,
   reconnectionDelayMax: 10000,
   timeout: 20000,
+  withCredentials: true,
+  auth: _jwtToken ? {token: _jwtToken} : {},
 });
 let portChart=null, hourChart=null, pnlChart=null, btChartInst=null;
 let lastData=null, allTrades=[], tradeFilter='all';

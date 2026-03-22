@@ -1,5 +1,5 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX v1.1.0 – Python Dependencies                       ║
+# ║  TREVLIX v1.5.0 – Python Dependencies                       ║
 # ║  Installieren: pip install -r requirements.txt               ║
 # ╚══════════════════════════════════════════════════════════════╝
 
@@ -14,7 +14,7 @@ flask-limiter>=3.5.0,<4.0.0
 ccxt>=4.2.0,<5.0.0
 
 # ── Database ───────────────────────────────────────────────────
-PyMySQL>=1.1.0,<2.0.0
+PyMySQL>=1.5.0,<2.0.0
 cryptography>=41.0.0,<44.0.0   # Fernet API-Key-Verschlüsselung
 
 # ── Data Processing ────────────────────────────────────────────
