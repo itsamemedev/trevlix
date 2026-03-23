@@ -48,8 +48,9 @@ def _get_fernet() -> "Fernet | None":
         with _fernet_lock:
             if not hasattr(_get_fernet, "_temp_key"):
                 # Einmalig warnen – ohne Key kein Verschlüsselungsschutz
-                log.warning(
+                log.critical(
                     "ENCRYPTION_KEY nicht gesetzt! Generiere temporären Key für diese Sitzung. "
+                    "API-Schlüssel werden nach Neustart NICHT mehr entschlüsselbar sein! "
                     "Setze ENCRYPTION_KEY in .env für Produktion: "
                     'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
                 )

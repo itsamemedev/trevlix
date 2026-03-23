@@ -153,12 +153,13 @@ class RiskManager:
             h.append(price)
             if len(h) > 100:
                 self._price_history[symbol] = h[-100:]
-            # Unbegrenztes Symbol-Wachstum verhindern
-            while len(self._price_history) > 200:
-                oldest_sym = next(iter(self._price_history))
-                if oldest_sym == symbol:
-                    break
-                del self._price_history[oldest_sym]
+            # Unbegrenztes Symbol-Wachstum verhindern (FIFO-Eviction)
+            if len(self._price_history) > 200:
+                to_remove = [k for k in list(self._price_history.keys()) if k != symbol][
+                    : len(self._price_history) - 200
+                ]
+                for k in to_remove:
+                    del self._price_history[k]
 
     def circuit_status(self) -> dict:
         with self._lock:

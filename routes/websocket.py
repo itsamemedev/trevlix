@@ -100,6 +100,11 @@ def register_handlers(
                 if stale:
                     log.debug(f"WS Rate-Limit: {len(stale)} stale Einträge entfernt")
 
+            # Hard cap: prevent unbounded growth between cleanups
+            if len(_ws_limits) > 5000:
+                _ws_limits.clear()
+                log.warning("WS Rate-Limit: Hard cap erreicht, Dict geleert")
+
         return True
 
     # Die eigentliche Handler-Registrierung erfolgt noch in server.py.

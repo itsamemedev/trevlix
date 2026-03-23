@@ -144,7 +144,7 @@ if PYDANTIC_AVAILABLE:
         mysql_db: str = Field(default="trevlix")
 
         # Auth
-        admin_password: str = Field(default="trevlix")
+        admin_password: str = Field(default="", description="Admin-Passwort (ADMIN_PASSWORD)")
         jwt_secret: str = Field(default_factory=lambda: secrets.token_hex(32))
         jwt_expiry_hours: int = Field(default=24, ge=1)
 
@@ -209,7 +209,7 @@ if PYDANTIC_AVAILABLE:
                 mysql_user=os.getenv("MYSQL_USER", "root"),
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
                 mysql_db=os.getenv("MYSQL_DB", "trevlix"),
-                admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
+                admin_password=os.getenv("ADMIN_PASSWORD", ""),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
                 cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
                 telegram_token=os.getenv("TELEGRAM_TOKEN", ""),
@@ -224,7 +224,9 @@ if PYDANTIC_AVAILABLE:
                 Liste mit Warnmeldungen. Leer = alles OK.
             """
             warnings = []
-            if len(self.admin_password) < 12:
+            if not self.admin_password:
+                warnings.append("ADMIN_PASSWORD ist nicht gesetzt – Login wird fehlschlagen!")
+            elif len(self.admin_password) < 12:
                 warnings.append("ADMIN_PASSWORD sollte mind. 12 Zeichen haben")
             if len(self.jwt_secret) < 32:
                 warnings.append("JWT_SECRET sollte mind. 32 Zeichen haben")
@@ -303,7 +305,7 @@ else:
                 mysql_pass=os.getenv("MYSQL_PASS", ""),
                 mysql_db=os.getenv("MYSQL_DB", "trevlix"),
                 # Auth
-                admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
+                admin_password=os.getenv("ADMIN_PASSWORD", ""),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
                 jwt_expiry_hours=_safe_env_int("JWT_EXPIRY_HOURS", 24),
                 # Notifications
@@ -317,7 +319,9 @@ else:
             """Sicherheitsvalidierung (Fallback ohne Pydantic)."""
             warnings = []
             admin_pw = getattr(self, "admin_password", "")
-            if len(admin_pw) < 12:
+            if not admin_pw:
+                warnings.append("ADMIN_PASSWORD ist nicht gesetzt – Login wird fehlschlagen!")
+            elif len(admin_pw) < 12:
                 warnings.append("ADMIN_PASSWORD sollte mind. 12 Zeichen haben")
             jwt = getattr(self, "jwt_secret", "")
             if len(jwt) < 32:
