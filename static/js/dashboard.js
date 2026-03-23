@@ -1,5 +1,7 @@
 // ── HTML-Escaping für sichere innerHTML-Nutzung ──────────────────────
 function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+// JS-safe escaping for use in onclick="fn('${escJS(val)}')" attributes
+function escJS(s){if(!s)return'';return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/</g,'\\x3c').replace(/>/g,'\\x3e');}
 
 // ── JWT Token (aus Cookie oder Session) ──────────────────────────────
 let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
@@ -188,7 +190,7 @@ function updateUI(d){
   // Chart pos buttons
   if((d.positions||[]).length){
     document.getElementById('chartPosBtns').innerHTML=d.positions.map(p=>
-      `<button onclick="openChart('${esc(p.symbol)}')" class="filter-btn">${esc(p.symbol.replace('/USDT',''))} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
+      `<button onclick="openChart('${escJS(p.symbol)}')" class="filter-btn">${esc(p.symbol.replace('/USDT',''))} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
   }
   // ARB stat
   document.getElementById('sArb').textContent=(d.arb_log||[]).length;
@@ -266,8 +268,8 @@ function updatePositions(positions){
         <div style="text-align:right">
           <div style="font-size:14px;font-weight:700;font-family:var(--mono);color:${c}">${pos?'+':''}${fmt(p.pnl)}</div>
           <div style="font-size:11px;font-family:var(--mono);color:${c}">${fmtPct(p.pnl_pct||0)}</div>
-          <button onclick="closePos('${esc(p.symbol)}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
-              <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${esc(p.symbol)}',${p.entry})">🎯 SL</button>
+          <button onclick="closePos('${escJS(p.symbol)}')" style="font-size:11px;padding:7px 10px">✕ ${QI18n.t('close_label')}</button>
+              <button class="btn btn-info" style="font-size:11px;padding:7px 10px" onclick="adjustSL('${escJS(p.symbol)}',${p.entry})">🎯 SL</button>
         </div>
       </div>
       <div class="pos-bot"><span>SL: ${(p.sl||0).toFixed(4)}</span><span>TP: ${(p.tp||0).toFixed(4)}</span><span>${fmt(p.invested||0,0)} USDT</span></div>
@@ -457,7 +459,7 @@ async function loadHeatmap(sortBy){
       const sym=coin.symbol.replace('/USDT','');
       const nc=coin.news_score>0.3?'🟢':coin.news_score<-0.3?'🔴':'⬜';
       const cls=(coin.in_pos?' inpos':'')+(coin.short?' inshort':'');
-      return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${esc(coin.symbol)}')">
+      return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${escJS(coin.symbol)}')">
         <div class="hm-symbol">${sym}</div>
         <div class="hm-pct">${pct>=0?'+':''}${pct.toFixed(1)}%</div>
         <div class="hm-news">${nc}</div>
@@ -1229,7 +1231,7 @@ async function loadCooldowns() {
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--muted)">
         <span style="font-size:13px;font-weight:600;color:#ef4444;flex:1">${esc(String(sym))}</span>
         <span style="font-size:11px;color:var(--sub)">bis ${info.until} (${info.remaining_min} Min.)</span>
-        <button onclick="clearCooldown('${esc(sym)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
+        <button onclick="clearCooldown('${escJS(sym)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
       </div>`).join('');
   } catch(e) { el.innerHTML = '<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
@@ -1268,7 +1270,7 @@ async function loadGrids() {
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
           <span style="font-weight:700;color:#e8f4ff">${esc(String(g.symbol||''))}</span>
           <span style="font-size:9px;padding:2px 6px;border-radius:4px;${g.active?'background:rgba(0,255,136,.08);color:var(--jade)':'background:rgba(255,255,255,.05);color:var(--sub)'}">${g.active?QI18n.t('label_grid_active'):QI18n.t('label_grid_inactive')}</span>
-          <button onclick="deleteGrid('${esc(g.symbol)}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
+          <button onclick="deleteGrid('${escJS(g.symbol)}')" style="margin-left:auto;background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
         </div>
         <div style="font-size:11px;color:var(--sub)">${g.levels} Stufen · ${g.lower}–${g.upper} USDT · Schritt: ${g.step?.toFixed(4) || '—'}</div>
         <div style="font-size:11px;color:var(--sub)">Offene Käufe: ${g.open_buys || 0} · Trades: ${g.total_trades || 0} · PnL: <span style="color:${(g.total_pnl||0)>=0?'var(--jade)':'var(--red)'}">${(g.total_pnl||0)>=0?'+':''}${(g.total_pnl||0).toFixed(4)} USDT</span></div>
@@ -1696,7 +1698,7 @@ function mexUpdate(data) {
         <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
         <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
         <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${p.pnl?.toFixed(2)} USDT</span>
-        <button onclick="mexClosePos('${esc(id)}','${esc(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
+        <button onclick="mexClosePos('${escJS(id)}','${escJS(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
       </div>`).join('') : '';
 
     return `
@@ -1743,12 +1745,12 @@ function mexUpdate(data) {
 
         <div style="display:flex;gap:8px;margin-top:12px">
           ${!enabled
-            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 API-Keys einrichten</button>`
+            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 API-Keys einrichten</button>`
             : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${esc(id)}')">⏹ Stoppen</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${esc(id)}')">▶ Starten</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${esc(id)}')">🔑 Keys</button>`
+              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ Stoppen</button>
+                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
+              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ Starten</button>
+                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
           }
         </div>
       </div>

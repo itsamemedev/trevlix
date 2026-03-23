@@ -3992,7 +3992,7 @@ class DailyReportScheduler:
         while True:
             time.sleep(60)
             now = datetime.now()
-            if now.hour == CONFIG.get("discord_report_hour", 20) and now.minute < 2:
+            if now.hour == CONFIG.get("discord_report_hour", 20) and now.minute < 5:
                 if not db.report_sent_today():
                     self._send_report()
             # Dominanz-Update stündlich
@@ -4051,7 +4051,7 @@ class BackupScheduler:
         while True:
             time.sleep(60)
             now = datetime.now()
-            if now.hour == 3 and now.minute < 2 and CONFIG.get("backup_enabled"):
+            if now.hour == 3 and now.minute < 5 and CONFIG.get("backup_enabled"):
                 path = db.backup()
                 if path:
                     discord.backup_done(path)
@@ -4463,6 +4463,8 @@ class ShortEngine:
             return False
         if not price or price <= 0:
             return False
+        if symbol in state.positions:
+            return False
         if invest <= 0 or invest > state.balance:
             return False
         sl = price * (1 + CONFIG.get("stop_loss_pct", 0.03))
@@ -4571,14 +4573,18 @@ class ShortEngine:
 
     def update_shorts(self):
         for sym in list(state.short_positions.keys()):
-            pos = state.short_positions.get(sym)
+            with state._lock:
+                pos = state.short_positions.get(sym)
             if not pos:
                 continue
             price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
-            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
+            if s_entry <= 0:
+                continue
+            pnl_pct = (s_entry - price) / s_entry * 100
+            leverage = CONFIG.get("short_leverage", 2)
             with state._lock:
-                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
+                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100) * leverage
             sl = pos.get("sl", float("inf"))
             tp = pos.get("tp", 0)
             if price >= sl:
@@ -4930,6 +4936,8 @@ def open_position(ex, scan: dict):
     if len(state.positions) >= CONFIG.get("max_open_trades", 5):
         return
     if symbol in state.positions:
+        return
+    if symbol in state.short_positions:
         return
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert")

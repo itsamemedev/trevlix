@@ -136,7 +136,7 @@ class BacktestEngine:
             total_pnl = sum(t["pnl"] for t in trades)
             gp = sum(t["pnl"] for t in won)
             gl = abs(sum(t["pnl"] for t in lost))
-            pf = gp / gl if gl > 0 else 99.0
+            pf = gp / gl if gl > 0 else (float("inf") if gp > 0 else 0.0)
             dd = 0.0
             peak = start
             for e in equity:
