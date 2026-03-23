@@ -245,7 +245,7 @@ function updateGenetic(gen){
   const el=document.getElementById('genHistory');
   if(gen.history?.length) el.innerHTML=gen.history.slice(0,8).map(h=>
     `<div class="log-row info"><span class="log-time">Gen.${esc(h.gen)}</span>
-     <span class="log-msg">Fitness:${esc(h.fitness)} · SL:${(h.genome?.sl*100).toFixed(1)}% · TP:${(h.genome?.tp*100).toFixed(1)}%</span></div>`).join('');
+     <span class="log-msg">Fitness:${esc(h.fitness)} · SL:${((h.genome?.sl??0)*100).toFixed(1)}% · TP:${((h.genome?.tp??0)*100).toFixed(1)}%</span></div>`).join('');
   else el.innerHTML='<div class="empty" style="padding:8px">—</div>';
 }
 
@@ -1496,9 +1496,9 @@ async function runMarkowitz(){
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
           <span style="font-size:12px;flex:1">${esc(String(s))}</span>
           <div style="flex:2;height:6px;background:var(--bg3);border-radius:3px">
-            <div style="width:${d.weights[i]*100}%;height:100%;border-radius:3px;background:var(--jade)"></div>
+            <div style="width:${((d.weights[i]??0)*100).toFixed(1)}%;height:100%;border-radius:3px;background:var(--jade)"></div>
           </div>
-          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${d.allocations[s]}%</span>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${d.allocations[s]??0}%</span>
         </div>`).join('')}`;
   } catch(e){ toast(QI18n.t('msg_markowitz_error')+': '+e.message,'error'); }
 }
@@ -1722,15 +1722,15 @@ function mexUpdate(data) {
       <div class="card-body" style="padding-top:0">
         <div class="sg" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${ret?.toFixed(2)}%</div>
+            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${(ret??0).toFixed(2)}%</div>
             <div class="sl">Return</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${pnl?.toFixed(2)}</div>
+            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${(pnl??0).toFixed(2)}</div>
             <div class="sl">PnL (USDT)</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px">${wr?.toFixed(1)}%</div>
+            <div class="sv" style="font-size:14px">${(wr??0).toFixed(1)}%</div>
             <div class="sl">Win-Rate</div>
           </div>
           <div class="sc">

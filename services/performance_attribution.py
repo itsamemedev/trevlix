@@ -271,8 +271,9 @@ class PerformanceAttribution:
             Profit Factor (>1 = profitabel). 0 wenn keine Verluste.
         """
         with self._lock:
-            gross_profit = sum(s.total_pnl for s in self._by_symbol.values() if s.total_pnl > 0)
-            gross_loss = abs(sum(s.total_pnl for s in self._by_symbol.values() if s.total_pnl < 0))
+            all_pnls = [p for s in self._by_symbol.values() for p in s.pnl_list]
+        gross_profit = sum(p for p in all_pnls if p > 0)
+        gross_loss = abs(sum(p for p in all_pnls if p < 0))
         if gross_loss > 0:
             return round(gross_profit / gross_loss, 2)
         return 999.99 if gross_profit > 0 else 0.0

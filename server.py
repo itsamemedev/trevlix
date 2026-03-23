@@ -245,6 +245,26 @@ try:
 except ImportError:
     BCRYPT_AVAILABLE = False
 
+
+def _pbkdf2_hash(password: bytes, salt: bytes | None = None) -> str:
+    """PBKDF2 password hash as safe fallback when bcrypt is unavailable."""
+    if salt is None:
+        salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
+    return f"pbkdf2${salt.hex()}${dk.hex()}"
+
+
+def _pbkdf2_verify(password: bytes, stored: str) -> bool:
+    """Verify a PBKDF2-hashed password."""
+    parts = stored.split("$")
+    if len(parts) != 3 or parts[0] != "pbkdf2":
+        return False
+    salt = bytes.fromhex(parts[1])
+    expected = bytes.fromhex(parts[2])
+    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
+    return hmac.compare_digest(dk, expected)
+
+
 load_dotenv()
 
 # BOT_NAME, BOT_VERSION, BOT_FULL importiert aus services.utils
@@ -1203,7 +1223,7 @@ class MySQLManager:
             if BCRYPT_AVAILABLE:
                 h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
             else:
-                h = hashlib.sha256(pw).hexdigest()
+                h = _pbkdf2_hash(pw)
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
@@ -1230,8 +1250,10 @@ class MySQLManager:
             if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
                 # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
-            # Fallback: SHA-256 (Legacy-Hashes oder bcrypt nicht installiert)
-            log.warning("verify_password: SHA-256 Fallback – bitte bcrypt-Hash verwenden")
+            if stored_hash.startswith("pbkdf2$"):
+                return _pbkdf2_verify(pw, stored_hash)
+            # Legacy SHA-256 hashes (migrate users to bcrypt/pbkdf2)
+            log.warning("verify_password: SHA-256 Legacy-Hash – Migration empfohlen")
             return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
         except Exception:
             return False
@@ -3538,7 +3560,9 @@ class AIEngine:
         dow = now.weekday()  # 0=Mo, 6=So
         woy = now.isocalendar()[1]  # Kalenderwoche
 
-        recent_trades = closed_trades[:20]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
+        recent_trades = closed_trades[
+            :20
+        ]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
         recent_wr = sum(1 for t in recent_trades if t.get("pnl", 0) > 0) / max(
             len(recent_trades), 1
         )
@@ -3915,6 +3939,11 @@ class MultiTimeframeFilter:
                     stale = [k for k, v in self._cache.items() if v["ts"] < cutoff]
                     for k in stale:
                         del self._cache[k]
+                    # If still over limit after stale eviction, drop oldest entries
+                    if len(self._cache) > self._MAX_CACHE:
+                        by_age = sorted(self._cache, key=lambda k: self._cache[k]["ts"])
+                        for k in by_age[: len(self._cache) - self._MAX_CACHE]:
+                            del self._cache[k]
             ok = trend >= 0
             return ok, f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
         except Exception as e:
@@ -4114,7 +4143,7 @@ class BotState:
             short_copy = dict(self.short_positions)
             prices_copy = dict(self.prices)
         longs = sum(
-            p.get("qty", 0) * prices_copy.get(s, p.get("entry", 0))
+            p.get("qty", 0) * (prices_copy.get(s) or p.get("entry", 0))
             for s, p in pos_copy.items()
             if p.get("qty", 0) > 0
         )
@@ -4148,7 +4177,7 @@ class BotState:
     def avg_loss(self):
         with self._lock:
             trades_copy = list(self.closed_trades)
-        losses = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) <= 0]
+        losses = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) < 0]
         return sum(losses) / len(losses) if losses else 0
 
     def profit_factor(self):
@@ -4225,9 +4254,19 @@ class BotState:
                 "entry": round(p.get("entry", 0), 4),
                 "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
                 "qty": round(p.get("qty", 0), 4),
-                "pnl": round(p.get("pnl_unrealized", 0), 2),
+                "pnl": round(
+                    p.get("invested", 0)
+                    * (
+                        (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
+                        / p.get("entry", 0)
+                    )
+                    * CONFIG.get("short_leverage", 2)
+                    if p.get("entry", 0) > 0
+                    else 0.0,
+                    2,
+                ),
                 "pnl_pct": round(
-                    (p.get("entry", 0) - prices_snap.get(sym, p.get("entry", 0)))
+                    (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
                     / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
@@ -4520,9 +4559,9 @@ class ShortEngine:
     def close_short(self, symbol: str, reason: str):
         with state._lock:
             pos = state.short_positions.pop(symbol, None)
+            price = state.prices.get(symbol, pos.get("entry", 0)) if pos else 0
         if not pos:
             return
-        price = state.prices.get(symbol, pos.get("entry", 0))
         short_entry = pos.get("entry") or price
         pnl_pct = (short_entry - price) / short_entry * 100 if short_entry > 0 else 0.0
         leverage = CONFIG.get("short_leverage", 2)
@@ -4593,16 +4632,18 @@ class ShortEngine:
         for sym in list(state.short_positions.keys()):
             with state._lock:
                 pos = state.short_positions.get(sym)
+                price = state.prices.get(sym, pos.get("entry", 0)) if pos else 0
             if not pos:
                 continue
-            price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
             if s_entry <= 0:
                 continue
             pnl_pct = (s_entry - price) / s_entry * 100
             leverage = CONFIG.get("short_leverage", 2)
             with state._lock:
-                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100) * leverage
+                invested = pos.get("invested", 0)
+                est_fee = invested * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
+                pos["pnl_unrealized"] = invested * (pnl_pct / 100) * leverage - est_fee
             sl = pos.get("sl", float("inf"))
             tp = pos.get("tp", 0)
             if price >= sl:
@@ -4988,12 +5029,6 @@ def open_position(ex, scan: dict):
         log.info(f"🌐 {symbol}: {dom_reason}")
         return
 
-    # News-Block
-    ns = scan.get("news_score", 0)
-    if ns <= CONFIG.get("news_block_score", -0.4):
-        log.info(f"📰 {symbol} News blockiert: {ns:.2f} – {scan.get('news_headline', '')[:60]}")
-        return
-
     if risk.is_correlated(symbol, list(state.positions.keys())):
         return
     if not scan.get("mtf_ok", True) and CONFIG.get("mtf_enabled"):
@@ -5013,7 +5048,7 @@ def open_position(ex, scan: dict):
         ob_imbalance=scan.get("ob_ratio", 0.5),
         mtf_bullish=int(scan.get("mtf_ok", True)),
         sentiment=scan.get("sentiment", 0.5),
-        news_score=ns,
+        news_score=news_score,
         onchain_score=scan.get("onchain_score", 0),
         dominance_ok=int(dom_ok),
     )
@@ -5024,7 +5059,7 @@ def open_position(ex, scan: dict):
             scan.get("rsi", 50),
             1 if regime.is_bull else -1,
             fg_idx.value,
-            ns,
+            news_score,
             scan.get("ob_ratio", 0.5),
         )
         if rl_action == 0:
@@ -5085,7 +5120,9 @@ def open_position(ex, scan: dict):
 
     if CONFIG.get("paper_trading", True):
         with state._lock:
-            if invest > state.balance:
+            # Re-clamp invest under lock to prevent stale-balance race condition
+            invest = min(invest, state.balance * CONFIG["max_position_pct"])
+            if invest > state.balance or invest < 5:
                 log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
                 return
             state.balance -= invest
@@ -5112,7 +5149,7 @@ def open_position(ex, scan: dict):
         "regime": "bull" if regime.is_bull else "bear",
         "dca_level": 0,
         "partial_sold": 0,
-        "news_score": round(ns, 3),
+        "news_score": round(news_score, 3),
         "onchain_score": round(scan.get("onchain_score", 0), 3),
     }
     # Trade DNA: Fingerprint in Position speichern
@@ -5129,7 +5166,7 @@ def open_position(ex, scan: dict):
     smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
         f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%"
-        f" | News:{ns:+.2f}{dna_info}{smart_info}"
+        f" | News:{news_score:+.2f}{dna_info}{smart_info}"
     )
     state.add_activity(
         "🟢",
@@ -5137,7 +5174,7 @@ def open_position(ex, scan: dict):
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%",
         "success",
     )
-    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, ns)
+    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, news_score)
     # DNA + Smart Exit Discord-Notifications
     if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
         discord.dna_boost(
@@ -5728,6 +5765,9 @@ def bot_loop():
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
                         if res and res["signal"] == 1:
+                            # Re-check max_open_trades to prevent exceeding limit
+                            if len(state.positions) >= CONFIG.get("max_open_trades", 5):
+                                continue
                             state.add_signal(
                                 {
                                     "symbol": res["symbol"],
@@ -6830,8 +6870,7 @@ def on_save_keys(data):
 
 @socketio.on("update_discord")
 def on_update_discord(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     if data.get("webhook"):
         CONFIG["discord_webhook"] = data["webhook"]
@@ -6852,8 +6891,7 @@ def on_update_discord(data):
 
 @socketio.on("force_train")
 def on_force_train():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "type": "info"})
     threading.Thread(target=ai_engine._train, daemon=True).start()
@@ -6861,8 +6899,7 @@ def on_force_train():
 
 @socketio.on("force_optimize")
 def on_force_optimize():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "type": "info"})
     threading.Thread(target=ai_engine._optimize, daemon=True).start()
@@ -6870,8 +6907,7 @@ def on_force_optimize():
 
 @socketio.on("force_genetic")
 def on_force_genetic():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
     threading.Thread(
@@ -6881,8 +6917,7 @@ def on_force_genetic():
 
 @socketio.on("reset_ai")
 def on_reset_ai():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     with ai_engine._lock:
         ai_engine.X_raw = []
@@ -6909,14 +6944,17 @@ def on_close_position(data):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
     sym = data.get("symbol", "")
-    if sym in state.positions:
+    with state._lock:
+        in_long = sym in state.positions
+        in_short = sym in state.short_positions
+    if in_long:
         try:
             ex = create_exchange()
             close_position(ex, sym, "Manuell geschlossen 🖐")
             emit("status", {"msg": f"✅ {sym} geschlossen", "type": "success"}, broadcast=True)
         except Exception as e:
             emit("status", {"msg": f"❌ {e}", "type": "error"})
-    elif sym in state.short_positions:
+    elif in_short:
         short_engine.close_short(sym, "Manuell 🖐")
         emit("status", {"msg": f"✅ Short {sym} geschlossen", "type": "success"}, broadcast=True)
 
@@ -7365,8 +7403,7 @@ def on_rollback_update():
 # ── Multi-Exchange Handler ──────────────────────────────────────────────────────
 @socketio.on("start_exchange")
 def on_start_exchange(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     emit(
@@ -7379,8 +7416,7 @@ def on_start_exchange(data):
 
 @socketio.on("stop_exchange")
 def on_stop_exchange(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     emit(
@@ -7412,8 +7448,7 @@ def on_save_exchange_keys(data):
 
 @socketio.on("close_exchange_position")
 def on_close_exchange_position(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     symbol = data.get("symbol", "")
@@ -8029,6 +8064,7 @@ def api_cluster_nodes_list():
 
 @app.route("/api/v1/cluster/nodes", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_nodes_add():
     """Cluster Control: register a new remote node."""
     data = request.json or {}
@@ -8047,6 +8083,7 @@ def api_cluster_nodes_add():
 
 @app.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
 @api_auth_required
+@admin_required
 def api_cluster_nodes_remove(name):
     """Cluster Control: remove a registered node."""
     try:
@@ -8058,6 +8095,7 @@ def api_cluster_nodes_remove(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/start", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_start(name):
     """Cluster Control: start trading bot on remote node."""
     try:
@@ -8069,6 +8107,7 @@ def api_cluster_node_start(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/stop", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_stop(name):
     """Cluster Control: stop trading bot on remote node."""
     try:
@@ -8080,6 +8119,7 @@ def api_cluster_node_stop(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/restart", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_restart(name):
     """Cluster Control: restart trading bot on remote node."""
     try:
@@ -8091,6 +8131,7 @@ def api_cluster_node_restart(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/deploy", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_deploy(name):
     """Cluster Control: deploy update to remote node."""
     try:

@@ -308,23 +308,9 @@ class AutoHealingAgent:
         """Check if notification services appear configured."""
         discord_url = self._config.get("discord_webhook", "")
         telegram_token = self._config.get("telegram_token", "")
-        if not discord_url and not telegram_token:
-            # Neither configured – nothing to check
+        if discord_url or telegram_token:
             self._mark_healthy(ServiceName.NOTIFICATIONS)
-            return
-
-        # Lightweight check: verify the webhook URL is set and
-        # non-empty. Actual delivery failures are handled at send
-        # time by the notification services themselves.
-        ok = bool(discord_url) or bool(telegram_token)
-        if ok:
-            self._mark_healthy(ServiceName.NOTIFICATIONS)
-        else:
-            self._record_failure(
-                ServiceName.NOTIFICATIONS,
-                Severity.WARNING,
-                "Notification services not configured",
-            )
+        # If neither is configured, skip check – not a failure, just unconfigured
 
     def _check_memory(self) -> None:
         """Check process memory usage via /proc/self/status."""

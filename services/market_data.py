@@ -284,7 +284,7 @@ class SentimentFetcher:
             r.raise_for_status()
             cd = r.json().get("community_data", {})
             raw = cd.get("sentiment_votes_up_percentage")
-            sentiment_up = raw if raw is not None else 50
+            sentiment_up = float(raw) if isinstance(raw, (int, float)) else 50.0
             score = float(np.clip(sentiment_up / 100, 0, 1))
             self.db.save_sentiment(symbol, score, "coingecko")
             return score

@@ -214,11 +214,13 @@ class DiscordNotifier:
 
     def genetic_result(self, gen: int, fitness: float, genome: dict) -> None:
         try:
-            sl_val = float(genome.get("sl", 0) or 0)
+            raw_sl = genome.get("sl")
+            sl_val = float(raw_sl) if raw_sl is not None else 0.0
         except (ValueError, TypeError):
             sl_val = 0.0
         try:
-            tp_val = float(genome.get("tp", 0) or 0)
+            raw_tp = genome.get("tp")
+            tp_val = float(raw_tp) if raw_tp is not None else 0.0
         except (ValueError, TypeError):
             tp_val = 0.0
         self.send(

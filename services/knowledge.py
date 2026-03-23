@@ -180,7 +180,9 @@ class KnowledgeBase:
                 "value": parsed_value,
                 "confidence": row.get("confidence", 0.5),
                 "source": row.get("source", "unknown"),
-                "updated_at": row.get("updated_at").isoformat() if row.get("updated_at") else None,
+                "updated_at": (
+                    row["updated_at"].isoformat() if row.get("updated_at") is not None else None
+                ),
             }
             self._cache[cache_key] = result
             self._cache_ts[cache_key] = now

@@ -28,10 +28,12 @@ class BacktestEngine:
         compute_indicators_fn: Callable[[pd.DataFrame], pd.DataFrame | None],
         strategies: list[tuple[str, Callable]],
         save_fn: Callable[[dict], None] | None = None,
+        fee_rate: float = 0.0004,
     ) -> None:
         self._compute_indicators = compute_indicators_fn
         self._strategies = strategies
         self._save_fn = save_fn
+        self._fee_rate = fee_rate
 
     def run(
         self,
@@ -82,6 +84,8 @@ class BacktestEngine:
                     pp = (price - pos["entry"]) / pos["entry"]
                     if pp <= -sl_pct:
                         pnl = pos["inv"] * pp
+                        fee = pos["inv"] * self._fee_rate * 2  # entry + exit fee
+                        pnl -= fee
                         cap += pos["inv"] + pnl
                         trades.append(
                             {
@@ -96,6 +100,8 @@ class BacktestEngine:
                         pos = None
                     elif pp >= tp_pct:
                         pnl = pos["inv"] * pp
+                        fee = pos["inv"] * self._fee_rate * 2  # entry + exit fee
+                        pnl -= fee
                         cap += pos["inv"] + pnl
                         trades.append(
                             {
