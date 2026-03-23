@@ -4116,7 +4116,7 @@ class BotState:
             short_copy = dict(self.short_positions)
             prices_copy = dict(self.prices)
         longs = sum(
-            p.get("qty", 0) * prices_copy.get(s, p.get("entry", 0))
+            p.get("qty", 0) * (prices_copy.get(s) or p.get("entry", 0))
             for s, p in pos_copy.items()
             if p.get("qty", 0) > 0
         )
@@ -4150,7 +4150,7 @@ class BotState:
     def avg_loss(self):
         with self._lock:
             trades_copy = list(self.closed_trades)
-        losses = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) <= 0]
+        losses = [t.get("pnl", 0) for t in trades_copy if t.get("pnl", 0) < 0]
         return sum(losses) / len(losses) if losses else 0
 
     def profit_factor(self):
@@ -4522,9 +4522,9 @@ class ShortEngine:
     def close_short(self, symbol: str, reason: str):
         with state._lock:
             pos = state.short_positions.pop(symbol, None)
+            price = state.prices.get(symbol, pos.get("entry", 0)) if pos else 0
         if not pos:
             return
-        price = state.prices.get(symbol, pos.get("entry", 0))
         short_entry = pos.get("entry") or price
         pnl_pct = (short_entry - price) / short_entry * 100 if short_entry > 0 else 0.0
         leverage = CONFIG.get("short_leverage", 2)
@@ -4595,16 +4595,18 @@ class ShortEngine:
         for sym in list(state.short_positions.keys()):
             with state._lock:
                 pos = state.short_positions.get(sym)
+                price = state.prices.get(sym, pos.get("entry", 0)) if pos else 0
             if not pos:
                 continue
-            price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
             if s_entry <= 0:
                 continue
             pnl_pct = (s_entry - price) / s_entry * 100
             leverage = CONFIG.get("short_leverage", 2)
             with state._lock:
-                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100) * leverage
+                invested = pos.get("invested", 0)
+                est_fee = invested * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
+                pos["pnl_unrealized"] = invested * (pnl_pct / 100) * leverage - est_fee
             sl = pos.get("sl", float("inf"))
             tp = pos.get("tp", 0)
             if price >= sl:
@@ -5087,7 +5089,9 @@ def open_position(ex, scan: dict):
 
     if CONFIG.get("paper_trading", True):
         with state._lock:
-            if invest > state.balance:
+            # Re-clamp invest under lock to prevent stale-balance race condition
+            invest = min(invest, state.balance * CONFIG["max_position_pct"])
+            if invest > state.balance or invest < 5:
                 log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
                 return
             state.balance -= invest
@@ -5730,6 +5734,9 @@ def bot_loop():
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
                         if res and res["signal"] == 1:
+                            # Re-check max_open_trades to prevent exceeding limit
+                            if len(state.positions) >= CONFIG.get("max_open_trades", 5):
+                                continue
                             state.add_signal(
                                 {
                                     "symbol": res["symbol"],
@@ -6911,14 +6918,17 @@ def on_close_position(data):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
     sym = data.get("symbol", "")
-    if sym in state.positions:
+    with state._lock:
+        in_long = sym in state.positions
+        in_short = sym in state.short_positions
+    if in_long:
         try:
             ex = create_exchange()
             close_position(ex, sym, "Manuell geschlossen 🖐")
             emit("status", {"msg": f"✅ {sym} geschlossen", "type": "success"}, broadcast=True)
         except Exception as e:
             emit("status", {"msg": f"❌ {e}", "type": "error"})
-    elif sym in state.short_positions:
+    elif in_short:
         short_engine.close_short(sym, "Manuell 🖐")
         emit("status", {"msg": f"✅ Short {sym} geschlossen", "type": "success"}, broadcast=True)
 
