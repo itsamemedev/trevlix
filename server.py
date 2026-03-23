@@ -2091,7 +2091,13 @@ def _before_request_hooks():
                         abort(401)
                     return redirect("/login")
             except (ValueError, TypeError):
-                pass
+                # Ungültiger session_created → Session sicherheitshalber beenden
+                session.clear()
+                if request.path.startswith("/api/"):
+                    from flask import abort
+
+                    abort(401)
+                return redirect("/login")
         session["last_active"] = now.isoformat()
 
     # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)

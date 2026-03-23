@@ -590,3 +590,125 @@ table {
   color: var(--dim);
   text-transform: uppercase;
 }
+
+/* ══ MODERNIZATION: IMPROVED ACCESSIBILITY ════════════════════════════ */
+/* Focus visible for keyboard navigation */
+*:focus-visible {
+  outline: 2px solid var(--jade);
+  outline-offset: 2px;
+}
+button:focus-visible, .btn:focus-visible, .nb:focus-visible {
+  outline: 2px solid var(--jade);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(0,255,136,.15);
+}
+/* Skip focus ring for mouse users */
+*:focus:not(:focus-visible) { outline: none; }
+
+/* ══ MODERNIZATION: SMOOTH TRANSITIONS ════════════════════════════════ */
+/* Reduce motion for users who prefer it */
+@media(prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+  #pageLoadOverlay { transition: none; }
+}
+
+/* ══ MODERNIZATION: CARD IMPROVEMENTS ═════════════════════════════════ */
+/* Glassmorphism effect on hover */
+.card {
+  position: relative;
+  isolation: isolate;
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(0,255,136,.02) 0%, transparent 50%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .3s;
+}
+.card:hover::before { opacity: 1; }
+
+/* ══ MODERNIZATION: BETTER STAT GRID ═════════════════════════════════ */
+.sc {
+  transition: background .2s;
+}
+.sc:hover {
+  background: rgba(0,255,136,.03);
+}
+
+/* ══ MODERNIZATION: IMPROVED BUTTON STATES ════════════════════════════ */
+.btn-jade {
+  background: linear-gradient(135deg, var(--jade) 0%, var(--teal) 100%);
+  color: var(--bg0);
+  font-weight: 800;
+  box-shadow: 0 2px 12px rgba(0,255,136,.2);
+}
+.btn-jade:hover {
+  box-shadow: 0 4px 20px rgba(0,255,136,.35);
+  transform: translateY(-1px);
+}
+
+/* ══ MODERNIZATION: CONNECTION STATUS INDICATOR ══════════════════════ */
+.conn-status {
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block; flex-shrink: 0;
+  transition: background .3s, box-shadow .3s;
+}
+.conn-status.connected {
+  background: var(--green);
+  box-shadow: 0 0 6px var(--green);
+  animation: blink 2s infinite;
+}
+.conn-status.disconnected {
+  background: var(--red);
+}
+.conn-status.reconnecting {
+  background: var(--yellow);
+  animation: blink .8s infinite;
+}
+
+/* ══ MODERNIZATION: BETTER MOBILE NAV ═════════════════════════════════ */
+@media(max-width:899px) {
+  .bnav {
+    grid-template-columns: repeat(auto-fit, minmax(50px, 1fr)) !important;
+    max-width: 100vw;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nb span:not(.nb-icon):not(.nb-badge) {
+    font-size: 7px !important;
+    line-height: 1.1;
+    max-width: 50px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+/* ══ MODERNIZATION: IMPROVED TOAST ANIMATIONS ═════════════════════════ */
+.toast {
+  transform-origin: center bottom;
+  will-change: opacity, transform;
+}
+
+/* ══ MODERNIZATION: BETTER SCROLLBAR ══════════════════════════════════ */
+@supports (scrollbar-width: thin) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--muted) transparent;
+  }
+}
+
+/* ══ MODERNIZATION: PRINT STYLES ══════════════════════════════════════ */
+@media print {
+  header, .bnav, #toasts, .wizard-overlay, #pageLoadOverlay { display: none !important; }
+  main { max-width: 100% !important; padding: 0 !important; }
+  .card { break-inside: avoid; border: 1px solid #ccc; }
+  body { background: #fff; color: #000; }
+}

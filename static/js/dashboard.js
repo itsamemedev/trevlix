@@ -3,6 +3,13 @@ function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/<
 // JS-safe escaping for use in onclick="fn('${escJS(val)}')" attributes
 function escJS(s){if(!s)return'';return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/</g,'\\x3c').replace(/>/g,'\\x3e');}
 
+// ── Safe localStorage wrapper (handles private browsing) ─────────────
+const _storage = {
+  get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+  set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
+  del(k){try{localStorage.removeItem(k);}catch(e){}}
+};
+
 // ── JWT Token (aus Cookie oder Session) ──────────────────────────────
 let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
 
@@ -11,7 +18,7 @@ let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
   try {
     const r = await fetch('/api/v1/state', {credentials:'include'});
     if(r.ok){ const d=await r.json(); if(d&&d.running!==undefined) updateUI(d); }
-  } catch(e){}
+  } catch(e){ console.warn('Initial state fetch failed:', e); }
 })();
 
 const socket = io({
@@ -74,8 +81,9 @@ function renderLog(){
   const icons={trade:'💰',signal:'📡',system:'⚙️',ai:'🧠',arb:'💹'};
   for(const[k,entries] of Object.entries(categories)){
     const el=document.getElementById('log'+k); if(!el) continue;
-    el.innerHTML=entries.slice(0,120).map(e=>`<div class="log-row ${e.type}">
-      <span class="log-time">${e.time}</span>
+    const validTypes = new Set(['info','success','error','warning']);
+    el.innerHTML=entries.slice(0,120).map(e=>`<div class="log-row ${validTypes.has(e.type)?e.type:'info'}">
+      <span class="log-time">${esc(e.time)}</span>
       <span style="flex-shrink:0;width:14px;text-align:center">${icons[e.cat]||'·'}</span>
       <span class="log-msg">${esc(e.msg)}</span></div>`).join('')||'<div class="empty" style="padding:12px">'+QI18n.t('empty_log')+'</div>';
   }
@@ -98,24 +106,34 @@ const cBase={responsive:true,maintainAspectRatio:false,
   scales:{x:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#2e3d5a',font:{family:"'JetBrains Mono'",size:8},maxTicksLimit:6}},
           y:{grid:{color:'rgba(255,255,255,0.03)'},ticks:{color:'#2e3d5a',font:{family:"'JetBrains Mono'",size:8}}}}};
 function initCharts(){
-  portChart=new Chart(document.getElementById('portChart'),{type:'line',
+  // Destroy existing chart instances to prevent memory leak
+  if(portChart){try{portChart.destroy();}catch(e){}} portChart=null;
+  if(hourChart){try{hourChart.destroy();}catch(e){}} hourChart=null;
+  if(pnlChart){try{pnlChart.destroy();}catch(e){}} pnlChart=null;
+
+  const portEl=document.getElementById('portChart');
+  const hourEl=document.getElementById('hourChart');
+  const pnlEl=document.getElementById('pnlChart');
+  if(portEl) portChart=new Chart(portEl,{type:'line',
     data:{labels:[],datasets:[{data:[],borderColor:'#00ff88',backgroundColor:'rgba(0,255,136,0.06)',borderWidth:2,fill:true,tension:.4,pointRadius:0}]},options:cBase});
-  hourChart=new Chart(document.getElementById('hourChart'),{type:'bar',
+  if(hourEl) hourChart=new Chart(hourEl,{type:'bar',
     data:{labels:Array.from({length:24},(_,i)=>i+'h'),datasets:[{data:Array(24).fill(0),backgroundColor:'rgba(0,255,136,.35)',borderRadius:3}]},options:cBase});
-  pnlChart=new Chart(document.getElementById('pnlChart'),{type:'bar',
+  if(pnlEl) pnlChart=new Chart(pnlEl,{type:'bar',
     data:{labels:[],datasets:[{data:[],backgroundColor:[],borderRadius:3}]},options:cBase});
 }
 
 // ── Main UI Update ───────────────────────────────────────────────────
 function updateUI(d){
+  if(!d || typeof d !== 'object') return;
   lastData=d; allTrades=d.closed_trades||[];
   // Header
   document.getElementById('hSub').textContent=(d.exchange||'TREVLIX').toUpperCase()+' · '+(d.paper_trading?'PAPER':'LIVE')+' · v'+(d.bot_version||'1.0.0');
   // Hero
-  document.getElementById('hVal').innerHTML=fmt(d.portfolio_value)+' <span style="font-size:18px;opacity:.4">USDT</span>';
+  const hValEl=document.getElementById('hVal');
+  if(hValEl){hValEl.textContent=fmt(d.portfolio_value)+' USDT';}
   const r=d.return_pct||0, re=document.getElementById('hReturn');
   re.textContent=(r>=0?'▲ +':'▼ ')+fmt(Math.abs(r))+'%'; re.className='pill '+(r>=0?'up':'dn');
-  document.getElementById('hPnl').textContent=fmtS(d.total_pnl)+' USDT Gesamt';
+  document.getElementById('hPnl').textContent=fmtS(d.total_pnl)+' USDT '+(QI18n.t('total_label')||'Gesamt');
   // Status
   const b=document.getElementById('statusBadge'),t=document.getElementById('statusTxt');
   if(d.paused){b.className='h-badge pause';t.textContent=QI18n.t('status_paused');}
@@ -124,7 +142,7 @@ function updateUI(d){
   document.getElementById('btnStart').disabled=d.running;
   document.getElementById('btnStop').disabled=!d.running;
   document.getElementById('btnPause').disabled=!d.running;
-  document.getElementById('btnPause').innerHTML=d.paused?QI18n.t('btn_resume'):QI18n.t('btn_pause');
+  document.getElementById('btnPause').textContent=d.paused?QI18n.t('btn_resume'):QI18n.t('btn_pause');
   document.getElementById('iterBadge').textContent=d.last_scan||'—';
   document.getElementById('lastScan').textContent='⏰ '+(d.last_scan||'—');
   document.getElementById('nextScan').textContent='→ '+(d.next_scan||'—');
@@ -334,7 +352,7 @@ function updateStats(d){
   // Hour chart
   if(hourChart && allTrades.length){
     const hd=Array(24).fill(0);
-    allTrades.forEach(t=>{if(t.closed) hd[new Date(t.closed).getHours()]+=(t.pnl||0);});
+    allTrades.forEach(t=>{if(t.closed){const h=new Date(t.closed).getUTCHours();if(h>=0&&h<24) hd[h]+=(t.pnl||0);}});
     hourChart.data.datasets[0].data=hd;
     hourChart.data.datasets[0].backgroundColor=hd.map(v=>v>=0?'rgba(0,255,136,.4)':'rgba(255,61,113,.4)');
     hourChart.update('none');
@@ -513,29 +531,48 @@ async function loadChart(){
   }catch(e){chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Fehler: '+esc(String(e))+'</div>';}
 }
 function openChart(sym){document.getElementById('chartSym').value=sym;nav('chart',document.getElementById('nb-chart'));loadChart();}
+let _tvChartInst = null; // Track LightweightCharts instance for cleanup
 function renderTVChart(data, el){
+  // Cleanup previous chart instance to prevent memory leak
+  if(_tvChartInst){try{_tvChartInst.remove();}catch(e){}_tvChartInst=null;}
   el.innerHTML='';
   if(!data.ohlcv?.length) return;
-  const chart=LightweightCharts.createChart(el,{
-    layout:{background:{color:'#020408'},textColor:'#2e3d5a'},
-    grid:{vertLines:{color:'rgba(255,255,255,.025)'},horzLines:{color:'rgba(255,255,255,.025)'}},
-    rightPriceScale:{borderColor:'rgba(255,255,255,.04)'},
-    timeScale:{borderColor:'rgba(255,255,255,.04)',timeVisible:true},
-    handleScroll:true,handleScale:true,
-  });
-  const cs=chart.addCandlestickSeries({upColor:'#00ff88',downColor:'#ef4444',borderUpColor:'#00ff88',borderDownColor:'#ef4444',wickUpColor:'#00ff88',wickDownColor:'#ef4444'});
-  const vs=chart.addHistogramSeries({color:'rgba(0,255,136,.2)',priceFormat:{type:'volume'},priceScaleId:'vol'});
-  chart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}});
-  cs.setData(data.ohlcv.map(r=>({time:Math.floor(r[0]/1000),open:r[1],high:r[2],low:r[3],close:r[4]})));
-  vs.setData(data.ohlcv.map(r=>({time:Math.floor(r[0]/1000),value:r[5],color:r[4]>=r[1]?'rgba(0,255,136,.25)':'rgba(255,61,113,.25)'})));
-  if(data.trades?.length){
-    const mk=[]; data.trades.forEach(t=>{
-      if(t.opened) mk.push({time:Math.floor(new Date(t.opened).getTime()/1000),position:'belowBar',color:'#00ff88',shape:'arrowUp',text:'K'});
-      if(t.closed) mk.push({time:Math.floor(new Date(t.closed).getTime()/1000),position:'aboveBar',color:(t.pnl||0)>=0?'#00ff88':'#ef4444',shape:'arrowDown',text:fmtS(t.pnl||0,0)});
+  try {
+    const chart=LightweightCharts.createChart(el,{
+      layout:{background:{color:'#020408'},textColor:'#2e3d5a'},
+      grid:{vertLines:{color:'rgba(255,255,255,.025)'},horzLines:{color:'rgba(255,255,255,.025)'}},
+      rightPriceScale:{borderColor:'rgba(255,255,255,.04)'},
+      timeScale:{borderColor:'rgba(255,255,255,.04)',timeVisible:true},
+      handleScroll:true,handleScale:true,
     });
-    mk.sort((a,b)=>a.time-b.time); cs.setMarkers(mk);
+    _tvChartInst = chart;
+    // LightweightCharts v4 compatibility: use addSeries if addCandlestickSeries doesn't exist
+    let cs, vs;
+    if(typeof chart.addCandlestickSeries === 'function'){
+      cs=chart.addCandlestickSeries({upColor:'#00ff88',downColor:'#ef4444',borderUpColor:'#00ff88',borderDownColor:'#ef4444',wickUpColor:'#00ff88',wickDownColor:'#ef4444'});
+    } else {
+      cs=chart.addSeries(LightweightCharts.CandlestickSeries,{upColor:'#00ff88',downColor:'#ef4444',borderUpColor:'#00ff88',borderDownColor:'#ef4444',wickUpColor:'#00ff88',wickDownColor:'#ef4444'});
+    }
+    if(typeof chart.addHistogramSeries === 'function'){
+      vs=chart.addHistogramSeries({color:'rgba(0,255,136,.2)',priceFormat:{type:'volume'},priceScaleId:'vol'});
+    } else {
+      vs=chart.addSeries(LightweightCharts.HistogramSeries,{color:'rgba(0,255,136,.2)',priceFormat:{type:'volume'},priceScaleId:'vol'});
+    }
+    chart.priceScale('vol').applyOptions({scaleMargins:{top:0.85,bottom:0}});
+    cs.setData(data.ohlcv.map(r=>({time:Math.floor(r[0]/1000),open:r[1],high:r[2],low:r[3],close:r[4]})));
+    vs.setData(data.ohlcv.map(r=>({time:Math.floor(r[0]/1000),value:r[5],color:r[4]>=r[1]?'rgba(0,255,136,.25)':'rgba(255,61,113,.25)'})));
+    if(data.trades?.length){
+      const mk=[]; data.trades.forEach(t=>{
+        if(t.opened) mk.push({time:Math.floor(new Date(t.opened).getTime()/1000),position:'belowBar',color:'#00ff88',shape:'arrowUp',text:'K'});
+        if(t.closed) mk.push({time:Math.floor(new Date(t.closed).getTime()/1000),position:'aboveBar',color:(t.pnl||0)>=0?'#00ff88':'#ef4444',shape:'arrowDown',text:fmtS(t.pnl||0,0)});
+      });
+      mk.sort((a,b)=>a.time-b.time); cs.setMarkers(mk);
+    }
+    chart.timeScale().fitContent();
+  } catch(e) {
+    console.error('Chart render error:', e);
+    el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Chart-Fehler: '+esc(String(e.message||e))+'</div>';
   }
-  chart.timeScale().fitContent();
 }
 
 // ── Backtest ─────────────────────────────────────────────────────────
@@ -626,8 +663,6 @@ function undoClose(){
   clearTimeout(_undoTimeout);
   toast('↩ '+QI18n.t('msg_undo_close')+' '+sym,'info');
 }
-// old closePos replaced above
-function _closePos_orig(sym){if(confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) socket.emit('close_position',{symbol:sym});}
 function forceTrain(){socket.emit('force_train');toast('🧠 '+QI18n.t('ai_training')+'...','info');}
 function forceOptimize(){socket.emit('force_optimize');toast('🔬 '+QI18n.t('toast_optimize'),'info');}
 function forceGenetic(){socket.emit('force_genetic');toast('🧬 '+QI18n.t('toast_genetic'),'info');}
@@ -730,20 +765,35 @@ function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).cl
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>b.style.borderColor='rgba(0,255,136,.2)');el.style.borderColor='var(--cyan)';wizEx=ex;document.getElementById('sExchange').value=ex;}
 function wizSaveKeys(){socket.emit('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
-function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();toast(QI18n.t('wiz_ready'),'success');}
+function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
 
-// ── Socket events ────────────────────────────────────────────────────
+// ── Socket events (with listener cleanup to prevent duplicates on reconnect) ──
+// Remove all previous listeners before registering to prevent accumulation
+const _socketEvents = ['connect','connect_error','disconnect','auth_error',
+  'update','ai_update','genetic_update','status','trade','price_alert','backtest_result'];
+_socketEvents.forEach(ev => socket.off(ev));
+
+function _setConnStatus(state){
+  const el=document.getElementById('connStatus');
+  if(!el)return;
+  el.className='conn-status '+state;
+  el.title=state==='connected'?'Verbunden':state==='reconnecting'?'Verbinde...':'Getrennt';
+}
+
 socket.on('connect',()=>{
+  _setConnStatus('connected');
   addLog(QI18n.t('dashboard_connected'),'success','system');
   toast('📡 '+QI18n.t('msg_dashboard_conn'),'success');
   // Nach Verbindung sofort State anfragen (bei Reconnect)
   socket.emit('request_state');
 });
 socket.on('connect_error',(err)=>{
-  addLog(QI18n.t('msg_socket_reconnect')+': '+err.message,'error','system');
+  _setConnStatus('reconnecting');
+  addLog(QI18n.t('msg_socket_reconnect')+': '+(err&&err.message||'Unknown'),'error','system');
   toast('⚠️ '+QI18n.t('msg_socket_reconnect'),'warning');
 });
 socket.on('disconnect',(reason)=>{
+  _setConnStatus('disconnected');
   addLog(QI18n.t('dashboard_disconnected')+' ('+reason+')','error','system');
   toast('⚠️ '+QI18n.t('dashboard_disconnected'),'warning');
 });
@@ -751,8 +801,8 @@ socket.on('auth_error',(d)=>{
   addLog('Auth-Fehler: '+(d&&d.msg||'Nicht authentifiziert'),'error','system');
   setTimeout(()=>location.href='/login',2000);
 });
-socket.on('update', d=>{updateUI(d);});
-socket.on('ai_update', ai=>{updateAI(ai);});
+socket.on('update', d=>{if(d) updateUI(d);});
+socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
   if(!g) return;
   const gf=document.getElementById('genFitness');
@@ -761,34 +811,40 @@ socket.on('genetic_update', g=>{
   if(gc) gc.textContent='Gen.'+(g.gen||0)+'/'+(g.total||0);
 });
 socket.on('status', d=>{
+  if(!d||!d.msg) return;
   toast(d.msg, d.type||'info');
   addLog(d.msg, d.type||'info', 'system');
 });
 socket.on('trade', d=>{
+  if(!d) return;
   const won=(d.pnl||0)>=0;
   const msg=d.type==='buy'?`🟢 ${QI18n.t('trade_buy')} ${d.symbol} @ ${d.price}`:
     `${won?'✅':'❌'} ${QI18n.t('trade_sell')} ${d.symbol} | ${fmtS(d.pnl||0)} USDT`;
   addLog(msg, d.type==='buy'?'success':(won?'success':'error'), 'trade');
   toast(msg, d.type==='buy'?'success':(won?'success':'warning'));
+  _checkPush(d);
 });
 socket.on('price_alert', d=>{
+  if(!d) return;
   toast(`🔔 Alert: ${d.symbol} @ ${d.price}`,'warning');
   addLog(`🔔 ${QI18n.t('alert_triggered')}: ${d.symbol}`,'warning','system');
 });
 socket.on('backtest_result', d=>{
   document.getElementById('btBtn').disabled=false;
+  if(!d) return;
   if(d.error){document.getElementById('btStatus').textContent='❌ '+d.error;toast(d.error,'error');return;}
   document.getElementById('btStatus').textContent='';
   document.getElementById('btResultSection').style.display='block';
   document.getElementById('btBadge').textContent=d.symbol+' '+d.timeframe;
-  const btEl=document.getElementById('btWR'); btEl.textContent=d.win_rate+'%';btEl.style.color=d.win_rate>50?'var(--green)':'var(--red)';
-  const btPnl=document.getElementById('btPnl'); btPnl.textContent=fmtS(d.total_pnl);btPnl.style.color=clr(d.total_pnl);
-  const btPF=document.getElementById('btPF'); btPF.textContent=d.profit_factor;btPF.style.color=d.profit_factor>1.2?'var(--green)':'var(--red)';
-  document.getElementById('btDD').textContent=d.max_drawdown+'%';
-  if(btChartInst){btChartInst.destroy();btChartInst=null;}
+  const btEl=document.getElementById('btWR'); if(btEl){btEl.textContent=d.win_rate+'%';btEl.style.color=d.win_rate>50?'var(--green)':'var(--red)';}
+  const btPnl=document.getElementById('btPnl'); if(btPnl){btPnl.textContent=fmtS(d.total_pnl);btPnl.style.color=clr(d.total_pnl);}
+  const btPF=document.getElementById('btPF'); if(btPF){btPF.textContent=d.profit_factor;btPF.style.color=d.profit_factor>1.2?'var(--green)':'var(--red)';}
+  const btDDEl=document.getElementById('btDD'); if(btDDEl) btDDEl.textContent=d.max_drawdown+'%';
+  if(btChartInst){try{btChartInst.destroy();}catch(e){} btChartInst=null;}
   if(d.equity_curve?.length){
     const cc=d.return_pct>=0?'#00ff88':'#ef4444';
-    btChartInst=new Chart(document.getElementById('btChart'),{type:'line',
+    const btChartEl=document.getElementById('btChart');
+    if(btChartEl) btChartInst=new Chart(btChartEl,{type:'line',
       data:{labels:d.equity_curve.map(e=>e.time?.slice(5,16)||''),
         datasets:[{data:d.equity_curve.map(e=>e.value),borderColor:cc,backgroundColor:cc==='#00ff88'?'rgba(0,255,136,.06)':'rgba(255,61,113,.06)',borderWidth:2,fill:true,tension:.4,pointRadius:0}]},
       options:cBase});
@@ -839,11 +895,11 @@ function toggleTheme(){
   const isLight = root.getAttribute('data-theme') === 'light';
   root.setAttribute('data-theme', isLight ? 'dark' : 'light');
   document.getElementById('themeBtn').textContent = isLight ? '🌙' : '☀️';
-  localStorage.setItem('trevlix_theme', isLight ? 'dark' : 'light');
+  _storage.set('trevlix_theme', isLight ? 'dark' : 'light');
 }
 // Restore theme
 (function(){
-  const saved = localStorage.getItem('trevlix_theme');
+  const saved = _storage.get('trevlix_theme');
   if(saved === 'light'){
     document.documentElement.setAttribute('data-theme','light');
     setTimeout(()=>{const b=document.getElementById('themeBtn');if(b)b.textContent='☀️';},100);
@@ -912,7 +968,12 @@ async function updateGasFees(){
     if(sig) sig.textContent = d.signal===1?'⬆ Hohe Aktivität':d.signal===-1?'⬇ Niedrige Aktivität':'→ Normal';
   } catch(e){}
 }
-setInterval(updateGasFees, 120000);
+let _gasInterval = setInterval(updateGasFees, 120000);
+// Cleanup on page unload to prevent memory leak
+window.addEventListener('beforeunload', () => {
+  clearInterval(_gasInterval);
+  _gasInterval = null;
+});
 
 
 
@@ -1097,8 +1158,8 @@ async function loadSharedAIStatus() {
   } catch(e) { console.warn('loadSharedAIStatus:', e); }
 }
 
-async function syncSharedModel() {
-  const btn = event.target;
+async function syncSharedModel(event) {
+  const btn = event?.target || document.activeElement;
   btn.textContent = '⏳';
   try {
     const r = await fetch('/api/v1/ai/shared/force-sync', {
@@ -1588,13 +1649,15 @@ async function adjustSL(symbol, entryPrice){
 // ── Web Push Notifications ──────────────────────────────────────────────────
 let _pushSub = null;
 async function requestPushPermission(){
-  if(!('Notification' in window)){ toast(QI18n.t('toast_push_unsupported'),'warning'); return; }
+  if(!('Notification' in window) || typeof Notification.requestPermission !== 'function'){
+    toast(QI18n.t('toast_push_unsupported'),'warning'); return;
+  }
   const perm = await Notification.requestPermission();
   if(perm === 'granted'){
     toast('🔔 '+QI18n.t('msg_push_enabled'),'success');
     document.getElementById('pushBtn').style.color='var(--jade)';
     document.getElementById('pushBtn').style.borderColor='var(--jade)';
-    localStorage.setItem('trevlix_push','1');
+    _storage.set('trevlix_push','1');
     // Register service worker
     if('serviceWorker' in navigator){
       try {
@@ -1609,7 +1672,7 @@ async function requestPushPermission(){
 // Auto-push on trade events via socket
 function _checkPush(data){
   if(!('Notification' in window)||Notification.permission!=='granted') return;
-  if(localStorage.getItem('trevlix_push')!=='1') return;
+  if(_storage.get('trevlix_push')!=='1') return;
   // New trade
   if(data.last_action && data.last_action !== window._lastAction){
     window._lastAction = data.last_action;
@@ -1626,7 +1689,7 @@ function _checkPush(data){
 // Do NOT redefine it here — the earlier definition already covers all tab switch logic.
 
 // Restore push pref
-if(localStorage.getItem('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
+if(_storage.get('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
   document.getElementById('pushBtn').style.color='var(--jade)';
 }
 
@@ -1847,5 +1910,5 @@ document.addEventListener('DOMContentLoaded',()=>{
   loadFollowers();
   updateGasFees();
   const sLang=document.getElementById('sLang');if(sLang)sLang.value=QI18n.lang;
-  if(!localStorage.getItem('trevlix_wiz')) setTimeout(showWizard,800);
+  if(!_storage.get('trevlix_wiz')) setTimeout(showWizard,800);
 });

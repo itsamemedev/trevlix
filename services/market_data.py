@@ -136,7 +136,7 @@ class FearGreedIndex:
             self.last_update = datetime.now().strftime("%H:%M")
             self._cache.set("fng", (self.value, self.label))
         except requests.HTTPError as e:
-            log.debug(f"FearGreed HTTP error: {e}")
+            log.warning(f"FearGreed HTTP error: {e}")
         except Exception as e:
             log.debug(f"FearGreed: {e}")
 
@@ -226,7 +226,7 @@ class DominanceFilter:
             self._cache.set("dominance", (self.btc_dom, self.usdt_dom))
             log.info(f"Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
         except requests.HTTPError as e:
-            log.debug(f"Dominanz HTTP error: {e}")
+            log.warning(f"Dominanz HTTP error: {e}")
         except Exception as e:
             log.debug(f"Dominanz: {e}")
 
@@ -289,7 +289,7 @@ class SentimentFetcher:
             self.db.save_sentiment(symbol, score, "coingecko")
             return score
         except requests.HTTPError as e:
-            log.debug(f"Sentiment HTTP error for {symbol}: {e}")
+            log.warning(f"Sentiment HTTP error for {symbol}: {e}")
             return 0.5
         except Exception as e:
             log.debug(f"Sentiment {symbol}: {e}")
@@ -381,7 +381,7 @@ class OnChainFetcher:
 
             detail = f"24h:{price_chg:+.1f}% Vol:{vol_ratio * 100:.1f}% Commits:{commits}"
         except requests.HTTPError as e:
-            log.debug(f"OnChain HTTP error {symbol}: {e}")
+            log.warning(f"OnChain HTTP error {symbol}: {e}")
         except Exception as e:
             log.debug(f"OnChain {symbol}: {e}")
 
