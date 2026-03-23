@@ -1888,12 +1888,13 @@ class MySQLManager:
             if not os.path.exists(backup_path):
                 result["error"] = "Backup-Datei nicht gefunden"
                 return result
-            if not os.path.exists(sha_path):
+            # Checksum aus Datei lesen
+            try:
+                with open(sha_path) as f:
+                    parts = f.read().split()
+            except FileNotFoundError:
                 result["error"] = "Keine .sha256-Datei vorhanden"
                 return result
-            # Checksum aus Datei lesen
-            with open(sha_path) as f:
-                parts = f.read().split()
             if not parts:
                 result["error"] = "SHA256-Datei ist leer"
                 return result
