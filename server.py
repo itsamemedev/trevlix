@@ -7602,13 +7602,16 @@ def on_request_system_analytics():
     data["db"] = {
         "pool_size": "—",
         "active_conn": "—",
+        "utilization": "—",
         "tables": "—",
         "size": "—",
     }
     try:
-        pool_info = db.pool_status() if hasattr(db, "pool_status") else {}
+        pool_info = db.pool_stats() if hasattr(db, "pool_stats") else {}
         data["db"]["pool_size"] = pool_info.get("pool_size", "—")
-        data["db"]["active_conn"] = pool_info.get("active", "—")
+        data["db"]["active_conn"] = pool_info.get("in_use", "—")
+        util = pool_info.get("utilization_pct")
+        data["db"]["utilization"] = f"{util}%" if util is not None else "—"
     except Exception:
         pass
     try:
@@ -7627,6 +7630,98 @@ def on_request_system_analytics():
                 data["db"]["size"] = f"{row[0]} MB" if row and row[0] else "—"
     except Exception:
         pass
+
+    # AI Engine metrics
+    try:
+        ai_dict = ai_engine.to_dict()
+        data["ai"] = {
+            "trained": ai_dict.get("is_trained", False),
+            "accuracy": f"{ai_dict.get('accuracy', 0) * 100:.1f}%",
+            "cv_accuracy": f"{ai_dict.get('cv_accuracy', 0) * 100:.1f}%",
+            "predictions": ai_dict.get("predictions_made", 0),
+            "correct": ai_dict.get("predictions_correct", 0),
+            "version": ai_dict.get("training_version", 0),
+            "last_trained": ai_dict.get("last_trained", "—"),
+            "trades_since_retrain": ai_dict.get("trades_since_retrain", 0),
+        }
+    except Exception:
+        data["ai"] = {}
+
+    # Risk metrics
+    try:
+        cb = risk.circuit_status()
+        data["risk"] = {
+            "circuit_active": cb.get("active", False),
+            "circuit_losses": cb.get("losses", 0),
+            "circuit_limit": cb.get("limit", 0),
+            "max_drawdown": f"{risk.max_drawdown:.1f}%",
+        }
+    except Exception:
+        data["risk"] = {}
+
+    # Revenue tracking
+    try:
+        rev = revenue_tracker.snapshot()
+        data["revenue"] = {
+            "gross_pnl": round(rev.get("gross_pnl", 0), 2),
+            "net_pnl": round(rev.get("net_pnl", 0), 2),
+            "total_fees": round(rev.get("total_fees", 0), 2),
+            "total_trades": rev.get("total_trades", 0),
+            "roi_pct": f"{rev.get('roi_pct', 0):.2f}%",
+            "max_drawdown": f"{rev.get('max_drawdown_pct', 0):.1f}%",
+            "profit_factor": round(rev.get("profit_factor", 0), 2),
+            "win_rate": f"{rev.get('win_rate', 0):.1f}%",
+        }
+    except Exception:
+        data["revenue"] = {}
+
+    # Performance attribution
+    try:
+        pa_stats = perf_attribution.stats()
+        data["attribution"] = {
+            "total_trades": pa_stats.get("total_trades", 0),
+            "profit_factor": round(pa_stats.get("profit_factor", 0), 2),
+            "expectancy": round(pa_stats.get("expectancy", 0), 2),
+            "sharpe": round(pa_stats.get("sharpe_ratio", 0), 2),
+        }
+    except Exception:
+        data["attribution"] = {}
+
+    # Adaptive weights
+    try:
+        aw = adaptive_weights.to_dict()
+        perf_list = aw.get("performance", [])
+        top_strats = sorted(perf_list, key=lambda x: x.get("weight", 0), reverse=True)[:5]
+        data["strategies"] = {
+            "total": aw.get("strategies_total", 0),
+            "adapted": aw.get("strategies_adapted", 0),
+            "total_votes": aw.get("total_votes", 0),
+            "top": [
+                {
+                    "name": s.get("strategy", "?"),
+                    "weight": round(s.get("weight", 0), 2),
+                    "win_rate": f"{s.get('win_rate', 0):.0f}%",
+                    "trades": s.get("trades", 0),
+                }
+                for s in top_strats
+            ],
+        }
+    except Exception:
+        data["strategies"] = {}
+
+    # Auto-healing status
+    try:
+        data["healing"] = healer.health_snapshot()
+    except Exception:
+        data["healing"] = {}
+
+    # Indicator cache stats
+    try:
+        from services.indicator_cache import cache_stats
+
+        data["cache"] = cache_stats()
+    except Exception:
+        data["cache"] = {}
 
     emit("system_analytics", data)
 
