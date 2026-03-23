@@ -1003,7 +1003,7 @@ class MySQLManager:
                     INDEX idx_source(source)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
-                c.execute("SELECT id FROM users WHERE username='admin'")
+                c.execute("SELECT id FROM users WHERE username=%s", ("admin",))
                 if not c.fetchone():
                     pw = CONFIG["admin_password"].encode()
                     if BCRYPT_AVAILABLE:
@@ -1556,7 +1556,7 @@ class MySQLManager:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("SELECT * FROM price_alerts WHERE triggered=0")
+                    c.execute("SELECT * FROM price_alerts WHERE triggered=0 LIMIT 500")
                     rows = c.fetchall()
             return [dict(r) for r in rows]
         except Exception as e:
@@ -7173,6 +7173,7 @@ def api_grid_create():
     upper = _safe_float(d.get("upper", 0), 0.0)
     levels = _safe_int(d.get("levels", 10), 10)
     invest = _safe_float(d.get("invest_per_level", 100.0), 100.0)
+    levels = min(levels, 200)
     if not symbol or lower <= 0 or upper <= lower:
         return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
     result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
@@ -7194,16 +7195,29 @@ def ws_create_grid(data):
     if session.get("user_role", "user") != "admin":
         emit("status", {"msg": "Nur Admin", "type": "error"})
         return
-    grid_engine.create_grid(
-        data.get("symbol", ""),
-        _safe_float(data.get("lower", 0), 0.0),
-        _safe_float(data.get("upper", 0), 0.0),
-        _safe_int(data.get("levels", 10), 10),
+    symbol = data.get("symbol", "").strip()
+    if not symbol:
+        emit("status", {"msg": "Symbol erforderlich", "type": "error"})
+        return
+    lower = _safe_float(data.get("lower", 0), 0.0)
+    upper = _safe_float(data.get("upper", 0), 0.0)
+    levels = min(_safe_int(data.get("levels", 10), 10), 200)
+    if lower <= 0 or upper <= lower:
+        emit("status", {"msg": "Ungültige Grid-Parameter", "type": "error"})
+        return
+    result = grid_engine.create_grid(
+        symbol,
+        lower,
+        upper,
+        levels,
         _safe_float(data.get("invest_per_level", 100), 100.0),
     )
+    if "error" in result:
+        emit("status", {"msg": result["error"], "type": "error"})
+        return
     emit(
         "status",
-        {"msg": f"✅ Grid {data.get('symbol', '')} erstellt", "type": "success"},
+        {"msg": f"✅ Grid {symbol} erstellt", "type": "success"},
         broadcast=True,
     )
 

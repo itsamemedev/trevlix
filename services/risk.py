@@ -66,6 +66,8 @@ class RiskManager:
             self._reset_daily_unlocked(balance)
             if self.daily_start <= 0:
                 return False
+            if balance < 0:
+                return True
             return (self.daily_start - balance) / self.daily_start > self.config.get(
                 "max_daily_loss_pct", 0.05
             )

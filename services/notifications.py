@@ -213,8 +213,14 @@ class DiscordNotifier:
         )
 
     def genetic_result(self, gen: int, fitness: float, genome: dict) -> None:
-        sl_val = float(genome.get("sl", 0) or 0)
-        tp_val = float(genome.get("tp", 0) or 0)
+        try:
+            sl_val = float(genome.get("sl", 0) or 0)
+        except (ValueError, TypeError):
+            sl_val = 0.0
+        try:
+            tp_val = float(genome.get("tp", 0) or 0)
+        except (ValueError, TypeError):
+            tp_val = 0.0
         self.send(
             f"🧬 Genetik Gen.{gen}",
             f"```\nFitness: {fitness:.3f}\nSL: {sl_val * 100:.1f}% TP: {tp_val * 100:.1f}%\n```",

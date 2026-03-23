@@ -121,9 +121,8 @@ class AdaptiveWeights:
             if len(rh) > self._window:
                 self._regime_history[regime][strategy] = rh[-self._window :]
 
-        # Gewichte neu berechnen (direkt unter Lock weiter oben ist sicherer,
-        # aber _recalculate erwirbt eigenen Lock → hier aufrufen)
-        self._recalculate()
+            # Gewichte direkt unter Lock neu berechnen (verhindert Race Condition)
+            self._recalculate_unlocked()
 
     def get_weights(self, regime: str | None = None) -> dict[str, float]:
         """Gibt die aktuellen Strategie-Gewichte zurück.
@@ -149,16 +148,20 @@ class AdaptiveWeights:
             return dict(self._cached_global)
 
     def _recalculate(self) -> None:
-        """Berechnet alle Gewichte neu (nach jedem record_vote)."""
+        """Berechnet alle Gewichte neu (thread-safe)."""
         with self._lock:
-            # Global
-            self._cached_global = self._compute_weights(self._global_history)
+            self._recalculate_unlocked()
 
-            # Pro Regime – Snapshot der Keys um RuntimeError bei dict-Änderung zu vermeiden
-            for regime in list(self._regime_history.keys()):
-                strat_history = self._regime_history.get(regime)
-                if strat_history:
-                    self._cached_regime[regime] = self._compute_weights(strat_history)
+    def _recalculate_unlocked(self) -> None:
+        """Berechnet alle Gewichte neu (muss unter self._lock aufgerufen werden)."""
+        # Global
+        self._cached_global = self._compute_weights(self._global_history)
+
+        # Pro Regime – Snapshot der Keys um RuntimeError bei dict-Änderung zu vermeiden
+        for regime in list(self._regime_history.keys()):
+            strat_history = self._regime_history.get(regime)
+            if strat_history:
+                self._cached_regime[regime] = self._compute_weights(strat_history)
 
     def _compute_weights(self, history: dict[str, list[tuple[bool, float]]]) -> dict[str, float]:
         """Berechnet Gewichte aus einer History mit Exponential Decay.

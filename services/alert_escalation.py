@@ -114,6 +114,7 @@ class AlertEscalationManager:
         self._escalation_window: int = int(self._config.get("escalation_window", 300))
         self._escalation_threshold: int = int(self._config.get("escalation_threshold", 3))
         self._auto_resolve_minutes: int = int(self._config.get("auto_resolve_minutes", 60))
+        self._max_active: int = int(self._config.get("max_active_alerts", 500))
 
     # ------------------------------------------------------------------
     # Public API
@@ -164,6 +165,18 @@ class AlertEscalationManager:
 
                 self._persist(existing)
                 return existing
+
+            # Evict oldest low-priority alerts if at capacity
+            if len(self._active) >= self._max_active:
+                evict_candidates = sorted(
+                    self._active.items(),
+                    key=lambda x: (x[1].level, x[1].last_occurrence),
+                )
+                if evict_candidates:
+                    evict_id = evict_candidates[0][0]
+                    evicted = self._active.pop(evict_id)
+                    self._history.append(evicted)
+                    log.warning("Alert evicted due to capacity: %s", evict_id)
 
             alert = Alert(
                 alert_id=alert_id,

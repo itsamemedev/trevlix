@@ -166,4 +166,5 @@ class BacktestEngine:
                 threading.Thread(target=lambda r=result: self._save_fn(r), daemon=True).start()
             return result
         except Exception as e:
+            log.exception("Backtest failed for %s", symbol)
             return {"error": str(e), "symbol": symbol}

@@ -231,7 +231,12 @@ class ConnectionPool:
             return
         try:
             with self._lock:
-                if len(self._pool) < self._pool_size and self._is_alive(conn):
+                alive = False
+                try:
+                    alive = len(self._pool) < self._pool_size and self._is_alive(conn)
+                except Exception:
+                    alive = False
+                if alive:
                     self._pool.append(conn)
                 else:
                     try:
