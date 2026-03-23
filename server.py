@@ -4490,6 +4490,9 @@ class ShortEngine:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
             with state._lock:
+                # Re-check under lock to prevent race with concurrent open/close
+                if symbol in state.positions or symbol in state.short_positions:
+                    return False
                 if CONFIG.get("paper_trading", True):
                     if invest > state.balance:
                         return False
@@ -5358,10 +5361,12 @@ def try_dca(ex, symbol):
     """Dollar-Cost-Averaging: bei Kursrückgang nachkaufen."""
     if not CONFIG.get("use_dca"):
         return
-    pos = state.positions.get(symbol)
-    if not pos:
-        return
-    price = state.prices.get(symbol, pos.get("entry", 0))
+    with state._lock:
+        pos_ref = state.positions.get(symbol)
+        if not pos_ref:
+            return
+        pos = dict(pos_ref)  # snapshot to prevent reading stale data outside lock
+        price = state.prices.get(symbol, pos.get("entry", 0))
     dca_level = pos.get("dca_level", 0)
     if dca_level >= CONFIG.get("dca_max_levels", 3):
         return
@@ -5401,12 +5406,19 @@ def try_dca(ex, symbol):
             log.error(f"DCA {symbol}: {e}")
             return
     with state._lock:
-        pos["qty"] = total_qty
-        pos["invested"] = total_cost
-        pos["entry"] = new_entry
-        pos["dca_level"] = dca_level + 1
-        pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
-        pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
+        # Re-fetch live reference; position may have been closed concurrently
+        live_pos = state.positions.get(symbol)
+        if not live_pos:
+            # Position closed while we were calculating – refund balance
+            if CONFIG.get("paper_trading", True):
+                state.balance += dca_invest
+            return
+        live_pos["qty"] = total_qty
+        live_pos["invested"] = total_cost
+        live_pos["entry"] = new_entry
+        live_pos["dca_level"] = dca_level + 1
+        live_pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
+        live_pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
     log.info(
         f"📉 DCA Lvl{dca_level + 1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}"
     )
