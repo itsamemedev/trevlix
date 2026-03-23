@@ -6638,10 +6638,10 @@ def _ws_admin_required() -> bool:
     try:
         user = db.get_user_by_id(uid)
         if not user or user.get("role") != "admin":
-            emit("status", {"msg": "Nur Admin", "type": "error"})
+            emit("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
             return False
     except Exception:
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+        emit("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
         return False
     return True
 
@@ -6742,7 +6742,10 @@ def on_start_bot():
     if not _ws_auth_required():
         return
     if not _ws_rate_check("start_bot", min_interval=3.0):
-        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     with state._lock:
         if state.running:
@@ -6750,7 +6753,11 @@ def on_start_bot():
         state.running = True
         state.paused = False
     threading.Thread(target=bot_loop, daemon=True).start()
-    emit("status", {"msg": "🤖 TREVLIX gestartet", "type": "success"}, broadcast=True)
+    emit(
+        "status",
+        {"msg": "🤖 TREVLIX gestartet", "key": "ws_bot_started", "type": "success"},
+        broadcast=True,
+    )
     state.add_activity(
         "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
     )
@@ -6762,12 +6769,17 @@ def on_stop_bot():
     if not _ws_auth_required():
         return
     if not _ws_rate_check("stop_bot", min_interval=3.0):
-        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     with state._lock:
         state.running = False
         state.paused = False
-    emit("status", {"msg": "⏹ Bot gestoppt", "type": "info"}, broadcast=True)
+    emit(
+        "status", {"msg": "⏹ Bot gestoppt", "key": "ws_bot_stopped", "type": "info"}, broadcast=True
+    )
     state.add_activity("⏹", "Bot gestoppt", "Alle Positionen offen", "info")
 
 
@@ -6780,7 +6792,8 @@ def on_pause_bot():
     with state._lock:
         state.paused = not state.paused
         msg = "⏸ Pausiert" if state.paused else "▶ Weiter"
-    emit("status", {"msg": msg, "type": "warning"}, broadcast=True)
+        key = "ws_bot_paused" if state.paused else "ws_bot_resumed"
+    emit("status", {"msg": msg, "key": key, "type": "warning"}, broadcast=True)
 
 
 @socketio.on("update_config")
@@ -6788,7 +6801,10 @@ def on_update_config(data):
     if not _ws_admin_required():
         return
     if not _ws_rate_check("update_config", min_interval=2.0):
-        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     allowed = {
         "stop_loss_pct",
@@ -6870,7 +6886,10 @@ def on_update_config(data):
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
-    emit("status", {"msg": "✅ Einstellungen gespeichert", "type": "success"})
+    emit(
+        "status",
+        {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
+    )
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -6885,7 +6904,14 @@ def on_save_keys(data):
     CONFIG["secret"] = encrypt_value(raw_secret) if raw_secret else ""
     if data.get("exchange") and data["exchange"] in EXCHANGE_MAP:
         CONFIG["exchange"] = data["exchange"]
-    emit("status", {"msg": f"🔑 Keys gespeichert ({CONFIG['exchange']})", "type": "success"})
+    emit(
+        "status",
+        {
+            "msg": f"🔑 Keys gespeichert ({CONFIG['exchange']})",
+            "key": "ws_keys_saved",
+            "type": "success",
+        },
+    )
 
 
 @socketio.on("update_discord")
@@ -6906,14 +6932,21 @@ def on_update_discord(data):
     discord.send(
         "✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info"
     )
-    emit("status", {"msg": "💬 Discord konfiguriert & getestet", "type": "success"})
+    emit(
+        "status",
+        {
+            "msg": "💬 Discord konfiguriert & getestet",
+            "key": "ws_discord_configured",
+            "type": "success",
+        },
+    )
 
 
 @socketio.on("force_train")
 def on_force_train():
     if not _ws_admin_required():
         return
-    emit("status", {"msg": "🧠 KI-Training gestartet...", "type": "info"})
+    emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
     threading.Thread(target=ai_engine._train, daemon=True).start()
 
 
@@ -6921,7 +6954,7 @@ def on_force_train():
 def on_force_optimize():
     if not _ws_admin_required():
         return
-    emit("status", {"msg": "🔬 Optimierung läuft...", "type": "info"})
+    emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
     threading.Thread(target=ai_engine._optimize, daemon=True).start()
 
 
@@ -6929,7 +6962,10 @@ def on_force_optimize():
 def on_force_genetic():
     if not _ws_admin_required():
         return
-    emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
+    emit(
+        "status",
+        {"msg": "🧬 Genetischer Optimizer gestartet...", "key": "ws_ai_genetic", "type": "info"},
+    )
     threading.Thread(
         target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
     ).start()
@@ -6953,7 +6989,7 @@ def on_reset_ai():
         ai_engine.bear_model = None
         ai_engine.lstm_model = None
         ai_engine.progress_pct = 0
-    emit("status", {"msg": "🔄 KI zurückgesetzt", "type": "warning"})
+    emit("status", {"msg": "🔄 KI zurückgesetzt", "key": "ws_ai_reset", "type": "warning"})
 
 
 @socketio.on("close_position")
@@ -6961,7 +6997,10 @@ def on_close_position(data):
     if not _ws_auth_required():
         return
     if not _ws_rate_check("close_position", min_interval=2.0):
-        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     sym = data.get("symbol", "")
     with state._lock:
@@ -6971,12 +7010,20 @@ def on_close_position(data):
         try:
             ex = create_exchange()
             close_position(ex, sym, "Manuell geschlossen 🖐")
-            emit("status", {"msg": f"✅ {sym} geschlossen", "type": "success"}, broadcast=True)
+            emit(
+                "status",
+                {"msg": f"✅ {sym} geschlossen", "key": "ws_position_closed", "type": "success"},
+                broadcast=True,
+            )
         except Exception as e:
             emit("status", {"msg": f"❌ {e}", "type": "error"})
     elif in_short:
         short_engine.close_short(sym, "Manuell 🖐")
-        emit("status", {"msg": f"✅ Short {sym} geschlossen", "type": "success"}, broadcast=True)
+        emit(
+            "status",
+            {"msg": f"✅ Short {sym} geschlossen", "key": "ws_short_closed", "type": "success"},
+            broadcast=True,
+        )
 
 
 @socketio.on("run_backtest")
@@ -7003,7 +7050,14 @@ def on_run_backtest(data):
         except Exception as e:
             socketio.emit("backtest_result", {"error": str(e)})
 
-    emit("status", {"msg": f"⏳ Backtest {data.get('symbol', '?')} läuft...", "type": "info"})
+    emit(
+        "status",
+        {
+            "msg": f"⏳ Backtest {data.get('symbol', '?')} läuft...",
+            "key": "ws_backtest_running",
+            "type": "info",
+        },
+    )
     threading.Thread(target=_bt, daemon=True).start()
 
 
@@ -7018,7 +7072,14 @@ def on_add_alert(data):
         data.get("direction", "above"),
         uid,
     )
-    emit("status", {"msg": f"🔔 Alert gesetzt für {data.get('symbol')}", "type": "success"})
+    emit(
+        "status",
+        {
+            "msg": f"🔔 Alert gesetzt für {data.get('symbol')}",
+            "key": "ws_alert_set",
+            "type": "success",
+        },
+    )
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -7040,10 +7101,18 @@ def on_manual_backup():
         if path:
             discord.backup_done(path)
             socketio.emit(
-                "status", {"msg": f"💾 Backup: {os.path.basename(path)}", "type": "success"}
+                "status",
+                {
+                    "msg": f"💾 Backup: {os.path.basename(path)}",
+                    "key": "ws_backup_done",
+                    "type": "success",
+                },
             )
         else:
-            socketio.emit("status", {"msg": "❌ Backup fehlgeschlagen", "type": "error"})
+            socketio.emit(
+                "status",
+                {"msg": "❌ Backup fehlgeschlagen", "key": "ws_backup_failed", "type": "error"},
+            )
 
     threading.Thread(target=_bk, daemon=True).start()
 
@@ -7053,7 +7122,9 @@ def on_send_report():
     if not _ws_auth_required():
         return
     threading.Thread(target=daily_sched._send_report, daemon=True).start()
-    emit("status", {"msg": "📊 Report wird gesendet...", "type": "info"})
+    emit(
+        "status", {"msg": "📊 Report wird gesendet...", "key": "ws_report_sending", "type": "info"}
+    )
 
 
 @socketio.on("reset_circuit_breaker")
@@ -7063,7 +7134,11 @@ def on_reset_cb():
     with risk._lock:
         risk.circuit_breaker_until = None
         risk.consecutive_losses = 0
-    emit("status", {"msg": "⚡ Circuit Breaker zurückgesetzt", "type": "success"}, broadcast=True)
+    emit(
+        "status",
+        {"msg": "⚡ Circuit Breaker zurückgesetzt", "key": "ws_cb_reset", "type": "success"},
+        broadcast=True,
+    )
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -7076,7 +7151,11 @@ def on_scan_arb():
         opps = arb_scanner.scan(state.markets[:30])
         socketio.emit(
             "status",
-            {"msg": f"💹 {len(opps)} Arbitrage-Chancen", "type": "success" if opps else "info"},
+            {
+                "msg": f"💹 {len(opps)} Arbitrage-Chancen",
+                "key": "ws_arb_result",
+                "type": "success" if opps else "info",
+            },
         )
 
     threading.Thread(target=_arb, daemon=True).start()
@@ -7087,7 +7166,10 @@ def on_update_dominance():
     if not _ws_auth_required():
         return
     threading.Thread(target=dominance.update, daemon=True).start()
-    emit("status", {"msg": "🌐 Dominanz-Update läuft...", "type": "info"})
+    emit(
+        "status",
+        {"msg": "🌐 Dominanz-Update läuft...", "key": "ws_dominance_updating", "type": "info"},
+    )
 
 
 @socketio.on("admin_create_user")
@@ -7098,22 +7180,57 @@ def on_admin_create_user(data):
     password = str(data.get("password", ""))
     role = str(data.get("role", "user")).strip()
     if not username or len(username) < 3 or len(username) > 64:
-        emit("status", {"msg": "❌ Username muss 3-64 Zeichen haben", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Username muss 3-64 Zeichen haben",
+                "key": "err_username_length",
+                "type": "error",
+            },
+        )
         return
     if not username.replace("_", "").replace("-", "").isalnum():
-        emit("status", {"msg": "❌ Username: nur Buchstaben, Zahlen, -, _", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Username: nur Buchstaben, Zahlen, -, _",
+                "key": "err_username_chars",
+                "type": "error",
+            },
+        )
         return
     if len(password) < 12:
-        emit("status", {"msg": "❌ Passwort muss mind. 12 Zeichen haben", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Passwort muss mind. 12 Zeichen haben",
+                "key": "err_password_length",
+                "type": "error",
+            },
+        )
         return
     if not any(c.isupper() for c in password) or not any(c.islower() for c in password):
-        emit("status", {"msg": "❌ Passwort braucht Groß- und Kleinbuchstaben", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Passwort braucht Groß- und Kleinbuchstaben",
+                "key": "err_password_case",
+                "type": "error",
+            },
+        )
         return
     if not any(c.isdigit() for c in password):
-        emit("status", {"msg": "❌ Passwort braucht mindestens eine Zahl", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Passwort braucht mindestens eine Zahl",
+                "key": "err_password_digit",
+                "type": "error",
+            },
+        )
         return
     if role not in ("admin", "user", "viewer"):
-        emit("status", {"msg": "❌ Ungültige Rolle", "type": "error"})
+        emit("status", {"msg": "❌ Ungültige Rolle", "key": "err_invalid_role", "type": "error"})
         return
     ok = db.create_user(
         username,
@@ -7123,7 +7240,11 @@ def on_admin_create_user(data):
     )
     emit(
         "status",
-        {"msg": "✅ User erstellt" if ok else "❌ Fehler", "type": "success" if ok else "error"},
+        {
+            "msg": "✅ User erstellt" if ok else "❌ Fehler",
+            "key": "ws_user_created" if ok else "ws_user_create_failed",
+            "type": "success" if ok else "error",
+        },
     )
 
 
@@ -7304,13 +7425,17 @@ def ws_create_grid(data):
         return
     symbol = data.get("symbol", "").strip()
     if not symbol:
-        emit("status", {"msg": "Symbol erforderlich", "type": "error"})
+        emit(
+            "status", {"msg": "Symbol erforderlich", "key": "err_symbol_required", "type": "error"}
+        )
         return
     lower = _safe_float(data.get("lower", 0), 0.0)
     upper = _safe_float(data.get("upper", 0), 0.0)
     levels = min(_safe_int(data.get("levels", 10), 10), 200)
     if lower <= 0 or upper <= lower:
-        emit("status", {"msg": "Ungültige Grid-Parameter", "type": "error"})
+        emit(
+            "status", {"msg": "Ungültige Grid-Parameter", "key": "err_grid_params", "type": "error"}
+        )
         return
     result = grid_engine.create_grid(
         symbol,
@@ -7324,7 +7449,7 @@ def ws_create_grid(data):
         return
     emit(
         "status",
-        {"msg": f"✅ Grid {symbol} erstellt", "type": "success"},
+        {"msg": f"✅ Grid {symbol} erstellt", "key": "ws_grid_created", "type": "success"},
         broadcast=True,
     )
 
@@ -7336,7 +7461,7 @@ def on_undo_close(data):
         return
     sym = data.get("symbol", "")
     if not sym:
-        emit("status", {"msg": "❌ Kein Symbol angegeben", "type": "error"})
+        emit("status", {"msg": "❌ Kein Symbol angegeben", "key": "err_no_symbol", "type": "error"})
         return
     # Position kann nicht wirklich rückgängig gemacht werden (bereits geschlossen)
     # – informiere den Nutzer
@@ -7344,6 +7469,7 @@ def on_undo_close(data):
         "status",
         {
             "msg": f"↩ Rückgängig nicht möglich: {sym} wurde bereits auf der Börse geschlossen",
+            "key": "ws_undo_impossible",
             "type": "warning",
         },
     )
@@ -7383,7 +7509,14 @@ def on_check_update():
             },
         )
     except Exception as e:
-        emit("status", {"msg": f"⚠ Update-Check fehlgeschlagen: {e}", "type": "warning"})
+        emit(
+            "status",
+            {
+                "msg": f"⚠ Update-Check fehlgeschlagen: {e}",
+                "key": "ws_update_check_failed",
+                "type": "warning",
+            },
+        )
 
 
 @socketio.on("apply_update")
@@ -7399,12 +7532,19 @@ def on_apply_update():
         emit("update_result", {"status": "success"}, broadcast=True)
         emit(
             "status",
-            {"msg": "✅ Update angewendet – Server wird neu gestartet", "type": "success"},
+            {
+                "msg": "✅ Update angewendet – Server wird neu gestartet",
+                "key": "ws_update_applied",
+                "type": "success",
+            },
             broadcast=True,
         )
     except Exception as e:
         emit("update_result", {"status": "error", "msg": str(e)})
-        emit("status", {"msg": f"❌ Update fehlgeschlagen: {e}", "type": "error"})
+        emit(
+            "status",
+            {"msg": f"❌ Update fehlgeschlagen: {e}", "key": "ws_update_failed", "type": "error"},
+        )
 
 
 @socketio.on("rollback_update")
@@ -7415,9 +7555,20 @@ def on_rollback_update():
         import subprocess
 
         subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
-        emit("status", {"msg": "↩ Rollback: git stash angewendet", "type": "info"}, broadcast=True)
+        emit(
+            "status",
+            {"msg": "↩ Rollback: git stash angewendet", "key": "ws_rollback_done", "type": "info"},
+            broadcast=True,
+        )
     except Exception as e:
-        emit("status", {"msg": f"❌ Rollback fehlgeschlagen: {e}", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": f"❌ Rollback fehlgeschlagen: {e}",
+                "key": "ws_rollback_failed",
+                "type": "error",
+            },
+        )
 
 
 # ── Multi-Exchange Handler ──────────────────────────────────────────────────────
@@ -7428,7 +7579,11 @@ def on_start_exchange(data):
     ex_name = data.get("exchange", "")
     emit(
         "status",
-        {"msg": f"▶ Exchange {ex_name.upper()} wird gestartet…", "type": "info"},
+        {
+            "msg": f"▶ Exchange {ex_name.upper()} wird gestartet…",
+            "key": "ws_exchange_starting",
+            "type": "info",
+        },
         broadcast=True,
     )
     emit("exchange_update", {"exchange": ex_name, "status": "running"}, broadcast=True)
@@ -7440,7 +7595,13 @@ def on_stop_exchange(data):
         return
     ex_name = data.get("exchange", "")
     emit(
-        "status", {"msg": f"⏹ Exchange {ex_name.upper()} gestoppt", "type": "info"}, broadcast=True
+        "status",
+        {
+            "msg": f"⏹ Exchange {ex_name.upper()} gestoppt",
+            "key": "ws_exchange_stopped",
+            "type": "info",
+        },
+        broadcast=True,
     )
     emit("exchange_update", {"exchange": ex_name, "status": "stopped"}, broadcast=True)
 
@@ -7453,7 +7614,14 @@ def on_save_exchange_keys(data):
     api_key = data.get("api_key", "")
     secret = data.get("secret", "")
     if not ex_name or not api_key or not secret:
-        emit("status", {"msg": "❌ Exchange, API-Key und Secret erforderlich", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Exchange, API-Key und Secret erforderlich",
+                "key": "err_exchange_keys_required",
+                "type": "error",
+            },
+        )
         return
     # Keys werden nur im laufenden Config-Objekt gespeichert (nicht persistiert)
     if "extra_exchanges" not in CONFIG:
@@ -7463,7 +7631,14 @@ def on_save_exchange_keys(data):
         "secret": encrypt_value(secret),
         "passphrase": encrypt_value(data.get("passphrase", "")) if data.get("passphrase") else "",
     }
-    emit("status", {"msg": f"🔑 Keys für {ex_name.upper()} gespeichert", "type": "success"})
+    emit(
+        "status",
+        {
+            "msg": f"🔑 Keys für {ex_name.upper()} gespeichert",
+            "key": "ws_exchange_keys_saved",
+            "type": "success",
+        },
+    )
 
 
 @socketio.on("close_exchange_position")
@@ -7473,22 +7648,46 @@ def on_close_exchange_position(data):
     ex_name = data.get("exchange", "")
     symbol = data.get("symbol", "")
     if not ex_name or not symbol:
-        emit("status", {"msg": "❌ Exchange und Symbol erforderlich", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Exchange und Symbol erforderlich",
+                "key": "err_exchange_symbol_required",
+                "type": "error",
+            },
+        )
         return
     try:
         # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
         if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
-            emit("status", {"msg": "❌ Unbekannte Exchange", "type": "error"})
+            emit(
+                "status",
+                {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+            )
             return
         ex_cfg = CONFIG.get("extra_exchanges", {}).get(ex_name, {})
         ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_name, ex_name), None)
         if ex_cls is None:
-            emit("status", {"msg": "❌ Exchange nicht verfügbar", "type": "error"})
+            emit(
+                "status",
+                {
+                    "msg": "❌ Exchange nicht verfügbar",
+                    "key": "err_exchange_unavailable",
+                    "type": "error",
+                },
+            )
             return
         raw_key = ex_cfg.get("api_key", "")
         raw_secret = ex_cfg.get("secret", "")
         if not raw_key or not raw_secret:
-            emit("status", {"msg": "❌ Keine API-Keys für diese Exchange", "type": "error"})
+            emit(
+                "status",
+                {
+                    "msg": "❌ Keine API-Keys für diese Exchange",
+                    "key": "err_no_exchange_keys",
+                    "type": "error",
+                },
+            )
             return
         ex = ex_cls(
             {
@@ -7504,11 +7703,18 @@ def on_close_exchange_position(data):
             ex.create_market_sell_order(symbol, amount)
         emit(
             "status",
-            {"msg": f"✅ {symbol} auf {ex_name.upper()} geschlossen", "type": "success"},
+            {
+                "msg": f"✅ {symbol} auf {ex_name.upper()} geschlossen",
+                "key": "ws_exchange_pos_closed",
+                "type": "success",
+            },
             broadcast=True,
         )
     except Exception as e:
-        emit("status", {"msg": f"❌ Fehler beim Schließen: {e}", "type": "error"})
+        emit(
+            "status",
+            {"msg": f"❌ Fehler beim Schließen: {e}", "key": "ws_close_error", "type": "error"},
+        )
 
 
 @socketio.on("request_system_analytics")

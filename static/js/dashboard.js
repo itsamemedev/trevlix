@@ -812,8 +812,9 @@ socket.on('genetic_update', g=>{
 });
 socket.on('status', d=>{
   if(!d||!d.msg) return;
-  toast(d.msg, d.type||'info');
-  addLog(d.msg, d.type||'info', 'system');
+  const msg = d.key ? QI18n.t(d.key) : d.msg;
+  toast(msg, d.type||'info');
+  addLog(msg, d.type||'info', 'system');
 });
 socket.on('trade', d=>{
   if(!d) return;
@@ -849,8 +850,8 @@ socket.on('backtest_result', d=>{
         datasets:[{data:d.equity_curve.map(e=>e.value),borderColor:cc,backgroundColor:cc==='#00ff88'?'rgba(0,255,136,.06)':'rgba(255,61,113,.06)',borderWidth:2,fill:true,tension:.4,pointRadius:0}]},
       options:cBase});
   }
-  toast(`✅ Backtest: WR ${d.win_rate}% | PnL ${fmtS(d.total_pnl)} USDT`,'success');
-  addLog(`Backtest ${d.symbol}: WR ${d.win_rate}% PnL ${fmtS(d.total_pnl)}`,'success','system');
+  toast(`✅ Backtest: ${QI18n.t('stat_winrate')} ${d.win_rate}% | PnL ${fmtS(d.total_pnl)} USDT`,'success');
+  addLog(`Backtest ${d.symbol}: ${QI18n.t('stat_winrate')} ${d.win_rate}% PnL ${fmtS(d.total_pnl)}`,'success','system');
 });
 
 
@@ -1926,7 +1927,7 @@ function mexUpdate(data) {
 
         <div style="display:flex;gap:8px;margin-top:12px">
           ${!enabled
-            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 API-Keys einrichten</button>`
+            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">${esc(QI18n.t('mex_setup_keys'))}</button>`
             : running
               ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ Stoppen</button>
                  <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
