@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TREVLIX v1.5.0 – Translations
+   TREVLIX v1.5.1 – Translations
    Languages: de | en | es | ru | pt
    ═══════════════════════════════════════════════════════════ */
 const QLANG_NAMES = {de:'Deutsch',en:'English',es:'Español',ru:'Русский',pt:'Português'};
@@ -229,7 +229,6 @@ const QT = {
   pause_duration:       {de:'Pause-Dauer (Min)',en:'Pause Duration (min)',es:'Duración de Pausa (min)',ru:'Длительность паузы (мин)',pt:'Duração da Pausa (min)'},
   sec_ai:               {de:'🧠 KI & Analyse',en:'🧠 AI & Analysis',es:'🧠 IA & Análisis',ru:'🧠 ИИ & Анализ',pt:'🧠 IA & Análise'},
   ai_confidence:        {de:'Min. KI-Konfidenz %',en:'Min. AI Confidence %',es:'Confianza IA mín. %',ru:'Мин. уверенность ИИ %',pt:'Confiança IA mín. %'},
-  mtf_label2:           {de:'Multi-Timeframe (4h)',en:'Multi-Timeframe (4h)',es:'Multi-Marco Temporal (4h)',ru:'Мульти-таймфрейм (4ч)',pt:'Multi-Período (4h)'},
   news_sentiment:       {de:'News-Sentiment',en:'News Sentiment',es:'Sentimiento de Noticias',ru:'Настроение новостей',pt:'Sentimento de Notícias'},
   news_api_help:        {de:'CryptoPanic API',en:'CryptoPanic API',es:'CryptoPanic API',ru:'CryptoPanic API',pt:'CryptoPanic API'},
   onchain_data:         {de:'On-Chain Daten',en:'On-Chain Data',es:'Datos On-Chain',ru:'Ончейн-данные',pt:'Dados On-Chain'},
@@ -266,8 +265,6 @@ const QT = {
   wiz_complete_title: {de:'Alles bereit!',en:'All set!',es:'¡Todo listo!',ru:'Всё готово!',pt:'Tudo pronto!'},
   wiz_complete_sub:   {de:'Klicke Start für Paper-Trading. Echten Handel in Settings aktivieren.',en:'Click Start for paper trading. Enable live trading in Settings.',es:'Clic en Iniciar para trading simulado. Activa en Ajustes.',ru:'Нажмите Старт для бумажной торговли. Включите реальную в Настройках.',pt:'Clique em Iniciar para paper trading. Ative o live em Configurações.'},
   wiz_open_dashboard: {de:'✅ Dashboard öffnen',en:'✅ Open Dashboard',es:'✅ Abrir Panel',ru:'✅ Открыть панель',pt:'✅ Abrir Painel'},
-  wiz_next:           {de:'→ Weiter',en:'→ Next',es:'→ Siguiente',ru:'→ Далее',pt:'→ Próximo'},
-  wiz_save_next:      {de:'→ Speichern & Weiter',en:'→ Save & Next',es:'→ Guardar y Siguiente',ru:'→ Сохранить и далее',pt:'→ Salvar e Próximo'},
 
   /* ── WEBSITE ── */
   web_nav_features:    {de:'Features',en:'Features',es:'Características',ru:'Возможности',pt:'Recursos'},
@@ -330,8 +327,6 @@ const QT = {
   /* ── ADMIN PANEL ── */
   admin_title:      {de:'Admin-Panel',en:'Admin Panel',es:'Panel de administración',ru:'Панель администратора',pt:'Painel Admin'},
   admin_users:      {de:'Nutzerverwaltung',en:'User Management',es:'Gestión de usuarios',ru:'Управление пользователями',pt:'Gestão de utilizadores'},
-  admin_create_user:{de:'Nutzer erstellen',en:'Create User',es:'Crear usuario',ru:'Создать пользователя',pt:'Criar utilizador'},
-  admin_bot_config: {de:'Bot-Konfiguration',en:'Bot Configuration',es:'Configuración del bot',ru:'Настройки бота',pt:'Configuração do bot'},
   admin_sys_status: {de:'System-Status',en:'System Status',es:'Estado del sistema',ru:'Статус системы',pt:'Estado do sistema'},
   admin_reg_enabled:{de:'Registrierung erlaubt',en:'Registration enabled',es:'Registro habilitado',ru:'Регистрация включена',pt:'Registro habilitado'},
 
@@ -649,38 +644,7 @@ const QT = {
 
   /* ── DASHBOARD CONFIRM / TOAST MESSAGES ── */
   confirm_stop_bot:       {de:'Bot wirklich stoppen?',en:'Really stop the bot?',es:'¿Realmente detener el bot?',ru:'Действительно остановить бота?',pt:'Realmente parar o bot?'},
-  confirm_close_pos:      {de:'Position {sym} schließen?',en:'Close position {sym}?',es:'¿Cerrar posición {sym}?',ru:'Закрыть позицию {sym}?',pt:'Fechar posição {sym}?'},
-  confirm_reset_ai:       {de:'KI-Daten zurücksetzen?',en:'Reset AI data?',es:'¿Restablecer datos de IA?',ru:'Сбросить данные ИИ?',pt:'Redefinir dados de IA?'},
-  confirm_install_update: {de:'Update installieren? Bot wird danach neu gestartet.',en:'Install update? Bot will restart afterwards.',es:'¿Instalar actualización? El bot se reiniciará después.',ru:'Установить обновление? Бот перезапустится.',pt:'Instalar atualização? O bot será reiniciado.'},
-  confirm_rollback:       {de:'Rollback auf .bak Dateien?',en:'Rollback to .bak files?',es:'¿Revertir a archivos .bak?',ru:'Откатить к .bak файлам?',pt:'Reverter para arquivos .bak?'},
-  confirm_global_train:   {de:'Globales Training mit allen Nutzer-Samples starten?\nDas kann einige Minuten dauern.',en:'Start global training with all user samples?\nThis may take a few minutes.',es:'¿Iniciar entrenamiento global con todas las muestras?\nEsto puede tardar unos minutos.',ru:'Начать глобальное обучение со всеми сэмплами?\nЭто может занять несколько минут.',pt:'Iniciar treinamento global com todas as amostras?\nIsso pode levar alguns minutos.'},
-  confirm_delete_grid:    {de:'Grid {sym} löschen?',en:'Delete grid {sym}?',es:'¿Eliminar grid {sym}?',ru:'Удалить сетку {sym}?',pt:'Excluir grade {sym}?'},
-  confirm_set_ips:        {de:'{n} IPs setzen? Falsche IPs können dich aussperren!',en:'{n} IPs set? Wrong IPs can lock you out!',es:'¿Establecer {n} IPs? ¡IPs incorrectas pueden bloquearte!',ru:'Установить {n} IP? Неправильные IP могут заблокировать доступ!',pt:'Definir {n} IPs? IPs incorretos podem te bloquear!'},
-  confirm_close_exchange_pos: {de:'Position {sym} auf {exc} schließen?',en:'Close position {sym} on {exc}?',es:'¿Cerrar posición {sym} en {exc}?',ru:'Закрыть позицию {sym} на {exc}?',pt:'Fechar posição {sym} na {exc}?'},
-  toast_optimize:         {de:'Optimierung läuft...',en:'Optimization running...',es:'Optimización en curso...',ru:'Оптимизация запущена...',pt:'Otimização em andamento...'},
-  toast_genetic:          {de:'Genetischer Optimizer läuft...',en:'Genetic optimizer running...',es:'Optimizador genético en curso...',ru:'Генетический оптимизатор запущен...',pt:'Otimizador genético em andamento...'},
-  toast_news_saved:       {de:'News-Filter gespeichert',en:'News filter saved',es:'Filtro de noticias guardado',ru:'Фильтр новостей сохранён',pt:'Filtro de notícias salvo'},
-  toast_error:            {de:'Fehler',en:'Error',es:'Error',ru:'Ошибка',pt:'Erro'},
-  toast_push_unsupported: {de:'Push nicht unterstützt',en:'Push not supported',es:'Push no soportado',ru:'Push не поддерживается',pt:'Push não suportado'},
-  dashboard_connected:    {de:'Dashboard verbunden',en:'Dashboard connected',es:'Dashboard conectado',ru:'Панель подключена',pt:'Dashboard conectado'},
-  dashboard_disconnected: {de:'Verbindung getrennt',en:'Connection lost',es:'Conexión perdida',ru:'Соединение потеряно',pt:'Conexão perdida'},
-  no_open_positions:      {de:'Keine offenen Positionen',en:'No open positions',es:'Sin posiciones abiertas',ru:'Нет открытых позиций',pt:'Sem posições abertas'},
-  no_trades_yet:          {de:'Keine Trades',en:'No trades',es:'Sin trades',ru:'Нет сделок',pt:'Sem trades'},
-  waiting_for_signals:    {de:'Warte auf Signale...',en:'Waiting for signals...',es:'Esperando señales...',ru:'Ожидание сигналов...',pt:'Aguardando sinais...'},
-  buy_allowed_label:      {de:'Kaufen erlaubt',en:'Buy allowed',es:'Compra permitida',ru:'Покупка разрешена',pt:'Compra permitida'},
-  buy_blocked_label:      {de:'Kauf blockiert',en:'Buy blocked',es:'Compra bloqueada',ru:'Покупка заблокирована',pt:'Compra bloqueada'},
   above_label:            {de:'Über',en:'Above',es:'Por encima',ru:'Выше',pt:'Acima'},
-  wiz_conservative:       {de:'🛡️ Konservativ – Wenig Risiko',en:'🛡️ Conservative – Low Risk',es:'🛡️ Conservador – Bajo Riesgo',ru:'🛡️ Консервативный – Низкий риск',pt:'🛡️ Conservador – Baixo Risco'},
-  wiz_balanced:           {de:'⚖️ Ausgewogen – Empfohlen',en:'⚖️ Balanced – Recommended',es:'⚖️ Equilibrado – Recomendado',ru:'⚖️ Сбалансированный – Рекомендуется',pt:'⚖️ Equilibrado – Recomendado'},
-  wiz_aggressive:         {de:'🚀 Aggressiv – Hohes Risiko',en:'🚀 Aggressive – High Risk',es:'🚀 Agresivo – Alto Riesgo',ru:'🚀 Агрессивный – Высокий риск',pt:'🚀 Agressivo – Alto Risco'},
-  wiz_next:               {de:'→ Weiter',en:'→ Next',es:'→ Siguiente',ru:'→ Далее',pt:'→ Próximo'},
-  wiz_ready:              {de:'🎉 TREVLIX ist bereit!',en:'🎉 TREVLIX is ready!',es:'🎉 ¡TREVLIX está listo!',ru:'🎉 TREVLIX готов!',pt:'🎉 TREVLIX está pronto!'},
-  trade_buy:              {de:'Kauf',en:'Buy',es:'Compra',ru:'Покупка',pt:'Compra'},
-  trade_sell:             {de:'Verkauf',en:'Sell',es:'Venta',ru:'Продажа',pt:'Venda'},
-  alert_triggered:        {de:'Alert ausgelöst',en:'Alert triggered',es:'Alerta activada',ru:'Алерт сработал',pt:'Alerta acionado'},
-  checking_github:        {de:'Prüfe GitHub...',en:'Checking GitHub...',es:'Comprobando GitHub...',ru:'Проверка GitHub...',pt:'Verificando GitHub...'},
-  installing_update:      {de:'Update wird installiert...',en:'Installing update...',es:'Instalando actualización...',ru:'Установка обновления...',pt:'Instalando atualização...'},
-  close_label:            {de:'Schließen',en:'Close',es:'Cerrar',ru:'Закрыть',pt:'Fechar'},
 
   /* ── AUTH / LOGIN ── */
   login_title:            {de:'Anmelden',en:'Login',es:'Iniciar sesión',ru:'Вход',pt:'Entrar'},
@@ -846,7 +810,6 @@ const QT = {
   strat_ensemble_p1: {de:'Alle Strategien stimmen ab: +1 (Kauf), -1 (Verkauf), 0 (Neutral). Gewichtete Mehrheit entscheidet.',en:'All strategies vote: +1 (buy), -1 (sell), 0 (neutral). Weighted majority decides.',es:'Todas las estrategias votan: +1 (compra), -1 (venta), 0 (neutral). La mayoría ponderada decide.',ru:'Все стратегии голосуют: +1 (покупка), -1 (продажа), 0 (нейтрально). Решает взвешенное большинство.',pt:'Todas as estratégias votam: +1 (compra), -1 (venda), 0 (neutro). A maioria ponderada decide.'},
 
   /* ── DASHBOARD WIZARD ── */
-  loading_label:    {de:'Laden...',en:'Loading...',es:'Cargando...',ru:'Загрузка...',pt:'Carregando...'},
   wiz_complete_desc:{de:'Setup abgeschlossen! Der Bot ist bereit.',en:'Setup complete! The bot is ready.',es:'¡Configuración completa! El bot está listo.',ru:'Настройка завершена! Бот готов.',pt:'Configuração concluída! O bot está pronto.'},
   wiz_next_step:    {de:'Nächster Schritt',en:'Next Step',es:'Siguiente Paso',ru:'Следующий шаг',pt:'Próximo Passo'},
   wiz_paper_hint:   {de:'Empfohlen: Starte mit Paper Trading!',en:'Recommended: Start with paper trading!',es:'Recomendado: ¡Empieza con trading simulado!',ru:'Рекомендуется: начните с бумажной торговли!',pt:'Recomendado: comece com trading simulado!'},
@@ -925,11 +888,8 @@ const QT = {
   err_sl_invalid:      {de:'Ungültiger SL-Wert (muss zwischen 0 und 50% liegen)',en:'Invalid SL value (must be between 0 and 50%)',es:'Valor SL inválido (debe estar entre 0 y 50%)',ru:'Неверное значение SL (должно быть от 0 до 50%)',pt:'Valor SL inválido (deve estar entre 0 e 50%)'},
   err_name_url:        {de:'Name und URL erforderlich',en:'Name and URL required',es:'Nombre y URL requeridos',ru:'Имя и URL обязательны',pt:'Nome e URL obrigatórios'},
   err_user_pass:       {de:'Username und Passwort erforderlich',en:'Username and password required',es:'Usuario y contraseña requeridos',ru:'Имя пользователя и пароль обязательны',pt:'Usuário e senha obrigatórios'},
-  err_grid_params:     {de:'Symbol, Unter- und Obergrenze erforderlich (untere < obere)',en:'Symbol, lower and upper bounds required (lower < upper)',es:'Símbolo, límites inferior y superior requeridos (inferior < superior)',ru:'Символ, нижняя и верхняя границы обязательны (нижняя < верхней)',pt:'Símbolo, limites inferior e superior necessários (inferior < superior)'},
   err_token_chatid:    {de:'Token und Chat-ID erforderlich',en:'Token and Chat-ID required',es:'Token y Chat-ID requeridos',ru:'Токен и Chat-ID обязательны',pt:'Token e Chat-ID obrigatórios'},
   err_apikey_secret:   {de:'API-Key und Secret erforderlich',en:'API key and secret required',es:'API key y secret requeridos',ru:'API-ключ и секрет обязательны',pt:'API key e secret obrigatórios'},
-  err_min2_symbols:    {de:'Mindestens 2 Symbole',en:'At least 2 symbols',es:'Al menos 2 símbolos',ru:'Минимум 2 символа',pt:'Mínimo 2 símbolos'},
-  err_min1_symbol:     {de:'Mindestens 1 Symbol',en:'At least 1 symbol',es:'Al menos 1 símbolo',ru:'Минимум 1 символ',pt:'Mínimo 1 símbolo'},
   err_network:         {de:'Netzwerkfehler',en:'Network error',es:'Error de red',ru:'Ошибка сети',pt:'Erro de rede'},
   err_delete:          {de:'Fehler beim Löschen',en:'Error deleting',es:'Error al eliminar',ru:'Ошибка удаления',pt:'Erro ao excluir'},
   err_generic:         {de:'Fehler',en:'Error',es:'Error',ru:'Ошибка',pt:'Erro'},
@@ -1069,7 +1029,6 @@ const QT = {
   empty_start_bot:      {de:'Starte TREVLIX',en:'Start TREVLIX',es:'Iniciar TREVLIX',ru:'Запустите TREVLIX',pt:'Iniciar TREVLIX'},
   loading_heatmap:      {de:'Lade Heatmap...',en:'Loading heatmap...',es:'Cargando mapa...',ru:'Загрузка карты...',pt:'Carregando mapa...'},
   loading_label:        {de:'Laden…',en:'Loading…',es:'Cargando…',ru:'Загрузка…',pt:'Carregando…'},
-  msg_auth_error:       {de:'Auth-Fehler',en:'Auth error',es:'Error de autenticación',ru:'Ошибка авторизации',pt:'Erro de autenticação'},
   msg_not_authenticated:{de:'Nicht authentifiziert',en:'Not authenticated',es:'No autenticado',ru:'Не аутентифицирован',pt:'Não autenticado'},
   tax_gains:            {de:'Gewinne',en:'Gains',es:'Ganancias',ru:'Прибыль',pt:'Ganhos'},
   tax_losses:           {de:'Verluste',en:'Losses',es:'Pérdidas',ru:'Убытки',pt:'Perdas'},
@@ -1130,6 +1089,9 @@ const QT = {
   ws_backup_failed:     {de:'Backup fehlgeschlagen',en:'Backup failed',es:'Copia de seguridad fallida',ru:'Резервная копия не удалась',pt:'Backup falhou'},
   ws_report_sending:    {de:'Report wird gesendet...',en:'Report is being sent...',es:'Enviando informe...',ru:'Отправка отчёта...',pt:'Enviando relatório...'},
   ws_cb_reset:          {de:'Circuit Breaker zurückgesetzt',en:'Circuit breaker reset',es:'Circuit breaker reiniciado',ru:'Выключатель сброшен',pt:'Circuit breaker reiniciado'},
+  cb_losses:            {de:'Verluste',en:'Losses',es:'Pérdidas',ru:'Убытков',pt:'Perdas'},
+  cb_pause_remaining:   {de:'Pause noch',en:'Pause remaining',es:'Pausa restante',ru:'Пауза ещё',pt:'Pausa restante'},
+  cb_until:             {de:'bis',en:'until',es:'hasta',ru:'до',pt:'até'},
   ws_arb_result:        {de:'Arbitrage-Scan abgeschlossen',en:'Arbitrage scan completed',es:'Escaneo de arbitraje completado',ru:'Сканирование арбитража завершено',pt:'Varredura de arbitragem concluída'},
   ws_dominance_updating:{de:'Dominanz-Update läuft...',en:'Dominance update running...',es:'Actualización de dominancia...',ru:'Обновление доминации...',pt:'Atualização de dominância...'},
   ws_grid_created:      {de:'Grid erstellt',en:'Grid created',es:'Grid creado',ru:'Сетка создана',pt:'Grid criado'},

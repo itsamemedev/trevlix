@@ -97,7 +97,7 @@ function switchLog(tab,el){
 function clearLog(){ logEntries=[]; renderLog(); }
 function pauseLog(){
   logPaused=!logPaused;
-  document.getElementById('logPauseBtn').textContent=logPaused?'▶':'⏸';
+  const lpb=document.getElementById('logPauseBtn'); if(lpb) lpb.textContent=logPaused?'▶':'⏸';
 }
 
 // ── Charts init ──────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ function updateUI(d){
   const hValEl=document.getElementById('hVal');
   if(hValEl){hValEl.textContent=fmt(d.portfolio_value)+' USDT';}
   const r=d.return_pct||0, re=document.getElementById('hReturn');
-  re.textContent=(r>=0?'▲ +':'▼ ')+fmt(Math.abs(r))+'%'; re.className='pill '+(r>=0?'up':'dn');
+  if(re){re.textContent=(r>=0?'▲ +':'▼ ')+fmt(Math.abs(r))+'%'; re.className='pill '+(r>=0?'up':'dn');}
   document.getElementById('hPnl').textContent=fmtS(d.total_pnl)+' USDT '+(QI18n.t('total_label')||'Gesamt');
   // Status
   const b=document.getElementById('statusBadge'),t=document.getElementById('statusTxt');
@@ -226,19 +226,20 @@ function updateFG(fg){
   document.getElementById('fgSub').style.color=fg.ok_to_buy?'var(--green)':'var(--red)';
 }
 function updateCB(cb){
-  document.getElementById('cbBanner').style.display=cb.active?'block':'none';
-  if(cb.active) document.getElementById('cbSub').textContent=`${cb.losses} Verluste · Pause noch ${cb.remaining_min} Min · bis ${cb.until||'—'}`;
+  const banner=document.getElementById('cbBanner'); if(banner) banner.style.display=cb.active?'block':'none';
+  if(cb.active){const sub=document.getElementById('cbSub'); if(sub) sub.textContent=`${cb.losses} ${QI18n.t('cb_losses')} · ${QI18n.t('cb_pause_remaining')} ${cb.remaining_min} Min · ${QI18n.t('cb_until')} ${cb.until||'—'}`;}
 }
 function updateGoal(g){
   const sec=document.getElementById('goalSection');
+  if(!sec) return;
   if(!g||!g.target||g.target<=0){sec.style.display='none';return;}
   sec.style.display='block';
-  document.getElementById('goalCurrent').textContent=fmt(g.current)+' USDT';
-  document.getElementById('goalTarget').textContent='Ziel: '+fmt(g.target)+' USDT';
-  document.getElementById('goalBar').style.width=g.pct+'%';
-  document.getElementById('goalPct').textContent=g.pct+'%';
-  document.getElementById('goalETA').textContent='ETA: '+g.eta;
-  document.getElementById('goalBadge').textContent=g.pct+'% erreicht';
+  const gc=document.getElementById('goalCurrent'); if(gc) gc.textContent=fmt(g.current)+' USDT';
+  const gt=document.getElementById('goalTarget'); if(gt) gt.textContent=QI18n.t('portfolio_goal')+': '+fmt(g.target)+' USDT';
+  const gb=document.getElementById('goalBar'); if(gb) gb.style.width=g.pct+'%';
+  const gp=document.getElementById('goalPct'); if(gp) gp.textContent=g.pct+'%';
+  const ge=document.getElementById('goalETA'); if(ge) ge.textContent=QI18n.t('eta_label')+': '+g.eta;
+  const gba=document.getElementById('goalBadge'); if(gba) gba.textContent=g.pct+'% '+QI18n.t('achieved');
 }
 function updateDom(dom){
   document.getElementById('domCard').style.display='block';
