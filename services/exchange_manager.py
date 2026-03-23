@@ -104,10 +104,18 @@ class ExchangeManager:
             exchanges = self._db.get_enabled_exchanges(user_id)
             for ex_data in exchanges:
                 if ex_data["exchange"] == exchange_name:
+                    api_key = decrypt_value(ex_data.get("api_key", ""))
+                    api_secret = decrypt_value(ex_data.get("api_secret", ""))
+                    if not api_key or not api_secret:
+                        log.warning(
+                            "Exchange %s: API-Schlüssel konnten nicht entschlüsselt werden",
+                            exchange_name,
+                        )
+                        return None
                     inst = self._create_instance(
                         exchange_name,
-                        decrypt_value(ex_data.get("api_key", "")),
-                        decrypt_value(ex_data.get("api_secret", "")),
+                        api_key,
+                        api_secret,
                     )
                     if inst:
                         self._instances[cache_key] = inst

@@ -218,6 +218,23 @@ if PYDANTIC_AVAILABLE:
             return warnings
 
 else:
+
+    def _safe_env_int(key: str, default: int) -> int:
+        """Parse int from env var with fallback on invalid values."""
+        try:
+            return int(os.getenv(key, str(default)))
+        except (ValueError, TypeError):
+            log.warning("Ungültiger Wert für %s, verwende Default %d", key, default)
+            return default
+
+    def _safe_env_float(key: str, default: float) -> float:
+        """Parse float from env var with fallback on invalid values."""
+        try:
+            return float(os.getenv(key, str(default)))
+        except (ValueError, TypeError):
+            log.warning("Ungültiger Wert für %s, verwende Default %s", key, default)
+            return default
+
     # Fallback wenn Pydantic nicht verfügbar
     class TrevlixConfig:  # type: ignore[no-redef]
         """Fallback-Config ohne Pydantic-Validierung."""
@@ -235,32 +252,32 @@ else:
                 api_key=os.getenv("API_KEY", ""),
                 secret=os.getenv("API_SECRET", ""),
                 quote_currency=os.getenv("QUOTE_CURRENCY", "USDT"),
-                min_volume_usdt=float(os.getenv("MIN_VOLUME_USDT", "1000000")),
+                min_volume_usdt=_safe_env_float("MIN_VOLUME_USDT", 1000000),
                 # Trading
                 timeframe=os.getenv("TIMEFRAME", "1h"),
-                candle_limit=int(os.getenv("CANDLE_LIMIT", "250")),
-                risk_per_trade=float(os.getenv("RISK_PER_TRADE", "0.015")),
-                stop_loss_pct=float(os.getenv("STOP_LOSS_PCT", "0.025")),
-                take_profit_pct=float(os.getenv("TAKE_PROFIT_PCT", "0.060")),
-                max_open_trades=int(os.getenv("MAX_OPEN_TRADES", "5")),
-                max_position_pct=float(os.getenv("MAX_POSITION_PCT", "0.20")),
-                fee_rate=float(os.getenv("FEE_RATE", "0.0004")),
+                candle_limit=_safe_env_int("CANDLE_LIMIT", 250),
+                risk_per_trade=_safe_env_float("RISK_PER_TRADE", 0.015),
+                stop_loss_pct=_safe_env_float("STOP_LOSS_PCT", 0.025),
+                take_profit_pct=_safe_env_float("TAKE_PROFIT_PCT", 0.060),
+                max_open_trades=_safe_env_int("MAX_OPEN_TRADES", 5),
+                max_position_pct=_safe_env_float("MAX_POSITION_PCT", 0.20),
+                fee_rate=_safe_env_float("FEE_RATE", 0.0004),
                 paper_trading=os.getenv("PAPER_TRADING", "true").lower() in ("true", "1", "yes"),
-                paper_balance=float(os.getenv("PAPER_BALANCE", "10000")),
-                scan_interval=int(os.getenv("SCAN_INTERVAL", "60")),
+                paper_balance=_safe_env_float("PAPER_BALANCE", 10000),
+                scan_interval=_safe_env_int("SCAN_INTERVAL", 60),
                 # Risk
-                max_spread_pct=float(os.getenv("MAX_SPREAD_PCT", "0.5")),
-                max_corr=float(os.getenv("MAX_CORR", "0.75")),
-                circuit_breaker_losses=int(os.getenv("CIRCUIT_BREAKER_LOSSES", "3")),
-                circuit_breaker_min=int(os.getenv("CIRCUIT_BREAKER_MIN", "120")),
-                max_drawdown_pct=float(os.getenv("MAX_DRAWDOWN_PCT", "0.10")),
-                max_daily_loss_pct=float(os.getenv("MAX_DAILY_LOSS_PCT", "0.05")),
-                slippage_pct=float(os.getenv("SLIPPAGE_PCT", "0.001")),
-                min_order_usdt=float(os.getenv("MIN_ORDER_USDT", "10")),
+                max_spread_pct=_safe_env_float("MAX_SPREAD_PCT", 0.5),
+                max_corr=_safe_env_float("MAX_CORR", 0.75),
+                circuit_breaker_losses=_safe_env_int("CIRCUIT_BREAKER_LOSSES", 3),
+                circuit_breaker_min=_safe_env_int("CIRCUIT_BREAKER_MIN", 120),
+                max_drawdown_pct=_safe_env_float("MAX_DRAWDOWN_PCT", 0.10),
+                max_daily_loss_pct=_safe_env_float("MAX_DAILY_LOSS_PCT", 0.05),
+                slippage_pct=_safe_env_float("SLIPPAGE_PCT", 0.001),
+                min_order_usdt=_safe_env_float("MIN_ORDER_USDT", 10),
                 # AI
                 ai_enabled=os.getenv("AI_ENABLED", "true").lower() in ("true", "1", "yes"),
-                ai_min_samples=int(os.getenv("AI_MIN_SAMPLES", "20")),
-                ai_min_confidence=float(os.getenv("AI_MIN_CONFIDENCE", "0.55")),
+                ai_min_samples=_safe_env_int("AI_MIN_SAMPLES", 20),
+                ai_min_confidence=_safe_env_float("AI_MIN_CONFIDENCE", 0.55),
                 ai_use_kelly=os.getenv("AI_USE_KELLY", "true").lower() in ("true", "1", "yes"),
                 # MySQL
                 mysql_host=os.getenv("MYSQL_HOST", "localhost"),
@@ -271,7 +288,7 @@ else:
                 # Auth
                 admin_password=os.getenv("ADMIN_PASSWORD", "trevlix"),
                 jwt_secret=os.getenv("JWT_SECRET", secrets.token_hex(32)),
-                jwt_expiry_hours=int(os.getenv("JWT_EXPIRY_HOURS", "24")),
+                jwt_expiry_hours=_safe_env_int("JWT_EXPIRY_HOURS", 24),
                 # Notifications
                 cryptopanic_token=os.getenv("CRYPTOPANIC_TOKEN", ""),
                 telegram_token=os.getenv("TELEGRAM_TOKEN", ""),

@@ -82,9 +82,12 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
         std20 = c.rolling(20).std()
         df["bb_upper"] = df["sma20"] + 2 * std20
         df["bb_lower"] = df["sma20"] - 2 * std20
-        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / df["sma20"].replace(0, np.nan)
+        sma20_safe = df["sma20"].replace(0, np.nan)
+        df["bb_width"] = (df["bb_upper"] - df["bb_lower"]) / sma20_safe
+        df["bb_width"] = df["bb_width"].fillna(0.0)
         bb_range = (df["bb_upper"] - df["bb_lower"]).replace(0, np.nan)
         df["bb_pct"] = (c - df["bb_lower"]) / bb_range
+        df["bb_pct"] = df["bb_pct"].fillna(0.5)
 
         # ATR
         tr = pd.concat([h - lo, (h - c.shift()).abs(), (lo - c.shift()).abs()], axis=1).max(axis=1)
@@ -206,7 +209,7 @@ def strat_vol(r: Row, p: Row) -> int:
     close = r.get("close", 0.0)
     ema21 = r.get("ema21", 0.0)
     prev_close = p.get("close")
-    if not prev_close or prev_close <= 0 or close <= 0:
+    if not prev_close or prev_close <= 0 or close <= 0 or ema21 <= 0:
         return 0
 
     above_ema = close > ema21

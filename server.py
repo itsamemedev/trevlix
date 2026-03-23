@@ -66,6 +66,7 @@ import threading
 import time
 import traceback
 import zipfile
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -78,11 +79,24 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
-from flask import Flask, Response, g, jsonify, redirect, request, send_file, send_from_directory, session
+from flask import (
+    Flask,
+    Response,
+    g,
+    jsonify,
+    redirect,
+    request,
+    send_file,
+    send_from_directory,
+    session,
+)
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit
 
 from services.adaptive_weights import AdaptiveWeights
+from services.alert_escalation import AlertEscalationManager
+from services.auto_healing import AutoHealingAgent
+from services.cluster_control import ClusterController
 from services.cryptopanic import CryptoPanicClient
 from services.db_pool import ConnectionPool
 
@@ -99,6 +113,7 @@ from services.market_data import (
     SentimentFetcher,
 )
 from services.performance_attribution import PerformanceAttribution
+from services.revenue_tracking import RevenueTracker
 from services.risk import (
     AdvancedRiskMetrics,
     FundingRateTracker,
@@ -931,8 +946,64 @@ class MySQLManager:
                     INDEX idx_symbol(symbol),
                     INDEX idx_time(created_at)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Revenue Tracking (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS revenue_trades (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    symbol VARCHAR(20),
+                    side VARCHAR(10),
+                    amount DOUBLE,
+                    price DOUBLE,
+                    fee DOUBLE DEFAULT 0,
+                    slippage_est DOUBLE DEFAULT 0,
+                    funding_fee DOUBLE DEFAULT 0,
+                    strategy VARCHAR(80),
+                    gross_pnl DOUBLE DEFAULT 0,
+                    net_pnl DOUBLE DEFAULT 0,
+                    recorded_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_time(recorded_at),
+                    INDEX idx_strategy(strategy),
+                    INDEX idx_symbol(symbol)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Healing Incidents (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS healing_incidents (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    service VARCHAR(30) NOT NULL,
+                    severity VARCHAR(20) NOT NULL,
+                    message VARCHAR(500),
+                    recovered TINYINT DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_service(service),
+                    INDEX idx_time(created_at)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Cluster Nodes (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS cluster_nodes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(50) UNIQUE NOT NULL,
+                    host VARCHAR(255) NOT NULL,
+                    port INT DEFAULT 5000,
+                    api_token VARCHAR(500),
+                    status VARCHAR(20) DEFAULT 'offline',
+                    last_check DATETIME,
+                    last_error VARCHAR(500),
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_status(status)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Alert Escalations (Agent v1.5)
+                c.execute("""CREATE TABLE IF NOT EXISTS alert_escalations (
+                    alert_id VARCHAR(100) PRIMARY KEY,
+                    message VARCHAR(500),
+                    source VARCHAR(50) DEFAULT 'system',
+                    level INT DEFAULT 1,
+                    occurrence_count INT DEFAULT 1,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    escalated_at DATETIME,
+                    acknowledged TINYINT DEFAULT 0,
+                    resolved_at DATETIME,
+                    INDEX idx_level(level),
+                    INDEX idx_source(source)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
-                c.execute("SELECT id FROM users WHERE username='admin'")
+                c.execute("SELECT id FROM users WHERE username=%s", ("admin",))
                 if not c.fetchone():
                     pw = CONFIG["admin_password"].encode()
                     if BCRYPT_AVAILABLE:
@@ -1485,7 +1556,7 @@ class MySQLManager:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("SELECT * FROM price_alerts WHERE triggered=0")
+                    c.execute("SELECT * FROM price_alerts WHERE triggered=0 LIMIT 500")
                     rows = c.fetchall()
             return [dict(r) for r in rows]
         except Exception as e:
@@ -1817,12 +1888,13 @@ class MySQLManager:
             if not os.path.exists(backup_path):
                 result["error"] = "Backup-Datei nicht gefunden"
                 return result
-            if not os.path.exists(sha_path):
+            # Checksum aus Datei lesen
+            try:
+                with open(sha_path) as f:
+                    parts = f.read().split()
+            except FileNotFoundError:
                 result["error"] = "Keine .sha256-Datei vorhanden"
                 return result
-            # Checksum aus Datei lesen
-            with open(sha_path) as f:
-                parts = f.read().split()
             if not parts:
                 result["error"] = "SHA256-Datei ist leer"
                 return result
@@ -1960,10 +2032,12 @@ def _before_request_hooks():
     """[Verbesserung #1] Session-Timeout + [Verbesserung #2] CSRF-Check."""
     # Session-Timeout prüfen
     if session.get("user_id"):
+        now = datetime.now()
         last = session.get("last_active")
+        created = session.get("session_created")
         if last:
             try:
-                elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+                elapsed = (now - datetime.fromisoformat(last)).total_seconds()
                 if elapsed > _SESSION_TIMEOUT_MIN * 60:
                     uid = session.get("user_id", 0)
                     session.clear()
@@ -1981,7 +2055,22 @@ def _before_request_hooks():
 
                     abort(401)
                 return redirect("/login")
-        session["last_active"] = datetime.now().isoformat()
+        # Absolute session lifetime: max 8 hours regardless of activity
+        if created:
+            try:
+                age = (now - datetime.fromisoformat(created)).total_seconds()
+                if age > 8 * 3600:
+                    uid = session.get("user_id", 0)
+                    session.clear()
+                    _audit("session_expired", f"user_id={uid} age={age:.0f}s", uid)
+                    if request.path.startswith("/api/"):
+                        from flask import abort
+
+                        abort(401)
+                    return redirect("/login")
+            except (ValueError, TypeError):
+                pass
+        session["last_active"] = now.isoformat()
 
     # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
@@ -1997,15 +2086,12 @@ def _before_request_hooks():
                     token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
                 except Exception:
                     token = None
-                if request.content_type and "application/json" not in request.content_type:
-                    expected = session.get("_csrf_token")
-                    if expected and (
-                        not token or not hmac.compare_digest(str(token), str(expected))
-                    ):
-                        _audit("csrf_violation", request.path, session.get("user_id", 0))
-                        from flask import abort
+                expected = session.get("_csrf_token")
+                if expected and (not token or not hmac.compare_digest(str(token), str(expected))):
+                    _audit("csrf_violation", request.path, session.get("user_id", 0))
+                    from flask import abort
 
-                        abort(403)  # CSRF-Verletzung → Request ablehnen
+                    abort(403)  # CSRF-Verletzung → Request ablehnen
 
 
 @app.after_request
@@ -2732,8 +2818,8 @@ class AIEngine:
         self._cal_X: list = []  # [26] Calibration samples for conformal
         self._cal_y: list = []  # [26] Calibration labels
         self.status_msg = "⏳ Lade Trainingsdaten..."
-        self.ai_log = []
-        self.optim_log = []
+        self.ai_log = deque(maxlen=500)
+        self.optim_log = deque(maxlen=500)
         self._pending: dict[str, dict] = {}
         self._scan_cache: dict[str, dict] = {}  # für RL
         self._load_from_db()
@@ -2754,7 +2840,7 @@ class AIEngine:
                     self.X_bear.append(xi)
                     self.y_bear.append(yi)
             n = len(self.X_raw)
-            self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
+            self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
             if n >= CONFIG["ai_min_samples"] and not models_loaded:
                 # Nur neu trainieren wenn kein gespeichertes Modell vorhanden
                 threading.Thread(target=self._train, daemon=True).start()
@@ -3725,7 +3811,7 @@ class AIEngine:
             daemon=True,
         ).start()
         n = len(self.X_raw)
-        self.progress_pct = min(100, int(n / CONFIG["ai_min_samples"] * 100))
+        self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
         if (
             n >= CONFIG["ai_min_samples"]
             and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
@@ -3791,6 +3877,8 @@ from services.backtest import BacktestEngine as _BacktestEngineBase  # noqa: E40
 # MULTI-TIMEFRAME FILTER
 # ═══════════════════════════════════════════════════════════════════════════════
 class MultiTimeframeFilter:
+    _MAX_CACHE = 500
+
     def __init__(self):
         self._cache: dict[str, dict] = {}
         self._lock = threading.Lock()
@@ -3821,6 +3909,12 @@ class MultiTimeframeFilter:
             trend = 1 if score >= 2 else (-1 if score == 0 else 0)
             with self._lock:
                 self._cache[symbol] = {"trend": trend, "ts": datetime.now()}
+                # Evict stale entries if cache grows too large
+                if len(self._cache) > self._MAX_CACHE:
+                    cutoff = datetime.now() - timedelta(minutes=10)
+                    stale = [k for k, v in self._cache.items() if v["ts"] < cutoff]
+                    for k in stale:
+                        del self._cache[k]
             ok = trend >= 0
             return ok, f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
         except Exception as e:
@@ -3858,7 +3952,6 @@ class OrderbookImbalance:
 # STEUER (modularisiert → services/tax_report.py)
 # ═══════════════════════════════════════════════════════════════════════════════
 from services.tax_report import TaxReportGenerator  # noqa: E402
-
 
 # MarketRegime importiert aus services.market_data
 
@@ -3913,7 +4006,7 @@ class DailyReportScheduler:
         while True:
             time.sleep(60)
             now = datetime.now()
-            if now.hour == CONFIG.get("discord_report_hour", 20) and now.minute < 2:
+            if now.hour == CONFIG.get("discord_report_hour", 20) and now.minute < 5:
                 if not db.report_sent_today():
                     self._send_report()
             # Dominanz-Update stündlich
@@ -3972,7 +4065,7 @@ class BackupScheduler:
         while True:
             time.sleep(60)
             now = datetime.now()
-            if now.hour == 3 and now.minute < 2 and CONFIG.get("backup_enabled"):
+            if now.hour == 3 and now.minute < 5 and CONFIG.get("backup_enabled"):
                 path = db.backup()
                 if path:
                     discord.backup_done(path)
@@ -3995,8 +4088,6 @@ class BotState:
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
-        from collections import deque
-
         self.portfolio_history: deque = deque(maxlen=500)
         self.signal_log: deque = deque(maxlen=50)
         self.activity_log: deque = deque(maxlen=50)
@@ -4386,6 +4477,10 @@ class ShortEngine:
             return False
         if not price or price <= 0:
             return False
+        if symbol in state.positions:
+            return False
+        if invest <= 0 or invest > state.balance:
+            return False
         sl = price * (1 + CONFIG.get("stop_loss_pct", 0.03))
         tp = price * (1 - CONFIG.get("take_profit_pct", 0.05))
         try:
@@ -4395,6 +4490,10 @@ class ShortEngine:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
             with state._lock:
+                if CONFIG.get("paper_trading", True):
+                    if invest > state.balance:
+                        return False
+                    state.balance -= invest
                 state.short_positions[symbol] = {
                     "entry": price,
                     "qty": qty,
@@ -4469,19 +4568,42 @@ class ShortEngine:
         )
         discord.trade_sell(symbol, price, pnl, pnl_pct, f"SHORT-{reason}")
         log.info(f"{icon} SHORT CLOSE {symbol} @ {price:.4f} | {pnl:+.2f} USDT")
+        # Revenue Tracking: Record short trade
+        try:
+            revenue_tracker.record_trade(
+                {
+                    "symbol": symbol,
+                    "side": "sell",
+                    "amount": pos.get("qty", 0),
+                    "price": price,
+                    "fee": fee,
+                    "strategy": f"SHORT-{reason}",
+                    "pnl": pnl,
+                    "timestamp": datetime.now(),
+                }
+            )
+        except Exception:
+            pass
 
     def update_shorts(self):
         for sym in list(state.short_positions.keys()):
-            pos = state.short_positions.get(sym)
+            with state._lock:
+                pos = state.short_positions.get(sym)
             if not pos:
                 continue
             price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
-            pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
-            pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
-            if price >= pos.get("sl", float("inf")):
+            if s_entry <= 0:
+                continue
+            pnl_pct = (s_entry - price) / s_entry * 100
+            leverage = CONFIG.get("short_leverage", 2)
+            with state._lock:
+                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100) * leverage
+            sl = pos.get("sl", float("inf"))
+            tp = pos.get("tp", 0)
+            if price >= sl:
                 self.close_short(sym, "SL 🛑")
-            elif price <= pos.get("tp", 0):
+            elif price <= tp:
                 self.close_short(sym, "TP 🎯")
 
 
@@ -4518,6 +4640,38 @@ daily_sched = DailyReportScheduler()
 backup_sched = BackupScheduler()
 state = BotState(db)
 ai_engine = AIEngine(db)
+
+# ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
+
+
+def _agent_notifier(msg: str) -> None:
+    """Unified notifier callback for autonomous agents."""
+    try:
+        discord.send("Agent Alert", msg, "alert")
+    except Exception:
+        pass
+    try:
+        telegram = TelegramNotifier(CONFIG)
+        telegram.send(f"<b>Agent Alert</b>\n{msg}")
+    except Exception:
+        pass
+
+
+alert_escalation = AlertEscalationManager(
+    db=db,
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
+revenue_tracker = RevenueTracker(db=db, config=CONFIG)
+healer = AutoHealingAgent(
+    db=db,
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
+cluster_ctrl = ClusterController(
+    config=CONFIG,
+    notifier=_agent_notifier,
+)
 
 
 def emit_event(event, data):
@@ -4662,11 +4816,7 @@ def fetch_markets(ex) -> list[str]:
         if CONFIG.get("use_vol_filter"):
             tickers = safe_fetch_tickers(ex, syms[:150])
             min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
-            syms = [
-                s
-                for s in syms
-                if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol
-            ]
+            syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
@@ -4801,6 +4951,8 @@ def open_position(ex, scan: dict):
         return
     if symbol in state.positions:
         return
+    if symbol in state.short_positions:
+        return
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert")
         return
@@ -4899,7 +5051,7 @@ def open_position(ex, scan: dict):
 
     fg_boost = fg_idx.buy_boost()
     # DNA-Boost in Position-Sizing einbeziehen
-    dna_mult = dna_adjustment["multiplier"] if dna_adjustment else 1.0
+    dna_mult = dna_adjustment.get("multiplier", 1.0) if dna_adjustment else 1.0
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
         if CONFIG["ai_use_kelly"]
@@ -4911,7 +5063,13 @@ def open_position(ex, scan: dict):
         return
 
     fee = invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
+    if price <= 0:
+        log.warning(f"open_position {symbol}: Preis ist 0, überspringe")
+        return
     qty = (invest - fee) / price
+    if qty <= 0:
+        log.warning(f"open_position {symbol}: qty <= 0 (invest={invest:.2f}, fee={fee:.2f})")
+        return
 
     # ── Smart Exits: Dynamische SL/TP ────────────────────────────────────
     if smart_exits.enabled:
@@ -4923,6 +5081,9 @@ def open_position(ex, scan: dict):
 
     if CONFIG.get("paper_trading", True):
         with state._lock:
+            if invest > state.balance:
+                log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
+                return
             state.balance -= invest
     else:
         try:
@@ -4999,10 +5160,12 @@ def open_position(ex, scan: dict):
 
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
-    pos = state.positions.get(symbol)
-    if not pos:
-        return
-    price = state.prices.get(symbol, pos.get("entry", 0))
+    partial_ratio = max(0.01, min(partial_ratio, 1.0))
+    with state._lock:
+        pos = state.positions.get(symbol)
+        if not pos:
+            return
+        price = state.prices.get(symbol, pos.get("entry", 0))
     is_partial = partial_ratio < 1.0
 
     close_qty = pos.get("qty", 0) * partial_ratio
@@ -5010,7 +5173,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     entry = pos.get("entry") or price
     if entry <= 0:
         entry = price
-    pnl_pct = (price - entry) / entry * 100 if entry > 0 else 0.0
+    if price <= 0 or entry <= 0:
+        log.warning(f"close_position {symbol}: ungültiger Preis {price} / Entry {entry}")
+        return
+    pnl_pct = (price - entry) / entry * 100
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5026,9 +5192,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
 
     if is_partial:
         # Teilverkauf → Position aktualisieren
-        pos["qty"] -= close_qty
-        pos["invested"] -= close_invest
-        pos["partial_sold"] = pos.get("partial_sold", 0) + partial_ratio
+        with state._lock:
+            pos["qty"] = max(0, pos["qty"] - close_qty)
+            pos["invested"] = max(0, pos["invested"] - close_invest)
+            pos["partial_sold"] = min(1.0, pos.get("partial_sold", 0) + partial_ratio)
         log.info(f"🔶 PARTIAL {symbol} {partial_ratio * 100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
         state.add_activity(
             "🔶",
@@ -5122,6 +5289,22 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
     except Exception:
         pass  # LLM-Analyse ist optional
+    # Revenue Tracking: Record trade with fees/slippage for real PnL
+    try:
+        revenue_tracker.record_trade(
+            {
+                "symbol": symbol,
+                "side": "sell",
+                "amount": close_qty,
+                "price": price,
+                "fee": fee,
+                "strategy": reason,
+                "pnl": pnl,
+                "timestamp": datetime.now(),
+            }
+        )
+    except Exception:
+        pass  # Revenue tracking is optional
     emit_event(
         "trade",
         {
@@ -5188,8 +5371,11 @@ def try_dca(ex, symbol):
         return
     # Nachkauf
     dca_invest = pos.get("invested", 0) * CONFIG.get("dca_size_mult", 1.0)
-    dca_invest = min(dca_invest, state.balance * 0.15)
+    with state._lock:
+        dca_invest = min(dca_invest, state.balance * 0.15)
     if dca_invest < 5:
+        return
+    if price <= 0:
         return
     fee = dca_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     add_qty = (dca_invest - fee) / price
@@ -5201,6 +5387,9 @@ def try_dca(ex, symbol):
     new_entry = total_cost / total_qty
     if CONFIG.get("paper_trading", True):
         with state._lock:
+            if dca_invest > state.balance:
+                log.warning(f"DCA {symbol}: invest {dca_invest:.2f} > balance {state.balance:.2f}")
+                return
             state.balance -= dca_invest
     else:
         try:
@@ -5243,48 +5432,56 @@ def manage_positions(ex):
             with state._lock:
                 state.prices[symbol] = price
             adv_risk.update_volatility(price)  # [25] EWMA vol update
-        except Exception:
-            # Fallback: letzten bekannten Preis nutzen für SL/TP-Prüfung
+        except (ccxt.BaseError, OSError, TimeoutError) as ticker_err:
+            log.debug(f"Ticker {symbol}: {ticker_err}")
             price = state.prices.get(symbol)
             if price is None:
                 continue
 
+        # Re-check: Position könnte zwischen fetch_ticker und jetzt geschlossen worden sein
+        with state._lock:
+            pos = state.positions.get(symbol)
+        if not pos:
+            continue
+
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
         pos_entry = pos.get("entry") or price
-        if (
-            pos_entry
-            and CONFIG.get("break_even_enabled")
-            and not pos.get("break_even_set")
-            and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
-        ):
-            be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
-            if be_sl > pos.get("sl", 0):  # Nur nach oben verschieben
-                pos["sl"] = be_sl
-                pos["break_even_set"] = True
-                log.info(
-                    f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
-                    f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
-                )
+        if pos_entry and pos_entry > 0:
+            with state._lock:
+                if (
+                    CONFIG.get("break_even_enabled")
+                    and not pos.get("break_even_set")
+                    and (price - pos_entry) / pos_entry >= CONFIG.get("break_even_trigger", 0.015)
+                ):
+                    be_sl = pos_entry * (1 + CONFIG.get("break_even_buffer", 0.001))
+                    if be_sl > pos.get("sl", 0):
+                        pos["sl"] = be_sl
+                        pos["break_even_set"] = True
+                        log.info(
+                            f"🔒 Break-Even {symbol}: SL → {be_sl:.4f} "
+                            f"(+{CONFIG.get('break_even_buffer', 0.001) * 100:.1f}%)"
+                        )
 
         # Smart Exits: Dynamische SL/TP-Anpassung basierend auf aktueller Volatilität
         if smart_exits.enabled:
             atr_val = pos.get("_last_atr", 0)
-            # ATR aus letztem Scan oder geschätzt aus Preisbewegung
-            if atr_val <= 0:
-                atr_val = abs(price - pos_entry) * 0.5  # Grobe Schätzung
+            if atr_val <= 0 and pos_entry:
+                atr_val = abs(price - pos_entry) * 0.5
             exit_regime = pos.get("exit_regime", "bull" if regime.is_bull else "bear")
             new_smart_sl, new_smart_tp = smart_exits.adapt(symbol, pos, price, atr_val, exit_regime)
-            if new_smart_sl and new_smart_sl > pos.get("sl", 0):
-                pos["sl"] = new_smart_sl
-            if new_smart_tp and new_smart_tp > pos.get("tp", 0):
-                pos["tp"] = new_smart_tp
+            with state._lock:
+                if new_smart_sl and new_smart_sl > pos.get("sl", 0):
+                    pos["sl"] = new_smart_sl
+                if new_smart_tp and new_smart_tp > pos.get("tp", 0):
+                    pos["tp"] = new_smart_tp
 
         # Trailing Stop
-        if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
-            pos["highest"] = price
-            new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
-            if new_sl > pos.get("sl", 0):  # Trailing Stop nur nach oben verschieben
-                pos["sl"] = new_sl
+        with state._lock:
+            if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
+                pos["highest"] = price
+                new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
+                if new_sl > pos.get("sl", 0):
+                    pos["sl"] = new_sl
 
         # Partial Take-Profit – pro Level separat prüfen, nicht nur Level 0
         # Jedes Level hat einen eigenen Index. "partial_tp_done" speichert,
@@ -5381,6 +5578,11 @@ def bot_loop():
         if state.paused:
             time.sleep(5)
             continue
+        # Auto-Healing: Signal that bot loop is alive
+        try:
+            healer.heartbeat()
+        except Exception:
+            pass
         try:
             if ex is None:
                 try:
@@ -5434,7 +5636,8 @@ def bot_loop():
                             emit_event(
                                 "trade", {**act, "type": act["action"].lower(), "source": "grid"}
                             )
-                state.balance = bal_ref[0]
+                with state._lock:
+                    state.balance = bal_ref[0]
             price_alerts.check(state.prices)
 
             # Anomalie global prüfen
@@ -5528,6 +5731,26 @@ def bot_loop():
 
             emit_event("update", state.snapshot())
 
+            # Autonomous agent updates (every 10 iterations)
+            if state.iteration % 10 == 0:
+                try:
+                    emit_event("healing_update", healer.health_snapshot())
+                except Exception:
+                    pass
+                try:
+                    emit_event("revenue_update", revenue_tracker.snapshot())
+                except Exception:
+                    pass
+                try:
+                    emit_event("cluster_update", cluster_ctrl.snapshot())
+                except Exception:
+                    pass
+                # Auto-resolve stale alerts
+                try:
+                    alert_escalation.auto_resolve_stale()
+                except Exception:
+                    pass
+
         # [Verbesserung #5] Differenzierte ccxt-Fehlerbehandlung
         except ccxt.RateLimitExceeded as e:
             log.warning(f"Rate-Limit: {e} – warte 60s")
@@ -5585,7 +5808,8 @@ def api_heatmap_v1():
         ex = create_exchange()
         return jsonify(get_heatmap_data(ex))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/backtest", methods=["POST"])
@@ -5608,7 +5832,8 @@ def api_backtest():
         )
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/tax")
@@ -5835,7 +6060,8 @@ def api_admin_exchanges():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/admin/exchanges/<int:exchange_id>/toggle", methods=["POST"])
@@ -5853,7 +6079,8 @@ def api_admin_exchange_toggle(exchange_id):
                 )
         return jsonify({"ok": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/signal", methods=["POST"])
@@ -5949,7 +6176,8 @@ def api_balance_all():
         data = fetch_aggregated_balance()
         return jsonify(data)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/fees")
@@ -5989,7 +6217,8 @@ def api_arb():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # Admin Routes
@@ -6098,7 +6327,8 @@ def api_heatmap_legacy():
         ex = create_exchange()
         return jsonify(get_heatmap_data(ex))
     except Exception as e:
-        return jsonify({"error": str(e)})
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"})
 
 
 @app.route("/api/ohlcv/<path:symbol>")
@@ -6115,7 +6345,8 @@ def api_ohlcv(symbol):
         trades = [t for t in state.closed_trades if t.get("symbol") == sym][:20]
         return jsonify({"ohlcv": ohlcv, "trades": trades})
     except Exception as e:
-        return jsonify({"error": str(e)})
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"})
 
 
 @app.route("/api/tax_report")
@@ -6192,7 +6423,8 @@ def api_backup_verify():
         result = db.verify_backup(latest)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/docs")
@@ -6282,7 +6514,8 @@ def api_revoke_token(token_id):
         _audit("token_revoked", f"token_id={token_id}", request.user_id)
         return jsonify({"success": True})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
@@ -6314,6 +6547,41 @@ def prometheus_metrics():
 _ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
 _ws_limits_last_cleanup: float = 0.0
 _ws_limits_lock = threading.Lock()
+
+
+def _ws_auth_required() -> bool:
+    """Check if the WebSocket client is authenticated.
+
+    Returns:
+        True if authenticated, False otherwise (also emits error).
+    """
+    if not session.get("user_id"):
+        emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
+        return False
+    return True
+
+
+def _ws_admin_required() -> bool:
+    """Check if the WebSocket client is an authenticated admin.
+
+    Re-verifies role from database to prevent privilege escalation
+    via session manipulation.
+
+    Returns:
+        True if admin, False otherwise (also emits error).
+    """
+    if not _ws_auth_required():
+        return False
+    uid = session.get("user_id")
+    try:
+        user = db.get_user_by_id(uid)
+        if not user or user.get("role") != "admin":
+            emit("status", {"msg": "Nur Admin", "type": "error"})
+            return False
+    except Exception:
+        emit("status", {"msg": "Nur Admin", "type": "error"})
+        return False
+    return True
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
@@ -6395,6 +6663,8 @@ def on_request_state():
 
 @socketio.on("start_bot")
 def on_start_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("start_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6413,6 +6683,8 @@ def on_start_bot():
 
 @socketio.on("stop_bot")
 def on_stop_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("stop_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6425,6 +6697,8 @@ def on_stop_bot():
 
 @socketio.on("pause_bot")
 def on_pause_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("pause_bot", min_interval=2.0):
         return
     with state._lock:
@@ -6435,8 +6709,7 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("update_config", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
@@ -6527,8 +6800,7 @@ def on_update_config(data):
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
     raw_key = data.get("api_key", "")
@@ -6615,6 +6887,8 @@ def on_reset_ai():
 
 @socketio.on("close_position")
 def on_close_position(data):
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("close_position", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6633,6 +6907,9 @@ def on_close_position(data):
 
 @socketio.on("run_backtest")
 def on_run_backtest(data):
+    if not _ws_auth_required():
+        return
+
     def _bt():
         try:
             ex = create_exchange()
@@ -6658,6 +6935,8 @@ def on_run_backtest(data):
 
 @socketio.on("add_price_alert")
 def on_add_alert(data):
+    if not _ws_auth_required():
+        return
     uid = session.get("user_id", 1)
     db.add_alert(
         data.get("symbol", ""),
@@ -6671,12 +6950,17 @@ def on_add_alert(data):
 
 @socketio.on("delete_price_alert")
 def on_delete_alert(data):
+    if not _ws_auth_required():
+        return
     db.delete_alert(_safe_int(data.get("id", 0), 0))
     emit("update", state.snapshot(), broadcast=True)
 
 
 @socketio.on("manual_backup")
 def on_manual_backup():
+    if not _ws_auth_required():
+        return
+
     def _bk():
         path = db.backup()
         if path:
@@ -6692,12 +6976,16 @@ def on_manual_backup():
 
 @socketio.on("send_daily_report")
 def on_send_report():
+    if not _ws_auth_required():
+        return
     threading.Thread(target=daily_sched._send_report, daemon=True).start()
     emit("status", {"msg": "📊 Report wird gesendet...", "type": "info"})
 
 
 @socketio.on("reset_circuit_breaker")
 def on_reset_cb():
+    if not _ws_auth_required():
+        return
     with risk._lock:
         risk.circuit_breaker_until = None
         risk.consecutive_losses = 0
@@ -6707,6 +6995,9 @@ def on_reset_cb():
 
 @socketio.on("scan_arbitrage")
 def on_scan_arb():
+    if not _ws_auth_required():
+        return
+
     def _arb():
         opps = arb_scanner.scan(state.markets[:30])
         socketio.emit(
@@ -6719,19 +7010,41 @@ def on_scan_arb():
 
 @socketio.on("update_dominance")
 def on_update_dominance():
+    if not _ws_auth_required():
+        return
     threading.Thread(target=dominance.update, daemon=True).start()
     emit("status", {"msg": "🌐 Dominanz-Update läuft...", "type": "info"})
 
 
 @socketio.on("admin_create_user")
 def on_admin_create_user(data):
-    if session.get("user_role") != "admin":
-        emit("status", {"msg": "❌ Kein Admin", "type": "error"})
+    if not _ws_admin_required():
+        return
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+    role = str(data.get("role", "user")).strip()
+    if not username or len(username) < 3 or len(username) > 64:
+        emit("status", {"msg": "❌ Username muss 3-64 Zeichen haben", "type": "error"})
+        return
+    if not username.replace("_", "").replace("-", "").isalnum():
+        emit("status", {"msg": "❌ Username: nur Buchstaben, Zahlen, -, _", "type": "error"})
+        return
+    if len(password) < 12:
+        emit("status", {"msg": "❌ Passwort muss mind. 12 Zeichen haben", "type": "error"})
+        return
+    if not any(c.isupper() for c in password) or not any(c.islower() for c in password):
+        emit("status", {"msg": "❌ Passwort braucht Groß- und Kleinbuchstaben", "type": "error"})
+        return
+    if not any(c.isdigit() for c in password):
+        emit("status", {"msg": "❌ Passwort braucht mindestens eine Zahl", "type": "error"})
+        return
+    if role not in ("admin", "user", "viewer"):
+        emit("status", {"msg": "❌ Ungültige Rolle", "type": "error"})
         return
     ok = db.create_user(
-        data.get("username", ""),
-        data.get("password", ""),
-        data.get("role", "user"),
+        username,
+        password,
+        role,
         _safe_float(data.get("balance", 10000), 10000.0),
     )
     emit(
@@ -6866,14 +7179,14 @@ def api_audit_log():
                 rows = c.fetchall()
         return jsonify({"logs": [dict(r) for r in rows]})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 # ════════════════════════════════════════════════════════════════════════════════
 # GRID TRADING ENGINE (modularisiert → services/grid_trading.py)
 # ════════════════════════════════════════════════════════════════════════════════
 from services.grid_trading import GridTradingEngine  # noqa: E402
-
 
 grid_engine = GridTradingEngine()
 
@@ -6894,6 +7207,7 @@ def api_grid_create():
     upper = _safe_float(d.get("upper", 0), 0.0)
     levels = _safe_int(d.get("levels", 10), 10)
     invest = _safe_float(d.get("invest_per_level", 100.0), 100.0)
+    levels = min(levels, 200)
     if not symbol or lower <= 0 or upper <= lower:
         return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
     result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
@@ -6912,19 +7226,31 @@ def api_grid_delete(symbol):
 
 @socketio.on("create_grid")
 def ws_create_grid(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
-    grid_engine.create_grid(
-        data.get("symbol", ""),
-        _safe_float(data.get("lower", 0), 0.0),
-        _safe_float(data.get("upper", 0), 0.0),
-        _safe_int(data.get("levels", 10), 10),
+    symbol = data.get("symbol", "").strip()
+    if not symbol:
+        emit("status", {"msg": "Symbol erforderlich", "type": "error"})
+        return
+    lower = _safe_float(data.get("lower", 0), 0.0)
+    upper = _safe_float(data.get("upper", 0), 0.0)
+    levels = min(_safe_int(data.get("levels", 10), 10), 200)
+    if lower <= 0 or upper <= lower:
+        emit("status", {"msg": "Ungültige Grid-Parameter", "type": "error"})
+        return
+    result = grid_engine.create_grid(
+        symbol,
+        lower,
+        upper,
+        levels,
         _safe_float(data.get("invest_per_level", 100), 100.0),
     )
+    if "error" in result:
+        emit("status", {"msg": result["error"], "type": "error"})
+        return
     emit(
         "status",
-        {"msg": f"✅ Grid {data.get('symbol', '')} erstellt", "type": "success"},
+        {"msg": f"✅ Grid {symbol} erstellt", "type": "success"},
         broadcast=True,
     )
 
@@ -6932,6 +7258,8 @@ def ws_create_grid(data):
 # ── Undo Close ────────────────────────────────────────────────────────────────
 @socketio.on("undo_close")
 def on_undo_close(data):
+    if not _ws_auth_required():
+        return
     sym = data.get("symbol", "")
     if not sym:
         emit("status", {"msg": "❌ Kein Symbol angegeben", "type": "error"})
@@ -6950,6 +7278,8 @@ def on_undo_close(data):
 # ── GitHub Updater ─────────────────────────────────────────────────────────────
 @socketio.on("check_update")
 def on_check_update():
+    if not _ws_auth_required():
+        return
     try:
         import subprocess
 
@@ -6984,8 +7314,7 @@ def on_check_update():
 
 @socketio.on("apply_update")
 def on_apply_update():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     try:
         import subprocess
@@ -7006,8 +7335,7 @@ def on_apply_update():
 
 @socketio.on("rollback_update")
 def on_rollback_update():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     try:
         import subprocess
@@ -7047,8 +7375,7 @@ def on_stop_exchange(data):
 
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     api_key = data.get("api_key", "")
@@ -7580,6 +7907,252 @@ def api_market_regime():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# AUTONOMOUS AGENT API ENDPOINTS (v1.5)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+# ── Auto-Healing Agent ──────────────────────────────────────────────────────
+
+
+@app.route("/api/v1/health/basic")
+def api_health_basic():
+    """Basic health check endpoint (used by cluster nodes)."""
+    return jsonify(
+        {
+            "status": "ok",
+            "running": state.running,
+            "version": BOT_VERSION,
+        }
+    )
+
+
+@app.route("/api/v1/health/snapshot")
+@api_auth_required
+def api_health_snapshot():
+    """Auto-Healing Agent: current health status."""
+    return jsonify(healer.health_snapshot())
+
+
+@app.route("/api/v1/health/incidents")
+@api_auth_required
+def api_health_incidents():
+    """Auto-Healing Agent: recent incident history."""
+    snap = healer.health_snapshot()
+    return jsonify({"incidents": snap.get("incidents", [])})
+
+
+# ── Revenue Tracking Agent ──────────────────────────────────────────────────
+
+
+@app.route("/api/v1/revenue/snapshot")
+@api_auth_required
+def api_revenue_snapshot():
+    """Revenue Tracking Agent: full performance snapshot."""
+    return jsonify(revenue_tracker.snapshot())
+
+
+@app.route("/api/v1/revenue/daily")
+@api_auth_required
+def api_revenue_daily():
+    """Revenue Tracking Agent: daily PnL summary."""
+    date_str = request.args.get("date")
+    dt = None
+    if date_str:
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
+    return jsonify(revenue_tracker.get_daily_summary(dt))
+
+
+@app.route("/api/v1/revenue/weekly")
+@api_auth_required
+def api_revenue_weekly():
+    """Revenue Tracking Agent: weekly PnL summary."""
+    return jsonify(revenue_tracker.get_weekly_summary())
+
+
+@app.route("/api/v1/revenue/monthly")
+@api_auth_required
+def api_revenue_monthly():
+    """Revenue Tracking Agent: monthly PnL summary."""
+    return jsonify(revenue_tracker.get_monthly_summary())
+
+
+@app.route("/api/v1/revenue/strategies")
+@api_auth_required
+def api_revenue_strategies():
+    """Revenue Tracking Agent: per-strategy performance."""
+    return jsonify(revenue_tracker.get_strategy_performance())
+
+
+@app.route("/api/v1/revenue/losing")
+@api_auth_required
+def api_revenue_losing():
+    """Revenue Tracking Agent: detect losing strategies."""
+    return jsonify({"losing_strategies": revenue_tracker.detect_losing_strategies()})
+
+
+# ── Multi-Server Cluster Control Agent ──────────────────────────────────────
+
+
+@app.route("/api/v1/cluster/snapshot")
+@api_auth_required
+def api_cluster_snapshot():
+    """Cluster Control: full cluster state snapshot."""
+    return jsonify(cluster_ctrl.snapshot())
+
+
+@app.route("/api/v1/cluster/nodes", methods=["GET"])
+@api_auth_required
+def api_cluster_nodes_list():
+    """Cluster Control: list all registered nodes."""
+    nodes = cluster_ctrl.get_nodes()
+    return jsonify({"nodes": [n.to_dict() for n in nodes]})
+
+
+@app.route("/api/v1/cluster/nodes", methods=["POST"])
+@api_auth_required
+def api_cluster_nodes_add():
+    """Cluster Control: register a new remote node."""
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    host = data.get("host", "").strip()
+    port = _safe_int(data.get("port", 5000), 5000)
+    api_token = data.get("api_token", "")
+    if not name or not host:
+        return jsonify({"error": "name and host are required"}), 400
+    try:
+        node = cluster_ctrl.add_node(name, host, port, api_token)
+        return jsonify({"ok": True, "node": node.to_dict()}), 201
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 409
+
+
+@app.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
+@api_auth_required
+def api_cluster_nodes_remove(name):
+    """Cluster Control: remove a registered node."""
+    try:
+        cluster_ctrl.remove_node(name)
+        return jsonify({"ok": True})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/start", methods=["POST"])
+@api_auth_required
+def api_cluster_node_start(name):
+    """Cluster Control: start trading bot on remote node."""
+    try:
+        result = cluster_ctrl.start_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/stop", methods=["POST"])
+@api_auth_required
+def api_cluster_node_stop(name):
+    """Cluster Control: stop trading bot on remote node."""
+    try:
+        result = cluster_ctrl.stop_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/restart", methods=["POST"])
+@api_auth_required
+def api_cluster_node_restart(name):
+    """Cluster Control: restart trading bot on remote node."""
+    try:
+        result = cluster_ctrl.restart_bot(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/cluster/nodes/<name>/deploy", methods=["POST"])
+@api_auth_required
+def api_cluster_node_deploy(name):
+    """Cluster Control: deploy update to remote node."""
+    try:
+        result = cluster_ctrl.deploy_update(name)
+        return jsonify({"ok": result})
+    except KeyError:
+        return jsonify({"error": f"Node '{name}' not found"}), 404
+
+
+@app.route("/api/v1/metrics")
+@api_auth_required
+def api_metrics():
+    """Local node metrics (used by cluster controller for aggregation)."""
+    return jsonify(
+        {
+            "portfolio_value": state.portfolio_value(),
+            "positions": len(state.positions),
+            "short_positions": len(state.short_positions),
+            "balance": state.balance,
+            "running": state.running,
+            "iteration": state.iteration,
+        }
+    )
+
+
+@app.route("/api/v1/cluster/metrics")
+@api_auth_required
+def api_cluster_metrics():
+    """Cluster Control: aggregated metrics across all nodes."""
+    return jsonify(cluster_ctrl.get_cluster_metrics())
+
+
+# ── Alert Escalation ────────────────────────────────────────────────────────
+
+
+@app.route("/api/v1/alerts/active")
+@api_auth_required
+def api_alerts_active():
+    """Alert Escalation: active alerts sorted by severity."""
+    return jsonify({"alerts": alert_escalation.get_active_alerts()})
+
+
+@app.route("/api/v1/alerts/history")
+@api_auth_required
+def api_alerts_history():
+    """Alert Escalation: recent alert history."""
+    limit = _safe_int(request.args.get("limit", 50), 50)
+    return jsonify({"history": alert_escalation.get_history(limit)})
+
+
+@app.route("/api/v1/alerts/snapshot")
+@api_auth_required
+def api_alerts_snapshot():
+    """Alert Escalation: full escalation state snapshot."""
+    return jsonify(alert_escalation.snapshot())
+
+
+@app.route("/api/v1/alerts/<alert_id>/acknowledge", methods=["POST"])
+@api_auth_required
+def api_alert_acknowledge(alert_id):
+    """Alert Escalation: acknowledge an active alert."""
+    ok = alert_escalation.acknowledge(alert_id)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
+
+
+@app.route("/api/v1/alerts/<alert_id>/resolve", methods=["POST"])
+@api_auth_required
+def api_alert_resolve(alert_id):
+    """Alert Escalation: resolve an active alert."""
+    ok = alert_escalation.resolve(alert_id)
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Fehlende API-Endpunkte (vom Dashboard referenziert)
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -7588,15 +8161,19 @@ def api_market_regime():
 def api_gas():
     """ETH Gas Fees via öffentlicher API."""
     try:
-        r = requests.get("https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5)
+        r = requests.get(
+            "https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5
+        )
         if r.status_code == 200:
             data = r.json().get("result", {})
-            return jsonify({
-                "low": data.get("SafeGasPrice", "0"),
-                "medium": data.get("ProposeGasPrice", "0"),
-                "high": data.get("FastGasPrice", "0"),
-                "source": "etherscan",
-            })
+            return jsonify(
+                {
+                    "low": data.get("SafeGasPrice", "0"),
+                    "medium": data.get("ProposeGasPrice", "0"),
+                    "high": data.get("FastGasPrice", "0"),
+                    "source": "etherscan",
+                }
+            )
         return jsonify({"low": "0", "medium": "0", "high": "0", "source": "unavailable"})
     except Exception:
         return jsonify({"low": "0", "medium": "0", "high": "0", "source": "error"})
@@ -7626,7 +8203,8 @@ def api_exchanges():
             result.append(d)
         return jsonify(result)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/copy-trading/register", methods=["POST"])
@@ -7659,13 +8237,17 @@ def api_copy_trading_test():
 def api_ai_shared_status():
     """Status des gemeinsamen KI-Wissenssystems."""
     summary = knowledge_base.get_market_summary()
-    return jsonify({
-        "llm_enabled": knowledge_base.llm_enabled,
-        "total_entries": summary.get("total_knowledge_entries", 0),
-        "top_symbols": summary.get("top_symbols", [])[:5],
-        "strategy_ranking": summary.get("strategy_ranking", [])[:5],
-        "cached_analysis": knowledge_base.cached_market_analysis[:200] if knowledge_base.cached_market_analysis else None,
-    })
+    return jsonify(
+        {
+            "llm_enabled": knowledge_base.llm_enabled,
+            "total_entries": summary.get("total_knowledge_entries", 0),
+            "top_symbols": summary.get("top_symbols", [])[:5],
+            "strategy_ranking": summary.get("strategy_ranking", [])[:5],
+            "cached_analysis": knowledge_base.cached_market_analysis[:200]
+            if knowledge_base.cached_market_analysis
+            else None,
+        }
+    )
 
 
 @app.route("/api/v1/exchanges/combined/trades")
@@ -7681,11 +8263,15 @@ def api_ai_shared_force_sync():
     """Erzwingt Synchronisation des geteilten KI-Modells."""
     if not ai_engine.is_trained:
         return jsonify({"updated": False, "error": "Kein trainiertes Modell vorhanden"})
-    return jsonify({
-        "updated": True,
-        "version": ai_engine.training_ver,
-        "accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
-    })
+    return jsonify(
+        {
+            "updated": True,
+            "version": ai_engine.training_ver,
+            "accuracy": round(ai_engine.wf_accuracy * 100, 1)
+            if hasattr(ai_engine, "wf_accuracy")
+            else 0,
+        }
+    )
 
 
 @app.route("/api/v1/ai/shared/train", methods=["POST"])
@@ -7694,7 +8280,12 @@ def api_ai_shared_train():
     """Startet globales KI-Training."""
     n = len(ai_engine.X_raw)
     if n < CONFIG.get("ai_min_samples", 50):
-        return jsonify({"started": False, "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})"})
+        return jsonify(
+            {
+                "started": False,
+                "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})",
+            }
+        )
     threading.Thread(target=ai_engine._train, daemon=True).start()
     return jsonify({"started": True, "samples_total": n, "new_samples": n})
 
@@ -7708,11 +8299,15 @@ def api_ai_feature_importance():
     weights = ai_engine.weights if hasattr(ai_engine, "weights") else {}
     names = list(weights.keys()) if weights else []
     importances = list(weights.values()) if weights else []
-    return jsonify({
-        "feature_names": names,
-        "importances": importances,
-        "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1) if hasattr(ai_engine, "wf_accuracy") else 0,
-    })
+    return jsonify(
+        {
+            "feature_names": names,
+            "importances": importances,
+            "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1)
+            if hasattr(ai_engine, "wf_accuracy")
+            else 0,
+        }
+    )
 
 
 @app.route("/api/v1/portfolio/optimize", methods=["POST"])
@@ -7739,16 +8334,19 @@ def api_portfolio_optimize():
         weight = round(1.0 / n, 4)
         allocations = {s: round(weight * 100, 1) for s in returns_data}
         avg_ret = sum(sum(r) / len(r) for r in returns_data.values()) / n * 100
-        return jsonify({
-            "symbols": list(returns_data.keys()),
-            "weights": [weight] * n,
-            "allocations": allocations,
-            "exp_return": round(avg_ret, 2),
-            "exp_volatility": round(avg_ret * 1.5, 2),
-            "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
-        })
+        return jsonify(
+            {
+                "symbols": list(returns_data.keys()),
+                "weights": [weight] * n,
+                "allocations": allocations,
+                "exp_return": round(avg_ret, 2),
+                "exp_volatility": round(avg_ret * 1.5, 2),
+                "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
+            }
+        )
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        log.error("API error: %s", e)
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/v1/backtest/compare", methods=["POST"])
@@ -7767,19 +8365,32 @@ def api_backtest_compare():
         full_sym = f"{sym}/USDT" if "/" not in sym else sym
         try:
             result = bt.run(
-                bt_ex, full_sym, tf, candles,
+                bt_ex,
+                full_sym,
+                tf,
+                candles,
                 CONFIG.get("stop_loss_pct", 0.025),
                 CONFIG.get("take_profit_pct", 0.06),
                 CONFIG.get("min_vote_score", 0.3),
             )
-            results[sym] = result if isinstance(result, dict) else {
-                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
-                "max_drawdown": 0, "total_trades": 0,
-            }
+            results[sym] = (
+                result
+                if isinstance(result, dict)
+                else {
+                    "return_pct": 0,
+                    "win_rate": 0,
+                    "sharpe_ratio": 0,
+                    "max_drawdown": 0,
+                    "total_trades": 0,
+                }
+            )
         except Exception:
             results[sym] = {
-                "return_pct": 0, "win_rate": 0, "sharpe_ratio": 0,
-                "max_drawdown": 0, "total_trades": 0,
+                "return_pct": 0,
+                "win_rate": 0,
+                "sharpe_ratio": 0,
+                "max_drawdown": 0,
+                "total_trades": 0,
             }
     return jsonify({"results": results})
 
@@ -7900,6 +8511,15 @@ def _graceful_shutdown(signum, _frame):
     sig_name = signal.Signals(signum).name
     log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
     state.running = False
+    # Stop autonomous agents
+    try:
+        healer.stop()
+    except Exception as e:
+        log.debug(f"Healer stop: {e}")
+    try:
+        cluster_ctrl.shutdown()
+    except Exception as e:
+        log.debug(f"Cluster shutdown: {e}")
     # DB-Pool schließen
     try:
         if db is not None and db._pool is not None:
@@ -7975,6 +8595,13 @@ if __name__ == "__main__":
     threading.Thread(target=fg_idx.update, daemon=True).start()
     threading.Thread(target=dominance.update, daemon=True).start()
     threading.Thread(target=safety_scan, daemon=True).start()
+
+    # Start autonomous agents
+    try:
+        healer.start()
+        log.info("🩺 Auto-Healing Agent gestartet")
+    except Exception as e:
+        log.warning(f"Auto-Healing Agent Start fehlgeschlagen: {e}")
 
     # Auto-Start: Bot sofort starten ohne Login
     if _AUTO_START:

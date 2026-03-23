@@ -18,7 +18,9 @@ Usage:
 
 from __future__ import annotations
 
+import ipaddress
 import logging
+import socket
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -32,6 +34,47 @@ log = logging.getLogger("trevlix.cluster")
 
 _DEFAULT_TIMEOUT = 5  # seconds
 _DEFAULT_HEALTH_INTERVAL = 30  # seconds
+
+# Private/reserved IP ranges that must not be used as cluster node hosts
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("169.254.0.0/16"),  # Link-local / cloud metadata
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+    ipaddress.ip_network("fe80::/10"),
+]
+
+
+def _validate_host(host: str) -> None:
+    """Validate that a host is not a private/reserved IP (SSRF prevention).
+
+    Args:
+        host: Hostname or IP address string.
+
+    Raises:
+        ValueError: If the host resolves to a blocked IP range.
+    """
+    try:
+        addr = ipaddress.ip_address(host)
+    except ValueError:
+        # It's a hostname – resolve it first
+        try:
+            resolved = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            addrs = {ipaddress.ip_address(r[4][0]) for r in resolved}
+        except socket.gaierror:
+            raise ValueError(f"Cannot resolve hostname: {host}")
+        for addr in addrs:
+            for net in _BLOCKED_NETWORKS:
+                if addr in net:
+                    raise ValueError(f"Host '{host}' resolves to blocked IP range {net}")
+        return
+
+    for net in _BLOCKED_NETWORKS:
+        if addr in net:
+            raise ValueError(f"Host '{host}' is in blocked IP range {net}")
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +203,9 @@ class ClusterController:
         ValueError
             If a node with the same *name* already exists.
         """
+        _validate_host(host)
+        if not (1 <= port <= 65535):
+            raise ValueError(f"Invalid port: {port}")
         with self._lock:
             if name in self._nodes:
                 raise ValueError(f"Node '{name}' is already registered")

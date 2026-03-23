@@ -77,6 +77,7 @@ class KnowledgeBase:
         self._llm_endpoint = llm_endpoint
         self._llm_api_key = llm_api_key
         self._llm_model = llm_model
+        self._lock = threading.Lock()
         self._cache: dict[str, dict] = {}
         self._cache_ts: dict[str, float] = {}
         self._cache_ttl = 300  # 5 Minuten Cache
@@ -220,7 +221,7 @@ class KnowledgeBase:
                     "value": val,
                     "confidence": r.get("confidence", 0.5),
                     "source": r.get("source", "unknown"),
-                    "updated_at": r["updated_at"].isoformat() if r.get("updated_at") else None,
+                    "updated_at": r.get("updated_at").isoformat() if r.get("updated_at") else None,
                 }
                 result.append(d)
             return result
@@ -426,14 +427,16 @@ class KnowledgeBase:
             LLM-Antwort als String oder None bei Fehler/Cache-Miss.
         """
         now = time.time()
-        if cache_key in self._llm_cache:
-            if now - self._llm_cache_ts.get(cache_key, 0) < self._llm_cache_ttl:
-                return self._llm_cache[cache_key]
+        with self._lock:
+            if cache_key in self._llm_cache:
+                if now - self._llm_cache_ts.get(cache_key, 0) < self._llm_cache_ttl:
+                    return self._llm_cache[cache_key]
         answer = self.query_llm(prompt, context)
         if answer:
-            self._llm_cache[cache_key] = answer
-            self._llm_cache_ts[cache_key] = now
-            self._evict_cache(self._llm_cache, self._llm_cache_ts, self._llm_cache_max_size)
+            with self._lock:
+                self._llm_cache[cache_key] = answer
+                self._llm_cache_ts[cache_key] = now
+                self._evict_cache(self._llm_cache, self._llm_cache_ts, self._llm_cache_max_size)
         return answer
 
     def analyze_trade_async(self, trade: dict, features: dict | None = None) -> None:
@@ -462,11 +465,11 @@ class KnowledgeBase:
             features: Optionale Feature-Daten.
         """
         try:
-            symbol = trade.get("symbol", "?")
+            symbol = str(trade.get("symbol", "?"))[:20]
             pnl = trade.get("pnl", 0)
             pnl_pct = trade.get("pnl_pct", 0)
-            reason = trade.get("reason", "")
-            regime = trade.get("regime", "unknown")
+            reason = str(trade.get("reason", ""))[:100]
+            regime = str(trade.get("regime", "unknown"))[:30]
             won = pnl > 0
 
             context = (

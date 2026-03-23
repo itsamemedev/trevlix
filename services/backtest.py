@@ -6,7 +6,8 @@ Berechnet Win-Rate, PnL, Drawdown und weitere Kennzahlen.
 
 import logging
 import threading
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import pandas as pd
 
@@ -135,7 +136,7 @@ class BacktestEngine:
             total_pnl = sum(t["pnl"] for t in trades)
             gp = sum(t["pnl"] for t in won)
             gl = abs(sum(t["pnl"] for t in lost))
-            pf = gp / gl if gl > 0 else 99.0
+            pf = gp / gl if gl > 0 else (float("inf") if gp > 0 else 0.0)
             dd = 0.0
             peak = start
             for e in equity:
@@ -165,4 +166,5 @@ class BacktestEngine:
                 threading.Thread(target=lambda r=result: self._save_fn(r), daemon=True).start()
             return result
         except Exception as e:
+            log.exception("Backtest failed for %s", symbol)
             return {"error": str(e), "symbol": symbol}

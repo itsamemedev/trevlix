@@ -560,7 +560,9 @@ def create_auth_blueprint(
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = user.get("role", "user")
-            session["last_active"] = datetime.now().isoformat()
+            now_iso = datetime.now().isoformat()
+            session["last_active"] = now_iso
+            session["session_created"] = now_iso
             _ensure_csrf()  # CSRF-Token nach Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "login", f"Login · {client_ip}", client_ip)
@@ -784,7 +786,9 @@ def create_auth_blueprint(
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = "admin"
-            session["last_active"] = datetime.now().isoformat()
+            now_iso = datetime.now().isoformat()
+            session["last_active"] = now_iso
+            session["session_created"] = now_iso
             _ensure_csrf()  # CSRF-Token nach Admin-Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "admin_login", f"Admin-Login · {client_ip}", client_ip)
@@ -880,8 +884,10 @@ def create_auth_blueprint(
         record_login_attempt_fn(client_ip)
 
         # Verifiziere Master-Passwort gegen ADMIN_PASSWORD aus Config
-        admin_pw = config.get("admin_password", "")
-        if not admin_pw or not hmac.compare_digest(master_password, admin_pw):
+        # Always run compare_digest to prevent timing attacks that reveal
+        # whether ADMIN_PASSWORD is configured.
+        admin_pw = config.get("admin_password", "") or "disabled"
+        if not hmac.compare_digest(master_password, admin_pw):
             audit_fn("admin_reset_failed", f"user={username[:32]} ip={client_ip} reason=master_pw")
             return redirect("/admin/reset-password?err=verify")
 
@@ -907,7 +913,10 @@ def create_auth_blueprint(
         # Passwort aktualisieren
         if db.update_password(user["id"], new_password):
             db_audit_fn(
-                user["id"], "admin_password_reset", f"Admin-PW-Reset · {client_ip}", client_ip
+                user["id"],
+                "admin_password_reset",
+                f"Admin-PW-Reset für '{username[:32]}' · {client_ip}",
+                client_ip,
             )
             session.clear()
             return redirect("/admin/reset-password?ok=1")

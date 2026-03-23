@@ -46,8 +46,8 @@ class GridTradingEngine:
         Returns:
             Grid-Konfiguration oder Fehler-Dict.
         """
-        if lower >= upper or levels < 2:
-            return {"error": "Ungültige Parameter: lower < upper, levels >= 2"}
+        if lower <= 0 or upper <= 0 or lower >= upper or levels < 2 or levels > 200:
+            return {"error": "Ungültige Parameter: 0 < lower < upper, 2 <= levels <= 200"}
         step = (upper - lower) / levels
         grid_levels = [round(lower + i * step, 6) for i in range(levels + 1)]
         with self._lock:
@@ -69,7 +69,9 @@ class GridTradingEngine:
         log.info(f"[GRID] {symbol}: {levels} Stufen zwischen {lower}–{upper} · {step:.4f}/Stufe")
         return self.grids[symbol]
 
-    def update(self, symbol: str, current_price: float, balance_ref: list[float]) -> list[dict[str, Any]]:
+    def update(
+        self, symbol: str, current_price: float, balance_ref: list[float]
+    ) -> list[dict[str, Any]]:
         """Prüft für ein Symbol ob Grid-Orders ausgelöst werden sollen.
 
         Args:
@@ -83,7 +85,9 @@ class GridTradingEngine:
         with self._lock:
             return self._update_locked(symbol, current_price, balance_ref)
 
-    def _update_locked(self, symbol: str, current_price: float, balance_ref: list[float]) -> list[dict[str, Any]]:
+    def _update_locked(
+        self, symbol: str, current_price: float, balance_ref: list[float]
+    ) -> list[dict[str, Any]]:
         grid = self.grids.get(symbol)
         if not grid or not grid["active"]:
             return []

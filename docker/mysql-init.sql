@@ -16,16 +16,16 @@ CREATE TABLE IF NOT EXISTS trades (
     id              INT AUTO_INCREMENT PRIMARY KEY,
     user_id         INT DEFAULT 1,
     symbol          VARCHAR(20),
-    entry           DOUBLE,
-    exit_price      DOUBLE,
-    qty             DOUBLE,
-    pnl             DOUBLE,
-    pnl_pct         DOUBLE,
+    entry           DECIMAL(20,8),
+    exit_price      DECIMAL(20,8),
+    qty             DECIMAL(20,8),
+    pnl             DECIMAL(16,4),
+    pnl_pct         DECIMAL(10,4),
     reason          VARCHAR(80),
-    confidence      DOUBLE,
-    ai_score        DOUBLE,
-    win_prob        DOUBLE,
-    invested        DOUBLE,
+    confidence      DECIMAL(6,4),
+    ai_score        DECIMAL(6,4),
+    win_prob        DECIMAL(6,4),
+    invested        DECIMAL(16,4),
     opened          DATETIME,
     closed          DATETIME,
     exchange        VARCHAR(20),
@@ -33,8 +33,8 @@ CREATE TABLE IF NOT EXISTS trades (
     trade_type      VARCHAR(10) DEFAULT 'long',
     partial_sold    TINYINT DEFAULT 0,
     dca_level       INT DEFAULT 0,
-    news_score      DOUBLE DEFAULT 0,
-    onchain_score   DOUBLE DEFAULT 0,
+    news_score      DECIMAL(8,4) DEFAULT 0,
+    onchain_score   DECIMAL(8,4) DEFAULT 0,
     INDEX idx_closed (closed),
     INDEX idx_symbol (symbol),
     INDEX idx_user   (user_id)
@@ -46,8 +46,8 @@ CREATE TABLE IF NOT EXISTS users (
     username        VARCHAR(50) UNIQUE,
     password_hash   VARCHAR(256),
     role            VARCHAR(20) DEFAULT 'user',
-    balance         DOUBLE DEFAULT 10000.0,
-    initial_balance DOUBLE DEFAULT 10000.0,
+    balance         DECIMAL(16,4) DEFAULT 10000.0,
+    initial_balance DECIMAL(16,4) DEFAULT 10000.0,
     api_key         VARCHAR(200),
     api_secret      VARCHAR(200),
     exchange        VARCHAR(20) DEFAULT 'cryptocom',
@@ -86,12 +86,14 @@ CREATE TABLE IF NOT EXISTS backtest_results (
     timeframe       VARCHAR(10),
     candles         INT,
     total_trades    INT,
-    win_rate        DOUBLE,
-    total_pnl       DOUBLE,
-    profit_factor   DOUBLE,
-    max_drawdown    DOUBLE,
+    win_rate        DECIMAL(6,2),
+    total_pnl       DECIMAL(16,4),
+    profit_factor   DECIMAL(10,4),
+    max_drawdown    DECIMAL(6,2),
     result_json     MEDIUMTEXT,
-    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_symbol (symbol),
+    INDEX idx_time   (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── Price Alerts ─────────────────────────────────────────────────
@@ -99,11 +101,13 @@ CREATE TABLE IF NOT EXISTS price_alerts (
     id           INT AUTO_INCREMENT PRIMARY KEY,
     user_id      INT DEFAULT 1,
     symbol       VARCHAR(20),
-    target_price DOUBLE,
+    target_price DECIMAL(20,8),
     direction    VARCHAR(10),
     triggered    TINYINT DEFAULT 0,
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
-    triggered_at DATETIME
+    triggered_at DATETIME,
+    INDEX idx_user      (user_id),
+    INDEX idx_triggered (triggered)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── Daily Reports ────────────────────────────────────────────────
@@ -156,13 +160,15 @@ CREATE TABLE IF NOT EXISTS arb_opportunities (
     id             INT AUTO_INCREMENT PRIMARY KEY,
     symbol         VARCHAR(20),
     exchange_buy   VARCHAR(20),
-    price_buy      DOUBLE,
+    price_buy      DECIMAL(20,8),
     exchange_sell  VARCHAR(20),
-    price_sell     DOUBLE,
-    spread_pct     DOUBLE,
+    price_sell     DECIMAL(20,8),
+    spread_pct     DECIMAL(8,4),
     executed       TINYINT DEFAULT 0,
-    profit         DOUBLE DEFAULT 0,
-    found_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+    profit         DECIMAL(16,4) DEFAULT 0,
+    found_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_found_at (found_at),
+    INDEX idx_symbol   (symbol)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── RL Episodes ──────────────────────────────────────────────────
@@ -184,7 +190,9 @@ CREATE TABLE IF NOT EXISTS api_tokens (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     last_used  DATETIME,
     expires_at DATETIME,
-    active     TINYINT DEFAULT 1
+    active     TINYINT DEFAULT 1,
+    INDEX idx_user   (user_id),
+    INDEX idx_active (active)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ── User Exchanges (Multi-Exchange pro User) ────────────────────
@@ -219,33 +227,6 @@ CREATE TABLE IF NOT EXISTS trade_dna (
     INDEX idx_time   (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- ── API Tokens ───────────────────────────────────────────────────
-CREATE TABLE IF NOT EXISTS api_tokens (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    user_id     INT,
-    token       VARCHAR(500),
-    label       VARCHAR(100),
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_used   DATETIME,
-    expires_at  DATETIME,
-    active      TINYINT DEFAULT 1
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
--- ── User Exchanges (Multi-Exchange pro User) ─────────────────────
-CREATE TABLE IF NOT EXISTS user_exchanges (
-    id          INT AUTO_INCREMENT PRIMARY KEY,
-    user_id     INT NOT NULL,
-    exchange    VARCHAR(20) NOT NULL,
-    api_key     VARCHAR(500),
-    api_secret  VARCHAR(500),
-    enabled     TINYINT DEFAULT 0,
-    is_primary  TINYINT DEFAULT 0,
-    created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_user_exchange(user_id, exchange),
-    INDEX idx_user(user_id),
-    INDEX idx_enabled(user_id, enabled)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
 -- ── Shared Knowledge (KI-Gemeinschaftswissen) ───────────────────
 CREATE TABLE IF NOT EXISTS shared_knowledge (
     id          INT AUTO_INCREMENT PRIMARY KEY,
@@ -258,4 +239,64 @@ CREATE TABLE IF NOT EXISTS shared_knowledge (
     updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uq_cat_key(category, key_name),
     INDEX idx_category(category)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Revenue Trades (Revenue Tracking Agent v1.5) ──────────────────
+CREATE TABLE IF NOT EXISTS revenue_trades (
+    id           INT AUTO_INCREMENT PRIMARY KEY,
+    symbol       VARCHAR(20),
+    side         VARCHAR(10),
+    amount       DECIMAL(20,8),
+    price        DECIMAL(20,8),
+    fee          DECIMAL(16,8) DEFAULT 0,
+    slippage_est DECIMAL(16,8) DEFAULT 0,
+    funding_fee  DECIMAL(16,8) DEFAULT 0,
+    strategy     VARCHAR(80),
+    gross_pnl    DECIMAL(16,4) DEFAULT 0,
+    net_pnl      DECIMAL(16,4) DEFAULT 0,
+    recorded_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_time     (recorded_at),
+    INDEX idx_strategy (strategy),
+    INDEX idx_symbol   (symbol)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Healing Incidents (Auto-Healing Agent v1.5) ───────────────────
+CREATE TABLE IF NOT EXISTS healing_incidents (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    service    VARCHAR(30) NOT NULL,
+    severity   VARCHAR(20) NOT NULL,
+    message    VARCHAR(500),
+    recovered  TINYINT DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_service (service),
+    INDEX idx_time    (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Cluster Nodes (Multi-Server Control Agent v1.5) ───────────────
+CREATE TABLE IF NOT EXISTS cluster_nodes (
+    id         INT AUTO_INCREMENT PRIMARY KEY,
+    name       VARCHAR(50) UNIQUE NOT NULL,
+    host       VARCHAR(255) NOT NULL,
+    port       INT DEFAULT 5000,
+    api_token  VARCHAR(500),
+    status     VARCHAR(20) DEFAULT 'offline',
+    last_check DATETIME,
+    last_error VARCHAR(500),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Alert Escalations (Alert Escalation Manager v1.5) ─────────────
+CREATE TABLE IF NOT EXISTS alert_escalations (
+    alert_id         VARCHAR(100) PRIMARY KEY,
+    message          VARCHAR(500),
+    source           VARCHAR(50) DEFAULT 'system',
+    level            INT DEFAULT 1,
+    occurrence_count INT DEFAULT 1,
+    created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    escalated_at     DATETIME,
+    acknowledged     TINYINT DEFAULT 0,
+    resolved_at      DATETIME,
+    INDEX idx_level  (level),
+    INDEX idx_source (source)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
