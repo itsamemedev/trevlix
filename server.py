@@ -3484,7 +3484,7 @@ class AIEngine:
                     "tp": round(best_tp * 100, 1),
                 },
             )
-            self.optim_log = self.optim_log[:20]
+            # optim_log is a deque(maxlen=500) – no manual trim needed
             log.info(f"🔬 Optimierung: {detail}")
             # Autonome LLM-Analyse: Optimierungsergebnis bewerten
             try:
@@ -3710,7 +3710,7 @@ class AIEngine:
                     "reason": f"{'✅' if allowed else '🚫'} {prob * 100:.1f}%",
                 },
             )
-            self.ai_log = self.ai_log[:30]
+            # ai_log is a deque(maxlen=500) – no manual trim needed
             if allowed:
                 self.allowed_count += 1
             else:
@@ -3854,8 +3854,8 @@ class AIEngine:
             "status_msg": self.status_msg,
             "progress_pct": self.progress_pct,
             "weights": wl,
-            "ai_log": self.ai_log[:20],
-            "optim_log": self.optim_log[:10],
+            "ai_log": list(self.ai_log)[:20],
+            "optim_log": list(self.optim_log)[:10],
             "blocked_count": self.blocked_count,
             "allowed_count": self.allowed_count,
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
@@ -4514,7 +4514,8 @@ class ShortEngine:
             return False
 
     def close_short(self, symbol: str, reason: str):
-        pos = state.short_positions.get(symbol)
+        with state._lock:
+            pos = state.short_positions.pop(symbol, None)
         if not pos:
             return
         price = state.prices.get(symbol, pos.get("entry", 0))
@@ -4555,7 +4556,6 @@ class ShortEngine:
         }
         with state._lock:
             state.closed_trades.insert(0, trade)
-            state.short_positions.pop(symbol, None)
         db.save_trade(trade)
         won = pnl >= 0
         risk.record_result(won)
@@ -5161,12 +5161,15 @@ def open_position(ex, scan: dict):
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
     partial_ratio = max(0.01, min(partial_ratio, 1.0))
+    is_partial = partial_ratio < 1.0
     with state._lock:
         pos = state.positions.get(symbol)
         if not pos:
             return
         price = state.prices.get(symbol, pos.get("entry", 0))
-    is_partial = partial_ratio < 1.0
+        if not is_partial:
+            # Eagerly pop to prevent concurrent double-close from bot_loop + WebSocket
+            state.positions.pop(symbol, None)
 
     close_qty = pos.get("qty", 0) * partial_ratio
     close_invest = pos.get("invested", 0) * partial_ratio
@@ -5237,7 +5240,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
         with state._lock:
             state.closed_trades.insert(0, trade)
-            state.positions.pop(symbol, None)
+            # positions already popped in initial lock to prevent double-close
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
