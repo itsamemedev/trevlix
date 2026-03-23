@@ -2546,7 +2546,7 @@ class GeneticOptimizer:
         wins = 0
         losses = 0
         total_pnl = 0.0
-        for t in trades[-100:]:
+        for t in trades[:100]:  # [:100] = newest 100 (insert(0,...) puts newest at index 0)
             pp = (t.get("pnl_pct") or 0) / 100
             inv = t.get("invested") or 100
             if pp <= -genome["sl"]:
@@ -3452,7 +3452,7 @@ class AIEngine:
                     wins = 0
                     total_pnl = 0.0
                     cap = 10000.0
-                    for t in trades[-80:]:
+                    for t in trades[:80]:  # [:80] = newest 80
                         pp = t.get("pnl_pct", 0) / 100
                         inv = t.get("invested", cap * 0.15) or cap * 0.15
                         if pp <= -sl:
@@ -3465,7 +3465,7 @@ class AIEngine:
                             wins += pp > 0
                         total_pnl += outcome
                         cap = max(cap + outcome, 1.0)
-                    wr = wins / len(trades[-80:])
+                    wr = wins / len(trades[:80])
                     score = wr * 0.55 + (total_pnl / 10000.0) * 0.45
                     if score > best_score:
                         best_score = score
@@ -3484,7 +3484,7 @@ class AIEngine:
                     "tp": round(best_tp * 100, 1),
                 },
             )
-            self.optim_log = self.optim_log[:20]
+            # optim_log is a deque(maxlen=500) – no manual trim needed
             log.info(f"🔬 Optimierung: {detail}")
             # Autonome LLM-Analyse: Optimierungsergebnis bewerten
             try:
@@ -3493,7 +3493,7 @@ class AIEngine:
                     best_tp=best_tp,
                     prev_sl=prev_sl,
                     prev_tp=prev_tp,
-                    trade_count=len(trades[-80:]),
+                    trade_count=len(trades[:80]),
                 )
             except Exception:
                 pass  # LLM-Analyse ist optional
@@ -3538,14 +3538,14 @@ class AIEngine:
         dow = now.weekday()  # 0=Mo, 6=So
         woy = now.isocalendar()[1]  # Kalenderwoche
 
-        recent_trades = closed_trades[-20:]
+        recent_trades = closed_trades[:20]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
         recent_wr = sum(1 for t in recent_trades if t.get("pnl", 0) > 0) / max(
             len(recent_trades), 1
         )
         recent_pnl_avg = sum(t.get("pnl", 0) for t in recent_trades) / max(len(recent_trades), 1)
-        # Streak: aufeinanderfolgende Gewinne/Verluste
+        # Streak: aufeinanderfolgende Gewinne/Verluste (newest first, so iterate directly)
         streak = 0
-        for t in reversed(recent_trades[-10:]):
+        for t in recent_trades[:10]:
             won = t.get("pnl", 0) > 0
             if streak == 0:
                 streak = 1 if won else -1
@@ -3710,7 +3710,7 @@ class AIEngine:
                     "reason": f"{'✅' if allowed else '🚫'} {prob * 100:.1f}%",
                 },
             )
-            self.ai_log = self.ai_log[:30]
+            # ai_log is a deque(maxlen=500) – no manual trim needed
             if allowed:
                 self.allowed_count += 1
             else:
@@ -3854,8 +3854,8 @@ class AIEngine:
             "status_msg": self.status_msg,
             "progress_pct": self.progress_pct,
             "weights": wl,
-            "ai_log": self.ai_log[:20],
-            "optim_log": self.optim_log[:10],
+            "ai_log": list(self.ai_log)[:20],
+            "optim_log": list(self.optim_log)[:10],
             "blocked_count": self.blocked_count,
             "allowed_count": self.allowed_count,
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
@@ -4247,8 +4247,9 @@ class BotState:
         goal_pct = min(100, round(pv / goal * 100, 1)) if goal > 0 else 0
         goal_eta = "—"
         if goal > 0 and len(closed_copy) > 5:
-            recent_g = sum(t.get("pnl", 0) for t in closed_copy[-20:])
-            daily_est = recent_g / 20 if recent_g > 0 else 0
+            recent_slice = closed_copy[:20]  # [:20] = newest 20 trades
+            recent_g = sum(t.get("pnl", 0) for t in recent_slice)
+            daily_est = recent_g / len(recent_slice) if recent_g > 0 and recent_slice else 0
             if daily_est > 0:
                 remaining = goal - pv
                 if remaining <= 0:
@@ -4490,6 +4491,9 @@ class ShortEngine:
                 ex.set_leverage(CONFIG.get("short_leverage", 2), symbol)
                 ex.create_market_sell_order(symbol, qty)
             with state._lock:
+                # Re-check under lock to prevent race with concurrent open/close
+                if symbol in state.positions or symbol in state.short_positions:
+                    return False
                 if CONFIG.get("paper_trading", True):
                     if invest > state.balance:
                         return False
@@ -4514,7 +4518,8 @@ class ShortEngine:
             return False
 
     def close_short(self, symbol: str, reason: str):
-        pos = state.short_positions.get(symbol)
+        with state._lock:
+            pos = state.short_positions.pop(symbol, None)
         if not pos:
             return
         price = state.prices.get(symbol, pos.get("entry", 0))
@@ -4555,7 +4560,6 @@ class ShortEngine:
         }
         with state._lock:
             state.closed_trades.insert(0, trade)
-            state.short_positions.pop(symbol, None)
         db.save_trade(trade)
         won = pnl >= 0
         risk.record_result(won)
@@ -5161,12 +5165,15 @@ def open_position(ex, scan: dict):
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
     partial_ratio = max(0.01, min(partial_ratio, 1.0))
+    is_partial = partial_ratio < 1.0
     with state._lock:
         pos = state.positions.get(symbol)
         if not pos:
             return
         price = state.prices.get(symbol, pos.get("entry", 0))
-    is_partial = partial_ratio < 1.0
+        if not is_partial:
+            # Eagerly pop to prevent concurrent double-close from bot_loop + WebSocket
+            state.positions.pop(symbol, None)
 
     close_qty = pos.get("qty", 0) * partial_ratio
     close_invest = pos.get("invested", 0) * partial_ratio
@@ -5237,7 +5244,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
         with state._lock:
             state.closed_trades.insert(0, trade)
-            state.positions.pop(symbol, None)
+            # positions already popped in initial lock to prevent double-close
         icon = "✅" if pnl > 0 else "❌"
         state.add_activity(
             icon,
@@ -5355,10 +5362,12 @@ def try_dca(ex, symbol):
     """Dollar-Cost-Averaging: bei Kursrückgang nachkaufen."""
     if not CONFIG.get("use_dca"):
         return
-    pos = state.positions.get(symbol)
-    if not pos:
-        return
-    price = state.prices.get(symbol, pos.get("entry", 0))
+    with state._lock:
+        pos_ref = state.positions.get(symbol)
+        if not pos_ref:
+            return
+        pos = dict(pos_ref)  # snapshot to prevent reading stale data outside lock
+        price = state.prices.get(symbol, pos.get("entry", 0))
     dca_level = pos.get("dca_level", 0)
     if dca_level >= CONFIG.get("dca_max_levels", 3):
         return
@@ -5398,12 +5407,19 @@ def try_dca(ex, symbol):
             log.error(f"DCA {symbol}: {e}")
             return
     with state._lock:
-        pos["qty"] = total_qty
-        pos["invested"] = total_cost
-        pos["entry"] = new_entry
-        pos["dca_level"] = dca_level + 1
-        pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
-        pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
+        # Re-fetch live reference; position may have been closed concurrently
+        live_pos = state.positions.get(symbol)
+        if not live_pos:
+            # Position closed while we were calculating – refund balance
+            if CONFIG.get("paper_trading", True):
+                state.balance += dca_invest
+            return
+        live_pos["qty"] = total_qty
+        live_pos["invested"] = total_cost
+        live_pos["entry"] = new_entry
+        live_pos["dca_level"] = dca_level + 1
+        live_pos["sl"] = new_entry * (1 - CONFIG.get("stop_loss_pct", 0.025))
+        live_pos["tp"] = new_entry * (1 + CONFIG.get("take_profit_pct", 0.06))
     log.info(
         f"📉 DCA Lvl{dca_level + 1} {symbol}: +{add_qty:.4f} @ {price:.4f} | ⌀:{new_entry:.4f}"
     )
