@@ -4254,9 +4254,19 @@ class BotState:
                 "entry": round(p.get("entry", 0), 4),
                 "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
                 "qty": round(p.get("qty", 0), 4),
-                "pnl": round(p.get("pnl_unrealized", 0), 2),
+                "pnl": round(
+                    p.get("invested", 0)
+                    * (
+                        (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
+                        / p.get("entry", 0)
+                    )
+                    * CONFIG.get("short_leverage", 2)
+                    if p.get("entry", 0) > 0
+                    else 0.0,
+                    2,
+                ),
                 "pnl_pct": round(
-                    (p.get("entry", 0) - prices_snap.get(sym, p.get("entry", 0)))
+                    (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
                     / p.get("entry", 0)
                     * 100
                     if p.get("entry", 0) > 0
