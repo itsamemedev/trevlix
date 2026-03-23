@@ -295,9 +295,9 @@ function renderTrades(trades,filter){
     return `<div class="trade-row">
       <div style="font-size:18px">${isShort?'📉':(won?'✅':'❌')}</div>
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:700">${t.symbol}${isShort?' SHORT':''}${dca}</div>
-        <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${(t.entry||0).toFixed(4)} → ${(t.exit||0).toFixed(4)} · ${t.reason||'—'}${ns}</div>
-        <div style="font-size:10px;color:var(--muted)">${(t.closed||'—').slice(0,10)}</div>
+        <div style="font-size:13px;font-weight:700">${esc(String(t.symbol||''))}${isShort?' SHORT':''}${dca}</div>
+        <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${(t.entry||0).toFixed(4)} → ${(t.exit||0).toFixed(4)} · ${esc(String(t.reason||'—'))}${ns}</div>
+        <div style="font-size:10px;color:var(--muted)">${esc(String((t.closed||'—').slice(0,10)))}</div>
       </div>
       <div style="text-align:right;flex-shrink:0">
         <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${c}">${fmtS(t.pnl||0)}</div>
@@ -362,7 +362,7 @@ function updateAI(ai){
   document.getElementById('aiBearS').textContent=ai.bear_samples||0;
   document.getElementById('aiAllowed').textContent=ai.allowed_count||0;
   document.getElementById('aiBlocked').textContent=ai.blocked_count||0;
-  document.getElementById('aiNews').textContent=ai.status_msg?.includes('News')||true?'✅':'—';
+  document.getElementById('aiNews').textContent=(ai.status_msg?.includes('News'))||false?'✅':'—';
   document.getElementById('aiOnchain').textContent='✅';
   document.getElementById('aiDecCount').textContent=ai.ai_log?.length||0;
   // Weights
@@ -391,10 +391,10 @@ function updateSignals(sigs){
     const nc=s.news_score>0.2?'var(--green)':s.news_score<-0.2?'var(--red)':'var(--sub)';
     return `<div style="background:var(--bg2);border-left:3px solid var(--green);border-radius:9px;padding:9px 11px;margin-bottom:5px">
       <div style="display:flex;justify-content:space-between;align-items:center">
-        <span style="font-size:13px;font-weight:700">${s.symbol}</span>
-        <span style="font-size:10px;font-family:var(--mono);color:var(--sub)">${s.time||'—'}</span>
+        <span style="font-size:13px;font-weight:700">${esc(String(s.symbol||''))}</span>
+        <span style="font-size:10px;font-family:var(--mono);color:var(--sub)">${esc(String(s.time||'—'))}</span>
       </div>
-      <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">RSI:${s.rsi||'—'} · Conf:${s.confidence?Math.round(s.confidence*100):0}% · ${s.mtf_desc||''}</div>
+      <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">RSI:${esc(String(s.rsi||'—'))} · Conf:${s.confidence?Math.round(s.confidence*100):0}% · ${esc(String(s.mtf_desc||''))}</div>
       ${s.news_headline?`<div style="font-size:10px;color:${nc};margin-top:3px;font-style:italic">${esc(s.news_headline.slice(0,80))}</div>`:''}
     </div>`;
   }).join('');
@@ -875,8 +875,8 @@ async function loadFollowers(){
     if(!d.followers || !d.followers.length){ el.innerHTML='<div style="font-size:11px;color:var(--sub)">'+QI18n.t('empty_no_followers')+'</div>'; return; }
     el.innerHTML = d.followers.map(f=>`
       <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--muted);font-size:12px">
-        <span style="color:var(--txt)">${f.name}</span>
-        <span style="color:var(--sub)">×${f.scale} · ${f.signals} Signale</span>
+        <span style="color:var(--txt)">${esc(String(f.name||''))}</span>
+        <span style="color:var(--sub)">×${esc(String(f.scale||''))} · ${esc(String(f.signals||''))} Signale</span>
         <span style="color:${f.active?'var(--jade)':'var(--red)'}">${f.active?QI18n.t('label_active'):QI18n.t('label_inactive')}</span>
       </div>`).join('');
   } catch(e){}
@@ -1061,11 +1061,11 @@ async function loadSharedAIStatus() {
     if (hist && d.models?.length) {
       hist.innerHTML = d.models.map(m => `
         <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--muted)">
-          <span style="font-family:var(--mono);font-size:10px;color:var(--jade);min-width:30px">v${m.version}</span>
-          <span style="font-size:9px;background:rgba(255,255,255,.05);padding:1px 6px;border-radius:4px;color:var(--sub)">${m.type}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:var(--jade);min-width:30px">v${esc(String(m.version||''))}</span>
+          <span style="font-size:9px;background:rgba(255,255,255,.05);padding:1px 6px;border-radius:4px;color:var(--sub)">${esc(String(m.type||''))}</span>
           <div style="flex:1">
-            <div style="font-size:11px;color:var(--txt)">${m.accuracy}% WF · ${(m.samples||0).toLocaleString('de-DE')} Samples</div>
-            <div style="font-size:9px;color:var(--sub)">${m.date} · von ${m.trained_by}</div>
+            <div style="font-size:11px;color:var(--txt)">${esc(String(m.accuracy||''))}% WF · ${(m.samples||0).toLocaleString('de-DE')} Samples</div>
+            <div style="font-size:9px;color:var(--sub)">${esc(String(m.date||''))} · von ${esc(String(m.trained_by||''))}</div>
           </div>
           <div style="width:50px;height:4px;background:var(--bg3);border-radius:2px">
             <div style="width:${Math.min(100,m.accuracy)}%;height:100%;border-radius:2px;
@@ -1081,8 +1081,8 @@ async function loadSharedAIStatus() {
         <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--muted)">
           <span style="font-family:var(--mono);font-size:13px;min-width:24px;color:${i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#b45309':'var(--sub)'}">${['🥇','🥈','🥉'][i]||'·'}</span>
           <div style="flex:1">
-            <div style="font-size:12px;font-weight:600;color:var(--txt)">${c.username}</div>
-            <div style="font-size:10px;color:var(--sub)">${c.last?.slice(0,16)||''}</div>
+            <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(c.username||''))}</div>
+            <div style="font-size:10px;color:var(--sub)">${esc(String(c.last?.slice(0,16)||''))}</div>
           </div>
           <div style="text-align:right">
             <div style="font-family:var(--mono);font-size:12px;color:var(--jade)">${(c.samples||0).toLocaleString('de-DE')} Samples</div>
@@ -1194,7 +1194,7 @@ async function loadFundingRates() {
       const pct = parseFloat(f.rate) || 0;
       const col = pct > 0.05 ? 'var(--red)' : pct < -0.05 ? 'var(--jade)' : 'var(--sub)';
       return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
-        <span style="font-size:12px;font-weight:600;color:var(--txt);flex:1">${f.symbol}</span>
+        <span style="font-size:12px;font-weight:600;color:var(--txt);flex:1">${esc(String(f.symbol||''))}</span>
         <span style="font-family:var(--mono);font-size:12px;color:${col}">${pct > 0 ? '+' : ''}${pct.toFixed(4)}%</span>
         ${pct > 0.08 ? '<span style="font-size:9px;background:rgba(239,68,68,.1);color:#ef4444;padding:1px 5px;border-radius:4px">'+QI18n.t('label_high')+'</span>' : ''}
       </div>`;
@@ -1227,7 +1227,7 @@ async function loadCooldowns() {
     }
     el.innerHTML = Object.entries(cds).map(([sym, info]) => `
       <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--muted)">
-        <span style="font-size:13px;font-weight:600;color:#ef4444;flex:1">${sym}</span>
+        <span style="font-size:13px;font-weight:600;color:#ef4444;flex:1">${esc(String(sym))}</span>
         <span style="font-size:11px;color:var(--sub)">bis ${info.until} (${info.remaining_min} Min.)</span>
         <button onclick="clearCooldown('${esc(sym)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:10px;padding:2px 8px">✕</button>
       </div>`).join('');
@@ -1381,11 +1381,11 @@ async function loadAuditLog() {
       return `<div style="display:flex;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted);font-size:11px">
         <span style="flex-shrink:0">${ico}</span>
         <div style="flex:1;min-width:0">
-          <div style="color:var(--txt);font-weight:600">${l.action}</div>
-          <div style="color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${l.detail||''}</div>
+          <div style="color:var(--txt);font-weight:600">${esc(String(l.action||''))}</div>
+          <div style="color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(String(l.detail||''))}</div>
         </div>
         <div style="text-align:right;flex-shrink:0;color:var(--sub)">
-          <div>${l.username||'system'}</div>
+          <div>${esc(String(l.username||'system'))}</div>
           <div style="font-family:var(--mono)">${(l.created_at||'').slice(11,16)}</div>
         </div>
       </div>`;
@@ -1457,8 +1457,8 @@ async function loadFeatureImportance(){
     if(ws.length){
       list.innerHTML += '<div style="margin-top:14px;font-family:var(--mono);font-size:9px;color:var(--sub);letter-spacing:2px;margin-bottom:6px">STRATEGIE-GEWICHTE</div>' +
         ws.map(w=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--muted)">
-          <span>${w.name}</span>
-          <span style="color:var(--jade)">${w.weight}× &nbsp; WR: ${w.win_rate}%</span>
+          <span>${esc(String(w.name||''))}</span>
+          <span style="color:var(--jade)">${esc(String(w.weight||''))}× &nbsp; WR: ${esc(String(w.win_rate||''))}%</span>
         </div>`).join('');
     }
   } catch(e){ toast(QI18n.t('msg_fi_error'),'error'); }
@@ -1492,7 +1492,7 @@ async function runMarkowitz(){
       </div>
       ${d.symbols.map((s,i)=>`
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
-          <span style="font-size:12px;flex:1">${s}</span>
+          <span style="font-size:12px;flex:1">${esc(String(s))}</span>
           <div style="flex:2;height:6px;background:var(--bg3);border-radius:3px">
             <div style="width:${d.weights[i]*100}%;height:100%;border-radius:3px;background:var(--jade)"></div>
           </div>
@@ -1545,8 +1545,8 @@ async function loadBtHistory(){
     if(el) el.innerHTML = d.slice(0,10).map(b=>`
       <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
         <div>
-          <div style="font-size:12px;font-weight:600;color:var(--txt)">${b.symbol} · ${b.timeframe}</div>
-          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${b.total_trades} Trades · ${b.candles} Kerzen · ${b.run_date?.slice(0,10)||''}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
+          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} Kerzen · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
         </div>
         <div style="text-align:right">
           <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
@@ -1715,7 +1715,7 @@ function mexUpdate(data) {
         </div>
       </div>
 
-      ${err ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${err}</div>` : ''}
+      ${err ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(String(err))}</div>` : ''}
 
       <div class="card-body" style="padding-top:0">
         <div class="sg" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
@@ -1802,10 +1802,10 @@ async function mexLoadTrades() {
       const won = (t.pnl||0) >= 0;
       return `
       <div style="display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--muted)">
-        <span style="font-size:11px;background:rgba(255,255,255,.05);border-radius:4px;padding:2px 6px;color:var(--sub);font-family:var(--mono)">${(t.exchange||'').toUpperCase()}</span>
+        <span style="font-size:11px;background:rgba(255,255,255,.05);border-radius:4px;padding:2px 6px;color:var(--sub);font-family:var(--mono)">${esc(String((t.exchange||'').toUpperCase()))}</span>
         <div style="flex:1">
-          <div style="font-size:12px;font-weight:600;color:var(--txt)">${t.symbol}</div>
-          <div style="font-size:10px;color:var(--sub)">${t.reason||''} · ${(t.closed||'').slice(0,16)}</div>
+          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(t.symbol||''))}</div>
+          <div style="font-size:10px;color:var(--sub)">${esc(String(t.reason||''))} · ${esc(String((t.closed||'').slice(0,16)))}</div>
         </div>
         <div style="font-family:var(--mono);font-size:13px;color:${won?'var(--jade)':'var(--red)'}">
           ${won?'+':''}${(t.pnl||0).toFixed(2)} USDT

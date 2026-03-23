@@ -126,7 +126,12 @@ class FearGreedIndex:
                 log.debug("FearGreed: leere API-Antwort")
                 return
             d = data_list[0]
-            self.value = int(d.get("value", 50))
+            try:
+                raw_value = int(d.get("value", 50))
+            except (ValueError, TypeError):
+                log.debug("FearGreed: ungültiger Wert '%s'", d.get("value"))
+                return
+            self.value = max(0, min(100, raw_value))  # Clamp to [0, 100]
             self.label = d.get("value_classification", "Neutral")
             self.last_update = datetime.now().strftime("%H:%M")
             self._cache.set("fng", (self.value, self.label))
@@ -209,8 +214,8 @@ class DominanceFilter:
             data = r.json().get("data", {})
             mcp = data.get("market_cap_percentage", {})
             with self._lock:
-                self.btc_dom = float(mcp.get("btc", 50))
-                self.usdt_dom = float(mcp.get("usdt", 6))
+                self.btc_dom = max(0.0, min(100.0, float(mcp.get("btc", 50))))
+                self.usdt_dom = max(0.0, min(100.0, float(mcp.get("usdt", 6))))
                 self.last_update = datetime.now().strftime("%H:%M")
             self._cache.set("dominance", (self.btc_dom, self.usdt_dom))
             log.info(f"Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")

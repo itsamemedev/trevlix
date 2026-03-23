@@ -64,11 +64,10 @@ class RiskManager:
     def daily_loss_exceeded(self, balance) -> bool:
         with self._lock:
             self._reset_daily_unlocked(balance)
-            return (
-                (self.daily_start - balance) / self.daily_start
-                > self.config.get("max_daily_loss_pct", 0.05)
-                if self.daily_start > 0
-                else False
+            if self.daily_start <= 0:
+                return False
+            return (self.daily_start - balance) / self.daily_start > self.config.get(
+                "max_daily_loss_pct", 0.05
             )
 
     def _reset_daily_unlocked(self, balance):
@@ -153,10 +152,11 @@ class RiskManager:
             if len(h) > 100:
                 self._price_history[symbol] = h[-100:]
             # Unbegrenztes Symbol-Wachstum verhindern
-            if len(self._price_history) > 200:
+            while len(self._price_history) > 200:
                 oldest_sym = next(iter(self._price_history))
-                if oldest_sym != symbol:
-                    del self._price_history[oldest_sym]
+                if oldest_sym == symbol:
+                    break
+                del self._price_history[oldest_sym]
 
     def circuit_status(self) -> dict:
         with self._lock:

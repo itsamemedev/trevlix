@@ -1010,7 +1010,7 @@ const QI18n = {
 
   setLang(lang) {
     this.lang = lang;
-    localStorage.setItem('trevlix_lang', lang);
+    try { localStorage.setItem('trevlix_lang', lang); } catch(_) { /* private mode */ }
     this.applyAll();
     document.documentElement.lang = lang;
   },

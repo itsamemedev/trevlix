@@ -66,6 +66,7 @@ import threading
 import time
 import traceback
 import zipfile
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -2802,8 +2803,8 @@ class AIEngine:
         self._cal_X: list = []  # [26] Calibration samples for conformal
         self._cal_y: list = []  # [26] Calibration labels
         self.status_msg = "⏳ Lade Trainingsdaten..."
-        self.ai_log = []
-        self.optim_log = []
+        self.ai_log = deque(maxlen=500)
+        self.optim_log = deque(maxlen=500)
         self._pending: dict[str, dict] = {}
         self._scan_cache: dict[str, dict] = {}  # für RL
         self._load_from_db()
@@ -3861,6 +3862,8 @@ from services.backtest import BacktestEngine as _BacktestEngineBase  # noqa: E40
 # MULTI-TIMEFRAME FILTER
 # ═══════════════════════════════════════════════════════════════════════════════
 class MultiTimeframeFilter:
+    _MAX_CACHE = 500
+
     def __init__(self):
         self._cache: dict[str, dict] = {}
         self._lock = threading.Lock()
@@ -3891,6 +3894,12 @@ class MultiTimeframeFilter:
             trend = 1 if score >= 2 else (-1 if score == 0 else 0)
             with self._lock:
                 self._cache[symbol] = {"trend": trend, "ts": datetime.now()}
+                # Evict stale entries if cache grows too large
+                if len(self._cache) > self._MAX_CACHE:
+                    cutoff = datetime.now() - timedelta(minutes=10)
+                    stale = [k for k, v in self._cache.items() if v["ts"] < cutoff]
+                    for k in stale:
+                        del self._cache[k]
             ok = trend >= 0
             return ok, f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
         except Exception as e:
@@ -4064,8 +4073,6 @@ class BotState:
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
-        from collections import deque
-
         self.portfolio_history: deque = deque(maxlen=500)
         self.signal_log: deque = deque(maxlen=50)
         self.activity_log: deque = deque(maxlen=50)
@@ -4467,6 +4474,8 @@ class ShortEngine:
                 ex.create_market_sell_order(symbol, qty)
             with state._lock:
                 if CONFIG.get("paper_trading", True):
+                    if invest > state.balance:
+                        return False
                     state.balance -= invest
                 state.short_positions[symbol] = {
                     "entry": price,
@@ -4567,10 +4576,13 @@ class ShortEngine:
             price = state.prices.get(sym, pos.get("entry", 0))
             s_entry = pos.get("entry") or price
             pnl_pct = (s_entry - price) / s_entry * 100 if s_entry > 0 else 0.0
-            pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
-            if price >= pos.get("sl", float("inf")):
+            with state._lock:
+                pos["pnl_unrealized"] = pos.get("invested", 0) * (pnl_pct / 100)
+            sl = pos.get("sl", float("inf"))
+            tp = pos.get("tp", 0)
+            if price >= sl:
                 self.close_short(sym, "SL 🛑")
-            elif price <= pos.get("tp", 0):
+            elif price <= tp:
                 self.close_short(sym, "TP 🎯")
 
 
@@ -5016,7 +5028,7 @@ def open_position(ex, scan: dict):
 
     fg_boost = fg_idx.buy_boost()
     # DNA-Boost in Position-Sizing einbeziehen
-    dna_mult = dna_adjustment["multiplier"] if dna_adjustment else 1.0
+    dna_mult = dna_adjustment.get("multiplier", 1.0) if dna_adjustment else 1.0
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
         if CONFIG["ai_use_kelly"]
@@ -5040,6 +5052,9 @@ def open_position(ex, scan: dict):
 
     if CONFIG.get("paper_trading", True):
         with state._lock:
+            if invest > state.balance:
+                log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
+                return
             state.balance -= invest
     else:
         try:
@@ -5147,7 +5162,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         with state._lock:
             pos["qty"] -= close_qty
             pos["invested"] -= close_invest
-            pos["partial_sold"] = pos.get("partial_sold", 0) + partial_ratio
+            pos["partial_sold"] = min(1.0, pos.get("partial_sold", 0) + partial_ratio)
         log.info(f"🔶 PARTIAL {symbol} {partial_ratio * 100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
         state.add_activity(
             "🔶",
@@ -5336,6 +5351,9 @@ def try_dca(ex, symbol):
     new_entry = total_cost / total_qty
     if CONFIG.get("paper_trading", True):
         with state._lock:
+            if dca_invest > state.balance:
+                log.warning(f"DCA {symbol}: invest {dca_invest:.2f} > balance {state.balance:.2f}")
+                return
             state.balance -= dca_invest
     else:
         try:
@@ -6489,6 +6507,18 @@ _ws_limits_last_cleanup: float = 0.0
 _ws_limits_lock = threading.Lock()
 
 
+def _ws_auth_required() -> bool:
+    """Check if the WebSocket client is authenticated.
+
+    Returns:
+        True if authenticated, False otherwise (also emits error).
+    """
+    if not session.get("user_id"):
+        emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
+        return False
+    return True
+
+
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     """Prüft ob ein Socket-Event zu schnell wiederholt wird.
 
@@ -6568,6 +6598,8 @@ def on_request_state():
 
 @socketio.on("start_bot")
 def on_start_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("start_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6586,6 +6618,8 @@ def on_start_bot():
 
 @socketio.on("stop_bot")
 def on_stop_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("stop_bot", min_interval=3.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6598,6 +6632,8 @@ def on_stop_bot():
 
 @socketio.on("pause_bot")
 def on_pause_bot():
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("pause_bot", min_interval=2.0):
         return
     with state._lock:
@@ -6788,6 +6824,8 @@ def on_reset_ai():
 
 @socketio.on("close_position")
 def on_close_position(data):
+    if not _ws_auth_required():
+        return
     if not _ws_rate_check("close_position", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
         return
@@ -6806,6 +6844,9 @@ def on_close_position(data):
 
 @socketio.on("run_backtest")
 def on_run_backtest(data):
+    if not _ws_auth_required():
+        return
+
     def _bt():
         try:
             ex = create_exchange()
@@ -6844,12 +6885,17 @@ def on_add_alert(data):
 
 @socketio.on("delete_price_alert")
 def on_delete_alert(data):
+    if not _ws_auth_required():
+        return
     db.delete_alert(_safe_int(data.get("id", 0), 0))
     emit("update", state.snapshot(), broadcast=True)
 
 
 @socketio.on("manual_backup")
 def on_manual_backup():
+    if not _ws_auth_required():
+        return
+
     def _bk():
         path = db.backup()
         if path:
@@ -6865,12 +6911,16 @@ def on_manual_backup():
 
 @socketio.on("send_daily_report")
 def on_send_report():
+    if not _ws_auth_required():
+        return
     threading.Thread(target=daily_sched._send_report, daemon=True).start()
     emit("status", {"msg": "📊 Report wird gesendet...", "type": "info"})
 
 
 @socketio.on("reset_circuit_breaker")
 def on_reset_cb():
+    if not _ws_auth_required():
+        return
     with risk._lock:
         risk.circuit_breaker_until = None
         risk.consecutive_losses = 0
@@ -6880,6 +6930,9 @@ def on_reset_cb():
 
 @socketio.on("scan_arbitrage")
 def on_scan_arb():
+    if not _ws_auth_required():
+        return
+
     def _arb():
         opps = arb_scanner.scan(state.markets[:30])
         socketio.emit(
@@ -6892,6 +6945,8 @@ def on_scan_arb():
 
 @socketio.on("update_dominance")
 def on_update_dominance():
+    if not _ws_auth_required():
+        return
     threading.Thread(target=dominance.update, daemon=True).start()
     emit("status", {"msg": "🌐 Dominanz-Update läuft...", "type": "info"})
 

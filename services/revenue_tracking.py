@@ -18,7 +18,7 @@ Usage:
 
 import logging
 import threading
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -57,8 +57,8 @@ class RevenueTracker:
         self._config = config
         self._lock = threading.Lock()
 
-        # In-memory trade ledger: list of enriched trade dicts
-        self._trades: list[dict] = []
+        # In-memory trade ledger: bounded deque to prevent unbounded memory growth
+        self._trades: deque[dict] = deque(maxlen=10_000)
 
         # Running totals for fast snapshot access
         self._total_pnl: float = 0.0
