@@ -560,7 +560,9 @@ def create_auth_blueprint(
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = user.get("role", "user")
-            session["last_active"] = datetime.now().isoformat()
+            now_iso = datetime.now().isoformat()
+            session["last_active"] = now_iso
+            session["session_created"] = now_iso
             _ensure_csrf()  # CSRF-Token nach Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "login", f"Login · {client_ip}", client_ip)
@@ -784,7 +786,9 @@ def create_auth_blueprint(
             session["user_id"] = user["id"]
             session["username"] = user["username"]
             session["user_role"] = "admin"
-            session["last_active"] = datetime.now().isoformat()
+            now_iso = datetime.now().isoformat()
+            session["last_active"] = now_iso
+            session["session_created"] = now_iso
             _ensure_csrf()  # CSRF-Token nach Admin-Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "admin_login", f"Admin-Login · {client_ip}", client_ip)
@@ -909,7 +913,10 @@ def create_auth_blueprint(
         # Passwort aktualisieren
         if db.update_password(user["id"], new_password):
             db_audit_fn(
-                user["id"], "admin_password_reset", f"Admin-PW-Reset · {client_ip}", client_ip
+                user["id"],
+                "admin_password_reset",
+                f"Admin-PW-Reset für '{username[:32]}' · {client_ip}",
+                client_ip,
             )
             session.clear()
             return redirect("/admin/reset-password?ok=1")

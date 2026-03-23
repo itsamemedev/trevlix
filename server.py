@@ -2032,10 +2032,12 @@ def _before_request_hooks():
     """[Verbesserung #1] Session-Timeout + [Verbesserung #2] CSRF-Check."""
     # Session-Timeout prüfen
     if session.get("user_id"):
+        now = datetime.now()
         last = session.get("last_active")
+        created = session.get("session_created")
         if last:
             try:
-                elapsed = (datetime.now() - datetime.fromisoformat(last)).total_seconds()
+                elapsed = (now - datetime.fromisoformat(last)).total_seconds()
                 if elapsed > _SESSION_TIMEOUT_MIN * 60:
                     uid = session.get("user_id", 0)
                     session.clear()
@@ -2053,7 +2055,22 @@ def _before_request_hooks():
 
                     abort(401)
                 return redirect("/login")
-        session["last_active"] = datetime.now().isoformat()
+        # Absolute session lifetime: max 8 hours regardless of activity
+        if created:
+            try:
+                age = (now - datetime.fromisoformat(created)).total_seconds()
+                if age > 8 * 3600:
+                    uid = session.get("user_id", 0)
+                    session.clear()
+                    _audit("session_expired", f"user_id={uid} age={age:.0f}s", uid)
+                    if request.path.startswith("/api/"):
+                        from flask import abort
+
+                        abort(401)
+                    return redirect("/login")
+            except (ValueError, TypeError):
+                pass
+        session["last_active"] = now.isoformat()
 
     # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
     if request.method in ("POST", "PUT", "DELETE", "PATCH"):
@@ -2069,15 +2086,12 @@ def _before_request_hooks():
                     token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
                 except Exception:
                     token = None
-                if request.content_type and "application/json" not in request.content_type:
-                    expected = session.get("_csrf_token")
-                    if expected and (
-                        not token or not hmac.compare_digest(str(token), str(expected))
-                    ):
-                        _audit("csrf_violation", request.path, session.get("user_id", 0))
-                        from flask import abort
+                expected = session.get("_csrf_token")
+                if expected and (not token or not hmac.compare_digest(str(token), str(expected))):
+                    _audit("csrf_violation", request.path, session.get("user_id", 0))
+                    from flask import abort
 
-                        abort(403)  # CSRF-Verletzung → Request ablehnen
+                    abort(403)  # CSRF-Verletzung → Request ablehnen
 
 
 @app.after_request
@@ -6547,6 +6561,29 @@ def _ws_auth_required() -> bool:
     return True
 
 
+def _ws_admin_required() -> bool:
+    """Check if the WebSocket client is an authenticated admin.
+
+    Re-verifies role from database to prevent privilege escalation
+    via session manipulation.
+
+    Returns:
+        True if admin, False otherwise (also emits error).
+    """
+    if not _ws_auth_required():
+        return False
+    uid = session.get("user_id")
+    try:
+        user = db.get_user_by_id(uid)
+        if not user or user.get("role") != "admin":
+            emit("status", {"msg": "Nur Admin", "type": "error"})
+            return False
+    except Exception:
+        emit("status", {"msg": "Nur Admin", "type": "error"})
+        return False
+    return True
+
+
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     """Prüft ob ein Socket-Event zu schnell wiederholt wird.
 
@@ -6672,8 +6709,7 @@ def on_pause_bot():
 
 @socketio.on("update_config")
 def on_update_config(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("update_config", min_interval=2.0):
         emit("status", {"msg": "⏳ Zu schnell – bitte warten", "type": "warning"})
@@ -6764,8 +6800,7 @@ def on_update_config(data):
 
 @socketio.on("save_api_keys")
 def on_save_keys(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
     raw_key = data.get("api_key", "")
@@ -6983,8 +7018,7 @@ def on_update_dominance():
 
 @socketio.on("admin_create_user")
 def on_admin_create_user(data):
-    if session.get("user_role") != "admin":
-        emit("status", {"msg": "❌ Kein Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     username = str(data.get("username", "")).strip()
     password = str(data.get("password", ""))
@@ -7192,8 +7226,7 @@ def api_grid_delete(symbol):
 
 @socketio.on("create_grid")
 def ws_create_grid(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     symbol = data.get("symbol", "").strip()
     if not symbol:
@@ -7281,8 +7314,7 @@ def on_check_update():
 
 @socketio.on("apply_update")
 def on_apply_update():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     try:
         import subprocess
@@ -7303,8 +7335,7 @@ def on_apply_update():
 
 @socketio.on("rollback_update")
 def on_rollback_update():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     try:
         import subprocess
@@ -7344,8 +7375,7 @@ def on_stop_exchange(data):
 
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     api_key = data.get("api_key", "")
