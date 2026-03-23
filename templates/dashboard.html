@@ -16,9 +16,9 @@
 })();
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700;900&family=Barlow+Condensed:wght@600;700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js" crossorigin="anonymous"></script>
 <!-- [#33] Externes CSS für besseres Caching -->
 <link rel="stylesheet" href="/static/css/dashboard.css">
 <script src="/static/js/trevlix_translations.js"></script>
@@ -60,8 +60,8 @@
       <div style="font-size:36px;margin-bottom:10px">🔑</div>
       <div style="font-size:18px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_api_keys">API-Keys</span></div>
       <div style="font-size:12px;color:var(--sub);margin-bottom:12px" data-i18n="wiz_paper_hint">Paper-Mode ist Standard — kein echtes Geld nötig.</div>
-      <input type="password" id="wzKey" placeholder="API Key" class="s-input s-input-full" style="margin-bottom:8px">
-      <input type="password" id="wzSecret" placeholder="Secret Key" class="s-input s-input-full" style="margin-bottom:14px">
+      <input type="password" id="wzKey" placeholder="API Key" autocomplete="off" class="s-input s-input-full" style="margin-bottom:8px">
+      <input type="password" id="wzSecret" placeholder="Secret Key" autocomplete="off" class="s-input s-input-full" style="margin-bottom:14px">
       <button class="save-btn" onclick="wizSaveKeys()" data-i18n="wiz_save_next">→ Speichern & Weiter</button>
     </div>
     <div class="wizard-step" id="wz3">
@@ -549,8 +549,8 @@
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_exchange">🌐 Exchange & Keys</span></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="sec_exchange">Exchange</span></div></div><select class="s-select" id="sExchange"><option value="cryptocom">Crypto.com</option><option value="binance">Binance</option><option value="bybit">Bybit</option><option value="okx">OKX</option><option value="kucoin">KuCoin</option></select></div>
-      <div class="s-row"><div class="s-label"><div class="s-name">API Key</div></div><input type="password" id="cfgKey" placeholder="API Key" class="s-input" style="width:140px;text-align:left"></div>
-      <div class="s-row"><div class="s-label"><div class="s-name">Secret Key</div></div><input type="password" id="cfgSecret" placeholder="Secret" class="s-input" style="width:140px;text-align:left"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">API Key</div></div><input type="password" id="cfgKey" placeholder="API Key" autocomplete="off" class="s-input" style="width:140px;text-align:left"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Secret Key</div></div><input type="password" id="cfgSecret" placeholder="Secret" autocomplete="off" class="s-input" style="width:140px;text-align:left"></div>
       <button class="save-btn" onclick="saveKeys()" style="background:linear-gradient(135deg,var(--purple),#7b1fa2);margin-top:8px;margin-bottom:0"><span data-i18n="btn_save_keys">🔑 Keys speichern</span></button>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_presets">🎛️ Risiko-Presets</span></div>
@@ -712,7 +712,7 @@
         <div class="card-body" style="padding-top:0">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
             <input class="s-input" id="newUsername" placeholder="Username">
-            <input class="s-input" type="password" id="newPassword" placeholder="Passwort">
+            <input class="s-input" type="password" id="newPassword" placeholder="Passwort" autocomplete="new-password">
             <select class="s-input" id="newRole">
               <option value="user">Nutzer</option>
               <option value="admin">Admin</option>
@@ -812,10 +812,10 @@
           <div class="s-label">API Key</div>
           <input class="s-input" id="mex-key-apikey" type="text" placeholder="API Key" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
           <div class="s-label">Secret</div>
-          <input class="s-input" id="mex-key-secret" type="password" placeholder="Secret" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
+          <input class="s-input" id="mex-key-secret" type="password" placeholder="Secret" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
           <div id="mex-passphrase-wrap" style="display:none">
             <div class="s-label">Passphrase (OKX / KuCoin)</div>
-            <input class="s-input" id="mex-key-passphrase" type="password" placeholder="Passphrase" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
+            <input class="s-input" id="mex-key-passphrase" type="password" placeholder="Passphrase" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
           </div>
           <button class="btn btn-jade" style="width:100%;padding:12px;font-size:13px" onclick="mexSaveKeys()">✅ Speichern & Aktivieren</button>
           <div style="margin-top:10px;font-size:11px;color:var(--sub);line-height:1.6">
