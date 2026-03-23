@@ -157,8 +157,8 @@ function updateUI(d){
   const dp=document.getElementById('sDailyPnl'); dp.textContent=fmtS(d.daily_pnl||0); dp.style.color=clr(d.daily_pnl||0);
   document.getElementById('sPF').textContent=d.profit_factor>0?fmt(d.profit_factor,2):'—';
   // Regime
-  const bull=(d.market_regime||'').includes('Bullish');
-  document.getElementById('regimeBadge').textContent=bull?'🐂 Bullish':'🐻 Bearish';
+  const bull=(d.market_regime||'').includes('bullish');
+  document.getElementById('regimeBadge').textContent=bull?'🐂 '+QI18n.t('label_bullish'):'🐻 '+QI18n.t('label_bearish');
   document.getElementById('regimeBadge').className=bull?'badge-pill badge-bull':'badge-pill badge-bear';
   document.getElementById('btcBadge').textContent='BTC '+(d.btc_price?fmt(d.btc_price,0):'—');
   // Portfolio chart
@@ -801,7 +801,7 @@ socket.on('auth_error',(d)=>{
   addLog('Auth-Fehler: '+(d&&d.msg||'Nicht authentifiziert'),'error','system');
   setTimeout(()=>location.href='/login',2000);
 });
-socket.on('update', d=>{if(d) updateUI(d);});
+socket.on('update', d=>{if(d){updateUI(d); if(d.user_role) applyStateToRole(d);}});
 socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
   if(!g) return;
@@ -1015,6 +1015,56 @@ function applyStateToRole(data) {
     if (mc) mc.textContent = (data.markets || []).length || 0;
   }
 }
+
+// ── Admin: System Analytics ───────────────────────────────────────────────────
+function loadSystemAnalytics() {
+  socket.emit('request_system_analytics');
+}
+socket.on('system_analytics', d => {
+  if (!d) return;
+  // System info
+  if (d.system) {
+    const s = d.system;
+    const _s = id => document.getElementById(id);
+    if (_s('sysPython'))   _s('sysPython').textContent = s.python || '—';
+    if (_s('sysPlatform')) _s('sysPlatform').textContent = s.platform || '—';
+    if (_s('sysCpu'))      _s('sysCpu').textContent = s.cpu || '—';
+    if (_s('sysMemory'))   _s('sysMemory').textContent = s.memory || '—';
+    if (_s('sysDisk'))     _s('sysDisk').textContent = s.disk || '—';
+    if (_s('sysUptime'))   _s('sysUptime').textContent = s.uptime || '—';
+  }
+  // API status
+  if (d.api) {
+    const a = d.api;
+    const _a = id => document.getElementById(id);
+    if (_a('apiExchange'))  _a('apiExchange').textContent = a.exchange || '—';
+    if (_a('apiConnected')) _a('apiConnected').textContent = a.connected || '—';
+    if (_a('apiLatency'))   _a('apiLatency').textContent = a.latency || '—';
+    if (_a('apiCalls24h'))  _a('apiCalls24h').textContent = a.calls_24h || '—';
+    if (_a('apiDiscord'))   _a('apiDiscord').textContent = a.discord || '—';
+    if (_a('apiTelegram'))  _a('apiTelegram').textContent = a.telegram || '—';
+  }
+  // LLM status
+  if (d.llm) {
+    const l = d.llm;
+    const _l = id => document.getElementById(id);
+    if (_l('llmEndpoint'))   _l('llmEndpoint').textContent = l.endpoint || '—';
+    if (_l('llmModel'))      _l('llmModel').textContent = l.model || '—';
+    if (_l('llmStatus'))     _l('llmStatus').textContent = l.status || '—';
+    if (_l('llmLatency'))    _l('llmLatency').textContent = l.latency || '—';
+    if (_l('llmQueries24h')) _l('llmQueries24h').textContent = l.queries_24h || '—';
+    if (_l('llmTokens24h'))  _l('llmTokens24h').textContent = l.tokens_24h || '—';
+  }
+  // DB status
+  if (d.db) {
+    const b = d.db;
+    const _b = id => document.getElementById(id);
+    if (_b('dbPoolSize'))   _b('dbPoolSize').textContent = b.pool_size || '—';
+    if (_b('dbActiveConn')) _b('dbActiveConn').textContent = b.active_conn || '—';
+    if (_b('dbTables'))     _b('dbTables').textContent = b.tables || '—';
+    if (_b('dbSize'))       _b('dbSize').textContent = b.size || '—';
+  }
+});
 
 // ── Admin: Load Users ──────────────────────────────────────────────────────────
 async function loadUsers() {

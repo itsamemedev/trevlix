@@ -4331,7 +4331,7 @@ class BotState:
             "max_drawdown": round(risk.max_drawdown, 2),
             "daily_pnl": round(daily_pnl, 2),
             "trade_today": len(trades_today),
-            "market_regime": "🐂 Bullish" if regime.is_bull else "🐻 Bearish",
+            "market_regime": "bullish" if regime.is_bull else "bearish",
             "btc_price": round(regime.btc_price, 2),
             "positions": open_pos,
             "closed_trades": [
@@ -6710,17 +6710,31 @@ def on_connect(auth=None):
     if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
-    emit("update", state.snapshot())
+    snap = state.snapshot()
+    # Attach user role so the frontend can show admin UI elements
+    try:
+        u = db.get_user_by_id(user_id)
+        snap["user_role"] = u.get("role", "user") if u else "user"
+    except Exception:
+        snap["user_role"] = "user"
+    emit("update", snap)
     log.info(f"📱 Client verbunden: {username}")
 
 
 @socketio.on("request_state")
 def on_request_state():
     """Ermöglicht dem Client, den aktuellen State explizit anzufragen (z.B. nach Reconnect)."""
-    if not session.get("user_id"):
+    uid = session.get("user_id")
+    if not uid:
         emit("auth_error", {"msg": "Nicht authentifiziert"})
         return
-    emit("update", state.snapshot())
+    snap = state.snapshot()
+    try:
+        u = db.get_user_by_id(uid)
+        snap["user_role"] = u.get("role", "user") if u else "user"
+    except Exception:
+        snap["user_role"] = "user"
+    emit("update", snap)
 
 
 @socketio.on("start_bot")
@@ -7495,6 +7509,126 @@ def on_close_exchange_position(data):
         )
     except Exception as e:
         emit("status", {"msg": f"❌ Fehler beim Schließen: {e}", "type": "error"})
+
+
+@socketio.on("request_system_analytics")
+def on_request_system_analytics():
+    """Return detailed system analytics for admin dashboard."""
+    if not _ws_admin_required():
+        return
+    if not _ws_rate_check("request_system_analytics", min_interval=5.0):
+        return
+    import platform
+    import shutil
+
+    data: dict[str, Any] = {}
+    # System info
+    try:
+        import psutil
+
+        mem = psutil.virtual_memory()
+        cpu_pct = psutil.cpu_percent(interval=0.1)
+        boot = datetime.fromtimestamp(psutil.boot_time())
+        uptime_delta = datetime.now() - boot
+        uptime_str = f"{uptime_delta.days}d {uptime_delta.seconds // 3600}h"
+        data["system"] = {
+            "python": platform.python_version(),
+            "platform": f"{platform.system()} {platform.release()}",
+            "cpu": f"{cpu_pct}%",
+            "memory": f"{mem.used // (1024**2)}/{mem.total // (1024**2)} MB ({mem.percent}%)",
+            "disk": "—",
+            "uptime": uptime_str,
+        }
+    except ImportError:
+        data["system"] = {
+            "python": platform.python_version(),
+            "platform": f"{platform.system()} {platform.release()}",
+            "cpu": "—",
+            "memory": "—",
+            "disk": "—",
+            "uptime": "—",
+        }
+    # Disk usage
+    try:
+        disk = shutil.disk_usage("/")
+        data["system"]["disk"] = (
+            f"{disk.used // (1024**3)}/{disk.total // (1024**3)} GB "
+            f"({100 * disk.used // disk.total}%)"
+        )
+    except Exception:
+        pass
+
+    # API status
+    exchange_name = CONFIG.get("exchange", "unknown")
+    discord_configured = bool(CONFIG.get("discord_webhook"))
+    telegram_configured = bool(CONFIG.get("telegram_token"))
+    data["api"] = {
+        "exchange": exchange_name.upper(),
+        "connected": "✅" if state.running else "⏸️",
+        "latency": "—",
+        "calls_24h": "—",
+        "discord": "✅" if discord_configured else "❌",
+        "telegram": "✅" if telegram_configured else "❌",
+    }
+
+    # LLM status
+    llm_endpoint = CONFIG.get("llm_endpoint", "")
+    data["llm"] = {
+        "endpoint": llm_endpoint or "—",
+        "model": CONFIG.get("llm_model", "—"),
+        "status": "—",
+        "latency": "—",
+        "queries_24h": "—",
+        "tokens_24h": "—",
+    }
+    if llm_endpoint:
+        try:
+            import urllib.request
+
+            start_t = time.time()
+            req = urllib.request.Request(
+                llm_endpoint.rstrip("/") + "/models",
+                method="GET",
+            )
+            req.add_header("Connection", "close")
+            with urllib.request.urlopen(req, timeout=5):
+                latency_ms = int((time.time() - start_t) * 1000)
+                data["llm"]["status"] = "✅ Online"
+                data["llm"]["latency"] = f"{latency_ms} ms"
+        except Exception:
+            data["llm"]["status"] = "❌ Offline"
+
+    # Database status
+    data["db"] = {
+        "pool_size": "—",
+        "active_conn": "—",
+        "tables": "—",
+        "size": "—",
+    }
+    try:
+        pool_info = db.pool_status() if hasattr(db, "pool_status") else {}
+        data["db"]["pool_size"] = pool_info.get("pool_size", "—")
+        data["db"]["active_conn"] = pool_info.get("active", "—")
+    except Exception:
+        pass
+    try:
+        with db.get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()"
+                )
+                row = cur.fetchone()
+                data["db"]["tables"] = row[0] if row else "—"
+                cur.execute(
+                    "SELECT ROUND(SUM(data_length+index_length)/1024/1024,1) "
+                    "FROM information_schema.tables WHERE table_schema=DATABASE()"
+                )
+                row = cur.fetchone()
+                data["db"]["size"] = f"{row[0]} MB" if row and row[0] else "—"
+    except Exception:
+        pass
+
+    emit("system_analytics", data)
 
 
 # ════════════════════════════════════════════════════════════════════════════════
