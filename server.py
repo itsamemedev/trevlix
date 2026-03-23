@@ -5041,7 +5041,13 @@ def open_position(ex, scan: dict):
         return
 
     fee = invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
+    if price <= 0:
+        log.warning(f"open_position {symbol}: Preis ist 0, überspringe")
+        return
     qty = (invest - fee) / price
+    if qty <= 0:
+        log.warning(f"open_position {symbol}: qty <= 0 (invest={invest:.2f}, fee={fee:.2f})")
+        return
 
     # ── Smart Exits: Dynamische SL/TP ────────────────────────────────────
     if smart_exits.enabled:
@@ -5133,10 +5139,11 @@ def open_position(ex, scan: dict):
 
 def close_position(ex, symbol, reason, partial_ratio=1.0):
     partial_ratio = max(0.01, min(partial_ratio, 1.0))
-    pos = state.positions.get(symbol)
-    if not pos:
-        return
-    price = state.prices.get(symbol, pos.get("entry", 0))
+    with state._lock:
+        pos = state.positions.get(symbol)
+        if not pos:
+            return
+        price = state.prices.get(symbol, pos.get("entry", 0))
     is_partial = partial_ratio < 1.0
 
     close_qty = pos.get("qty", 0) * partial_ratio
@@ -5144,7 +5151,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     entry = pos.get("entry") or price
     if entry <= 0:
         entry = price
-    pnl_pct = (price - entry) / entry * 100 if entry > 0 else 0.0
+    if price <= 0 or entry <= 0:
+        log.warning(f"close_position {symbol}: ungültiger Preis {price} / Entry {entry}")
+        return
+    pnl_pct = (price - entry) / entry * 100
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
@@ -5161,8 +5171,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     if is_partial:
         # Teilverkauf → Position aktualisieren
         with state._lock:
-            pos["qty"] -= close_qty
-            pos["invested"] -= close_invest
+            pos["qty"] = max(0, pos["qty"] - close_qty)
+            pos["invested"] = max(0, pos["invested"] - close_invest)
             pos["partial_sold"] = min(1.0, pos.get("partial_sold", 0) + partial_ratio)
         log.info(f"🔶 PARTIAL {symbol} {partial_ratio * 100:.0f}% @ {price:.4f} | PnL: {pnl:+.2f}")
         state.add_activity(
@@ -5339,8 +5349,11 @@ def try_dca(ex, symbol):
         return
     # Nachkauf
     dca_invest = pos.get("invested", 0) * CONFIG.get("dca_size_mult", 1.0)
-    dca_invest = min(dca_invest, state.balance * 0.15)
+    with state._lock:
+        dca_invest = min(dca_invest, state.balance * 0.15)
     if dca_invest < 5:
+        return
+    if price <= 0:
         return
     fee = dca_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     add_qty = (dca_invest - fee) / price
@@ -5402,6 +5415,12 @@ def manage_positions(ex):
             price = state.prices.get(symbol)
             if price is None:
                 continue
+
+        # Re-check: Position könnte zwischen fetch_ticker und jetzt geschlossen worden sein
+        with state._lock:
+            pos = state.positions.get(symbol)
+        if not pos:
+            continue
 
         # Break-Even Stop: SL auf Einstiegspreis (+Puffer) setzen sobald +X% Gewinn
         pos_entry = pos.get("entry") or price
@@ -6873,6 +6892,8 @@ def on_run_backtest(data):
 
 @socketio.on("add_price_alert")
 def on_add_alert(data):
+    if not _ws_auth_required():
+        return
     uid = session.get("user_id", 1)
     db.add_alert(
         data.get("symbol", ""),
@@ -6966,8 +6987,14 @@ def on_admin_create_user(data):
     if not username.replace("_", "").replace("-", "").isalnum():
         emit("status", {"msg": "❌ Username: nur Buchstaben, Zahlen, -, _", "type": "error"})
         return
-    if len(password) < 8:
-        emit("status", {"msg": "❌ Passwort muss mind. 8 Zeichen haben", "type": "error"})
+    if len(password) < 12:
+        emit("status", {"msg": "❌ Passwort muss mind. 12 Zeichen haben", "type": "error"})
+        return
+    if not any(c.isupper() for c in password) or not any(c.islower() for c in password):
+        emit("status", {"msg": "❌ Passwort braucht Groß- und Kleinbuchstaben", "type": "error"})
+        return
+    if not any(c.isdigit() for c in password):
+        emit("status", {"msg": "❌ Passwort braucht mindestens eine Zahl", "type": "error"})
         return
     if role not in ("admin", "user", "viewer"):
         emit("status", {"msg": "❌ Ungültige Rolle", "type": "error"})
@@ -7176,6 +7203,8 @@ def ws_create_grid(data):
 # ── Undo Close ────────────────────────────────────────────────────────────────
 @socketio.on("undo_close")
 def on_undo_close(data):
+    if not _ws_auth_required():
+        return
     sym = data.get("symbol", "")
     if not sym:
         emit("status", {"msg": "❌ Kein Symbol angegeben", "type": "error"})
@@ -7194,6 +7223,8 @@ def on_undo_close(data):
 # ── GitHub Updater ─────────────────────────────────────────────────────────────
 @socketio.on("check_update")
 def on_check_update():
+    if not _ws_auth_required():
+        return
     try:
         import subprocess
 

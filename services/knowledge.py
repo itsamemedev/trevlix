@@ -77,6 +77,7 @@ class KnowledgeBase:
         self._llm_endpoint = llm_endpoint
         self._llm_api_key = llm_api_key
         self._llm_model = llm_model
+        self._lock = threading.Lock()
         self._cache: dict[str, dict] = {}
         self._cache_ts: dict[str, float] = {}
         self._cache_ttl = 300  # 5 Minuten Cache
