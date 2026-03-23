@@ -245,6 +245,26 @@ try:
 except ImportError:
     BCRYPT_AVAILABLE = False
 
+
+def _pbkdf2_hash(password: bytes, salt: bytes | None = None) -> str:
+    """PBKDF2 password hash as safe fallback when bcrypt is unavailable."""
+    if salt is None:
+        salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
+    return f"pbkdf2${salt.hex()}${dk.hex()}"
+
+
+def _pbkdf2_verify(password: bytes, stored: str) -> bool:
+    """Verify a PBKDF2-hashed password."""
+    parts = stored.split("$")
+    if len(parts) != 3 or parts[0] != "pbkdf2":
+        return False
+    salt = bytes.fromhex(parts[1])
+    expected = bytes.fromhex(parts[2])
+    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
+    return hmac.compare_digest(dk, expected)
+
+
 load_dotenv()
 
 # BOT_NAME, BOT_VERSION, BOT_FULL importiert aus services.utils
@@ -1203,7 +1223,7 @@ class MySQLManager:
             if BCRYPT_AVAILABLE:
                 h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
             else:
-                h = hashlib.sha256(pw).hexdigest()
+                h = _pbkdf2_hash(pw)
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
@@ -1230,8 +1250,10 @@ class MySQLManager:
             if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
                 # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
-            # Fallback: SHA-256 (Legacy-Hashes oder bcrypt nicht installiert)
-            log.warning("verify_password: SHA-256 Fallback – bitte bcrypt-Hash verwenden")
+            if stored_hash.startswith("pbkdf2$"):
+                return _pbkdf2_verify(pw, stored_hash)
+            # Legacy SHA-256 hashes (migrate users to bcrypt/pbkdf2)
+            log.warning("verify_password: SHA-256 Legacy-Hash – Migration empfohlen")
             return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
         except Exception:
             return False
@@ -3917,6 +3939,11 @@ class MultiTimeframeFilter:
                     stale = [k for k, v in self._cache.items() if v["ts"] < cutoff]
                     for k in stale:
                         del self._cache[k]
+                    # If still over limit after stale eviction, drop oldest entries
+                    if len(self._cache) > self._MAX_CACHE:
+                        by_age = sorted(self._cache, key=lambda k: self._cache[k]["ts"])
+                        for k in by_age[: len(self._cache) - self._MAX_CACHE]:
+                            del self._cache[k]
             ok = trend >= 0
             return ok, f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
         except Exception as e:
@@ -6839,8 +6866,7 @@ def on_save_keys(data):
 
 @socketio.on("update_discord")
 def on_update_discord(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     if data.get("webhook"):
         CONFIG["discord_webhook"] = data["webhook"]
@@ -6861,8 +6887,7 @@ def on_update_discord(data):
 
 @socketio.on("force_train")
 def on_force_train():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "type": "info"})
     threading.Thread(target=ai_engine._train, daemon=True).start()
@@ -6870,8 +6895,7 @@ def on_force_train():
 
 @socketio.on("force_optimize")
 def on_force_optimize():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "type": "info"})
     threading.Thread(target=ai_engine._optimize, daemon=True).start()
@@ -6879,8 +6903,7 @@ def on_force_optimize():
 
 @socketio.on("force_genetic")
 def on_force_genetic():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     emit("status", {"msg": "🧬 Genetischer Optimizer gestartet...", "type": "info"})
     threading.Thread(
@@ -6890,8 +6913,7 @@ def on_force_genetic():
 
 @socketio.on("reset_ai")
 def on_reset_ai():
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     with ai_engine._lock:
         ai_engine.X_raw = []
@@ -7377,8 +7399,7 @@ def on_rollback_update():
 # ── Multi-Exchange Handler ──────────────────────────────────────────────────────
 @socketio.on("start_exchange")
 def on_start_exchange(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     emit(
@@ -7391,8 +7412,7 @@ def on_start_exchange(data):
 
 @socketio.on("stop_exchange")
 def on_stop_exchange(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     emit(
@@ -7424,8 +7444,7 @@ def on_save_exchange_keys(data):
 
 @socketio.on("close_exchange_position")
 def on_close_exchange_position(data):
-    if session.get("user_role", "user") != "admin":
-        emit("status", {"msg": "❌ Nur Admin", "type": "error"})
+    if not _ws_admin_required():
         return
     ex_name = data.get("exchange", "")
     symbol = data.get("symbol", "")
@@ -8041,6 +8060,7 @@ def api_cluster_nodes_list():
 
 @app.route("/api/v1/cluster/nodes", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_nodes_add():
     """Cluster Control: register a new remote node."""
     data = request.json or {}
@@ -8059,6 +8079,7 @@ def api_cluster_nodes_add():
 
 @app.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
 @api_auth_required
+@admin_required
 def api_cluster_nodes_remove(name):
     """Cluster Control: remove a registered node."""
     try:
@@ -8070,6 +8091,7 @@ def api_cluster_nodes_remove(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/start", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_start(name):
     """Cluster Control: start trading bot on remote node."""
     try:
@@ -8081,6 +8103,7 @@ def api_cluster_node_start(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/stop", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_stop(name):
     """Cluster Control: stop trading bot on remote node."""
     try:
@@ -8092,6 +8115,7 @@ def api_cluster_node_stop(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/restart", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_restart(name):
     """Cluster Control: restart trading bot on remote node."""
     try:
@@ -8103,6 +8127,7 @@ def api_cluster_node_restart(name):
 
 @app.route("/api/v1/cluster/nodes/<name>/deploy", methods=["POST"])
 @api_auth_required
+@admin_required
 def api_cluster_node_deploy(name):
     """Cluster Control: deploy update to remote node."""
     try:
