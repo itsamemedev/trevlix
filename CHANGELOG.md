@@ -7,6 +7,35 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.5.1] – 2026-03-23
+
+### Fixed — Dashboard Bugs, i18n & Code Quality
+
+#### WebSocket & Dashboard Fixes
+- **Admin role not transmitted**: `user_role` was missing from WebSocket snapshot — admin buttons were invisible. Fixed by injecting `user_role` into `on_connect` and `on_request_state` handlers.
+- **`applyStateToRole()` never called**: Function existed but was never invoked from the `update` event handler. Admin UI was permanently hidden.
+- **`pool_status()` → `pool_stats()`**: Wrong method name in analytics handler caused runtime error.
+- **Missing WebSocket listeners**: `healing_update`, `revenue_update`, `cluster_update` events emitted by server but never handled by frontend.
+- **Null reference errors in dashboard.js**: Added null-safety checks to `logPauseBtn`, `hReturn`, `updateGoal()`, and `updateCB()`.
+
+#### Internationalization (i18n)
+- **45 hardcoded German emit messages internationalized**: All `emit("status", ...)` calls in server.py now include a `key` field for frontend translation via `QI18n.t()`.
+- **55+ new translation keys** added to `trevlix_translations.js` in all 5 languages (de/en/es/ru/pt): bot control, settings, AI operations, position management, exchange operations, validation errors, grid trading, updates, backups.
+- **40 duplicate translation keys removed**: JS object key shadowing caused first definitions to be silently overridden. Cleaned up to single canonical definitions.
+- **Hardcoded German in dashboard.js replaced**: `updateGoal()` ("Ziel", "erreicht") and `updateCB()` ("Verluste", "Pause noch") now use `QI18n.t()`.
+- **3 missing JS translation keys added**: `err_min2_symbols`, `err_min1_symbol`, `mtf_label2`.
+- **`market_regime` i18n**: Changed from hardcoded emoji strings to translatable `label_bullish`/`label_bearish` keys.
+- **Server-side `status` handler updated**: `socket.on('status')` now supports `key` field for progressive i18n migration.
+
+#### Admin Analytics Tab
+- **New `sec-analytics` section** in dashboard with 11 metric panels: System Info, API Status, LLM Status, Database, AI Engine, Risk Management, Revenue Tracking, Performance Attribution, Strategy Weights, Indicator Cache, Auto-Healing.
+- **New `request_system_analytics` WebSocket handler** aggregating data from all service modules.
+
+#### Documentation & Versioning
+- Updated version references in `docs/ARCHITECTURE.md`, `docs/SERVICES.md`, `docs/API.md` from 1.2.0 to 1.5.1.
+
+---
+
 ## [1.5.0] – 2026-03-22
 
 ### Added — Autonomous Agents & System Improvements
