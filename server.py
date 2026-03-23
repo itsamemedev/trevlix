@@ -2546,7 +2546,7 @@ class GeneticOptimizer:
         wins = 0
         losses = 0
         total_pnl = 0.0
-        for t in trades[-100:]:
+        for t in trades[:100]:  # [:100] = newest 100 (insert(0,...) puts newest at index 0)
             pp = (t.get("pnl_pct") or 0) / 100
             inv = t.get("invested") or 100
             if pp <= -genome["sl"]:
@@ -3452,7 +3452,7 @@ class AIEngine:
                     wins = 0
                     total_pnl = 0.0
                     cap = 10000.0
-                    for t in trades[-80:]:
+                    for t in trades[:80]:  # [:80] = newest 80
                         pp = t.get("pnl_pct", 0) / 100
                         inv = t.get("invested", cap * 0.15) or cap * 0.15
                         if pp <= -sl:
@@ -3465,7 +3465,7 @@ class AIEngine:
                             wins += pp > 0
                         total_pnl += outcome
                         cap = max(cap + outcome, 1.0)
-                    wr = wins / len(trades[-80:])
+                    wr = wins / len(trades[:80])
                     score = wr * 0.55 + (total_pnl / 10000.0) * 0.45
                     if score > best_score:
                         best_score = score
@@ -3493,7 +3493,7 @@ class AIEngine:
                     best_tp=best_tp,
                     prev_sl=prev_sl,
                     prev_tp=prev_tp,
-                    trade_count=len(trades[-80:]),
+                    trade_count=len(trades[:80]),
                 )
             except Exception:
                 pass  # LLM-Analyse ist optional
@@ -3538,14 +3538,14 @@ class AIEngine:
         dow = now.weekday()  # 0=Mo, 6=So
         woy = now.isocalendar()[1]  # Kalenderwoche
 
-        recent_trades = closed_trades[-20:]
+        recent_trades = closed_trades[:20]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
         recent_wr = sum(1 for t in recent_trades if t.get("pnl", 0) > 0) / max(
             len(recent_trades), 1
         )
         recent_pnl_avg = sum(t.get("pnl", 0) for t in recent_trades) / max(len(recent_trades), 1)
-        # Streak: aufeinanderfolgende Gewinne/Verluste
+        # Streak: aufeinanderfolgende Gewinne/Verluste (newest first, so iterate directly)
         streak = 0
-        for t in reversed(recent_trades[-10:]):
+        for t in recent_trades[:10]:
             won = t.get("pnl", 0) > 0
             if streak == 0:
                 streak = 1 if won else -1
@@ -4247,8 +4247,9 @@ class BotState:
         goal_pct = min(100, round(pv / goal * 100, 1)) if goal > 0 else 0
         goal_eta = "—"
         if goal > 0 and len(closed_copy) > 5:
-            recent_g = sum(t.get("pnl", 0) for t in closed_copy[-20:])
-            daily_est = recent_g / 20 if recent_g > 0 else 0
+            recent_slice = closed_copy[:20]  # [:20] = newest 20 trades
+            recent_g = sum(t.get("pnl", 0) for t in recent_slice)
+            daily_est = recent_g / len(recent_slice) if recent_g > 0 and recent_slice else 0
             if daily_est > 0:
                 remaining = goal - pv
                 if remaining <= 0:
