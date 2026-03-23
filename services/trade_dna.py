@@ -25,6 +25,7 @@ Verwendung:
 
 import hashlib
 import logging
+import math
 import threading
 from collections import defaultdict
 from datetime import datetime
@@ -33,6 +34,18 @@ from typing import Any
 import numpy as np
 
 log = logging.getLogger("trevlix.trade_dna")
+
+
+def _nz(val: object, default: float) -> float:
+    """Return *val* as float, or *default* if None / NaN / invalid."""
+    if val is None:
+        return default
+    try:
+        f = float(val)
+        return default if math.isnan(f) else f
+    except (TypeError, ValueError):
+        return default
+
 
 # ── DNA-Bucket-Definitionen ─────────────────────────────────────────────────
 
@@ -154,10 +167,10 @@ class TradeDNA:
         Returns:
             DNA-Dict mit Fingerprint, Hash und allen Dimensionen.
         """
-        atr_pct = float(scan.get("atr_pct", 1.0) or 1.0)
-        news_score = float(scan.get("news_score", 0.0) or 0.0)
-        ob_ratio = float(scan.get("ob_ratio", 0.5) or 0.5)
-        confidence = float(scan.get("confidence", 0.5) or 0.5)
+        atr_pct = _nz(scan.get("atr_pct"), 1.0)
+        news_score = _nz(scan.get("news_score"), 0.0)
+        ob_ratio = _nz(scan.get("ob_ratio"), 0.5)
+        confidence = _nz(scan.get("confidence"), 0.5)
         hour = datetime.now().hour
 
         dimensions = {
@@ -386,8 +399,8 @@ class TradeDNA:
             if not isinstance(trade, dict):
                 continue
             regime = trade.get("regime", "bull")
-            confidence = float(trade.get("confidence", 0.5) or 0.5)
-            news_score = float(trade.get("news_score", 0.0) or 0.0)
+            confidence = _nz(trade.get("confidence"), 0.5)
+            news_score = _nz(trade.get("news_score"), 0.0)
             won = trade.get("pnl", 0) > 0
 
             # Rekonstruiere vereinfachte Scan-Daten aus Trade-Metadaten

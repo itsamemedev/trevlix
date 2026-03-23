@@ -3538,7 +3538,9 @@ class AIEngine:
         dow = now.weekday()  # 0=Mo, 6=So
         woy = now.isocalendar()[1]  # Kalenderwoche
 
-        recent_trades = closed_trades[:20]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
+        recent_trades = closed_trades[
+            :20
+        ]  # [:20] = newest 20 (insert(0,...) puts newest at index 0)
         recent_wr = sum(1 for t in recent_trades if t.get("pnl", 0) > 0) / max(
             len(recent_trades), 1
         )

@@ -434,6 +434,8 @@ class AdvancedRiskMetrics:
                 return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
             probs = proba_out[:, 1]
             scores = np.abs(probs - y_cal)
+            if len(scores) == 0:
+                return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
             q_level = math.ceil(((len(scores) + 1) * (1 - alpha)) / len(scores))
             q_level = min(q_level, 1.0)
             q_hat = float(np.quantile(scores, q_level))
