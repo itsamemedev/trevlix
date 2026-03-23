@@ -310,12 +310,7 @@ class AutoHealingAgent:
         telegram_token = self._config.get("telegram_token", "")
         if discord_url or telegram_token:
             self._mark_healthy(ServiceName.NOTIFICATIONS)
-        else:
-            self._record_failure(
-                ServiceName.NOTIFICATIONS,
-                Severity.WARNING,
-                "Notification services not configured",
-            )
+        # If neither is configured, skip check – not a failure, just unconfigured
 
     def _check_memory(self) -> None:
         """Check process memory usage via /proc/self/status."""

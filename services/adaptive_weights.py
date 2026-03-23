@@ -199,8 +199,10 @@ class AdaptiveWeights:
         else:
             normalized = {s: 1.0 for s in self._strategies}
 
-        # Nochmal clampen nach Normalisierung
-        return {s: round(max(self._min_w, min(w, self._max_w)), 3) for s, w in normalized.items()}
+        # Soft-Clamp nach Normalisierung: engere Grenzen, damit Differenzierung erhalten bleibt
+        norm_min = max(self._min_w, 0.5)
+        norm_max = min(self._max_w, 2.0)
+        return {s: round(max(norm_min, min(w, norm_max)), 3) for s, w in normalized.items()}
 
     def strategy_performance(self) -> list[dict[str, Any]]:
         """Gibt die Performance-Übersicht aller Strategien zurück.

@@ -19,6 +19,23 @@ from typing import Any
 
 log = logging.getLogger("trevlix.config")
 
+# Keys that must never be logged, exported, or exposed via API
+_PROTECTED_KEYS: frozenset[str] = frozenset(
+    {
+        "api_key",
+        "api_secret",
+        "api_passphrase",
+        "jwt_secret",
+        "secret_key",
+        "encryption_key",
+        "admin_password",
+        "mysql_pass",
+        "discord_webhook",
+        "telegram_token",
+        "llm_api_key",
+    }
+)
+
 
 def _safe_port(val: str) -> int:
     """Parse port number safely, returning 3306 on invalid input."""

@@ -5019,12 +5019,6 @@ def open_position(ex, scan: dict):
         log.info(f"🌐 {symbol}: {dom_reason}")
         return
 
-    # News-Block
-    ns = scan.get("news_score", 0)
-    if ns <= CONFIG.get("news_block_score", -0.4):
-        log.info(f"📰 {symbol} News blockiert: {ns:.2f} – {scan.get('news_headline', '')[:60]}")
-        return
-
     if risk.is_correlated(symbol, list(state.positions.keys())):
         return
     if not scan.get("mtf_ok", True) and CONFIG.get("mtf_enabled"):
@@ -5044,7 +5038,7 @@ def open_position(ex, scan: dict):
         ob_imbalance=scan.get("ob_ratio", 0.5),
         mtf_bullish=int(scan.get("mtf_ok", True)),
         sentiment=scan.get("sentiment", 0.5),
-        news_score=ns,
+        news_score=news_score,
         onchain_score=scan.get("onchain_score", 0),
         dominance_ok=int(dom_ok),
     )
@@ -5055,7 +5049,7 @@ def open_position(ex, scan: dict):
             scan.get("rsi", 50),
             1 if regime.is_bull else -1,
             fg_idx.value,
-            ns,
+            news_score,
             scan.get("ob_ratio", 0.5),
         )
         if rl_action == 0:
@@ -5145,7 +5139,7 @@ def open_position(ex, scan: dict):
         "regime": "bull" if regime.is_bull else "bear",
         "dca_level": 0,
         "partial_sold": 0,
-        "news_score": round(ns, 3),
+        "news_score": round(news_score, 3),
         "onchain_score": round(scan.get("onchain_score", 0), 3),
     }
     # Trade DNA: Fingerprint in Position speichern
@@ -5162,7 +5156,7 @@ def open_position(ex, scan: dict):
     smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
         f"🟢 KAUF {symbol} @ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%"
-        f" | News:{ns:+.2f}{dna_info}{smart_info}"
+        f" | News:{news_score:+.2f}{dna_info}{smart_info}"
     )
     state.add_activity(
         "🟢",
@@ -5170,7 +5164,7 @@ def open_position(ex, scan: dict):
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%",
         "success",
     )
-    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, ns)
+    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, news_score)
     # DNA + Smart Exit Discord-Notifications
     if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
         discord.dna_boost(
