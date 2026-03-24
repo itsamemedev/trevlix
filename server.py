@@ -4971,6 +4971,7 @@ def scan_symbol(ex, symbol) -> dict | None:
             "ohlcv": [
                 [int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])]
                 for r in ohlcv[-100:]
+                if len(r) >= 6
             ],
             "time": datetime.now().strftime("%H:%M:%S"),
         }

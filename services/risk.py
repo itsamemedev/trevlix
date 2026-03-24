@@ -213,7 +213,7 @@ class LiquidityScorer:
     def check(self, ex, symbol) -> tuple[bool, float, str]:
         try:
             ob = ex.fetch_order_book(symbol, limit=5)
-            if not ob["bids"] or not ob["asks"]:
+            if not ob or not ob.get("bids") or not ob.get("asks"):
                 return False, 0.0, "Kein Orderbook"
             bid = ob["bids"][0][0]
             ask = ob["asks"][0][0]

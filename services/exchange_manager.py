@@ -206,7 +206,7 @@ class ExchangeManager:
         result: dict[str, dict] = {}
         for name, inst in self.get_active_exchanges(user_id):
             try:
-                bal = inst.fetch_balance()
+                bal = inst.fetch_balance() or {}
                 result[name] = {
                     "total": {
                         k: float(v)

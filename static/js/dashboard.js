@@ -450,7 +450,7 @@ function updateSignals(sigs){
 function updateActivity(acts){
   const el=document.getElementById('actList');
   if(!el) return;
-  if(!acts.length){el.innerHTML='<div class="empty"><div class="empty-ico">⚡</div>Starte TREVLIX</div>';return;}
+  if(!acts.length){el.innerHTML='<div class="empty"><div class="empty-ico">⚡</div>'+QI18n.t('empty_start_bot')+'</div>';return;}
   el.innerHTML=acts.slice(0,12).map(a=>{
     const c={success:'var(--green)',error:'var(--red)',warning:'var(--yellow)',info:'var(--cyan)'}[a.type]||'var(--sub)';
     return `<div style="display:flex;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
@@ -466,7 +466,7 @@ function renderAlerts(alerts){
   const ac=document.getElementById('alertCount'); if(ac) ac.textContent=alerts.filter(a=>!a.triggered).length;
   const el=document.getElementById('alertList');
   if(!el) return;
-  if(!alerts.length){el.innerHTML='<div class="empty" style="padding:8px">Keine Alerts</div>';return;}
+  if(!alerts.length){el.innerHTML='<div class="empty" style="padding:8px">'+QI18n.t('empty_no_alerts')+'</div>';return;}
   el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
     <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
     <div style="flex:1"><div style="font-size:12px;font-weight:700">${esc(String(a.symbol||''))}</div>
@@ -487,7 +487,7 @@ function renderArbLog(arb){
     <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${esc(String(a.buy||''))} → Verkauf: ${esc(String(a.sell||''))} · ${esc(String(a.time||'—'))}</div>
   </div>`).join('');
   const alh=document.getElementById('arbLogHome'); if(alh) alh.innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
-  const al2=document.getElementById('arbList2'); if(al2) al2.innerHTML=html||'<div class="empty" style="padding:8px">Noch kein Scan</div>';
+  const al2=document.getElementById('arbList2'); if(al2) al2.innerHTML=html||'<div class="empty" style="padding:8px">'+QI18n.t('empty_no_scans')+'</div>';
 }
 
 // ── Heatmap ──────────────────────────────────────────────────────────
@@ -512,7 +512,7 @@ async function loadHeatmap(sortBy){
         <div class="hm-news">${nc}</div>
       </div>`;
     }).join('');
-  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">Fehler: '+esc(String(e))+'</div>';}
+  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
 }
 
 // ── Chart ────────────────────────────────────────────────────────────
@@ -557,7 +557,7 @@ async function loadChart(){
       document.getElementById('cMTF').textContent=sig.mtf_desc||'—';
       document.getElementById('cVol').textContent=sig.confidence?Math.round(sig.confidence*100)+'%':'—';
     }
-  }catch(e){chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Fehler: '+esc(String(e))+'</div>';}
+  }catch(e){chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
 }
 function openChart(sym){document.getElementById('chartSym').value=sym;nav('chart',document.getElementById('nb-chart'));loadChart();}
 let _tvChartInst = null; // Track LightweightCharts instance for cleanup
@@ -600,7 +600,7 @@ function renderTVChart(data, el){
     chart.timeScale().fitContent();
   } catch(e) {
     console.error('Chart render error:', e);
-    el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">Chart-Fehler: '+esc(String(e.message||e))+'</div>';
+    el.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">'+QI18n.t('err_generic')+': '+esc(String(e.message||e))+'</div>';
   }
 }
 
@@ -610,7 +610,7 @@ function runBacktest(){
   const sl=parseFloat(document.getElementById('btSL')?.value);
   const tp=parseFloat(document.getElementById('btTP')?.value);
   const vote=parseFloat(document.getElementById('btVote')?.value);
-  if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic')+': Ungültige Eingabe','warning');return;}
+  if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic'),'warning');return;}
   const bts=document.getElementById('btStatus'); if(bts) bts.textContent='⏳ Backtest läuft...';
   const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
   const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
@@ -987,8 +987,11 @@ async function loadFollowers(){
 }
 
 async function testCopySignal(){
-  await fetch('/api/v1/copy-trading/test',{method:'POST',headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-  toast('📡 '+QI18n.t('msg_test_signal'),'info');
+  try {
+    const r = await fetch('/api/v1/copy-trading/test',{method:'POST',headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    if(r.ok) toast('📡 '+QI18n.t('msg_test_signal'),'info');
+    else toast(QI18n.t('err_generic'),'error');
+  } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
 }
 
 // ── Pine Script ──────────────────────────────────────────────────────────
@@ -1189,7 +1192,7 @@ async function loadUsers() {
     const r = await fetch('/api/v1/admin/users', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const users = d.users || d || [];
-    if (!users.length) { if(el) el.innerHTML='<div class="empty">Keine Nutzer</div>'; return; }
+    if (!users.length) { if(el) el.innerHTML='<div class="empty">'+QI18n.t('empty_no_users')+'</div>'; return; }
     if (el) el.innerHTML = users.map(u => `
       <div style="display:flex;align-items:center;justify-content:space-between;
         padding:8px 0;border-bottom:1px solid var(--muted);gap:8px">
@@ -1320,7 +1323,7 @@ async function loadSharedAIStatus() {
           </div>
         </div>`).join('');
     } else if (contribs && !d.contributors?.length) {
-      contribs.innerHTML = '<div class="empty"><div class="empty-ico">🏆</div>Noch keine Beiträge</div>';
+      contribs.innerHTML = '<div class="empty"><div class="empty-ico">🏆</div>'+QI18n.t('empty_no_contributions')+'</div>';
     }
   } catch(e) { console.warn('loadSharedAIStatus:', e); }
 }
@@ -1414,9 +1417,11 @@ async function runMonteCarlo() {
 // ════════════════════════════════════════════════════════════════
 async function loadFundingRates() {
   const el = document.getElementById('fundingList');
+  if(!el) return;
   try {
     const r = await fetch('/api/v1/funding-rates?n=15',
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    if(!r.ok){ el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; return; }
     const d = await r.json();
     const rates = d.top_rates || [];
     if (!rates.length) { el.innerHTML='<div class="empty">'+QI18n.t('empty_no_data')+'</div>'; return; }
@@ -1429,16 +1434,19 @@ async function loadFundingRates() {
         ${pct > 0.08 ? '<span style="font-size:9px;background:rgba(239,68,68,.1);color:#ef4444;padding:1px 5px;border-radius:4px">'+QI18n.t('label_high')+'</span>' : ''}
       </div>`;
     }).join('');
-  } catch(e) { el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
+  } catch(e) { if(el) el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
 async function saveFundingConfig() {
   const enabled = document.getElementById('fundingEnabled')?.checked;
   const maxRate = parseFloat(document.getElementById('fundingMaxRate')?.value || '0.1') / 100;
-  await fetch('/api/v1/funding-rates/config', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
-    body: JSON.stringify({enabled, max_rate: maxRate})
-  });
-  toast(QI18n.t('msg_funding_saved'),'success');
+  try {
+    const r = await fetch('/api/v1/funding-rates/config', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      body: JSON.stringify({enabled, max_rate: maxRate})
+    });
+    if(r.ok) toast(QI18n.t('msg_funding_saved'),'success');
+    else toast(QI18n.t('err_generic'),'error');
+  } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -2046,7 +2054,7 @@ async function mexLoadTrades() {
       </div>`;
     }).join('');
   } catch(e) {
-    el.innerHTML = '<div class="empty">Fehler beim Laden</div>';
+    el.innerHTML = '<div class="empty">'+QI18n.t('empty_load_error')+'</div>';
   }
 }
 
