@@ -646,6 +646,7 @@ function runBacktest(){
   const tp=parseFloat(document.getElementById('btTP')?.value);
   const vote=parseFloat(document.getElementById('btVote')?.value);
   if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic'),'warning');return;}
+  if(!socket.connected){toast('⚠️ '+QI18n.t('conn_disconnected'),'warning');return;}
   const bts=document.getElementById('btStatus'); if(bts) bts.textContent=QI18n.t('running_bt');
   const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
   const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
@@ -724,16 +725,24 @@ function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
 // ── Bot controls ─────────────────────────────────────────────────────
-function startBot(){socket.emit('start_bot');}
-function stopBot(){socket.emit('stop_bot');}
-function pauseBot(){socket.emit('pause_bot');}
+function _emitSafe(event, data){
+  if(!socket.connected){
+    toast('⚠️ '+QI18n.t('conn_disconnected')+' – '+QI18n.t('msg_socket_reconnect'),'warning');
+    return false;
+  }
+  if(data!==undefined) socket.emit(event,data); else socket.emit(event);
+  return true;
+}
+function startBot(){_emitSafe('start_bot');}
+function stopBot(){_emitSafe('stop_bot');}
+function pauseBot(){_emitSafe('pause_bot');}
 const _closeHistory = [];
 let _undoTimeout = null;
 
 function closePos(sym){
   if(!confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) return;
+  if(!_emitSafe('close_position',{symbol:sym})) return;
   _closeHistory.push(sym);
-  socket.emit('close_position',{symbol:sym});
   showUndoBar(sym);
 }
 
@@ -1124,8 +1133,17 @@ function applyStateToRole(data) {
 }
 
 // ── Admin: System Analytics ───────────────────────────────────────────────────
-function loadSystemAnalytics() {
-  socket.emit('request_system_analytics');
+async function loadSystemAnalytics() {
+  if(socket.connected){
+    socket.emit('request_system_analytics');
+  } else {
+    // HTTP fallback when socket is disconnected
+    try{
+      const r=await fetch('/api/v1/system-analytics',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      if(r.ok){ const d=await r.json(); socket.listeners('system_analytics').forEach(fn=>fn(d)); }
+      else { toast('⚠️ Analytics: '+r.status,'warning'); }
+    }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
+  }
 }
 socket.on('system_analytics', d => {
   if (!d) return;

@@ -93,14 +93,14 @@
       <div class="h-sub" id="hSub">QUANTUM TRADING AI · v1.5.0</div>
     </div>
   </div>
-  <div style="display:flex;align-items:center;gap:7px">
+  <div class="h-actions" style="display:flex;align-items:center;gap:7px">
     <div class="h-badge stop" id="statusBadge"><div class="h-dot"></div><span id="statusTxt" data-i18n="status_stopped">Gestoppt</span></div>
     <span class="role-badge" id="roleBadge">user</span>
-  <button class="theme-btn" onclick="requestPushPermission()" id="pushBtn" title="Browser-Benachrichtigungen">🔔</button>
-  <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Dark/Light Mode">🌙</button>
-  <div class="lang-switcher" id="langSwitcher"></div>
-    <a href="index.html" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Zur Website">WEB</a>
-    <a href="INSTALLATION.html" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Dokumentation">DOCS</a>
+    <button class="theme-btn" onclick="requestPushPermission()" id="pushBtn" title="Browser-Benachrichtigungen">🔔</button>
+    <button class="theme-btn" onclick="toggleTheme()" id="themeBtn" title="Dark/Light Mode">🌙</button>
+    <div class="lang-switcher" id="langSwitcher"></div>
+    <a href="index.html" class="h-link" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Zur Website">WEB</a>
+    <a href="INSTALLATION.html" class="h-link" style="font-size:11px;text-decoration:none;color:var(--dim);font-family:var(--mono);padding:4px 8px;border:1px solid var(--line2);border-radius:5px;white-space:nowrap" title="Dokumentation">DOCS</a>
     <span class="conn-status disconnected" id="connStatus" title="WebSocket Status"></span>
     <a href="/logout" style="font-size:17px;text-decoration:none;opacity:.35" title="Abmelden">&#128682;</a>
   </div>
@@ -782,7 +782,7 @@
     </div>
 
     <!-- ══ SYSTEM ANALYTICS (Admin) ══ -->
-    <div class="sec admin-only" id="sec-analytics" style="gap:14px">
+    <div class="sec" id="sec-analytics" style="gap:14px">
       <div class="card hero" style="background:linear-gradient(135deg,#060c12,#091017)">
         <div class="card-body" style="padding:18px">
           <div style="font-family:var(--mono);font-size:9px;letter-spacing:3px;color:var(--sub);margin-bottom:6px;text-transform:uppercase" data-i18n="admin_analytics_title">SYSTEM ANALYTICS</div>
@@ -1131,7 +1131,7 @@
   <div class="nb nb-secondary" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
   <div class="nb nb-secondary admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
   <div class="nb nb-secondary admin-only" id="nb-admin" onclick="nav('admin',this)" title="Admin [G]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">G</kbd></div>
-  <div class="nb nb-secondary admin-only" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
+  <div class="nb nb-secondary" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
   <div class="nb nb-secondary" id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
   <!-- Mobile "More" button – only visible < 900px -->
   <div class="nb nb-more" id="nb-more" onclick="toggleMobileNav()" title="Mehr"><span class="nb-icon">☰</span><span data-i18n="nav_more">Mehr</span></div>

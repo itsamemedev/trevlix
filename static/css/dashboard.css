@@ -446,6 +446,22 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
   .btn{min-height:44px}
   /* section scroll feels native */
   main{-webkit-overflow-scrolling:touch}
+
+  /* ── Header: collapse for mobile ── */
+  header{flex-wrap:wrap;height:auto;padding:8px 10px;gap:6px}
+  .h-logo{flex:1;min-width:0}
+  .h-sub{display:none}
+  .h-actions{flex-wrap:wrap;gap:4px;justify-content:flex-end}
+  .h-actions .h-link{display:none}
+  .lang-switcher{order:10}
+}
+@media(max-width:479px){
+  .h-title{font-size:13px}
+  .h-badge{font-size:9px;padding:2px 6px}
+  .role-badge{font-size:8px;padding:1px 5px}
+  .lang-switcher{gap:2px}
+  .lang-btn{padding:3px 5px;font-size:9px}
+  .theme-btn{font-size:14px;padding:4px}
 }
 
 /* ══ [#37] KEYBOARD SHORTCUT BADGES IN NAVIGATION ════════════════ */
