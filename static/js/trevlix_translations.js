@@ -24,6 +24,7 @@ const QT = {
   nav_tax:      {de:'Steuer',en:'Tax',es:'Impuesto',ru:'Налоги',pt:'Imposto'},
   nav_log:      {de:'Log',en:'Log',es:'Registro',ru:'Журнал',pt:'Log'},
   nav_settings: {de:'Settings',en:'Settings',es:'Ajustes',ru:'Настройки',pt:'Config'},
+  nav_more:     {de:'Mehr',en:'More',es:'Más',ru:'Ещё',pt:'Mais'},
 
   /* ── HOME ── */
   portfolio_value:   {de:'Portfolio-Wert',en:'Portfolio Value',es:'Valor de Cartera',ru:'Стоимость портфеля',pt:'Valor do Portfólio'},
@@ -919,6 +920,8 @@ const QT = {
   empty_no_entries:    {de:'Keine Einträge',en:'No entries',es:'Sin entradas',ru:'Нет записей',pt:'Sem entradas'},
   empty_no_users:      {de:'Keine Nutzer',en:'No users',es:'Sin usuarios',ru:'Нет пользователей',pt:'Sem usuários'},
   empty_no_data:       {de:'Keine Daten',en:'No data',es:'Sin datos',ru:'Нет данных',pt:'Sem dados'},
+  empty_no_scans:      {de:'Noch kein Scan',en:'No scans yet',es:'Sin escaneos',ru:'Нет сканирований',pt:'Sem varreduras'},
+  empty_no_contributions:{de:'Noch keine Beiträge',en:'No contributions yet',es:'Sin contribuciones',ru:'Нет вкладов',pt:'Sem contribuições'},
   empty_no_followers:  {de:'Keine Follower registriert',en:'No followers registered',es:'Sin seguidores registrados',ru:'Нет зарегистрированных подписчиков',pt:'Sem seguidores registrados'},
   empty_no_locks:      {de:'Keine Sperren aktiv',en:'No locks active',es:'Sin bloqueos activos',ru:'Нет активных блокировок',pt:'Sem bloqueios ativos'},
   label_bullish:       {de:'Bullish',en:'Bullish',es:'Alcista',ru:'Бычий',pt:'Altista'},

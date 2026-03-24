@@ -1123,17 +1123,23 @@
   <div class="nb"        id="nb-pos"      onclick="nav('pos',this)"  title="Trades [P]"><span class="nb-icon">💼</span><span data-i18n="nav_trades">Trades</span><div class="nb-badge" id="posBadge">0</div><kbd class="nav-kbd">P</kbd></div>
   <div class="nb"        id="nb-stats"    onclick="nav('stats',this)" title="Statistik [X]"><span class="nb-icon">📈</span><span data-i18n="nav_stats">Stats</span><kbd class="nav-kbd">X</kbd></div>
   <div class="nb"        id="nb-ai"       onclick="nav('ai',this)"   title="KI-Modell [A]"><span class="nb-icon">🧠</span><span data-i18n="nav_ai">KI</span><kbd class="nav-kbd">A</kbd></div>
-  <div class="nb"        id="nb-heat"     onclick="nav('heat',this);loadHeatmap('change')" title="Markt [M]"><span class="nb-icon">🌡️</span><span data-i18n="nav_market">Markt</span><kbd class="nav-kbd">M</kbd></div>
+  <div class="nb nb-secondary" id="nb-heat" onclick="nav('heat',this);loadHeatmap('change')" title="Markt [M]"><span class="nb-icon">🌡️</span><span data-i18n="nav_market">Markt</span><kbd class="nav-kbd">M</kbd></div>
   <div class="nb"        id="nb-chart"    onclick="nav('chart',this)" title="Chart [C]"><span class="nb-icon">🕯️</span><span data-i18n="nav_chart">Chart</span><kbd class="nav-kbd">C</kbd></div>
-  <div class="nb"        id="nb-bt"       onclick="nav('bt',this);loadBtHistory()" title="Backtest [B]"><span class="nb-icon">🔬</span><span data-i18n="nav_backtest">Backtest</span><kbd class="nav-kbd">B</kbd></div>
-  <div class="nb"        id="nb-tax"      onclick="nav('tax',this)"  title="Steuer [T]"><span class="nb-icon">🧾</span><span data-i18n="nav_tax">Steuer</span></div>
-  <div class="nb"        id="nb-log"      onclick="nav('log',this)"  title="Log [L]"><span class="nb-icon">📋</span><span data-i18n="nav_log">Log</span><kbd class="nav-kbd">L</kbd></div>
-  <div class="nb" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
-  <div class="nb admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
-  <div class="nb admin-only" id="nb-admin" onclick="nav('admin',this)" title="Admin [G]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">G</kbd></div>
-  <div class="nb admin-only" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
-  <div class="nb"        id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
+  <div class="nb nb-secondary" id="nb-bt" onclick="nav('bt',this);loadBtHistory()" title="Backtest [B]"><span class="nb-icon">🔬</span><span data-i18n="nav_backtest">Backtest</span><kbd class="nav-kbd">B</kbd></div>
+  <div class="nb nb-secondary" id="nb-tax" onclick="nav('tax',this)" title="Steuer [T]"><span class="nb-icon">🧾</span><span data-i18n="nav_tax">Steuer</span></div>
+  <div class="nb nb-secondary" id="nb-log" onclick="nav('log',this)" title="Log [L]"><span class="nb-icon">📋</span><span data-i18n="nav_log">Log</span><kbd class="nav-kbd">L</kbd></div>
+  <div class="nb nb-secondary" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
+  <div class="nb nb-secondary admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
+  <div class="nb nb-secondary admin-only" id="nb-admin" onclick="nav('admin',this)" title="Admin [G]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">G</kbd></div>
+  <div class="nb nb-secondary admin-only" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
+  <div class="nb nb-secondary" id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
+  <!-- Mobile "More" button – only visible < 900px -->
+  <div class="nb nb-more" id="nb-more" onclick="toggleMobileNav()" title="Mehr"><span class="nb-icon">☰</span><span data-i18n="nav_more">Mehr</span></div>
 </nav>
+
+<!-- Mobile Nav Drawer -->
+<div class="mob-nav-overlay" id="mobNavOverlay" onclick="closeMobileNav()"></div>
+<div class="mob-nav-drawer" id="mobNavDrawer" aria-label="Navigation"></div>
 
 <!-- [#34] Externes JavaScript für besseres Caching -->
 <script src="/static/js/dashboard.js"></script>

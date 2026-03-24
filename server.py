@@ -4971,6 +4971,7 @@ def scan_symbol(ex, symbol) -> dict | None:
             "ohlcv": [
                 [int(r[0]), float(r[1]), float(r[2]), float(r[3]), float(r[4]), float(r[5])]
                 for r in ohlcv[-100:]
+                if len(r) >= 6
             ],
             "time": datetime.now().strftime("%H:%M:%S"),
         }
@@ -6719,6 +6720,20 @@ def on_connect(auth=None):
         snap["user_role"] = "user"
     emit("update", snap)
     log.info(f"📱 Client verbunden: {username}")
+
+
+@socketio.on("disconnect")
+def on_disconnect():
+    """Cleanup bei Client-Disconnect – Session-State aufräumen."""
+    username = session.get("username", "?")
+    sid = getattr(request, "sid", "?")
+    log.info(f"📴 Client getrennt: {username} (sid={sid})")
+
+
+@socketio.on_error_default
+def default_error_handler(e: Exception) -> None:
+    """Globaler Fallback-Handler für unbehandelte SocketIO-Fehler."""
+    log.error(f"⚠️ SocketIO-Fehler: {type(e).__name__}: {e}")
 
 
 @socketio.on("request_state")

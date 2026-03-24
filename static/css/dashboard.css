@@ -673,22 +673,70 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
   animation: blink .8s infinite;
 }
 
-/* ══ MODERNIZATION: BETTER MOBILE NAV ═════════════════════════════════ */
+/* ══ MOBILE NAVIGATION: 5 TABS + DRAWER ══════════════════════════════ */
+/* "More" button hidden on desktop */
+.nb-more { display:none !important; }
+
+/* Mobile nav overlay (backdrop) */
+.mob-nav-overlay {
+  display:none; position:fixed; inset:0; z-index:900;
+  background:rgba(0,0,0,.55); backdrop-filter:blur(4px);
+  -webkit-backdrop-filter:blur(4px);
+}
+.mob-nav-overlay.open { display:block; animation:fadeIn .2s ease; }
+
+/* Mobile nav drawer (slide-up sheet) */
+.mob-nav-drawer {
+  display:none; position:fixed; bottom:0; left:0; right:0; z-index:901;
+  background:rgba(8,14,20,.98); border-top:1px solid rgba(0,255,136,.12);
+  border-radius:18px 18px 0 0; padding:12px 16px calc(16px + env(safe-area-inset-bottom,0));
+  max-height:70vh; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  box-shadow:0 -12px 48px rgba(0,0,0,.5);
+}
+.mob-nav-drawer.open {
+  display:block; animation:slideUp .25s cubic-bezier(.22,1,.36,1);
+}
+.mob-nav-drawer .drawer-handle {
+  width:36px; height:4px; border-radius:2px; background:var(--muted);
+  margin:0 auto 14px; opacity:.4;
+}
+.mob-nav-drawer .drawer-item {
+  display:flex; align-items:center; gap:12px; padding:13px 14px;
+  border-radius:10px; color:var(--sub); font-size:14px; font-weight:600;
+  cursor:pointer; transition:.15s; position:relative;
+}
+.mob-nav-drawer .drawer-item:active { background:rgba(0,255,136,.08); }
+.mob-nav-drawer .drawer-item.active { color:var(--jade); background:rgba(0,255,136,.06); }
+.mob-nav-drawer .drawer-item .di-icon { font-size:20px; width:28px; text-align:center; flex-shrink:0; }
+.mob-nav-drawer .drawer-item .di-kbd {
+  font-size:10px; font-family:var(--mono); color:var(--dim);
+  background:rgba(255,255,255,.05); border:1px solid var(--muted);
+  border-radius:4px; padding:2px 6px; margin-left:auto;
+}
+@keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+@keyframes fadeIn { from{opacity:0} to{opacity:1} }
+
+[data-theme="light"] .mob-nav-drawer { background:rgba(245,248,252,.98) !important; }
+[data-theme="light"] .mob-nav-overlay { background:rgba(0,0,0,.3) !important; }
+
 @media(max-width:899px) {
+  /* Show only 5 primary tabs + "More" button */
   .bnav {
-    grid-template-columns: repeat(auto-fit, minmax(50px, 1fr)) !important;
-    max-width: 100vw;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    grid-template-columns: repeat(5,1fr) !important;
+    overflow:hidden !important;
   }
+  /* Hide secondary nav items on mobile (they go in drawer) */
+  .nb.nb-secondary { display:none !important; }
+  /* Show the "More" button on mobile */
+  .nb-more { display:flex !important; }
+  /* Better mobile touch targets */
+  .nb { padding:8px 2px !important; min-height:52px; }
+  .nb-icon { font-size:20px !important; }
   .nb span:not(.nb-icon):not(.nb-badge) {
-    font-size: 7px !important;
-    line-height: 1.1;
-    max-width: 50px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    font-size:9px !important; line-height:1.2;
   }
+  /* Content padding for fixed bottom nav */
+  main { padding-bottom:68px !important; }
 }
 
 /* ══ MODERNIZATION: IMPROVED TOAST ANIMATIONS ═════════════════════════ */

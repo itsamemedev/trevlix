@@ -372,7 +372,7 @@ class KnowledgeBase:
             v = s.get("value") or {}
             total_trades = v.get("total_trades", 0)
             if total_trades >= 3:
-                wr = v.get("wins", 0) / total_trades
+                wr = v.get("wins", 0) / max(total_trades, 1)
                 top_symbols.append(
                     {
                         "symbol": s.get("key", "?"),
@@ -389,7 +389,7 @@ class KnowledgeBase:
             v = s.get("value") or {}
             num_trades = v.get("trades", 0)
             if num_trades >= 2:
-                wr = v.get("wins", 0) / num_trades
+                wr = v.get("wins", 0) / max(num_trades, 1)
                 strat_ranking.append(
                     {
                         "strategy": s.get("key", "?"),
