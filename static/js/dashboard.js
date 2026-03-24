@@ -758,35 +758,35 @@ function showUndoBar(sym){
 function undoClose(){
   if(!_closeHistory.length) return;
   const sym = _closeHistory.pop();
-  socket.emit('undo_close', {symbol: sym});
+  _emitSafe('undo_close', {symbol: sym});
   document.getElementById('undoBar').style.display = 'none';
   clearTimeout(_undoTimeout);
   toast('↩ '+QI18n.t('msg_undo_close')+' '+sym,'info');
 }
-function forceTrain(){socket.emit('force_train');toast('🧠 '+QI18n.t('ai_training')+'...','info');}
-function forceOptimize(){socket.emit('force_optimize');toast('🔬 '+QI18n.t('toast_optimize'),'info');}
-function forceGenetic(){socket.emit('force_genetic');toast('🧬 '+QI18n.t('toast_genetic'),'info');}
-function resetAI(){if(confirm(QI18n.t('confirm_reset_ai'))) socket.emit('reset_ai');}
-function manualBackup(){socket.emit('manual_backup');}
-function sendReport(){socket.emit('send_daily_report');}
-function resetCB(){socket.emit('reset_circuit_breaker');}
-function refreshDom(){socket.emit('update_dominance');toast(QI18n.t('dominance')+'...','info');}
-function scanArb(){socket.emit('scan_arbitrage');toast(QI18n.t('btn_arbitrage')+'...','info');}
+function forceTrain(){if(_emitSafe('force_train')) toast('🧠 '+QI18n.t('ai_training')+'...','info');}
+function forceOptimize(){if(_emitSafe('force_optimize')) toast('🔬 '+QI18n.t('toast_optimize'),'info');}
+function forceGenetic(){if(_emitSafe('force_genetic')) toast('🧬 '+QI18n.t('toast_genetic'),'info');}
+function resetAI(){if(confirm(QI18n.t('confirm_reset_ai'))) _emitSafe('reset_ai');}
+function manualBackup(){_emitSafe('manual_backup');}
+function sendReport(){_emitSafe('send_daily_report');}
+function resetCB(){_emitSafe('reset_circuit_breaker');}
+function refreshDom(){if(_emitSafe('update_dominance')) toast(QI18n.t('dominance')+'...','info');}
+function scanArb(){if(_emitSafe('scan_arbitrage')) toast(QI18n.t('btn_arbitrage')+'...','info');}
 function addAlert(){
   const sym=document.getElementById('alertSym').value.trim().toUpperCase();
   const target=parseFloat(document.getElementById('alertTarget').value);
   const dir=document.getElementById('alertDir').value;
   if(!sym||isNaN(target)||target<=0){toast(QI18n.t('err_symbol_price'),'error');return;}
-  socket.emit('add_price_alert',{symbol:sym,target,direction:dir});
+  _emitSafe('add_price_alert',{symbol:sym,target,direction:dir});
   document.getElementById('alertTarget').value='';
 }
-function deleteAlert(id){socket.emit('delete_price_alert',{id});}
+function deleteAlert(id){_emitSafe('delete_price_alert',{id});}
 
 // ── Settings ─────────────────────────────────────────────────────────
 
 function changeLang(lang){
   QI18n.setLang(lang);
-  socket.emit('update_config',{language:lang});
+  _emitSafe('update_config',{language:lang});
   toast(QLANG_FLAGS[lang]+' '+QLANG_NAMES[lang],'info');
 }
 function applyPreset(name){
@@ -807,7 +807,7 @@ function saveSettings(){
   const sl=_pf(document.getElementById('sSL').value);
   const tp=_pf(document.getElementById('sTP').value);
   if(sl<=0||tp<=0||sl>=tp){toast(QI18n.t('err_sltp_invalid'),'error');return;}
-  socket.emit('update_config',{
+  _emitSafe('update_config',{
     stop_loss_pct:sl/100,
     take_profit_pct:tp/100,
     max_open_trades:_pi(document.getElementById('sMaxTrades').value),
@@ -839,11 +839,11 @@ function saveSettings(){
   });
 }
 function saveKeys(){
-  socket.emit('save_api_keys',{api_key:document.getElementById('cfgKey').value,
+  _emitSafe('save_api_keys',{api_key:document.getElementById('cfgKey').value,
     secret:document.getElementById('cfgSecret').value,exchange:document.getElementById('sExchange').value});
 }
 function saveDiscord(){
-  socket.emit('update_discord',{webhook:document.getElementById('sDiscord').value,
+  _emitSafe('update_discord',{webhook:document.getElementById('sDiscord').value,
     report_hour:parseInt(document.getElementById('sReportHour').value, 10)});
 }
 async function createToken(){
@@ -863,7 +863,7 @@ function wizNext(){
 }
 function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).className='wd'+(i<=wizStep?' done':'');}
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>b.style.borderColor='rgba(0,255,136,.2)');el.style.borderColor='var(--cyan)';wizEx=ex;document.getElementById('sExchange').value=ex;}
-function wizSaveKeys(){socket.emit('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
+function wizSaveKeys(){_emitSafe('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
 function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
 
@@ -967,17 +967,15 @@ socket.on('backtest_result', d=>{
 
 // ── GitHub Updater ───────────────────────────────────────────────────
 function checkUpdate(){
-  toast('🔍 '+QI18n.t('checking_github'),'info');
-  socket.emit('check_update');
+  if(_emitSafe('check_update')) toast('🔍 '+QI18n.t('checking_github'),'info');
 }
 function applyUpdate(){
   if(!confirm(QI18n.t('confirm_install_update'))) return;
-  toast('⬆ '+QI18n.t('installing_update'),'info');
-  socket.emit('apply_update');
+  if(_emitSafe('apply_update')) toast('⬆ '+QI18n.t('installing_update'),'info');
 }
 function rollbackUpdate(){
   if(!confirm(QI18n.t('confirm_rollback'))) return;
-  socket.emit('rollback_update');
+  _emitSafe('rollback_update');
 }
 function renderUpdateStatus(d){
   document.getElementById('updateCurrent').textContent = d.current || d.current_version || '—';
@@ -1289,15 +1287,15 @@ async function createUser() {
   const password = document.getElementById('newPassword')?.value;
   const role     = document.getElementById('newRole')?.value || 'user';
   if (!username || !password) { toast(QI18n.t('err_user_pass'),'warning'); return; }
-  socket.emit('admin_create_user', {username, password, role});
+  if(!_emitSafe('admin_create_user', {username, password, role})) return;
   document.getElementById('newUsername').value = '';
   document.getElementById('newPassword').value = '';
   setTimeout(loadUsers, 800);
 }
 
 async function toggleRegistration(enabled) {
-  socket.emit('update_config', {allow_registration: enabled});
-  toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
+  if(_emitSafe('update_config', {allow_registration: enabled}))
+    toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
 }
 
 
@@ -1568,7 +1566,7 @@ async function createGrid() {
   if (!symbol || isNaN(lower) || isNaN(upper) || isNaN(levels) || isNaN(invest) || lower >= upper) {
     toast(QI18n.t('err_grid_params'), 'warning'); return;
   }
-  socket.emit('create_grid', {symbol, lower, upper, levels, invest_per_level: invest});
+  if(!_emitSafe('create_grid', {symbol, lower, upper, levels, invest_per_level: invest})) return;
   setTimeout(loadGrids, 600);
 }
 async function loadGrids() {
@@ -1672,12 +1670,11 @@ function saveBreakEven() {
   const trigger = parseFloat(document.getElementById('beeTrigger')?.value || '1.5') / 100;
   const buffer  = parseFloat(document.getElementById('beeBuffer')?.value  || '0.1') / 100;
   const enabled = document.getElementById('beeEnabled')?.checked;
-  socket.emit('update_config', {
+  if(_emitSafe('update_config', {
     break_even_enabled: enabled,
     break_even_trigger: trigger,
     break_even_buffer:  buffer,
-  });
-  toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
+  })) toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1854,7 +1851,6 @@ async function runCompareBacktest(){
 
 // ── Backtest History ────────────────────────────────────────────────────────
 // NOTE: loadBtHistory is defined above (merged version that populates both #btHistory and #btHistoryList)
-}
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
 async function adjustSL(symbol, entryPrice){
@@ -2072,8 +2068,8 @@ function mexUpdate(data) {
   }).join('');
 }
 
-function mexStart(name)  { socket.emit('start_exchange',  {exchange: name}); }
-function mexStop(name)   { socket.emit('stop_exchange',   {exchange: name}); }
+function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
+function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
 
 function mexSetupKeys(name) {
   document.getElementById('mex-key-exchange').value = name;
@@ -2093,14 +2089,14 @@ function mexSaveKeys() {
   const secret     = document.getElementById('mex-key-secret').value.trim();
   const passphrase = document.getElementById('mex-key-passphrase')?.value?.trim() || '';
   if (!api_key || !secret) { toast(QI18n.t('err_apikey_secret'), 'warning'); return; }
-  socket.emit('save_exchange_keys', {exchange, api_key, secret, passphrase});
+  if(!_emitSafe('save_exchange_keys', {exchange, api_key, secret, passphrase})) return;
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
 }
 
 function mexClosePos(exchange, symbol) {
   if (!confirm(QI18n.t('confirm_close_exchange_pos').replace('{sym}',symbol).replace('{exc}',exchange.toUpperCase()))) return;
-  socket.emit('close_exchange_position', {exchange, symbol});
+  _emitSafe('close_exchange_position', {exchange, symbol});
 }
 
 async function mexLoadTrades() {
