@@ -1128,6 +1128,23 @@ const QT = {
   err_exchange_unavailable:{de:'Exchange nicht verfügbar',en:'Exchange not available',es:'Exchange no disponible',ru:'Биржа недоступна',pt:'Exchange indisponível'},
   err_no_exchange_keys: {de:'Keine API-Keys für diese Exchange',en:'No API keys for this exchange',es:'Sin claves API para este exchange',ru:'Нет API-ключей для этой биржи',pt:'Sem chaves API para esta exchange'},
   err_exchange_symbol_required:{de:'Exchange und Symbol erforderlich',en:'Exchange and symbol required',es:'Exchange y símbolo requeridos',ru:'Биржа и символ обязательны',pt:'Exchange e símbolo obrigatórios'},
+
+  /* ── CONNECTION STATUS ── */
+  conn_connected:    {de:'Verbunden',en:'Connected',es:'Conectado',ru:'Подключено',pt:'Conectado'},
+  conn_reconnecting: {de:'Verbinde...',en:'Reconnecting...',es:'Reconectando...',ru:'Переподключение...',pt:'Reconectando...'},
+  conn_disconnected: {de:'Getrennt',en:'Disconnected',es:'Desconectado',ru:'Отключено',pt:'Desconectado'},
+
+  /* ── GAS TRACKER ── */
+  gas_high:   {de:'Hohe Aktivität',en:'High Activity',es:'Alta Actividad',ru:'Высокая активность',pt:'Alta Atividade'},
+  gas_low:    {de:'Niedrige Aktivität',en:'Low Activity',es:'Baja Actividad',ru:'Низкая активность',pt:'Baixa Atividade'},
+  gas_normal: {de:'Normal',en:'Normal',es:'Normal',ru:'Нормально',pt:'Normal'},
+
+  /* ── ADDITIONAL LABELS ── */
+  label_active:   {de:'Aktiv',en:'Active',es:'Activo',ru:'Активен',pt:'Ativo'},
+  label_inactive: {de:'Inaktiv',en:'Inactive',es:'Inactivo',ru:'Неактивен',pt:'Inativo'},
+  empty_no_backtests: {de:'Keine Backtests',en:'No backtests',es:'Sin backtests',ru:'Нет бэктестов',pt:'Sem backtests'},
+  empty_no_trades:    {de:'Keine Trades',en:'No trades',es:'Sin trades',ru:'Нет сделок',pt:'Sem trades'},
+  msg_bt_load_fail:   {de:'Backtest-Verlauf konnte nicht geladen werden',en:'Failed to load backtest history',es:'Error al cargar historial de backtests',ru:'Не удалось загрузить историю бэктестов',pt:'Erro ao carregar histórico de backtests'},
 };
 
 /* ════════════════════════════════════════════════════════════

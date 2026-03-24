@@ -448,7 +448,7 @@ function updateAI(ai){
   _s('aiDecCount', ai.ai_log?.length||0);
   // Weights
   const wl=document.getElementById('weightList');
-  if(ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
+  if(wl && ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
     const pct=Math.min(100,Math.round(w.weight/3.5*100));
     const c=w.weight>1.2?'var(--green)':w.weight<0.5?'var(--red)':'var(--cyan)';
     return `<div class="weight-row"><span class="weight-name">${esc(String(w.name||''))}</span>
@@ -458,7 +458,7 @@ function updateAI(ai){
   }).join('');
   // AI log
   const dl=document.getElementById('aiDecLog');
-  if(ai.ai_log?.length) dl.innerHTML=ai.ai_log.map(e=>
+  if(dl && ai.ai_log?.length) dl.innerHTML=ai.ai_log.map(e=>
     `<div class="log-row ${e.allowed?'success':'error'}">
       <span class="log-time">${esc(String(e.time||''))}</span>
       <span class="log-msg">${esc(String(e.reason||'—'))} (${esc(String(e.prob||0))}%)</span></div>`).join('');
@@ -492,7 +492,7 @@ function updateActivity(acts){
       <div style="font-size:18px;flex-shrink:0">${esc(a.icon)}</div>
       <div style="flex:1"><div style="font-size:12px;font-weight:700;color:${c}">${esc(a.title)}</div>
         <div style="font-size:10px;color:var(--sub);margin-top:1px">${esc(a.detail)}</div></div>
-      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${a.time}</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${esc(String(a.time||''))}</div>
     </div>`;
   }).join('');
 }
@@ -505,7 +505,7 @@ function renderAlerts(alerts){
   el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
     <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
     <div style="flex:1"><div style="font-size:12px;font-weight:700">${esc(String(a.symbol||''))}</div>
-      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?'↑ Über':'↓ Unter'} ${esc(String(a.target_price||''))}</div></div>
+      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?QI18n.t('dir_above'):QI18n.t('dir_below')} ${esc(String(a.target_price||''))}</div></div>
     ${!a.triggered?`<button onclick="deleteAlert(${parseInt(a.id,10)||0})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px">🗑</button>`:''}`).join('');
 }
 
@@ -646,7 +646,7 @@ function runBacktest(){
   const tp=parseFloat(document.getElementById('btTP')?.value);
   const vote=parseFloat(document.getElementById('btVote')?.value);
   if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic'),'warning');return;}
-  const bts=document.getElementById('btStatus'); if(bts) bts.textContent='⏳ Backtest läuft...';
+  const bts=document.getElementById('btStatus'); if(bts) bts.textContent=QI18n.t('running_bt');
   const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
   const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
   socket.emit('run_backtest',{
@@ -660,17 +660,38 @@ function runBacktest(){
 }
 async function loadBtHistory(){
   try{
-    const data=await(await fetch('/api/backtest/history')).json();
-    const el=document.getElementById('btHistory');
-    if(!el) return;
-    if(!data||!data.length){el.innerHTML='<div class="empty" style="padding:8px">—</div>';return;}
-    el.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
-      <div><div style="font-size:12px;font-weight:700">${r.symbol} ${r.timeframe}</div>
-        <div style="font-size:10px;color:var(--sub)">${r.candles} Kerzen · ${r.total_trades} Trades</div></div>
+    const data=await(await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}})).json();
+    if(!data||!data.length){
+      const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
+      const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
+      return;
+    }
+    // Compact view (home/backtest tab inline)
+    const el1=document.getElementById('btHistory');
+    if(el1) el1.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-size:12px;font-weight:700">${esc(String(r.symbol||''))} ${esc(String(r.timeframe||''))}</div>
+        <div style="font-size:10px;color:var(--sub)">${esc(String(r.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(r.total_trades||''))} Trades</div></div>
       <div style="text-align:right">
         <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${(r.win_rate||0)>50?'var(--green)':'var(--red)'}">${(r.win_rate||0).toFixed(1)}%</div>
         <div style="font-size:10px;font-family:var(--mono);color:${(r.total_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(r.total_pnl||0)} USDT</div>
       </div></div>`).join('');
+    // Detailed view (backtest history list)
+    const el2=document.getElementById('btHistoryList');
+    if(el2) el2.innerHTML=data.slice(0,10).map(b=>`
+      <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
+          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
+          <div style="font-size:10px;color:var(--sub)">WR: ${b.win_rate}%</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--dim)">Sharpe</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
+        </div>
+      </div>`).join('');
   }catch(e){ console.warn('Backtest history load failed:', e); }
 }
 
@@ -849,7 +870,7 @@ function _setConnStatus(state){
   const el=document.getElementById('connStatus');
   if(!el)return;
   el.className='conn-status '+state;
-  el.title=state==='connected'?'Verbunden':state==='reconnecting'?'Verbinde...':'Getrennt';
+  el.title=state==='connected'?QI18n.t('conn_connected'):state==='reconnecting'?QI18n.t('conn_reconnecting'):QI18n.t('conn_disconnected');
 }
 
 socket.on('connect',()=>{
@@ -1054,7 +1075,7 @@ async function updateGasFees(){
     const el = document.getElementById('gasGwei');
     if(el && typeof d.gwei === 'number') el.textContent = d.gwei.toFixed(1) + ' Gwei';
     const sig = document.getElementById('gasSig');
-    if(sig) sig.textContent = d.signal===1?'⬆ Hohe Aktivität':d.signal===-1?'⬇ Niedrige Aktivität':'→ Normal';
+    if(sig) sig.textContent = d.signal===1?'⬆ '+QI18n.t('gas_high'):d.signal===-1?'⬇ '+QI18n.t('gas_low'):'→ '+QI18n.t('gas_normal');
   } catch(e){ console.warn('Gas fees fetch failed:', e); }
 }
 let _gasInterval = setInterval(updateGasFees, 120000);
@@ -1083,9 +1104,6 @@ function applyRoleUI(role) {
     body.classList.add('is-user');
     if (badge) { badge.textContent = 'user'; badge.className = 'role-badge user'; }
   }
-
-  // Show admin nav item
-  const adminNav = document.querySelector('[onclick*="sec-admin"], [onclick*="admin"]');
 
   // Update nav visibility
   document.querySelectorAll('.nb.admin-only').forEach(el => {
@@ -1817,28 +1835,7 @@ async function runCompareBacktest(){
 }
 
 // ── Backtest History ────────────────────────────────────────────────────────
-async function loadBtHistory(){
-  const el = document.getElementById('btHistoryList');
-  try {
-    const r = await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-    const d = await r.json();
-    if(!d.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>'; return; }
-    if(el) el.innerHTML = d.slice(0,10).map(b=>`
-      <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
-          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} Kerzen · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
-          <div style="font-size:10px;color:var(--sub)">WR: ${b.win_rate}%</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:10px;color:var(--dim)">Sharpe</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
-        </div>
-      </div>`).join('');
-  } catch(e){ if(el) el.innerHTML='<div class="empty">'+QI18n.t('msg_bt_load_fail')+'</div>'; }
+// NOTE: loadBtHistory is defined above (merged version that populates both #btHistory and #btHistoryList)
 }
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
@@ -1891,7 +1888,25 @@ async function requestPushPermission(){
 function _checkPush(data){
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(_storage.get('trevlix_push')!=='1') return;
-  // New trade
+  // Trade event from socket (has symbol, pnl, price, type)
+  if(data.symbol){
+    const key = data.type+'_'+data.symbol+'_'+(data.price||0);
+    if(key !== window._lastPushKey){
+      window._lastPushKey = key;
+      const won = (data.pnl||0) >= 0;
+      const body = data.type==='buy'
+        ? `${QI18n.t('trade_buy')} ${data.symbol} @ ${data.price}`
+        : `${QI18n.t('trade_sell')} ${data.symbol} | ${fmtS(data.pnl||0)} USDT`;
+      new Notification('⚡ TREVLIX', {
+        body: body,
+        icon: '/static/icon-192.png',
+        badge: '/static/icon-96.png',
+        tag: 'trade',
+      });
+    }
+    return;
+  }
+  // Legacy: update event with last_action
   if(data.last_action && data.last_action !== window._lastAction){
     window._lastAction = data.last_action;
     new Notification('⚡ TREVLIX', {
@@ -1908,7 +1923,7 @@ function _checkPush(data){
 
 // Restore push pref
 if(_storage.get('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
-  document.getElementById('pushBtn').style.color='var(--jade)';
+  const _pb=document.getElementById('pushBtn'); if(_pb) _pb.style.color='var(--jade)';
 }
 
 
@@ -1939,11 +1954,11 @@ function mexUpdate(data) {
   if (pvEl) pvEl.innerHTML = fmt(pv) + ' <span style="font-size:16px;opacity:.4">USDT</span>';
   const pnlEl = document.getElementById('mex-total-pnl');
   if (pnlEl) {
-    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl) + ' USDT Gesamt-PnL';
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl) + ' USDT ' + QI18n.t('total_pnl');
     pnlEl.className = 'pill ' + (pnl >= 0 ? 'up' : 'dn');
   }
   const acEl = document.getElementById('mex-active-count');
-  if (acEl) acEl.textContent = active + ' Exchange' + (active !== 1 ? 's' : '') + ' aktiv';
+  if (acEl) acEl.textContent = active + ' Exchange' + (active !== 1 ? 's' : '') + ' ' + QI18n.t('label_active').toLowerCase();
 
   // Badge in Nav
   const badge = document.getElementById('exBadge');
@@ -1994,7 +2009,7 @@ function mexUpdate(data) {
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           ${statusDot}
-          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?'AKTIV':enabled?'KONFIGURIERT':'INAKTIV'}</span>
+          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?QI18n.t('mex_active_label'):enabled?QI18n.t('mex_configured'):QI18n.t('mex_inactive')}</span>
         </div>
       </div>
 
@@ -2021,16 +2036,16 @@ function mexUpdate(data) {
         </div>
 
         ${positions.length ? `
-        <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} OFFENE POSITIONEN</div>
+        <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} ${QI18n.t('open_positions').toUpperCase()}</div>
         ${posHtml}` : ''}
 
         <div style="display:flex;gap:8px;margin-top:12px">
           ${!enabled
             ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">${esc(QI18n.t('mex_setup_keys'))}</button>`
             : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ Stoppen</button>
+              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>
                  <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ Starten</button>
+              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>
                  <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
           }
         </div>
