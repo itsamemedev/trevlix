@@ -24,9 +24,10 @@ let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
 const socket = io({
   transports:['websocket','polling'],
   reconnection: true,
-  reconnectionAttempts: 10,
+  reconnectionAttempts: Infinity,
   reconnectionDelay: 2000,
-  reconnectionDelayMax: 10000,
+  reconnectionDelayMax: 30000,
+  randomizationFactor: 0.3,
   timeout: 20000,
   withCredentials: true,
   auth: _jwtToken ? {token: _jwtToken} : {},
@@ -602,7 +603,7 @@ async function loadBtHistory(){
         <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${(r.win_rate||0)>50?'var(--green)':'var(--red)'}">${(r.win_rate||0).toFixed(1)}%</div>
         <div style="font-size:10px;font-family:var(--mono);color:${(r.total_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(r.total_pnl||0)} USDT</div>
       </div></div>`).join('');
-  }catch(e){}
+  }catch(e){ console.warn('Backtest history load failed:', e); }
 }
 
 // ── Tax ──────────────────────────────────────────────────────────────
@@ -771,7 +772,9 @@ function wizFinish(){document.getElementById('wizardOverlay').style.display='non
 // ── Socket events (with listener cleanup to prevent duplicates on reconnect) ──
 // Remove all previous listeners before registering to prevent accumulation
 const _socketEvents = ['connect','connect_error','disconnect','auth_error',
-  'update','ai_update','genetic_update','status','trade','price_alert','backtest_result'];
+  'update','ai_update','genetic_update','status','trade','price_alert','backtest_result',
+  'update_status','update_result','system_analytics','healing_update','revenue_update',
+  'cluster_update','ai_model_updated','exchange_update'];
 _socketEvents.forEach(ev => socket.off(ev));
 
 function _setConnStatus(state){
@@ -884,11 +887,11 @@ function renderUpdateStatus(d){
     const el = document.getElementById('updateChangelog');
     if(el){el.style.display='block'; el.textContent=d.changelog;}
     const elShort = document.getElementById('updateChangelogShort');
-    if(elShort) elShort.textContent = d.changelog.split('\n')[0].slice(0,60);
+    if(elShort && d.changelog) elShort.textContent = d.changelog.split('\n')[0].slice(0,60);
   }
 }
-socket.on('update_status', d => { renderUpdateStatus(d); toast(d.update_available ? '🎉 '+QI18n.t('msg_update_avail')+' v'+d.latest : '✅ '+QI18n.t('msg_up_to_date'), d.update_available?'success':'info'); });
-socket.on('update_result', d => { toast(d.status==='success'?'✅ '+QI18n.t('msg_update_installed'):'⚠ '+QI18n.t('msg_update_partial'), d.status==='success'?'success':'warning'); if(d.status==='success') setTimeout(()=>location.reload(),3000); });
+socket.on('update_status', d => { if(!d) return; renderUpdateStatus(d); toast(d.update_available ? '🎉 '+QI18n.t('msg_update_avail')+' v'+d.latest : '✅ '+QI18n.t('msg_up_to_date'), d.update_available?'success':'info'); });
+socket.on('update_result', d => { if(!d) return; toast(d.status==='success'?'✅ '+QI18n.t('msg_update_installed'):'⚠ '+QI18n.t('msg_update_partial'), d.status==='success'?'success':'warning'); if(d.status==='success') setTimeout(()=>location.reload(),3000); });
 
 
 // ── Theme Toggle ─────────────────────────────────────────────────────────
@@ -963,12 +966,14 @@ async function downloadPineScript(){
 async function updateGasFees(){
   try {
     const r = await fetch('/api/v1/gas');
+    if(!r.ok) return;
     const d = await r.json();
+    if(!d) return;
     const el = document.getElementById('gasGwei');
-    if(el) el.textContent = d.gwei.toFixed(1) + ' Gwei';
+    if(el && typeof d.gwei === 'number') el.textContent = d.gwei.toFixed(1) + ' Gwei';
     const sig = document.getElementById('gasSig');
     if(sig) sig.textContent = d.signal===1?'⬆ Hohe Aktivität':d.signal===-1?'⬇ Niedrige Aktivität':'→ Normal';
-  } catch(e){}
+  } catch(e){ console.warn('Gas fees fetch failed:', e); }
 }
 let _gasInterval = setInterval(updateGasFees, 120000);
 // Cleanup on page unload to prevent memory leak
@@ -1180,7 +1185,8 @@ async function toggleRegistration(enabled) {
 
 // ── Shared AI Model broadcast ──────────────────────────────────────────────
 socket.on('ai_model_updated', data => {
-  toast(`🧠 ${QI18n.t('msg_ai_model_new')} v${data.version} (WF: ${data.wf_accuracy}%)`, 'success');
+  if(!data) return;
+  toast(`🧠 ${QI18n.t('msg_ai_model_new')} v${data.version||'?'} (WF: ${data.wf_accuracy||0}%)`, 'success');
   loadSharedAIStatus();
   // Animate version badge
   const badge = document.getElementById('sharedAIVersionBadge');
@@ -1621,7 +1627,7 @@ async function loadFeatureImportance(){
     if(!list) return;
     const names = d.feature_names || [];
     const imps  = d.importances   || [];
-    const max   = Math.max(...imps, 0.001);
+    const max   = imps.length > 0 ? Math.max(...imps, 0.001) : 1;
     list.innerHTML = names.map((n,i)=>{
       const v = imps[i]||0;
       const w = Math.round(v/max*100);

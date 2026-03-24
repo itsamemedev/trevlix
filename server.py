@@ -6721,6 +6721,20 @@ def on_connect(auth=None):
     log.info(f"📱 Client verbunden: {username}")
 
 
+@socketio.on("disconnect")
+def on_disconnect():
+    """Cleanup bei Client-Disconnect – Session-State aufräumen."""
+    username = session.get("username", "?")
+    sid = getattr(request, "sid", "?")
+    log.info(f"📴 Client getrennt: {username} (sid={sid})")
+
+
+@socketio.on_error_default
+def default_error_handler(e: Exception) -> None:
+    """Globaler Fallback-Handler für unbehandelte SocketIO-Fehler."""
+    log.error(f"⚠️ SocketIO-Fehler: {type(e).__name__}: {e}")
+
+
 @socketio.on("request_state")
 def on_request_state():
     """Ermöglicht dem Client, den aktuellen State explizit anzufragen (z.B. nach Reconnect)."""
