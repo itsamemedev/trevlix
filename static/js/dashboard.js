@@ -448,7 +448,7 @@ function updateAI(ai){
   _s('aiDecCount', ai.ai_log?.length||0);
   // Weights
   const wl=document.getElementById('weightList');
-  if(ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
+  if(wl && ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
     const pct=Math.min(100,Math.round(w.weight/3.5*100));
     const c=w.weight>1.2?'var(--green)':w.weight<0.5?'var(--red)':'var(--cyan)';
     return `<div class="weight-row"><span class="weight-name">${esc(String(w.name||''))}</span>
@@ -458,7 +458,7 @@ function updateAI(ai){
   }).join('');
   // AI log
   const dl=document.getElementById('aiDecLog');
-  if(ai.ai_log?.length) dl.innerHTML=ai.ai_log.map(e=>
+  if(dl && ai.ai_log?.length) dl.innerHTML=ai.ai_log.map(e=>
     `<div class="log-row ${e.allowed?'success':'error'}">
       <span class="log-time">${esc(String(e.time||''))}</span>
       <span class="log-msg">${esc(String(e.reason||'—'))} (${esc(String(e.prob||0))}%)</span></div>`).join('');
@@ -492,7 +492,7 @@ function updateActivity(acts){
       <div style="font-size:18px;flex-shrink:0">${esc(a.icon)}</div>
       <div style="flex:1"><div style="font-size:12px;font-weight:700;color:${c}">${esc(a.title)}</div>
         <div style="font-size:10px;color:var(--sub);margin-top:1px">${esc(a.detail)}</div></div>
-      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${a.time}</div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);flex-shrink:0">${esc(String(a.time||''))}</div>
     </div>`;
   }).join('');
 }
@@ -505,7 +505,7 @@ function renderAlerts(alerts){
   el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
     <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
     <div style="flex:1"><div style="font-size:12px;font-weight:700">${esc(String(a.symbol||''))}</div>
-      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?'↑ Über':'↓ Unter'} ${esc(String(a.target_price||''))}</div></div>
+      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?QI18n.t('dir_above'):QI18n.t('dir_below')} ${esc(String(a.target_price||''))}</div></div>
     ${!a.triggered?`<button onclick="deleteAlert(${parseInt(a.id,10)||0})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px">🗑</button>`:''}`).join('');
 }
 
@@ -646,7 +646,8 @@ function runBacktest(){
   const tp=parseFloat(document.getElementById('btTP')?.value);
   const vote=parseFloat(document.getElementById('btVote')?.value);
   if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic'),'warning');return;}
-  const bts=document.getElementById('btStatus'); if(bts) bts.textContent='⏳ Backtest läuft...';
+  if(!socket.connected){toast('⚠️ '+QI18n.t('conn_disconnected'),'warning');return;}
+  const bts=document.getElementById('btStatus'); if(bts) bts.textContent=QI18n.t('running_bt');
   const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
   const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
   socket.emit('run_backtest',{
@@ -660,17 +661,38 @@ function runBacktest(){
 }
 async function loadBtHistory(){
   try{
-    const data=await(await fetch('/api/backtest/history')).json();
-    const el=document.getElementById('btHistory');
-    if(!el) return;
-    if(!data||!data.length){el.innerHTML='<div class="empty" style="padding:8px">—</div>';return;}
-    el.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
-      <div><div style="font-size:12px;font-weight:700">${r.symbol} ${r.timeframe}</div>
-        <div style="font-size:10px;color:var(--sub)">${r.candles} Kerzen · ${r.total_trades} Trades</div></div>
+    const data=await(await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}})).json();
+    if(!data||!data.length){
+      const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
+      const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
+      return;
+    }
+    // Compact view (home/backtest tab inline)
+    const el1=document.getElementById('btHistory');
+    if(el1) el1.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
+      <div><div style="font-size:12px;font-weight:700">${esc(String(r.symbol||''))} ${esc(String(r.timeframe||''))}</div>
+        <div style="font-size:10px;color:var(--sub)">${esc(String(r.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(r.total_trades||''))} Trades</div></div>
       <div style="text-align:right">
         <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${(r.win_rate||0)>50?'var(--green)':'var(--red)'}">${(r.win_rate||0).toFixed(1)}%</div>
         <div style="font-size:10px;font-family:var(--mono);color:${(r.total_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(r.total_pnl||0)} USDT</div>
       </div></div>`).join('');
+    // Detailed view (backtest history list)
+    const el2=document.getElementById('btHistoryList');
+    if(el2) el2.innerHTML=data.slice(0,10).map(b=>`
+      <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
+        <div>
+          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
+          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
+          <div style="font-size:10px;color:var(--sub)">WR: ${b.win_rate}%</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:10px;color:var(--dim)">Sharpe</div>
+          <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
+        </div>
+      </div>`).join('');
   }catch(e){ console.warn('Backtest history load failed:', e); }
 }
 
@@ -703,16 +725,24 @@ function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
 // ── Bot controls ─────────────────────────────────────────────────────
-function startBot(){socket.emit('start_bot');}
-function stopBot(){socket.emit('stop_bot');}
-function pauseBot(){socket.emit('pause_bot');}
+function _emitSafe(event, data){
+  if(!socket.connected){
+    toast('⚠️ '+QI18n.t('conn_disconnected')+' – '+QI18n.t('msg_socket_reconnect'),'warning');
+    return false;
+  }
+  if(data!==undefined) socket.emit(event,data); else socket.emit(event);
+  return true;
+}
+function startBot(){_emitSafe('start_bot');}
+function stopBot(){_emitSafe('stop_bot');}
+function pauseBot(){_emitSafe('pause_bot');}
 const _closeHistory = [];
 let _undoTimeout = null;
 
 function closePos(sym){
   if(!confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) return;
+  if(!_emitSafe('close_position',{symbol:sym})) return;
   _closeHistory.push(sym);
-  socket.emit('close_position',{symbol:sym});
   showUndoBar(sym);
 }
 
@@ -728,35 +758,35 @@ function showUndoBar(sym){
 function undoClose(){
   if(!_closeHistory.length) return;
   const sym = _closeHistory.pop();
-  socket.emit('undo_close', {symbol: sym});
+  _emitSafe('undo_close', {symbol: sym});
   document.getElementById('undoBar').style.display = 'none';
   clearTimeout(_undoTimeout);
   toast('↩ '+QI18n.t('msg_undo_close')+' '+sym,'info');
 }
-function forceTrain(){socket.emit('force_train');toast('🧠 '+QI18n.t('ai_training')+'...','info');}
-function forceOptimize(){socket.emit('force_optimize');toast('🔬 '+QI18n.t('toast_optimize'),'info');}
-function forceGenetic(){socket.emit('force_genetic');toast('🧬 '+QI18n.t('toast_genetic'),'info');}
-function resetAI(){if(confirm(QI18n.t('confirm_reset_ai'))) socket.emit('reset_ai');}
-function manualBackup(){socket.emit('manual_backup');}
-function sendReport(){socket.emit('send_daily_report');}
-function resetCB(){socket.emit('reset_circuit_breaker');}
-function refreshDom(){socket.emit('update_dominance');toast(QI18n.t('dominance')+'...','info');}
-function scanArb(){socket.emit('scan_arbitrage');toast(QI18n.t('btn_arbitrage')+'...','info');}
+function forceTrain(){if(_emitSafe('force_train')) toast('🧠 '+QI18n.t('ai_training')+'...','info');}
+function forceOptimize(){if(_emitSafe('force_optimize')) toast('🔬 '+QI18n.t('toast_optimize'),'info');}
+function forceGenetic(){if(_emitSafe('force_genetic')) toast('🧬 '+QI18n.t('toast_genetic'),'info');}
+function resetAI(){if(confirm(QI18n.t('confirm_reset_ai'))) _emitSafe('reset_ai');}
+function manualBackup(){_emitSafe('manual_backup');}
+function sendReport(){_emitSafe('send_daily_report');}
+function resetCB(){_emitSafe('reset_circuit_breaker');}
+function refreshDom(){if(_emitSafe('update_dominance')) toast(QI18n.t('dominance')+'...','info');}
+function scanArb(){if(_emitSafe('scan_arbitrage')) toast(QI18n.t('btn_arbitrage')+'...','info');}
 function addAlert(){
   const sym=document.getElementById('alertSym').value.trim().toUpperCase();
   const target=parseFloat(document.getElementById('alertTarget').value);
   const dir=document.getElementById('alertDir').value;
   if(!sym||isNaN(target)||target<=0){toast(QI18n.t('err_symbol_price'),'error');return;}
-  socket.emit('add_price_alert',{symbol:sym,target,direction:dir});
+  _emitSafe('add_price_alert',{symbol:sym,target,direction:dir});
   document.getElementById('alertTarget').value='';
 }
-function deleteAlert(id){socket.emit('delete_price_alert',{id});}
+function deleteAlert(id){_emitSafe('delete_price_alert',{id});}
 
 // ── Settings ─────────────────────────────────────────────────────────
 
 function changeLang(lang){
   QI18n.setLang(lang);
-  socket.emit('update_config',{language:lang});
+  _emitSafe('update_config',{language:lang});
   toast(QLANG_FLAGS[lang]+' '+QLANG_NAMES[lang],'info');
 }
 function applyPreset(name){
@@ -777,7 +807,7 @@ function saveSettings(){
   const sl=_pf(document.getElementById('sSL').value);
   const tp=_pf(document.getElementById('sTP').value);
   if(sl<=0||tp<=0||sl>=tp){toast(QI18n.t('err_sltp_invalid'),'error');return;}
-  socket.emit('update_config',{
+  _emitSafe('update_config',{
     stop_loss_pct:sl/100,
     take_profit_pct:tp/100,
     max_open_trades:_pi(document.getElementById('sMaxTrades').value),
@@ -809,11 +839,11 @@ function saveSettings(){
   });
 }
 function saveKeys(){
-  socket.emit('save_api_keys',{api_key:document.getElementById('cfgKey').value,
+  _emitSafe('save_api_keys',{api_key:document.getElementById('cfgKey').value,
     secret:document.getElementById('cfgSecret').value,exchange:document.getElementById('sExchange').value});
 }
 function saveDiscord(){
-  socket.emit('update_discord',{webhook:document.getElementById('sDiscord').value,
+  _emitSafe('update_discord',{webhook:document.getElementById('sDiscord').value,
     report_hour:parseInt(document.getElementById('sReportHour').value, 10)});
 }
 async function createToken(){
@@ -833,7 +863,7 @@ function wizNext(){
 }
 function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).className='wd'+(i<=wizStep?' done':'');}
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>b.style.borderColor='rgba(0,255,136,.2)');el.style.borderColor='var(--cyan)';wizEx=ex;document.getElementById('sExchange').value=ex;}
-function wizSaveKeys(){socket.emit('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
+function wizSaveKeys(){_emitSafe('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
 function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
 
@@ -849,7 +879,7 @@ function _setConnStatus(state){
   const el=document.getElementById('connStatus');
   if(!el)return;
   el.className='conn-status '+state;
-  el.title=state==='connected'?'Verbunden':state==='reconnecting'?'Verbinde...':'Getrennt';
+  el.title=state==='connected'?QI18n.t('conn_connected'):state==='reconnecting'?QI18n.t('conn_reconnecting'):QI18n.t('conn_disconnected');
 }
 
 socket.on('connect',()=>{
@@ -937,17 +967,15 @@ socket.on('backtest_result', d=>{
 
 // ── GitHub Updater ───────────────────────────────────────────────────
 function checkUpdate(){
-  toast('🔍 '+QI18n.t('checking_github'),'info');
-  socket.emit('check_update');
+  if(_emitSafe('check_update')) toast('🔍 '+QI18n.t('checking_github'),'info');
 }
 function applyUpdate(){
   if(!confirm(QI18n.t('confirm_install_update'))) return;
-  toast('⬆ '+QI18n.t('installing_update'),'info');
-  socket.emit('apply_update');
+  if(_emitSafe('apply_update')) toast('⬆ '+QI18n.t('installing_update'),'info');
 }
 function rollbackUpdate(){
   if(!confirm(QI18n.t('confirm_rollback'))) return;
-  socket.emit('rollback_update');
+  _emitSafe('rollback_update');
 }
 function renderUpdateStatus(d){
   document.getElementById('updateCurrent').textContent = d.current || d.current_version || '—';
@@ -1054,7 +1082,7 @@ async function updateGasFees(){
     const el = document.getElementById('gasGwei');
     if(el && typeof d.gwei === 'number') el.textContent = d.gwei.toFixed(1) + ' Gwei';
     const sig = document.getElementById('gasSig');
-    if(sig) sig.textContent = d.signal===1?'⬆ Hohe Aktivität':d.signal===-1?'⬇ Niedrige Aktivität':'→ Normal';
+    if(sig) sig.textContent = d.signal===1?'⬆ '+QI18n.t('gas_high'):d.signal===-1?'⬇ '+QI18n.t('gas_low'):'→ '+QI18n.t('gas_normal');
   } catch(e){ console.warn('Gas fees fetch failed:', e); }
 }
 let _gasInterval = setInterval(updateGasFees, 120000);
@@ -1084,9 +1112,6 @@ function applyRoleUI(role) {
     if (badge) { badge.textContent = 'user'; badge.className = 'role-badge user'; }
   }
 
-  // Show admin nav item
-  const adminNav = document.querySelector('[onclick*="sec-admin"], [onclick*="admin"]');
-
   // Update nav visibility
   document.querySelectorAll('.nb.admin-only').forEach(el => {
     el.style.display = role === 'admin' ? '' : 'none';
@@ -1106,8 +1131,17 @@ function applyStateToRole(data) {
 }
 
 // ── Admin: System Analytics ───────────────────────────────────────────────────
-function loadSystemAnalytics() {
-  socket.emit('request_system_analytics');
+async function loadSystemAnalytics() {
+  if(socket.connected){
+    socket.emit('request_system_analytics');
+  } else {
+    // HTTP fallback when socket is disconnected
+    try{
+      const r=await fetch('/api/v1/system-analytics',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      if(r.ok){ const d=await r.json(); socket.listeners('system_analytics').forEach(fn=>fn(d)); }
+      else { toast('⚠️ Analytics: '+r.status,'warning'); }
+    }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
+  }
 }
 socket.on('system_analytics', d => {
   if (!d) return;
@@ -1253,15 +1287,15 @@ async function createUser() {
   const password = document.getElementById('newPassword')?.value;
   const role     = document.getElementById('newRole')?.value || 'user';
   if (!username || !password) { toast(QI18n.t('err_user_pass'),'warning'); return; }
-  socket.emit('admin_create_user', {username, password, role});
+  if(!_emitSafe('admin_create_user', {username, password, role})) return;
   document.getElementById('newUsername').value = '';
   document.getElementById('newPassword').value = '';
   setTimeout(loadUsers, 800);
 }
 
 async function toggleRegistration(enabled) {
-  socket.emit('update_config', {allow_registration: enabled});
-  toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
+  if(_emitSafe('update_config', {allow_registration: enabled}))
+    toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
 }
 
 
@@ -1532,7 +1566,7 @@ async function createGrid() {
   if (!symbol || isNaN(lower) || isNaN(upper) || isNaN(levels) || isNaN(invest) || lower >= upper) {
     toast(QI18n.t('err_grid_params'), 'warning'); return;
   }
-  socket.emit('create_grid', {symbol, lower, upper, levels, invest_per_level: invest});
+  if(!_emitSafe('create_grid', {symbol, lower, upper, levels, invest_per_level: invest})) return;
   setTimeout(loadGrids, 600);
 }
 async function loadGrids() {
@@ -1636,12 +1670,11 @@ function saveBreakEven() {
   const trigger = parseFloat(document.getElementById('beeTrigger')?.value || '1.5') / 100;
   const buffer  = parseFloat(document.getElementById('beeBuffer')?.value  || '0.1') / 100;
   const enabled = document.getElementById('beeEnabled')?.checked;
-  socket.emit('update_config', {
+  if(_emitSafe('update_config', {
     break_even_enabled: enabled,
     break_even_trigger: trigger,
     break_even_buffer:  buffer,
-  });
-  toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
+  })) toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1817,29 +1850,7 @@ async function runCompareBacktest(){
 }
 
 // ── Backtest History ────────────────────────────────────────────────────────
-async function loadBtHistory(){
-  const el = document.getElementById('btHistoryList');
-  try {
-    const r = await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-    const d = await r.json();
-    if(!d.length){ if(el) el.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>'; return; }
-    if(el) el.innerHTML = d.slice(0,10).map(b=>`
-      <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
-          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} Kerzen · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
-          <div style="font-size:10px;color:var(--sub)">WR: ${b.win_rate}%</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:10px;color:var(--dim)">Sharpe</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
-        </div>
-      </div>`).join('');
-  } catch(e){ if(el) el.innerHTML='<div class="empty">'+QI18n.t('msg_bt_load_fail')+'</div>'; }
-}
+// NOTE: loadBtHistory is defined above (merged version that populates both #btHistory and #btHistoryList)
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
 async function adjustSL(symbol, entryPrice){
@@ -1891,7 +1902,25 @@ async function requestPushPermission(){
 function _checkPush(data){
   if(!('Notification' in window)||Notification.permission!=='granted') return;
   if(_storage.get('trevlix_push')!=='1') return;
-  // New trade
+  // Trade event from socket (has symbol, pnl, price, type)
+  if(data.symbol){
+    const key = data.type+'_'+data.symbol+'_'+(data.price||0);
+    if(key !== window._lastPushKey){
+      window._lastPushKey = key;
+      const won = (data.pnl||0) >= 0;
+      const body = data.type==='buy'
+        ? `${QI18n.t('trade_buy')} ${data.symbol} @ ${data.price}`
+        : `${QI18n.t('trade_sell')} ${data.symbol} | ${fmtS(data.pnl||0)} USDT`;
+      new Notification('⚡ TREVLIX', {
+        body: body,
+        icon: '/static/icon-192.png',
+        badge: '/static/icon-96.png',
+        tag: 'trade',
+      });
+    }
+    return;
+  }
+  // Legacy: update event with last_action
   if(data.last_action && data.last_action !== window._lastAction){
     window._lastAction = data.last_action;
     new Notification('⚡ TREVLIX', {
@@ -1908,7 +1937,7 @@ function _checkPush(data){
 
 // Restore push pref
 if(_storage.get('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
-  document.getElementById('pushBtn').style.color='var(--jade)';
+  const _pb=document.getElementById('pushBtn'); if(_pb) _pb.style.color='var(--jade)';
 }
 
 
@@ -1939,11 +1968,11 @@ function mexUpdate(data) {
   if (pvEl) pvEl.innerHTML = fmt(pv) + ' <span style="font-size:16px;opacity:.4">USDT</span>';
   const pnlEl = document.getElementById('mex-total-pnl');
   if (pnlEl) {
-    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl) + ' USDT Gesamt-PnL';
+    pnlEl.textContent = (pnl >= 0 ? '+' : '') + fmt(pnl) + ' USDT ' + QI18n.t('total_pnl');
     pnlEl.className = 'pill ' + (pnl >= 0 ? 'up' : 'dn');
   }
   const acEl = document.getElementById('mex-active-count');
-  if (acEl) acEl.textContent = active + ' Exchange' + (active !== 1 ? 's' : '') + ' aktiv';
+  if (acEl) acEl.textContent = active + ' Exchange' + (active !== 1 ? 's' : '') + ' ' + QI18n.t('label_active').toLowerCase();
 
   // Badge in Nav
   const badge = document.getElementById('exBadge');
@@ -1994,7 +2023,7 @@ function mexUpdate(data) {
         </div>
         <div style="display:flex;align-items:center;gap:6px">
           ${statusDot}
-          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?'AKTIV':enabled?'KONFIGURIERT':'INAKTIV'}</span>
+          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?QI18n.t('mex_active_label'):enabled?QI18n.t('mex_configured'):QI18n.t('mex_inactive')}</span>
         </div>
       </div>
 
@@ -2021,16 +2050,16 @@ function mexUpdate(data) {
         </div>
 
         ${positions.length ? `
-        <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} OFFENE POSITIONEN</div>
+        <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} ${QI18n.t('open_positions').toUpperCase()}</div>
         ${posHtml}` : ''}
 
         <div style="display:flex;gap:8px;margin-top:12px">
           ${!enabled
             ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">${esc(QI18n.t('mex_setup_keys'))}</button>`
             : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ Stoppen</button>
+              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>
                  <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ Starten</button>
+              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>
                  <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
           }
         </div>
@@ -2039,8 +2068,8 @@ function mexUpdate(data) {
   }).join('');
 }
 
-function mexStart(name)  { socket.emit('start_exchange',  {exchange: name}); }
-function mexStop(name)   { socket.emit('stop_exchange',   {exchange: name}); }
+function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
+function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
 
 function mexSetupKeys(name) {
   document.getElementById('mex-key-exchange').value = name;
@@ -2060,14 +2089,14 @@ function mexSaveKeys() {
   const secret     = document.getElementById('mex-key-secret').value.trim();
   const passphrase = document.getElementById('mex-key-passphrase')?.value?.trim() || '';
   if (!api_key || !secret) { toast(QI18n.t('err_apikey_secret'), 'warning'); return; }
-  socket.emit('save_exchange_keys', {exchange, api_key, secret, passphrase});
+  if(!_emitSafe('save_exchange_keys', {exchange, api_key, secret, passphrase})) return;
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
 }
 
 function mexClosePos(exchange, symbol) {
   if (!confirm(QI18n.t('confirm_close_exchange_pos').replace('{sym}',symbol).replace('{exc}',exchange.toUpperCase()))) return;
-  socket.emit('close_exchange_position', {exchange, symbol});
+  _emitSafe('close_exchange_position', {exchange, symbol});
 }
 
 async function mexLoadTrades() {

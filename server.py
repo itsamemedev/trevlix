@@ -7732,13 +7732,8 @@ def on_close_exchange_position(data):
         )
 
 
-@socketio.on("request_system_analytics")
-def on_request_system_analytics():
-    """Return detailed system analytics for admin dashboard."""
-    if not _ws_admin_required():
-        return
-    if not _ws_rate_check("request_system_analytics", min_interval=5.0):
-        return
+def _collect_system_analytics() -> dict[str, Any]:
+    """Collect system analytics data (shared by WS and HTTP)."""
     import platform
     import shutil
 
@@ -7783,11 +7778,23 @@ def on_request_system_analytics():
     exchange_name = CONFIG.get("exchange", "unknown")
     discord_configured = bool(CONFIG.get("discord_webhook"))
     telegram_configured = bool(CONFIG.get("telegram_token"))
+    api_latency = "—"
+    api_connected = "⏸️"
+    try:
+        ex = create_exchange()
+        start_t = time.time()
+        ex.fetch_time()
+        api_latency = f"{int((time.time() - start_t) * 1000)} ms"
+        api_connected = "✅"
+    except Exception:
+        if state.running:
+            api_connected = "⚠️"
+        api_latency = "timeout"
     data["api"] = {
         "exchange": exchange_name.upper(),
-        "connected": "✅" if state.running else "⏸️",
-        "latency": "—",
-        "calls_24h": "—",
+        "connected": api_connected,
+        "latency": api_latency,
+        "calls_24h": str(getattr(state, "api_calls_24h", "—")),
         "discord": "✅" if discord_configured else "❌",
         "telegram": "✅" if telegram_configured else "❌",
     }
@@ -7944,7 +7951,24 @@ def on_request_system_analytics():
     except Exception:
         data["cache"] = {}
 
-    emit("system_analytics", data)
+    return data
+
+
+@socketio.on("request_system_analytics")
+def on_request_system_analytics():
+    """Return system analytics for the analytics dashboard tab (WS)."""
+    if not _ws_auth_required():
+        return
+    if not _ws_rate_check("request_system_analytics", min_interval=5.0):
+        return
+    emit("system_analytics", _collect_system_analytics())
+
+
+@app.route("/api/v1/system-analytics")
+@api_auth_required
+def api_system_analytics():
+    """Return system analytics via HTTP (fallback when WS is unavailable)."""
+    return jsonify(_collect_system_analytics())
 
 
 # ════════════════════════════════════════════════════════════════════════════════

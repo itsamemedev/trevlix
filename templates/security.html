@@ -11,8 +11,8 @@
 <title>TREVLIX v1.5.0 — Sicherheitsleitfaden</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="../static/css/shared-nav.css">
-<script src="../static/js/page_i18n.js" defer></script>
+<link rel="stylesheet" href="/static/css/shared-nav.css">
+<script src="/static/js/page_i18n.js" defer></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:var(--fw);background:var(--ink);color:var(--txt);-webkit-font-smoothing:antialiased;line-height:1.6;padding-top:62px}
@@ -306,7 +306,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 <script>
 const sn=document.getElementById('siteNav');
 window.addEventListener('scroll',()=>{sn.classList.toggle('scrolled',window.scrollY>60)});
-function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');mn.style.display=mn.style.display==='flex'?'none':'flex'}
+function toggleSiteNav(){const mn=document.getElementById('siteMobileNav');if(mn) mn.style.display=mn.style.display==='flex'?'none':'flex'}
 const btt=document.getElementById('backToTop');
 window.addEventListener('scroll',()=>{btt.classList.toggle('visible',window.scrollY>400)});
 </script>

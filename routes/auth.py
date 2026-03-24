@@ -16,10 +16,11 @@ import logging
 import os
 import secrets
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from flask import Blueprint, redirect, request, send_file, session
+import jwt as pyjwt
+from flask import Blueprint, make_response, redirect, request, send_file, session
 
 log = logging.getLogger("trevlix.auth")
 
@@ -566,7 +567,31 @@ def create_auth_blueprint(
             _ensure_csrf()  # CSRF-Token nach Login neu generieren
             db.update_user_login(user["id"])
             db_audit_fn(user["id"], "login", f"Login · {client_ip}", client_ip)
-            return redirect("/")
+            # JWT-Token als Cookie setzen für Socket.io Fallback-Auth
+            resp = make_response(redirect("/"))
+            try:
+                jwt_secret = config.get("jwt_secret", "")
+                if jwt_secret:
+                    token = pyjwt.encode(
+                        {
+                            "user_id": user["id"],
+                            "username": user["username"],
+                            "exp": datetime.now(UTC) + timedelta(hours=8),
+                        },
+                        jwt_secret,
+                        algorithm="HS256",
+                    )
+                    resp.set_cookie(
+                        "token",
+                        token,
+                        httponly=False,  # JS muss lesen können
+                        samesite="Lax",
+                        max_age=8 * 3600,
+                        path="/",
+                    )
+            except Exception as e:
+                log.warning("JWT cookie generation failed: %s", e)
+            return resp
 
         audit_fn("login_failed", f"user={username} ip={client_ip}")
         return redirect("/login?err=1")
@@ -713,7 +738,9 @@ def create_auth_blueprint(
             Redirect zur Login-Seite.
         """
         session.clear()
-        return redirect("/login")
+        resp = make_response(redirect("/login"))
+        resp.delete_cookie("token", path="/")
+        return resp
 
     # ── Admin Login ──────────────────────────────────────────────────────
 
