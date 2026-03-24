@@ -43,11 +43,46 @@ function onNav(fn){_navHooks.push(fn);}
 function nav(id,el){
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
-  document.getElementById('sec-'+id).classList.add('active');
-  el.classList.add('active');
+  const sec=document.getElementById('sec-'+id); if(sec) sec.classList.add('active');
+  if(el) el.classList.add('active');
   if(id==='stats' && lastData) updateStats(lastData);
   if(id==='ai' && lastData?.ai) updateAI(lastData.ai);
   _navHooks.forEach(fn=>{try{fn(id);}catch(e){}});
+  closeMobileNav();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+// ── Mobile Nav Drawer ────────────────────────────────────────────────
+function toggleMobileNav(){
+  const overlay=document.getElementById('mobNavOverlay');
+  const drawer=document.getElementById('mobNavDrawer');
+  if(!overlay||!drawer) return;
+  const isOpen=drawer.classList.contains('open');
+  if(isOpen){closeMobileNav();return;}
+  // Build drawer items from secondary nav buttons
+  const items=document.querySelectorAll('.nb.nb-secondary');
+  let html='<div class="drawer-handle"></div>';
+  items.forEach(nb=>{
+    if(nb.classList.contains('admin-only') && !document.body.classList.contains('is-admin')) return;
+    const icon=nb.querySelector('.nb-icon')?.textContent||'';
+    const label=nb.querySelector('[data-i18n]')?.textContent||'';
+    const kbd=nb.querySelector('.nav-kbd')?.textContent||'';
+    const isActive=nb.classList.contains('active');
+    const oc=nb.getAttribute('onclick')||'';
+    html+=`<div class="drawer-item${isActive?' active':''}" onclick="${oc}">
+      <span class="di-icon">${icon}</span><span>${label}</span>
+      ${kbd?'<span class="di-kbd">'+kbd+'</span>':''}
+    </div>`;
+  });
+  drawer.innerHTML=html;
+  overlay.classList.add('open');
+  drawer.classList.add('open');
+}
+function closeMobileNav(){
+  const overlay=document.getElementById('mobNavOverlay');
+  const drawer=document.getElementById('mobNavDrawer');
+  if(overlay) overlay.classList.remove('open');
+  if(drawer) drawer.classList.remove('open');
 }
 
 // ── Format ───────────────────────────────────────────────────────────
@@ -523,12 +558,12 @@ async function loadChart(){
   const chartEl=document.getElementById('tvChart');
   chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--sub);font-size:12px">⏳ Lade Chart...</div>';
   try{
-    const data=await(await fetch(`/api/ohlcv/${sym.replace('/','-')}?tf=${tf}&limit=200`)).json();
+    const data=await(await fetch(`/api/ohlcv/${encodeURIComponent(sym.replace('/','-'))}?tf=${encodeURIComponent(tf)}&limit=200`)).json();
     if(data.error){chartEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">${esc(data.error)}</div>`;return;}
     renderTVChart(data, chartEl);
     // News
     try{
-      const ndata=await(await fetch(`/api/v1/news/${sym.replace('/USDT','')}`)).json();
+      const ndata=await(await fetch(`/api/v1/news/${encodeURIComponent(sym.replace('/USDT',''))}`)).json();
       const nScore=typeof ndata.score==='number'?ndata.score:0;
       const nCount=typeof ndata.count==='number'?ndata.count:0;
       if(ndata.headline&&ndata.headline!=='—'){
@@ -546,7 +581,7 @@ async function loadChart(){
     }catch(e){}
     // On-chain
     try{
-      const oc=await(await fetch(`/api/v1/onchain/${sym.replace('/USDT','')}`)).json();
+      const oc=await(await fetch(`/api/v1/onchain/${encodeURIComponent(sym.replace('/USDT',''))}`)).json();
       const ocScore=typeof oc.score==='number'?oc.score:0;
       document.getElementById('cOnchain').textContent=(ocScore>=0?'+':'')+ocScore.toFixed(2);
       document.getElementById('cOnchain').style.color=ocScore>=0?'var(--green)':'var(--red)';
@@ -644,7 +679,7 @@ async function loadTax(){
   const year=document.getElementById('taxYear').value||new Date().getFullYear();
   const method=document.getElementById('taxMethod').value;
   try{
-    const data=await(await fetch(`/api/tax_report?year=${year}&method=${method}`)).json();
+    const data=await(await fetch(`/api/tax_report?year=${encodeURIComponent(year)}&method=${encodeURIComponent(method)}`)).json();
     if(data.error){toast(data.error,'error');return;}
     const s=data.summary;
     document.getElementById('taxResult').style.display='block';
@@ -663,7 +698,7 @@ async function loadTax(){
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
-function exportTaxCSV(){const y=document.getElementById('taxYear').value||new Date().getFullYear();window.open(`/api/tax_report?year=${y}&format=csv`);}
+function exportTaxCSV(){const y=document.getElementById('taxYear').value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
 function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
@@ -996,14 +1031,17 @@ async function testCopySignal(){
 
 // ── Pine Script ──────────────────────────────────────────────────────────
 async function downloadPineScript(){
-  const sym = (document.getElementById('pineSymbol')?.value || 'BTCUSDT').replace('/','');
-  const r = await fetch(`/api/v1/pine-script?symbol=${sym}`,{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-  const txt = await r.text();
-  const blob = new Blob([txt], {type:'text/plain'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href=url; a.download=`trevlix_${sym.toLowerCase()}.pine`; a.click();
-  URL.revokeObjectURL(url);
-  toast('⬇ '+QI18n.t('msg_pine_download'),'success');
+  const sym = encodeURIComponent((document.getElementById('pineSymbol')?.value || 'BTCUSDT').replace('/',''));
+  try {
+    const r = await fetch(`/api/v1/pine-script?symbol=${sym}`,{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    if(!r.ok){ toast(QI18n.t('err_generic'),'error'); return; }
+    const txt = await r.text();
+    const blob = new Blob([txt], {type:'text/plain'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href=url; a.download=`trevlix_${sym.toLowerCase()}.pine`; a.click();
+    URL.revokeObjectURL(url);
+    toast('⬇ '+QI18n.t('msg_pine_download'),'success');
+  } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
 }
 
 // ── Gas Tracker ─────────────────────────────────────────────────────────
@@ -1387,27 +1425,29 @@ async function runMonteCarlo() {
   document.getElementById('mcResults')?.style  && (document.getElementById('mcResults').style.display='none');
   document.getElementById('mcEmpty')?.style    && (document.getElementById('mcEmpty').style.display='none');
   try {
-    const r = await fetch(`/api/v1/risk/monte-carlo?n=${n}&days=${days}`,
+    const r = await fetch(`/api/v1/risk/monte-carlo?n=${encodeURIComponent(n)}&days=${encodeURIComponent(days)}`,
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    if(!r.ok){ toast(QI18n.t('err_generic'),'error'); return; }
     const d = await r.json();
     if (d.error) { toast(d.error,'warning'); return; }
-    document.getElementById('mcLoading').style.display = 'none';
-    document.getElementById('mcResults').style.display = 'block';
-    document.getElementById('mcP50').textContent  = fmt(d.percentile_50)  + ' USDT';
-    document.getElementById('mcP5').textContent   = fmt(d.percentile_5)   + ' USDT';
-    document.getElementById('mcP95').textContent  = fmt(d.percentile_95)  + ' USDT';
-    document.getElementById('mcProbProfit').textContent = d.prob_profit_pct + '%';
-    document.getElementById('mcVaR95').textContent = fmt(d.var_95_usdt) + ' USDT';
-    document.getElementById('mcBarMin').textContent = fmt(d.percentile_5);
-    document.getElementById('mcBarMax').textContent = fmt(d.percentile_95);
-    document.getElementById('mcBarExpected').textContent = fmt(d.percentile_50) + ' USDT';
-    // Bar: show where median falls between p5 and p95
+    const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+    const _sh = (id, show) => { const el=document.getElementById(id); if(el) el.style.display=show?'block':'none'; };
+    _sh('mcLoading', false);
+    _sh('mcResults', true);
+    _s('mcP50', fmt(d.percentile_50) + ' USDT');
+    _s('mcP5', fmt(d.percentile_5) + ' USDT');
+    _s('mcP95', fmt(d.percentile_95) + ' USDT');
+    _s('mcProbProfit', d.prob_profit_pct + '%');
+    _s('mcVaR95', fmt(d.var_95_usdt) + ' USDT');
+    _s('mcBarMin', fmt(d.percentile_5));
+    _s('mcBarMax', fmt(d.percentile_95));
+    _s('mcBarExpected', fmt(d.percentile_50) + ' USDT');
     const range = d.percentile_95 - d.percentile_5;
     const pos   = range > 0 ? (d.percentile_50 - d.percentile_5) / range * 100 : 50;
-    document.getElementById('mcBar').style.width = Math.max(10, Math.min(90, pos)) + '%';
+    const mcBar=document.getElementById('mcBar'); if(mcBar) mcBar.style.width = Math.max(10, Math.min(90, pos)) + '%';
   } catch(e) {
-    document.getElementById('mcLoading').style.display = 'none';
-    document.getElementById('mcEmpty').style.display = 'block';
+    const mcl=document.getElementById('mcLoading'); if(mcl) mcl.style.display='none';
+    const mce=document.getElementById('mcEmpty'); if(mce) mce.style.display='block';
     toast(QI18n.t('msg_monte_error'),'error');
   }
 }
@@ -1472,10 +1512,12 @@ async function loadCooldowns() {
   } catch(e) { el.innerHTML = '<div class="empty">'+QI18n.t('empty_error')+'</div>'; }
 }
 async function clearCooldown(symbol) {
-  await fetch('/api/v1/cooldowns/'+symbol, {
-    method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
-  loadCooldowns();
-  toast(`${symbol} ${QI18n.t('msg_cooldown_cleared')}`, 'info');
+  try {
+    await fetch('/api/v1/cooldowns/'+encodeURIComponent(symbol), {
+      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    loadCooldowns();
+    toast(`${symbol} ${QI18n.t('msg_cooldown_cleared')}`, 'info');
+  } catch(e){ toast(QI18n.t('err_network'),'error'); }
 }
 
 // ════════════════════════════════════════════════════════════════

@@ -24,6 +24,7 @@ const QT = {
   nav_tax:      {de:'Steuer',en:'Tax',es:'Impuesto',ru:'Налоги',pt:'Imposto'},
   nav_log:      {de:'Log',en:'Log',es:'Registro',ru:'Журнал',pt:'Log'},
   nav_settings: {de:'Settings',en:'Settings',es:'Ajustes',ru:'Настройки',pt:'Config'},
+  nav_more:     {de:'Mehr',en:'More',es:'Más',ru:'Ещё',pt:'Mais'},
 
   /* ── HOME ── */
   portfolio_value:   {de:'Portfolio-Wert',en:'Portfolio Value',es:'Valor de Cartera',ru:'Стоимость портфеля',pt:'Valor do Portfólio'},
