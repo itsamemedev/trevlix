@@ -126,42 +126,47 @@ function initCharts(){
 // ── Main UI Update ───────────────────────────────────────────────────
 function updateUI(d){
   if(!d || typeof d !== 'object') return;
+  try {
   lastData=d; allTrades=d.closed_trades||[];
+  const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   // Header
-  document.getElementById('hSub').textContent=(d.exchange||'TREVLIX').toUpperCase()+' · '+(d.paper_trading?'PAPER':'LIVE')+' · v'+(d.bot_version||'1.0.0');
+  _s('hSub', (d.exchange||'TREVLIX').toUpperCase()+' · '+(d.paper_trading?'PAPER':'LIVE')+' · v'+(d.bot_version||'1.0.0'));
   // Hero
   const hValEl=document.getElementById('hVal');
   if(hValEl){hValEl.textContent=fmt(d.portfolio_value)+' USDT';}
   const r=d.return_pct||0, re=document.getElementById('hReturn');
   if(re){re.textContent=(r>=0?'▲ +':'▼ ')+fmt(Math.abs(r))+'%'; re.className='pill '+(r>=0?'up':'dn');}
-  document.getElementById('hPnl').textContent=fmtS(d.total_pnl)+' USDT '+(QI18n.t('total_label')||'Gesamt');
+  _s('hPnl', fmtS(d.total_pnl)+' USDT '+(QI18n.t('total_label')||'Gesamt'));
   // Status
   const b=document.getElementById('statusBadge'),t=document.getElementById('statusTxt');
-  if(d.paused){b.className='h-badge pause';t.textContent=QI18n.t('status_paused');}
-  else if(d.running){b.className='h-badge run';t.textContent=QI18n.t('status_running');}
-  else{b.className='h-badge stop';t.textContent=QI18n.t('status_stopped');}
-  document.getElementById('btnStart').disabled=d.running;
-  document.getElementById('btnStop').disabled=!d.running;
-  document.getElementById('btnPause').disabled=!d.running;
-  document.getElementById('btnPause').textContent=d.paused?QI18n.t('btn_resume'):QI18n.t('btn_pause');
-  document.getElementById('iterBadge').textContent=d.last_scan||'—';
-  document.getElementById('lastScan').textContent='⏰ '+(d.last_scan||'—');
-  document.getElementById('nextScan').textContent='→ '+(d.next_scan||'—');
+  if(b&&t){
+    if(d.paused){b.className='h-badge pause';t.textContent=QI18n.t('status_paused');}
+    else if(d.running){b.className='h-badge run';t.textContent=QI18n.t('status_running');}
+    else{b.className='h-badge stop';t.textContent=QI18n.t('status_stopped');}
+  }
+  const btnStart=document.getElementById('btnStart'); if(btnStart) btnStart.disabled=d.running;
+  const btnStop=document.getElementById('btnStop'); if(btnStop) btnStop.disabled=!d.running;
+  const btnPause=document.getElementById('btnPause');
+  if(btnPause){btnPause.disabled=!d.running; btnPause.textContent=d.paused?QI18n.t('btn_resume'):QI18n.t('btn_pause');}
+  _s('iterBadge', d.last_scan||'—');
+  _s('lastScan', '⏰ '+(d.last_scan||'—'));
+  _s('nextScan', '→ '+(d.next_scan||'—'));
   // Stats
-  document.getElementById('sBal').textContent=fmt(d.balance,0);
-  document.getElementById('sWin').textContent=d.total_trades>0?fmt(d.win_rate,1)+'%':'—';
-  document.getElementById('sDd').textContent=fmt(d.max_drawdown,1)+'%';
-  document.getElementById('sOpen').textContent=d.open_trades+'/'+(d.max_trades||5);
-  document.getElementById('sTrades').textContent=d.total_trades;
-  document.getElementById('sSharpe').textContent=d.sharpe>0?fmt(d.sharpe,2):'—';
+  _s('sBal', fmt(d.balance,0));
+  _s('sWin', d.total_trades>0?fmt(d.win_rate,1)+'%':'—');
+  _s('sDd', fmt(d.max_drawdown,1)+'%');
+  _s('sOpen', d.open_trades+'/'+(d.max_trades||5));
+  _s('sTrades', d.total_trades);
+  _s('sSharpe', d.sharpe>0?fmt(d.sharpe,2):'—');
   // Bottom row
-  const dp=document.getElementById('sDailyPnl'); dp.textContent=fmtS(d.daily_pnl||0); dp.style.color=clr(d.daily_pnl||0);
-  document.getElementById('sPF').textContent=d.profit_factor>0?fmt(d.profit_factor,2):'—';
+  const dp=document.getElementById('sDailyPnl');
+  if(dp){dp.textContent=fmtS(d.daily_pnl||0); dp.style.color=clr(d.daily_pnl||0);}
+  _s('sPF', d.profit_factor>0?fmt(d.profit_factor,2):'—');
   // Regime
   const bull=(d.market_regime||'').includes('bullish');
-  document.getElementById('regimeBadge').textContent=bull?'🐂 '+QI18n.t('label_bullish'):'🐻 '+QI18n.t('label_bearish');
-  document.getElementById('regimeBadge').className=bull?'badge-pill badge-bull':'badge-pill badge-bear';
-  document.getElementById('btcBadge').textContent='BTC '+(d.btc_price?fmt(d.btc_price,0):'—');
+  const rb=document.getElementById('regimeBadge');
+  if(rb){rb.textContent=bull?'🐂 '+QI18n.t('label_bullish'):'🐻 '+QI18n.t('label_bearish'); rb.className=bull?'badge-pill badge-bull':'badge-pill badge-bear';}
+  _s('btcBadge', 'BTC '+(d.btc_price?fmt(d.btc_price,0):'—'));
   // Portfolio chart
   if(portChart && d.portfolio_history?.length){
     const vals=d.portfolio_history.map(h=>h.value);
@@ -179,13 +184,13 @@ function updateUI(d){
   if(d.dominance) updateDom(d.dominance);
   if(d.anomaly) updateAnomaly(d.anomaly);
   if(d.genetic) updateGenetic(d.genetic);
-  if(d.rl) document.getElementById('rlEpisodes').textContent=d.rl.episodes||0;
+  if(d.rl){ const rlEl=document.getElementById('rlEpisodes'); if(rlEl) rlEl.textContent=d.rl.episodes||0; }
   // Positions + trades
   updatePositions(d.positions||[]);
   renderTrades(allTrades, tradeFilter);
-  document.getElementById('tradeCount').textContent=d.total_trades;
-  document.getElementById('posCount').textContent=d.open_trades;
-  const pb=document.getElementById('posBadge'); pb.textContent=d.open_trades; pb.classList.toggle('show',d.open_trades>0);
+  _s('tradeCount', d.total_trades);
+  _s('posCount', d.open_trades);
+  const pb=document.getElementById('posBadge'); if(pb){pb.textContent=d.open_trades; pb.classList.toggle('show',d.open_trades>0);}
   // Signals + activity
   updateSignals(d.signal_log||[]);
   updateActivity(d.activity_log||[]);
@@ -208,23 +213,26 @@ function updateUI(d){
 
   // Chart pos buttons
   if((d.positions||[]).length){
-    document.getElementById('chartPosBtns').innerHTML=d.positions.map(p=>
+    const cpb=document.getElementById('chartPosBtns');
+    if(cpb) cpb.innerHTML=d.positions.map(p=>
       `<button onclick="openChart('${escJS(p.symbol)}')" class="filter-btn">${esc(p.symbol.replace('/USDT',''))} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
   }
   // ARB stat
-  document.getElementById('sArb').textContent=(d.arb_log||[]).length;
+  _s('sArb', (d.arb_log||[]).length);
+  } catch(e){ console.warn('updateUI error:', e); }
 }
 
 function updateFG(fg){
+  if(!fg) return;
   const v=fg.value||50, c=v<25?'var(--green)':v<45?'var(--teal)':v<55?'var(--yellow)':v<75?'var(--orange)':'var(--red)';
-  document.getElementById('fgVal').textContent=v; document.getElementById('fgVal').style.color=c;
-  document.getElementById('fgLabel').textContent=fg.label||'Neutral';
-  document.getElementById('fgUpdated').textContent=fg.last_update||'—';
+  const fgv=document.getElementById('fgVal'); if(fgv){fgv.textContent=v; fgv.style.color=c;}
+  const fgl=document.getElementById('fgLabel'); if(fgl) fgl.textContent=fg.label||'Neutral';
+  const fgu=document.getElementById('fgUpdated'); if(fgu) fgu.textContent=fg.last_update||'—';
   const pct=v/100;
-  document.getElementById('fgRing').style.background=`conic-gradient(${c} ${pct}turn,var(--bg3) ${pct}turn)`;
-  document.getElementById('fgBar').style.cssText=`width:${v}%;background:${c}`;
-  document.getElementById('fgSub').textContent=fg.ok_to_buy?'✅ '+QI18n.t('buy_allowed_label'):'🚫 '+QI18n.t('buy_blocked_label');
-  document.getElementById('fgSub').style.color=fg.ok_to_buy?'var(--green)':'var(--red)';
+  const fgr=document.getElementById('fgRing'); if(fgr) fgr.style.background=`conic-gradient(${c} ${pct}turn,var(--bg3) ${pct}turn)`;
+  const fgb=document.getElementById('fgBar'); if(fgb) fgb.style.cssText=`width:${v}%;background:${c}`;
+  const fgs=document.getElementById('fgSub');
+  if(fgs){fgs.textContent=fg.ok_to_buy?'✅ '+QI18n.t('buy_allowed_label'):'🚫 '+QI18n.t('buy_blocked_label'); fgs.style.color=fg.ok_to_buy?'var(--green)':'var(--red)';}
 }
 function updateCB(cb){
   const banner=document.getElementById('cbBanner'); if(banner) banner.style.display=cb.active?'block':'none';
@@ -243,34 +251,41 @@ function updateGoal(g){
   const gba=document.getElementById('goalBadge'); if(gba) gba.textContent=g.pct+'% '+QI18n.t('achieved');
 }
 function updateDom(dom){
-  document.getElementById('domCard').style.display='block';
-  document.getElementById('domBTC').textContent=dom.btc_dom+'%';
-  document.getElementById('domUSDT').textContent=dom.usdt_dom+'%';
-  document.getElementById('domUpdated').textContent=dom.last_update||'—';
+  const dc=document.getElementById('domCard'); if(dc) dc.style.display='block';
+  const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  _s('domBTC', dom.btc_dom+'%');
+  _s('domUSDT', dom.usdt_dom+'%');
+  _s('domUpdated', dom.last_update||'—');
   const s=document.getElementById('domStatus');
-  if(!dom.ok_usdt){s.textContent='🚨';s.style.color='var(--red)';}
-  else if(!dom.ok_btc){s.textContent='⚠️';s.style.color='var(--yellow)';}
-  else{s.textContent='✅';s.style.color='var(--green)';}
-  document.getElementById('cDom').textContent='BTC '+dom.btc_dom+'%';
-  document.getElementById('cDom').style.color=dom.ok_btc?'var(--green)':'var(--red)';
+  if(s){
+    if(!dom.ok_usdt){s.textContent='🚨';s.style.color='var(--red)';}
+    else if(!dom.ok_btc){s.textContent='⚠️';s.style.color='var(--yellow)';}
+    else{s.textContent='✅';s.style.color='var(--green)';}
+  }
+  const cd=document.getElementById('cDom');
+  if(cd){cd.textContent='BTC '+dom.btc_dom+'%'; cd.style.color=dom.ok_btc?'var(--green)':'var(--red)';}
 }
 function updateAnomaly(anom){
-  document.getElementById('anomalyBanner').style.display=anom.is_anomaly?'block':'none';
-  if(anom.is_anomaly) document.getElementById('anomalyTxt').textContent=`Symbol: ${anom.anomaly_symbol||'?'} · Score: ${anom.last_score?.toFixed(3)||0}`;
-  document.getElementById('anomSamples').textContent=anom.samples||0;
+  if(!anom) return;
+  const ab=document.getElementById('anomalyBanner'); if(ab) ab.style.display=anom.is_anomaly?'block':'none';
+  if(anom.is_anomaly){const at=document.getElementById('anomalyTxt'); if(at) at.textContent=`Symbol: ${anom.anomaly_symbol||'?'} · Score: ${anom.last_score?.toFixed(3)||0}`;}
+  const as=document.getElementById('anomSamples'); if(as) as.textContent=anom.samples||0;
 }
 function updateGenetic(gen){
-  document.getElementById('genFitness').textContent=gen.best_fitness>0?gen.best_fitness.toFixed(3):'—';
-  document.getElementById('genGenCount').textContent='Gen.'+gen.generation;
+  if(!gen) return;
+  const gf=document.getElementById('genFitness'); if(gf) gf.textContent=gen.best_fitness>0?gen.best_fitness.toFixed(3):'—';
+  const gc=document.getElementById('genGenCount'); if(gc) gc.textContent='Gen.'+gen.generation;
   const el=document.getElementById('genHistory');
+  if(!el) return;
   if(gen.history?.length) el.innerHTML=gen.history.slice(0,8).map(h=>
-    `<div class="log-row info"><span class="log-time">Gen.${esc(h.gen)}</span>
-     <span class="log-msg">Fitness:${esc(h.fitness)} · SL:${((h.genome?.sl??0)*100).toFixed(1)}% · TP:${((h.genome?.tp??0)*100).toFixed(1)}%</span></div>`).join('');
+    `<div class="log-row info"><span class="log-time">Gen.${esc(String(h.gen||''))}</span>
+     <span class="log-msg">Fitness:${esc(String(h.fitness||''))} · SL:${((h.genome?.sl??0)*100).toFixed(1)}% · TP:${((h.genome?.tp??0)*100).toFixed(1)}%</span></div>`).join('');
   else el.innerHTML='<div class="empty" style="padding:8px">—</div>';
 }
 
 function updatePositions(positions){
   const el=document.getElementById('posList');
+  if(!el) return;
   if(!positions.length){el.innerHTML='<div class="empty"><div class="empty-ico">📭</div>'+QI18n.t('no_open_positions')+'</div>';return;}
   el.innerHTML=positions.map(p=>{
     const pos=p.pnl>=0,c=clr(p.pnl),isShort=p.trade_type==='short';
@@ -309,6 +324,7 @@ function renderTrades(trades,filter){
   if(filter==='short') fl=trades.filter(t=>t.trade_type==='short');
   if(filter==='dca')   fl=trades.filter(t=>t.dca_level>0);
   const el=document.getElementById('tradeLog');
+  if(!el) return;
   if(!fl.length){el.innerHTML='<div class="empty"><div class="empty-ico">📋</div>'+QI18n.t('no_trades_yet')+'</div>';return;}
   el.innerHTML=fl.slice(0,80).map(t=>{
     const won=(t.pnl||0)>0,c=clr(t.pnl||0),isShort=t.trade_type==='short';
@@ -330,63 +346,71 @@ function renderTrades(trades,filter){
 }
 
 function updateStats(d){
-  document.getElementById('pStart').textContent=fmt(d.initial_balance)+' USDT';
-  document.getElementById('pCurrent').textContent=fmt(d.portfolio_value)+' USDT';
-  const pp=document.getElementById('pPnl'); pp.textContent=fmtS(d.total_pnl)+' USDT'; pp.style.color=clr(d.total_pnl);
-  const pr=document.getElementById('pReturn'); pr.textContent=fmtPct(d.return_pct); pr.style.color=clr(d.return_pct);
-  document.getElementById('pDd').textContent=fmt(d.max_drawdown,1)+'%';
-  document.getElementById('pSharpe').textContent=d.sharpe>0?fmt(d.sharpe,2):'—';
-  document.getElementById('pTotal').textContent=d.total_trades;
-  document.getElementById('pWR').textContent=d.total_trades>0?fmt(d.win_rate,1)+'%':'—';
-  document.getElementById('pAvgW').textContent=fmt(d.avg_win)+' USDT';
-  document.getElementById('pAvgL').textContent=fmt(d.avg_loss)+' USDT';
-  document.getElementById('pPF').textContent=d.profit_factor>0?fmt(d.profit_factor,2):'—';
-  document.getElementById('pDCA').textContent=allTrades.filter(t=>t.dca_level>0).length;
-  document.getElementById('pShorts').textContent=allTrades.filter(t=>t.trade_type==='short').length;
-  document.getElementById('pArbCount').textContent=(d.arb_log||[]).length;
-  // Top coins
-  const coinPnl={};
-  allTrades.forEach(t=>{coinPnl[t.symbol]=(coinPnl[t.symbol]||0)+(t.pnl||0);});
-  document.getElementById('topCoins').innerHTML=Object.entries(coinPnl).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([sym,pnl])=>
-    `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
-       <span style="font-weight:600">${esc(String(sym))}</span>
-       <span style="font-family:var(--mono);font-weight:700;color:${clr(pnl)}">${fmtS(pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
-  // Hour chart
-  if(hourChart && allTrades.length){
-    const hd=Array(24).fill(0);
-    allTrades.forEach(t=>{if(t.closed){const h=new Date(t.closed).getUTCHours();if(h>=0&&h<24) hd[h]+=(t.pnl||0);}});
-    hourChart.data.datasets[0].data=hd;
-    hourChart.data.datasets[0].backgroundColor=hd.map(v=>v>=0?'rgba(0,255,136,.4)':'rgba(255,61,113,.4)');
-    hourChart.update('none');
-  }
-  // PnL chart
-  if(pnlChart && allTrades.length){
-    const rec=allTrades.slice(0,30).reverse();
-    pnlChart.data.labels=rec.map((_,i)=>'#'+(i+1));
-    pnlChart.data.datasets[0].data=rec.map(t=>t.pnl||0);
-    pnlChart.data.datasets[0].backgroundColor=rec.map(t=>(t.pnl||0)>=0?'rgba(0,255,136,.5)':'rgba(255,61,113,.5)');
-    pnlChart.update('none');
-  }
+  if(!d) return;
+  try {
+    const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+    const _sc = (id, v, color) => { const el=document.getElementById(id); if(el){el.textContent=v; if(color) el.style.color=color;} };
+    _s('pStart', fmt(d.initial_balance)+' USDT');
+    _s('pCurrent', fmt(d.portfolio_value)+' USDT');
+    _sc('pPnl', fmtS(d.total_pnl)+' USDT', clr(d.total_pnl));
+    _sc('pReturn', fmtPct(d.return_pct), clr(d.return_pct));
+    _s('pDd', fmt(d.max_drawdown,1)+'%');
+    _s('pSharpe', d.sharpe>0?fmt(d.sharpe,2):'—');
+    _s('pTotal', d.total_trades);
+    _s('pWR', d.total_trades>0?fmt(d.win_rate,1)+'%':'—');
+    _s('pAvgW', fmt(d.avg_win)+' USDT');
+    _s('pAvgL', fmt(d.avg_loss)+' USDT');
+    _s('pPF', d.profit_factor>0?fmt(d.profit_factor,2):'—');
+    _s('pDCA', allTrades.filter(t=>t.dca_level>0).length);
+    _s('pShorts', allTrades.filter(t=>t.trade_type==='short').length);
+    _s('pArbCount', (d.arb_log||[]).length);
+    // Top coins
+    const coinPnl={};
+    allTrades.forEach(t=>{coinPnl[t.symbol]=(coinPnl[t.symbol]||0)+(t.pnl||0);});
+    const topEl=document.getElementById('topCoins');
+    if(topEl) topEl.innerHTML=Object.entries(coinPnl).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([sym,pnl])=>
+      `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:12px">
+         <span style="font-weight:600">${esc(String(sym))}</span>
+         <span style="font-family:var(--mono);font-weight:700;color:${clr(pnl)}">${fmtS(pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
+    // Hour chart
+    if(hourChart && allTrades.length){
+      const hd=Array(24).fill(0);
+      allTrades.forEach(t=>{if(t.closed){try{const h=new Date(t.closed).getUTCHours();if(h>=0&&h<24) hd[h]+=(t.pnl||0);}catch(e){}}});
+      hourChart.data.datasets[0].data=hd;
+      hourChart.data.datasets[0].backgroundColor=hd.map(v=>v>=0?'rgba(0,255,136,.4)':'rgba(255,61,113,.4)');
+      hourChart.update('none');
+    }
+    // PnL chart
+    if(pnlChart && allTrades.length){
+      const rec=allTrades.slice(0,30).reverse();
+      pnlChart.data.labels=rec.map((_,i)=>'#'+(i+1));
+      pnlChart.data.datasets[0].data=rec.map(t=>t.pnl||0);
+      pnlChart.data.datasets[0].backgroundColor=rec.map(t=>(t.pnl||0)>=0?'rgba(0,255,136,.5)':'rgba(255,61,113,.5)');
+      pnlChart.update('none');
+    }
+  } catch(e){ console.warn('updateStats error:', e); }
 }
 
 function updateAI(ai){
-  document.getElementById('aiVer').textContent=ai.is_trained?'v'+ai.training_ver:'Training...';
-  document.getElementById('aiStatusMsg').textContent=ai.status_msg||'—';
-  document.getElementById('aiStatusMsg').style.color=ai.is_trained?'var(--green)':'var(--sub)';
-  document.getElementById('aiProgPct').textContent=ai.progress_pct+'%';
-  document.getElementById('aiProgBar').style.width=ai.progress_pct+'%';
-  document.getElementById('aiProgBar').style.background=ai.progress_pct>=100?'var(--green)':'var(--cyan)';
-  document.getElementById('aiWF').textContent=ai.wf_accuracy>0?ai.wf_accuracy+'%':'—';
-  document.getElementById('aiBullAcc').textContent=ai.bull_accuracy>0?ai.bull_accuracy+'%':'—';
-  document.getElementById('aiBearAcc').textContent=ai.bear_accuracy>0?ai.bear_accuracy+'%':'—';
-  document.getElementById('aiSamples').textContent=ai.samples||0;
-  document.getElementById('aiBullS').textContent=ai.bull_samples||0;
-  document.getElementById('aiBearS').textContent=ai.bear_samples||0;
-  document.getElementById('aiAllowed').textContent=ai.allowed_count||0;
-  document.getElementById('aiBlocked').textContent=ai.blocked_count||0;
-  document.getElementById('aiNews').textContent=(ai.status_msg?.includes('News'))||false?'✅':'—';
-  document.getElementById('aiOnchain').textContent='✅';
-  document.getElementById('aiDecCount').textContent=ai.ai_log?.length||0;
+  if(!ai) return;
+  const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
+  const _sc = (id, v, color) => { const el=document.getElementById(id); if(el){el.textContent=v; if(color) el.style.color=color;} };
+  _s('aiVer', ai.is_trained?'v'+ai.training_ver:'Training...');
+  _sc('aiStatusMsg', ai.status_msg||'—', ai.is_trained?'var(--green)':'var(--sub)');
+  _s('aiProgPct', (ai.progress_pct||0)+'%');
+  const progBar=document.getElementById('aiProgBar');
+  if(progBar){progBar.style.width=(ai.progress_pct||0)+'%'; progBar.style.background=(ai.progress_pct||0)>=100?'var(--green)':'var(--cyan)';}
+  _s('aiWF', ai.wf_accuracy>0?ai.wf_accuracy+'%':'—');
+  _s('aiBullAcc', ai.bull_accuracy>0?ai.bull_accuracy+'%':'—');
+  _s('aiBearAcc', ai.bear_accuracy>0?ai.bear_accuracy+'%':'—');
+  _s('aiSamples', ai.samples||0);
+  _s('aiBullS', ai.bull_samples||0);
+  _s('aiBearS', ai.bear_samples||0);
+  _s('aiAllowed', ai.allowed_count||0);
+  _s('aiBlocked', ai.blocked_count||0);
+  _s('aiNews', (ai.status_msg?.includes('News'))||false?'✅':'—');
+  _s('aiOnchain', '✅');
+  _s('aiDecCount', ai.ai_log?.length||0);
   // Weights
   const wl=document.getElementById('weightList');
   if(ai.weights?.length) wl.innerHTML=ai.weights.map(w=>{
@@ -407,8 +431,9 @@ function updateAI(ai){
 
 function updateSignals(sigs){
   const el=document.getElementById('sigList');
+  if(!el) return;
   if(!sigs.length){el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>'+QI18n.t('waiting_for_signals')+'</div>';return;}
-  document.getElementById('sigCount').textContent=sigs.length;
+  const sc=document.getElementById('sigCount'); if(sc) sc.textContent=sigs.length;
   el.innerHTML=sigs.slice(0,25).map(s=>{
     const nc=s.news_score>0.2?'var(--green)':s.news_score<-0.2?'var(--red)':'var(--sub)';
     return `<div style="background:var(--bg2);border-left:3px solid var(--green);border-radius:9px;padding:9px 11px;margin-bottom:5px">
@@ -424,6 +449,7 @@ function updateSignals(sigs){
 
 function updateActivity(acts){
   const el=document.getElementById('actList');
+  if(!el) return;
   if(!acts.length){el.innerHTML='<div class="empty"><div class="empty-ico">⚡</div>Starte TREVLIX</div>';return;}
   el.innerHTML=acts.slice(0,12).map(a=>{
     const c={success:'var(--green)',error:'var(--red)',warning:'var(--yellow)',info:'var(--cyan)'}[a.type]||'var(--sub)';
@@ -437,8 +463,9 @@ function updateActivity(acts){
 }
 
 function renderAlerts(alerts){
-  document.getElementById('alertCount').textContent=alerts.filter(a=>!a.triggered).length;
+  const ac=document.getElementById('alertCount'); if(ac) ac.textContent=alerts.filter(a=>!a.triggered).length;
   const el=document.getElementById('alertList');
+  if(!el) return;
   if(!alerts.length){el.innerHTML='<div class="empty" style="padding:8px">Keine Alerts</div>';return;}
   el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
     <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
@@ -449,9 +476,9 @@ function renderAlerts(alerts){
 
 function renderArbLog(arb){
   const cnt=(arb||[]).length;
-  document.getElementById('arbCountBadge').textContent=cnt;
-  document.getElementById('arbCount2').textContent=cnt;
-  document.getElementById('arbCard').style.display=cnt>0?'block':'none';
+  const acb=document.getElementById('arbCountBadge'); if(acb) acb.textContent=cnt;
+  const ac2=document.getElementById('arbCount2'); if(ac2) ac2.textContent=cnt;
+  const acd=document.getElementById('arbCard'); if(acd) acd.style.display=cnt>0?'block':'none';
   const html=arb.slice(0,5).map(a=>`<div class="arb-item">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <span style="font-size:13px;font-weight:700">${esc(String(a.symbol||''))}</span>
@@ -459,8 +486,8 @@ function renderArbLog(arb){
     </div>
     <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${esc(String(a.buy||''))} → Verkauf: ${esc(String(a.sell||''))} · ${esc(String(a.time||'—'))}</div>
   </div>`).join('');
-  document.getElementById('arbLogHome').innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
-  document.getElementById('arbList2').innerHTML=html||'<div class="empty" style="padding:8px">Noch kein Scan</div>';
+  const alh=document.getElementById('arbLogHome'); if(alh) alh.innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
+  const al2=document.getElementById('arbList2'); if(al2) al2.innerHTML=html||'<div class="empty" style="padding:8px">Noch kein Scan</div>';
 }
 
 // ── Heatmap ──────────────────────────────────────────────────────────
@@ -579,23 +606,29 @@ function renderTVChart(data, el){
 
 // ── Backtest ─────────────────────────────────────────────────────────
 function runBacktest(){
-  document.getElementById('btStatus').textContent='⏳ Backtest läuft...';
-  document.getElementById('btBtn').disabled=true;
-  document.getElementById('btResultSection').style.display='none';
+  const candles=parseInt(document.getElementById('btCandles')?.value, 10);
+  const sl=parseFloat(document.getElementById('btSL')?.value);
+  const tp=parseFloat(document.getElementById('btTP')?.value);
+  const vote=parseFloat(document.getElementById('btVote')?.value);
+  if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic')+': Ungültige Eingabe','warning');return;}
+  const bts=document.getElementById('btStatus'); if(bts) bts.textContent='⏳ Backtest läuft...';
+  const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
+  const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
   socket.emit('run_backtest',{
-    symbol:document.getElementById('btSym').value.trim(),
-    timeframe:document.getElementById('btTf').value,
-    candles:parseInt(document.getElementById('btCandles').value, 10),
-    sl:parseFloat(document.getElementById('btSL').value)/100,
-    tp:parseFloat(document.getElementById('btTP').value)/100,
-    vote:parseFloat(document.getElementById('btVote').value)/100,
+    symbol:(document.getElementById('btSym')?.value||'').trim(),
+    timeframe:document.getElementById('btTf')?.value||'1h',
+    candles:candles,
+    sl:sl/100,
+    tp:tp/100,
+    vote:vote/100,
   });
 }
 async function loadBtHistory(){
   try{
     const data=await(await fetch('/api/backtest/history')).json();
     const el=document.getElementById('btHistory');
-    if(!data.length){el.innerHTML='<div class="empty" style="padding:8px">—</div>';return;}
+    if(!el) return;
+    if(!data||!data.length){el.innerHTML='<div class="empty" style="padding:8px">—</div>';return;}
     el.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
       <div><div style="font-size:12px;font-weight:700">${r.symbol} ${r.timeframe}</div>
         <div style="font-size:10px;color:var(--sub)">${r.candles} Kerzen · ${r.total_trades} Trades</div></div>
@@ -805,7 +838,15 @@ socket.on('auth_error',(d)=>{
   addLog(QI18n.t('msg_auth_error')+': '+(d&&d.msg||QI18n.t('msg_not_authenticated')),'error','system');
   setTimeout(()=>location.href='/login',2000);
 });
-socket.on('update', d=>{if(d){updateUI(d); if(d.user_role) applyStateToRole(d);}});
+socket.on('update', d=>{
+  if(d){
+    updateUI(d);
+    if(d.user_role) applyStateToRole(d);
+    // Auto-refresh stats if stats tab is active
+    const statsTab=document.getElementById('sec-stats');
+    if(statsTab && statsTab.classList.contains('active')) updateStats(d);
+  }
+});
 socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
   if(!g) return;
@@ -1438,7 +1479,7 @@ async function createGrid() {
   const upper  = parseFloat(document.getElementById('gridUpper')?.value);
   const levels = parseInt(document.getElementById('gridLevels')?.value || 10, 10);
   const invest = parseFloat(document.getElementById('gridInvest')?.value || 100);
-  if (!symbol || !lower || !upper || lower >= upper) {
+  if (!symbol || isNaN(lower) || isNaN(upper) || isNaN(levels) || isNaN(invest) || lower >= upper) {
     toast(QI18n.t('err_grid_params'), 'warning'); return;
   }
   socket.emit('create_grid', {symbol, lower, upper, levels, invest_per_level: invest});
@@ -1601,6 +1642,7 @@ document.addEventListener('keydown', e => {
     case 's':  { const nb=document.getElementById('nb-settings'); if(nb) nav('settings',nb); } break;
     case 'd':  { const nb=document.getElementById('nb-home'); if(nb) nav('home',nb); } break;
     case 'a':  { const nb=document.getElementById('nb-ai'); if(nb) nav('ai',nb); } break;
+    case 'x':  { const nb=document.getElementById('nb-stats'); if(nb) nav('stats',nb); } break;
     case 't':  toggleTheme(); break;
     case '?':
       const h = document.getElementById('shortcutHelp');
