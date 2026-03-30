@@ -17,7 +17,11 @@ let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
 (async function _initState(){
   try {
     const r = await fetch('/api/v1/state', {credentials:'include'});
-    if(r.ok){ const d=await r.json(); if(d&&d.running!==undefined) updateUI(d); }
+    if(r.ok){
+      const d=await r.json();
+      if(d&&d.running!==undefined) updateUI(d);
+      if(d&&d.user_role) applyStateToRole(d);
+    }
   } catch(e){ console.warn('Initial state fetch failed:', e); }
 })();
 
@@ -1112,9 +1116,13 @@ function applyRoleUI(role) {
     if (badge) { badge.textContent = 'user'; badge.className = 'role-badge user'; }
   }
 
-  // Update nav visibility
-  document.querySelectorAll('.nb.admin-only').forEach(el => {
-    el.style.display = role === 'admin' ? '' : 'none';
+  // Update admin-only element visibility (nav buttons + sections)
+  document.querySelectorAll('.admin-only').forEach(el => {
+    if (role === 'admin') {
+      el.style.display = el.classList.contains('nb') ? 'flex' : '';
+    } else {
+      el.style.display = 'none';
+    }
   });
 }
 

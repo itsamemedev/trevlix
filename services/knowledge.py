@@ -43,6 +43,7 @@ class KnowledgeBase:
 
     Speichert Erkenntnisse aus Trading, KI-Modellen und Marktdaten
     in der DB und stellt sie allen Usern zur Verfügung.
+    Unterstützt MCP-Tool-Integration für LLM-gestützte Analysen.
     """
 
     # Gültige Kategorien
@@ -88,6 +89,7 @@ class KnowledgeBase:
         self._llm_cache_max_size = 100  # Max LLM-Einträge
         self._cached_market_analysis: str = ""
         self._cached_market_analysis_ts: float = 0.0
+        self._mcp_registry: Any = None  # MCPToolRegistry (lazy init)
 
     @staticmethod
     def _evict_cache(cache: dict, ts_dict: dict, max_size: int) -> None:
@@ -407,6 +409,176 @@ class KnowledgeBase:
             "total_knowledge_entries": len(insights) + len(symbols) + len(strategies),
         }
 
+    def set_mcp_registry(self, registry: Any) -> None:
+        """Setzt die MCP-Tool-Registry für Tool-Use-Unterstützung.
+
+        Args:
+            registry: MCPToolRegistry-Instanz.
+        """
+        self._mcp_registry = registry
+        log.info("MCP-Tool-Registry verbunden (%d Tools)", len(registry.get_tools_schema()))
+
+    def query_llm_with_tools(
+        self, prompt: str, context: str = "", max_rounds: int = 3
+    ) -> str | None:
+        """LLM-Abfrage mit automatischem MCP-Tool-Use.
+
+        Sendet den Prompt an die LLM mit Tool-Definitionen.
+        Falls die LLM Tool-Calls zurückgibt, werden diese ausgeführt
+        und die Ergebnisse in einer Folgenachricht zurückgegeben.
+
+        Args:
+            prompt: Die Frage/Aufgabe für die LLM.
+            context: System-Kontext.
+            max_rounds: Maximale Tool-Use-Runden.
+
+        Returns:
+            Finale LLM-Antwort als String oder None bei Fehler.
+        """
+        if not self._llm_endpoint or not HTTPX_AVAILABLE:
+            return None
+        if not self._mcp_registry:
+            return self.query_llm(prompt, context)
+
+        try:
+            messages: list[dict[str, Any]] = []
+            tools_desc = self._mcp_registry.get_tool_descriptions()
+            system_ctx = (
+                (
+                    f"{context}\n\n{tools_desc}\n\n"
+                    "Du kannst diese Tools nutzen um aktuelle Daten abzurufen. "
+                    "Rufe Tools auf indem du JSON im Format "
+                    '{"tool": "name", "args": {...}} zurückgibst. '
+                    "Antworte nach Tool-Ergebnissen mit deiner finalen Analyse."
+                )
+                if context
+                else (f"{tools_desc}\n\nDu kannst diese Tools nutzen um aktuelle Daten abzurufen.")
+            )
+            messages.append({"role": "system", "content": system_ctx})
+            messages.append({"role": "user", "content": prompt})
+
+            headers = {"Content-Type": "application/json"}
+            if self._llm_api_key:
+                headers["Authorization"] = f"Bearer {self._llm_api_key}"
+
+            tools_schema = self._mcp_registry.get_tools_schema()
+
+            for _round in range(max_rounds):
+                if self._is_ollama:
+                    payload: dict[str, Any] = {
+                        "model": self._llm_model or "llama3",
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"temperature": 0.3, "num_predict": 800},
+                    }
+                else:
+                    payload = {
+                        "messages": messages,
+                        "temperature": 0.3,
+                        "max_tokens": 800,
+                        "tools": tools_schema,
+                    }
+                    if self._llm_model:
+                        payload["model"] = self._llm_model
+
+                resp = httpx.post(
+                    self._llm_endpoint,
+                    json=payload,
+                    headers=headers,
+                    timeout=45,
+                )
+                if resp.status_code != 200:
+                    log.warning("LLM Tool-Query HTTP %d", resp.status_code)
+                    return None
+
+                data = resp.json()
+
+                # Prüfe auf Tool-Calls in der Antwort
+                if self._is_ollama:
+                    answer = data.get("message", {}).get("content", "")
+                    # Ollama: Prüfe ob Antwort einen Tool-Call enthält
+                    tool_call = self._parse_tool_call_from_text(answer)
+                    if tool_call and _round < max_rounds - 1:
+                        result = self._mcp_registry.execute(
+                            tool_call["tool"], tool_call.get("args", {})
+                        )
+                        messages.append({"role": "assistant", "content": answer})
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": f"Tool-Ergebnis für {tool_call['tool']}: "
+                                f"{json.dumps(result, ensure_ascii=False, default=str)}\n\n"
+                                "Bitte gib jetzt deine finale Analyse basierend auf diesen Daten.",
+                            }
+                        )
+                        continue
+                    return answer or None
+
+                # OpenAI-kompatibles Format: Prüfe auf tool_calls
+                choices = data.get("choices") or []
+                if not choices:
+                    return None
+                message = choices[0].get("message", {})
+                tool_calls = message.get("tool_calls")
+
+                if tool_calls and _round < max_rounds - 1:
+                    # Tool-Calls ausführen
+                    messages.append(message)
+                    results = self._mcp_registry.process_tool_calls(tool_calls)
+                    for r in results:
+                        messages.append(
+                            {
+                                "role": "tool",
+                                "tool_call_id": r["tool_call_id"],
+                                "content": r["result"],
+                            }
+                        )
+                    continue
+
+                # Finale Antwort
+                return message.get("content") or None
+
+            return None
+        except Exception as e:
+            log.debug("LLM Tool-Query: %s", e)
+            return None
+
+    @staticmethod
+    def _parse_tool_call_from_text(text: str) -> dict[str, Any] | None:
+        """Versucht einen Tool-Call aus Freitext zu extrahieren.
+
+        Unterstützt Ollama-Modelle die kein natives tool_use haben.
+
+        Args:
+            text: LLM-Antwort als Freitext.
+
+        Returns:
+            Dict mit 'tool' und 'args' oder None.
+        """
+        try:
+            # Suche nach JSON-Block im Text
+            start = text.find('{"tool"')
+            if start == -1:
+                return None
+            # Finde das Ende des JSON-Blocks
+            depth = 0
+            end = start
+            for i in range(start, len(text)):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            if end > start:
+                parsed = json.loads(text[start:end])
+                if "tool" in parsed:
+                    return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return None
+
     @property
     def llm_enabled(self) -> bool:
         """Prüft ob LLM-Endpunkt konfiguriert und verfügbar ist."""
@@ -587,7 +759,11 @@ class KnowledgeBase:
                 "Sollte aggressiver oder defensiver gehandelt werden?"
             )
 
-            answer = self._query_llm_cached("market_context", prompt, context)
+            # MCP-Tool-gestützte Analyse bevorzugen
+            if self._mcp_registry:
+                answer = self.query_llm_with_tools(prompt, context, max_rounds=2)
+            else:
+                answer = self._query_llm_cached("market_context", prompt, context)
             if not answer:
                 return
 

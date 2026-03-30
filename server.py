@@ -112,6 +112,7 @@ from services.market_data import (
     OnChainFetcher,
     SentimentFetcher,
 )
+from services.mcp_tools import MCPToolRegistry
 from services.performance_attribution import PerformanceAttribution
 from services.revenue_tracking import RevenueTracker
 from services.risk import (
@@ -655,7 +656,8 @@ def get_db():
             g.db_conn = db._conn()  # type: ignore[attr-defined]
         return g.db_conn
     except RuntimeError:
-        # Außerhalb des Request-Kontexts
+        # Außerhalb des Request-Kontexts – Warnung loggen
+        log.debug("get_db() außerhalb Request-Kontext – verwende db._get_conn() stattdessen")
         return db._conn()  # type: ignore[attr-defined]
 
 
@@ -698,8 +700,8 @@ class MySQLManager:
                 user=CONFIG["mysql_user"],
                 password=CONFIG["mysql_pass"],
                 database=CONFIG["mysql_db"],
-                pool_size=5,
-                timeout=10,
+                pool_size=int(os.getenv("DB_POOL_SIZE", "15")),
+                timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
             )
         except Exception as e:
             log.warning(f"Connection-Pool: {e} – Fallback auf direkte Verbindung")
@@ -751,6 +753,39 @@ class MySQLManager:
                     conn.close()
                 except Exception:
                     pass
+
+    def pool_stats(self) -> dict[str, int | float]:
+        """Gibt Pool-Statistiken zurück (oder leeres Dict ohne Pool)."""
+        if self._pool is not None:
+            return self._pool.pool_stats()
+        return {}
+
+    @contextmanager
+    def get_connection(self):
+        """Alias für _get_conn() – öffentlicher Context-Manager."""
+        with self._get_conn() as conn:
+            yield conn
+
+    def _check_pool_health(self) -> None:
+        """Prüft Pool-Auslastung und loggt Warnungen bei hoher Nutzung."""
+        if self._pool is None:
+            return
+        stats = self._pool.pool_stats()
+        util = stats.get("utilization_pct", 0)
+        if util >= 90:
+            log.warning(
+                "DB-Pool kritisch: %s%% Auslastung (%s/%s belegt)",
+                util,
+                stats.get("in_use", "?"),
+                stats.get("pool_size", "?"),
+            )
+        elif util >= 70:
+            log.info(
+                "DB-Pool hoch: %s%% Auslastung (%s/%s belegt)",
+                util,
+                stats.get("in_use", "?"),
+                stats.get("pool_size", "?"),
+            )
 
     # ── Encryption Helpers ───────────────────────────────────────────────────
     @staticmethod
@@ -4692,6 +4727,16 @@ backup_sched = BackupScheduler()
 state = BotState(db)
 ai_engine = AIEngine(db)
 
+# ── MCP-Tool-Integration für KI ────────────────────────────────────────────
+mcp_registry = MCPToolRegistry(
+    db_manager=db,
+    state=state,
+    knowledge_base=knowledge_base,
+    exchange_fn=None,  # Wird nach create_exchange gesetzt
+    config=CONFIG,
+)
+knowledge_base.set_mcp_registry(mcp_registry)
+
 # ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
 
 
@@ -5661,6 +5706,13 @@ def bot_loop():
             risk.reset_daily(state.balance)
             regime.update(ex)
 
+            # DB-Pool Health Check (alle 10 Iterationen)
+            if state.iteration % 10 == 0:
+                try:
+                    db._check_pool_health()
+                except Exception:
+                    pass
+
             # Periodische Updates
             if state.iteration % 30 == 1:
                 threading.Thread(target=fg_idx.update, daemon=True).start()
@@ -5852,7 +5904,10 @@ def bot_loop():
 @app.route("/api/v1/state")
 @api_auth_required
 def api_state():
-    return jsonify(state.snapshot())
+    snap = state.snapshot()
+    # user_role aus Session oder JWT für Frontend Role-UI
+    snap["user_role"] = session.get("user_role", "user")
+    return jsonify(snap)
 
 
 @app.route("/api/v1/trades")
@@ -6078,7 +6133,8 @@ def api_knowledge_query():
         f"Top Symbole: {json.dumps(summary.get('top_symbols', [])[:5])}\n"
         f"Strategie-Ranking: {json.dumps(summary.get('strategy_ranking', [])[:5])}\n"
     )
-    answer = knowledge_base.query_llm(prompt, context)
+    # MCP-Tool-gestützte Analyse wenn verfügbar
+    answer = knowledge_base.query_llm_with_tools(prompt, context)
     if answer is None:
         return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
     return jsonify({"answer": answer})
@@ -6098,6 +6154,31 @@ def api_knowledge_llm_status():
             "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
         }
     )
+
+
+@app.route("/api/v1/mcp/tools")
+@api_auth_required
+def api_mcp_tools():
+    """Liste der verfügbaren MCP-Tools für die KI."""
+    return jsonify(
+        {
+            "tools": mcp_registry.get_tools_schema(),
+            "count": len(mcp_registry.get_tools_schema()),
+        }
+    )
+
+
+@app.route("/api/v1/mcp/execute", methods=["POST"])
+@api_auth_required
+def api_mcp_execute():
+    """Führt ein MCP-Tool direkt aus."""
+    data = request.json or {}
+    tool_name = data.get("tool", "")
+    arguments = data.get("arguments", {})
+    if not tool_name:
+        return jsonify({"error": "tool ist Pflichtfeld"}), 400
+    result = mcp_registry.execute(tool_name, arguments)
+    return jsonify(result)
 
 
 @app.route("/api/v1/admin/exchanges")
@@ -6533,16 +6614,12 @@ def api_health():
     db_ok = False
     pool_stats = {}
     try:
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute("SELECT 1")
-        conn.close()
-        db_ok = True
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT 1")
+            db_ok = True
         if db._pool:
-            pool_stats = {
-                "pool_size": db._pool.pool_size,
-                "available": db._pool.available,
-            }
+            pool_stats = db._pool.pool_stats()
     except Exception:
         pass
     return jsonify(
