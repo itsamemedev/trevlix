@@ -691,28 +691,89 @@
 </div>
 
 
-    <!-- ══ ADMIN PANEL ══════════════════════════════════════════════════ -->
-    <div class="sec admin-only" id="sec-admin" style="gap:14px">
+    <!-- ══ ADMIN DASHBOARD ═══════════════════════════════════════════════ -->
+    <div class="sec admin-only admin-gold" id="sec-admin" style="gap:12px">
 
-      <!-- Audit Log -->
-      <div class="card">
-        <div class="card-hd">
-          <div class="card-title" data-i18n="admin_audit_log">📋 Audit-Log</div>
-          <button class="btn btn-info" style="padding:5px 12px;font-size:11px" onclick="loadAuditLog()">↻</button>
+      <!-- Admin Header -->
+      <div class="admin-sec-hd">
+        <div class="admin-sec-title">Admin Dashboard <span class="admin-badge">Admin</span></div>
+        <div class="admin-sec-sub">TREVLIX Control Center &middot; System Management &middot; v1.5.0</div>
+      </div>
+
+      <!-- KPI Stat Cards (BitCrypto-Stil) -->
+      <div class="admin-stat-row">
+        <div class="admin-stat-card">
+          <div class="admin-stat-label" data-i18n="admin_total_revenue">Total Revenue</div>
+          <div class="admin-stat-val" id="adminRevTotal">$0.00</div>
+          <div class="admin-stat-sub" id="adminRevChange">— this month</div>
         </div>
-        <div class="card-body" id="auditLogList" style="max-height:300px;overflow-y:auto">
-          <div class="empty"><div class="empty-ico">📋</div><span data-i18n="loading_label">Laden…</span></div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label" data-i18n="admin_total_trades">Total Trades</div>
+          <div class="admin-stat-val" id="adminTradesTotal">0</div>
+          <div class="admin-stat-sub" id="adminTradesChange">— this month</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label" data-i18n="admin_active_users">Active Users</div>
+          <div class="admin-stat-val" id="adminUsersTotal">0</div>
+          <div class="admin-stat-sub" id="adminUsersOnline">0 online</div>
+        </div>
+        <div class="admin-stat-card">
+          <div class="admin-stat-label" data-i18n="admin_win_rate_global">Win Rate</div>
+          <div class="admin-stat-val" id="adminWinRate">—%</div>
+          <div class="admin-stat-sub" id="adminIterCount2">0 Iterationen</div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_user_mgmt">👥 Nutzerverwaltung</div>
-          <button class="btn btn-jade" style="padding:5px 12px;font-size:11px" onclick="loadUsers()">↻</button>
+      <!-- Bot Control & Status -->
+      <div class="admin-card">
+        <div class="card-hd"><div class="card-title">Bot Controls</div></div>
+        <div class="card-body">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+            <div class="admin-stat-card" style="padding:10px;text-align:center">
+              <div class="admin-stat-label" style="margin-bottom:3px">Iterationen</div>
+              <div style="font-size:18px;font-weight:900;font-family:var(--fc);color:#e8f0ff" id="adminIterCount">—</div>
+            </div>
+            <div class="admin-stat-card" style="padding:10px;text-align:center">
+              <div class="admin-stat-label" style="margin-bottom:3px">Clients</div>
+              <div style="font-size:18px;font-weight:900;font-family:var(--fc);color:#e8f0ff" id="adminClientCount">—</div>
+            </div>
+            <div class="admin-stat-card" style="padding:10px;text-align:center">
+              <div class="admin-stat-label" style="margin-bottom:3px" data-i18n="admin_markets">Märkte</div>
+              <div style="font-size:18px;font-weight:900;font-family:var(--fc);color:#e8f0ff" id="adminMarketCount">—</div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+            <div>
+              <div class="s-label" data-i18n="admin_registration" style="color:#8a7a5a">Registrierung</div>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
+                <div class="s-tog"><input type="checkbox" id="allowReg" onchange="toggleRegistration(this.checked)"><div class="s-tog-inner"></div></div>
+                <span style="font-size:12px;color:var(--dim)" data-i18n="allowed_label">Erlaubt</span>
+              </label>
+            </div>
+            <div>
+              <div class="s-label" style="color:#8a7a5a">Paper-Trading</div>
+              <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
+                <div class="s-tog"><input type="checkbox" id="paperMode"><div class="s-tog-inner"></div></div>
+                <span style="font-size:12px;color:var(--dim)" data-i18n="admin_active">Aktiv</span>
+              </label>
+            </div>
+          </div>
+          <button class="btn btn-red" style="width:100%;padding:10px;font-size:13px" onclick="if(confirm(QI18n.t('confirm_stop_bot'))) socket.emit('stop_bot')">🛑 <span data-i18n="btn_stop">Bot stoppen</span></button>
+          <div style="margin-top:10px;font-size:10px;color:#6a5a3a;font-family:var(--mono)">
+            <span data-i18n="admin_log_file">Log-Datei</span>: <span id="adminLogPath">/opt/trevlix/logs/trevlix.log</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- User Management -->
+      <div class="admin-card">
+        <div class="card-hd"><div class="card-title" data-i18n="admin_user_mgmt">Nutzerverwaltung</div>
+          <button class="btn btn-gold-outline" style="padding:4px 12px;font-size:11px" onclick="loadUsers()">↻</button>
         </div>
         <div class="card-body" id="userList">
-          <div class="empty"><div class="empty-ico">👥</div><span data-i18n="loading_label">Laden…</span></div>
+          <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">👥</div><span data-i18n="loading_label">Laden…</span></div>
         </div>
-        <div class="card-body" style="padding-top:0">
+        <div class="card-body" style="padding-top:0;border-top:1px solid rgba(255,180,0,.08)">
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
             <input class="s-input" id="newUsername" placeholder="Username">
             <input class="s-input" type="password" id="newPassword" placeholder="Passwort" autocomplete="new-password">
@@ -721,79 +782,61 @@
               <option value="admin">Admin</option>
             </select>
           </div>
-          <button class="btn btn-jade" style="width:100%;padding:10px;margin-top:8px;font-size:13px" onclick="createUser()"><span data-i18n="admin_create_user">+ Nutzer erstellen</span></button>
+          <button class="btn btn-gold" style="width:100%;padding:10px;margin-top:8px;font-size:13px" onclick="createUser()"><span data-i18n="admin_create_user">+ Nutzer erstellen</span></button>
+        </div>
+      </div>
+
+      <!-- Audit Log -->
+      <div class="admin-card">
+        <div class="card-hd">
+          <div class="card-title" data-i18n="admin_audit_log">Audit-Log</div>
+          <button class="btn btn-gold-outline" style="padding:4px 12px;font-size:11px" onclick="loadAuditLog()">↻</button>
+        </div>
+        <div class="card-body" id="auditLogList" style="max-height:300px;overflow-y:auto">
+          <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">📋</div><span data-i18n="loading_label">Laden…</span></div>
         </div>
       </div>
 
       <!-- Grid Trading -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd">
-          <div class="card-title">⚡ Grid-Trading</div>
-          <button class="btn btn-info" style="padding:5px 12px;font-size:11px" onclick="loadGrids()">↻</button>
+          <div class="card-title">Grid-Trading</div>
+          <button class="btn btn-gold-outline" style="padding:4px 12px;font-size:11px" onclick="loadGrids()">↻</button>
         </div>
         <div class="card-body">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-            <div><div class="s-label">Symbol</div><input class="s-input" id="gridSymbol" placeholder="BTC/USDT" style="margin-top:4px"></div>
-            <div><div class="s-label" data-i18n="admin_grid_levels">Stufen</div><input class="s-input" id="gridLevels" type="number" value="10" min="2" max="50" style="margin-top:4px"></div>
-            <div><div class="s-label" data-i18n="admin_grid_lower">Untere Grenze (USDT)</div><input class="s-input" id="gridLower" type="number" step="any" style="margin-top:4px"></div>
-            <div><div class="s-label" data-i18n="admin_grid_upper">Obere Grenze (USDT)</div><input class="s-input" id="gridUpper" type="number" step="any" style="margin-top:4px"></div>
-            <div style="grid-column:1/-1"><div class="s-label" data-i18n="admin_grid_invest">Invest pro Stufe (USDT)</div><input class="s-input" id="gridInvest" type="number" value="100" style="margin-top:4px"></div>
+            <div><div class="s-label" style="color:#8a7a5a">Symbol</div><input class="s-input" id="gridSymbol" placeholder="BTC/USDT" style="margin-top:4px"></div>
+            <div><div class="s-label" style="color:#8a7a5a" data-i18n="admin_grid_levels">Stufen</div><input class="s-input" id="gridLevels" type="number" value="10" min="2" max="50" style="margin-top:4px"></div>
+            <div><div class="s-label" style="color:#8a7a5a" data-i18n="admin_grid_lower">Untere Grenze (USDT)</div><input class="s-input" id="gridLower" type="number" step="any" style="margin-top:4px"></div>
+            <div><div class="s-label" style="color:#8a7a5a" data-i18n="admin_grid_upper">Obere Grenze (USDT)</div><input class="s-input" id="gridUpper" type="number" step="any" style="margin-top:4px"></div>
+            <div style="grid-column:1/-1"><div class="s-label" style="color:#8a7a5a" data-i18n="admin_grid_invest">Invest pro Stufe (USDT)</div><input class="s-input" id="gridInvest" type="number" value="100" style="margin-top:4px"></div>
           </div>
-          <button class="btn btn-jade" style="width:100%;padding:10px;font-size:13px" onclick="createGrid()"><span data-i18n="admin_grid_create">+ Grid erstellen</span></button>
+          <button class="btn btn-gold" style="width:100%;padding:10px;font-size:13px" onclick="createGrid()"><span data-i18n="admin_grid_create">+ Grid erstellen</span></button>
           <div id="gridList" style="margin-top:12px"></div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_bot_config">⚙️ Bot-Konfiguration</div></div>
-        <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-            <div>
-              <div class="s-label" data-i18n="admin_registration">Registrierung</div>
-              <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
-                <div class="s-tog"><input type="checkbox" id="allowReg" onchange="toggleRegistration(this.checked)"><div class="s-tog-inner"></div></div>
-                <span style="font-size:12px;color:var(--dim)" data-i18n="allowed_label">Erlaubt</span>
-              </label>
-            </div>
-            <div>
-              <div class="s-label">Paper-Trading</div>
-              <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer">
-                <div class="s-tog"><input type="checkbox" id="paperMode"><div class="s-tog-inner"></div></div>
-                <span style="font-size:12px;color:var(--dim)" data-i18n="admin_active">Aktiv</span>
-              </label>
-            </div>
-          </div>
-          <button class="btn btn-red" style="width:100%;padding:10px;font-size:13px" onclick="if(confirm(QI18n.t('confirm_stop_bot'))) socket.emit('stop_bot')">🛑 <span data-i18n="btn_stop">Bot stoppen</span></button>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_system_status">📊 System-Status</div></div>
-        <div class="card-body">
-          <div class="sg" style="grid-template-columns:1fr 1fr 1fr">
-            <div class="sc"><div class="sv" id="adminIterCount">—</div><div class="sl" data-i18n="admin_iterations">Iterationen</div></div>
-            <div class="sc"><div class="sv" id="adminClientCount">—</div><div class="sl">Clients</div></div>
-            <div class="sc"><div class="sv" id="adminMarketCount">—</div><div class="sl" data-i18n="admin_markets">Märkte</div></div>
-          </div>
-          <div style="margin-top:10px;font-size:11px;color:var(--sub);font-family:var(--mono)">
-            <span data-i18n="admin_log_file">Log-Datei</span>: <span id="adminLogPath">/opt/trevlix/logs/trevlix.log</span>
-          </div>
+      <!-- LLM Provider Status -->
+      <div class="admin-card admin-full-width">
+        <div class="card-hd"><div class="card-title">LLM Providers</div></div>
+        <div class="card-body" id="adminLlmProviders">
+          <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">🤖</div><span>Laden…</span></div>
         </div>
       </div>
     </div>
 
     <!-- ══ SYSTEM ANALYTICS (Admin) ══ -->
-    <div class="sec" id="sec-analytics" style="gap:14px">
-      <div class="card hero" style="background:linear-gradient(135deg,#060c12,#091017)">
-        <div class="card-body" style="padding:18px">
-          <div style="font-family:var(--mono);font-size:9px;letter-spacing:3px;color:var(--sub);margin-bottom:6px;text-transform:uppercase" data-i18n="admin_analytics_title">SYSTEM ANALYTICS</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">
-            <button class="btn btn-info" style="padding:6px 14px;font-size:11px" onclick="loadSystemAnalytics()">↻ <span data-i18n="admin_refresh">Aktualisieren</span></button>
-          </div>
+    <div class="sec admin-only admin-gold" id="sec-analytics" style="gap:14px">
+      <div class="admin-sec-hd">
+        <div class="admin-sec-title">System Analytics <span class="admin-badge">Admin</span></div>
+        <div class="admin-sec-sub">Monitoring &middot; Performance &middot; Diagnostics</div>
+        <div style="margin-top:8px">
+          <button class="btn btn-gold" style="padding:6px 14px;font-size:11px" onclick="loadSystemAnalytics()">↻ <span data-i18n="admin_refresh">Aktualisieren</span></button>
         </div>
       </div>
 
       <!-- System Info -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_sys_info">🖥️ System-Info</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -808,7 +851,7 @@
       </div>
 
       <!-- API Status -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_api_status">🔌 API-Status</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -823,7 +866,7 @@
       </div>
 
       <!-- LLM Status -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_llm_status">🤖 LLM-Status</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -838,7 +881,7 @@
       </div>
 
       <!-- Database Status -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_db_status">🗄️ Datenbank</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -852,7 +895,7 @@
       </div>
 
       <!-- AI Engine -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_ai_engine">🧠 KI-Engine</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -869,7 +912,7 @@
       </div>
 
       <!-- Risk Management -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_risk_mgmt">⚠️ Risiko-Management</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -881,7 +924,7 @@
       </div>
 
       <!-- Revenue Tracking -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_revenue">💰 Revenue Tracking</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -898,7 +941,7 @@
       </div>
 
       <!-- Performance Attribution -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_perf_attr">📊 Performance Attribution</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -911,7 +954,7 @@
       </div>
 
       <!-- Strategy Weights -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_strat_weights">🎯 Strategie-Gewichte</div></div>
         <div class="card-body">
           <div class="kv-grid" style="margin-bottom:10px">
@@ -924,7 +967,7 @@
       </div>
 
       <!-- Indicator Cache -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_cache">📦 Indikator-Cache</div></div>
         <div class="card-body">
           <div class="kv-grid">
@@ -937,7 +980,7 @@
       </div>
 
       <!-- Auto-Healing -->
-      <div class="card">
+      <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_healing">🏥 Auto-Healing</div></div>
         <div class="card-body" id="healingList">
           <div class="empty"><div class="empty-ico">🏥</div><span data-i18n="loading_label">Laden…</span></div>
@@ -1131,7 +1174,7 @@
   <div class="nb nb-secondary" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
   <div class="nb nb-secondary admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
   <div class="nb nb-secondary admin-only" id="nb-admin" onclick="nav('admin',this)" title="Admin [G]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">G</kbd></div>
-  <div class="nb nb-secondary" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
+  <div class="nb nb-secondary admin-only" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
   <div class="nb nb-secondary" id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
   <!-- Mobile "More" button – only visible < 900px -->
   <div class="nb nb-more" id="nb-more" onclick="toggleMobileNav()" title="Mehr"><span class="nb-icon">☰</span><span data-i18n="nav_more">Mehr</span></div>

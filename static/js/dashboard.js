@@ -17,20 +17,19 @@ let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
 (async function _initState(){
   try {
     const r = await fetch('/api/v1/state', {credentials:'include'});
-    if(r.ok){ const d=await r.json(); if(d&&d.running!==undefined) updateUI(d); }
+    if(r.ok){
+      const d=await r.json();
+      if(d&&d.running!==undefined) updateUI(d);
+      if(d&&d.user_role) applyStateToRole(d);
+    }
   } catch(e){ console.warn('Initial state fetch failed:', e); }
 })();
 
-const socket = io({
-  transports:['websocket','polling'],
-  reconnection: true,
+const socket = TrevlixSocket.init({
   reconnectionAttempts: Infinity,
   reconnectionDelay: 2000,
   reconnectionDelayMax: 30000,
-  randomizationFactor: 0.3,
   timeout: 20000,
-  withCredentials: true,
-  auth: _jwtToken ? {token: _jwtToken} : {},
 });
 let portChart=null, hourChart=null, pnlChart=null, btChartInst=null;
 let lastData=null, allTrades=[], tradeFilter='all';
@@ -726,7 +725,7 @@ function exportJSON(){window.open('/api/export/json');}
 
 // ── Bot controls ─────────────────────────────────────────────────────
 function _emitSafe(event, data){
-  if(!socket.connected){
+  if(!socket || !socket.connected){
     toast('⚠️ '+QI18n.t('conn_disconnected')+' – '+QI18n.t('msg_socket_reconnect'),'warning');
     return false;
   }
@@ -1112,9 +1111,13 @@ function applyRoleUI(role) {
     if (badge) { badge.textContent = 'user'; badge.className = 'role-badge user'; }
   }
 
-  // Update nav visibility
-  document.querySelectorAll('.nb.admin-only').forEach(el => {
-    el.style.display = role === 'admin' ? '' : 'none';
+  // Update admin-only element visibility (nav buttons + sections)
+  document.querySelectorAll('.admin-only').forEach(el => {
+    if (role === 'admin') {
+      el.style.display = el.classList.contains('nb') ? 'flex' : '';
+    } else {
+      el.style.display = 'none';
+    }
   });
 }
 
@@ -1256,6 +1259,72 @@ socket.on('cluster_update', d => {
   if (!d) return;
   addLog('🔗 Cluster: ' + (d.status || 'update'), 'info', 'system');
 });
+
+// ── Admin: KPI Stat Cards ─────────────────────────────────────────────────────
+function updateAdminKPIs(d) {
+  if (!d || typeof d !== 'object') return;
+  const _s = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  // Revenue = total PnL
+  const pnl = d.total_pnl || 0;
+  _s('adminRevTotal', (pnl >= 0 ? '+' : '') + fmt(pnl) + ' USDT');
+  const revEl = document.getElementById('adminRevTotal');
+  if (revEl) revEl.style.color = pnl >= 0 ? '#00e676' : '#ef4444';
+  _s('adminRevChange', (d.daily_pnl >= 0 ? '+' : '') + fmt(d.daily_pnl || 0) + ' today');
+  // Total trades
+  _s('adminTradesTotal', d.total_trades || 0);
+  _s('adminTradesChange', (d.open_trades || 0) + ' open');
+  // Active users (from connected clients count)
+  _s('adminUsersTotal', d.connected_clients || 1);
+  _s('adminUsersOnline', (d.connected_clients || 1) + ' online');
+  // Win rate
+  const wr = d.win_rate || 0;
+  _s('adminWinRate', fmt(wr, 1) + '%');
+  const wrEl = document.getElementById('adminWinRate');
+  if (wrEl) wrEl.style.color = wr >= 50 ? '#00e676' : wr > 0 ? '#ffb400' : '#8a8a8a';
+  _s('adminIterCount2', (d.iteration_count || 0) + ' Iterationen');
+  // Bot controls mini-stats
+  _s('adminIterCount', d.iteration_count || 0);
+  _s('adminClientCount', d.connected_clients || 0);
+  _s('adminMarketCount', (d.symbols || []).length || 1);
+}
+// Hook into existing update flow
+socket.on('update', d => { if (d) updateAdminKPIs(d); });
+
+// ── Admin: LLM Provider Status ────────────────────────────────────────────────
+async function loadLlmProviderStatus() {
+  const el = document.getElementById('adminLlmProviders');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/v1/llm-status', {headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}});
+    if (!r.ok) { el.innerHTML = '<div style="color:#8a6a3a;font-size:12px">Status nicht verfuegbar</div>'; return; }
+    const d = await r.json();
+    const providers = d.multi_llm_providers || d.providers || [];
+    if (!providers.length) {
+      el.innerHTML = '<div style="color:#8a6a3a;font-size:12px">Keine LLM-Provider konfiguriert</div>';
+      return;
+    }
+    el.innerHTML = providers.map(p =>
+      '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,180,0,.08);font-size:12px">' +
+      '<div><span style="color:#e8f0ff;font-weight:600">' + esc(p.name) + '</span>' +
+      '<span style="color:#6a5a3a;margin-left:8px;font-family:var(--mono);font-size:10px">' + esc(p.model || '') + '</span></div>' +
+      '<div style="display:flex;gap:8px;align-items:center">' +
+      (p.supports_tools ? '<span style="font-size:9px;background:rgba(255,180,0,.1);border:1px solid rgba(255,180,0,.2);color:#ffb400;border-radius:3px;padding:1px 5px">Tools</span>' : '') +
+      '<span style="color:' + (p.available ? '#00e676' : '#ef4444') + ';font-weight:600">' + (p.available ? 'Online' : 'Offline') + '</span>' +
+      '<span style="font-family:var(--mono);color:#6a5a3a;font-size:10px">' + (p.requests || 0) + ' req / ' + (p.errors || 0) + ' err</span>' +
+      '</div></div>'
+    ).join('');
+  } catch (e) {
+    el.innerHTML = '<div style="color:#8a6a3a;font-size:12px">Fehler: ' + esc(e.message) + '</div>';
+  }
+}
+// Auto-load LLM status when admin section becomes visible
+(function(){
+  const obs = new MutationObserver(() => {
+    const sec = document.getElementById('sec-admin');
+    if (sec && sec.classList.contains('active')) { loadLlmProviderStatus(); obs.disconnect(); }
+  });
+  obs.observe(document.body, {subtree: true, attributes: true, attributeFilter: ['class']});
+})();
 
 // ── Admin: Load Users ──────────────────────────────────────────────────────────
 async function loadUsers() {

@@ -270,6 +270,43 @@ class ConnectionPool:
             except Exception as e:
                 log.warning(f"DB-Pool: Fehler beim Verbindungs-Release: {e}")
 
+    def cleanup_stale(self) -> int:
+        """Entfernt tote Verbindungen aus dem Pool und erstellt neue.
+
+        Returns:
+            Anzahl der ersetzten Verbindungen.
+        """
+        replaced = 0
+        with self._lock:
+            alive = []
+            for conn in self._pool:
+                if self._is_alive(conn):
+                    alive.append(conn)
+                else:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    replaced += 1
+            self._pool = alive
+
+        # Neue Verbindungen erstellen um den Pool aufzufüllen
+        for _ in range(replaced):
+            try:
+                new_conn = self._create_connection()
+                if new_conn:
+                    with self._lock:
+                        if len(self._pool) < self._pool_size:
+                            self._pool.append(new_conn)
+                        else:
+                            new_conn.close()
+            except Exception as e:
+                log.debug(f"Pool cleanup: neue Verbindung fehlgeschlagen: {e}")
+
+        if replaced > 0:
+            log.info(f"DB-Pool cleanup: {replaced} tote Verbindungen ersetzt")
+        return replaced
+
     def close_all(self) -> None:
         """Schließt alle Verbindungen im Pool."""
         with self._lock:

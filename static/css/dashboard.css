@@ -776,3 +776,84 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
   .card { break-inside: avoid; border: 1px solid #ccc; }
   body { background: #fff; color: #000; }
 }
+
+/* ══ ADMIN DASHBOARD – GOLD/AMBER THEME ══════════════════════════════ */
+/* Admin sections use gold/amber palette matching admin login */
+.admin-gold { --ag:#ffb400; --ag2:#ffd060; --ag3:#e09800; --ag-bg:rgba(255,180,0,.06); --ag-border:rgba(255,180,0,.15); }
+
+/* Admin hero stat cards */
+.admin-stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
+.admin-stat-card {
+  background:linear-gradient(135deg,#1a1208 0%,#12081a 100%);
+  border:1px solid var(--ag-border,rgba(255,180,0,.15));
+  border-radius:var(--r2); padding:16px 14px;
+  position:relative; overflow:hidden;
+}
+.admin-stat-card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:2px;
+  background:linear-gradient(90deg,var(--ag,#ffb400),var(--ag3,#e09800));
+}
+.admin-stat-label { font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+  color:var(--ag,#ffb400); margin-bottom:6px; font-family:var(--mono); }
+.admin-stat-val { font-size:24px; font-weight:900; font-family:var(--fc); color:#e8f0ff; line-height:1; }
+.admin-stat-sub { font-size:10px; color:var(--sub); margin-top:6px; font-family:var(--mono); }
+
+/* Admin section header */
+.admin-sec-hd {
+  background:linear-gradient(135deg,#0a0608 0%,#12081a 50%,#0a0608 100%);
+  border:1px solid rgba(255,180,0,.12); border-radius:var(--r2);
+  padding:20px 18px; margin-bottom:4px; position:relative; overflow:hidden;
+}
+.admin-sec-hd::after {
+  content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(255,180,0,.2),transparent);
+}
+.admin-sec-title {
+  font-size:20px; font-weight:900; font-family:var(--fc); color:#e8f0ff;
+  display:flex; align-items:center; gap:10px;
+}
+.admin-sec-title .admin-badge {
+  font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  background:rgba(255,180,0,.1); color:#ffb400; padding:3px 10px; border-radius:6px;
+  border:1px solid rgba(255,180,0,.25);
+}
+.admin-sec-sub { font-size:11px; color:#6a5a3a; margin-top:4px; font-family:var(--mono); letter-spacing:.5px; }
+
+/* Admin cards with gold accents */
+.admin-card {
+  background:var(--bg1); border:1px solid rgba(255,180,0,.08); border-radius:var(--r);
+  overflow:hidden; transition:border-color .25s, box-shadow .25s;
+}
+.admin-card:hover { border-color:rgba(255,180,0,.2); box-shadow:0 4px 24px rgba(255,180,0,.04); }
+.admin-card .card-hd { display:flex; align-items:center; justify-content:space-between; padding:13px 16px 0; }
+.admin-card .card-title { font-family:var(--mono); font-size:9px; font-weight:500;
+  letter-spacing:2px; text-transform:uppercase; color:#ffb400; }
+.admin-card .card-body { padding:12px 16px 16px; }
+
+/* Admin action buttons with gold style */
+.btn-gold { background:linear-gradient(135deg,#ffb400 0%,#e09800 100%);
+  color:#0a0608; font-weight:800; box-shadow:0 2px 12px rgba(255,180,0,.2); }
+.btn-gold:hover { box-shadow:0 4px 20px rgba(255,180,0,.35); transform:translateY(-1px); }
+.btn-gold-outline { background:rgba(255,180,0,.06); color:#ffb400;
+  border:1px solid rgba(255,180,0,.25); }
+.btn-gold-outline:hover { background:rgba(255,180,0,.12); border-color:rgba(255,180,0,.4); }
+
+/* Admin KV grid gold variant */
+.admin-card .kv-label { color:#8a7a5a; }
+.admin-card .kv-value { color:#e0d8c8; }
+
+/* Admin grid layout on desktop */
+@media(min-width:900px){
+  #sec-admin { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
+  #sec-admin .admin-sec-hd { grid-column:1/-1; }
+  #sec-admin .admin-stat-row { grid-column:1/-1; }
+  #sec-admin .admin-full-width { grid-column:1/-1; }
+  #sec-analytics { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
+  #sec-analytics > .admin-sec-hd { grid-column:1/-1; }
+  #sec-analytics > .admin-card.admin-full-width { grid-column:1/-1; }
+  .admin-stat-row { grid-template-columns:repeat(4,1fr); }
+}
+
+@media(max-width:640px){
+  .admin-stat-row { grid-template-columns:1fr 1fr; }
+}

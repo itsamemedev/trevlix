@@ -112,6 +112,7 @@ from services.market_data import (
     OnChainFetcher,
     SentimentFetcher,
 )
+from services.mcp_tools import MCPToolRegistry
 from services.performance_attribution import PerformanceAttribution
 from services.revenue_tracking import RevenueTracker
 from services.risk import (
@@ -316,8 +317,9 @@ socketio = SocketIO(
     logger=False,
     engineio_logger=False,
     # [Socket.io Fix] Stabilere Verbindung durch längere Timeouts
-    ping_timeout=60,
+    ping_timeout=30,
     ping_interval=25,
+    max_http_buffer_size=1_000_000,
     # Session-Verwaltung aktiv halten
     manage_session=True,
 )
@@ -655,7 +657,8 @@ def get_db():
             g.db_conn = db._conn()  # type: ignore[attr-defined]
         return g.db_conn
     except RuntimeError:
-        # Außerhalb des Request-Kontexts
+        # Außerhalb des Request-Kontexts – Warnung loggen
+        log.debug("get_db() außerhalb Request-Kontext – verwende db._get_conn() stattdessen")
         return db._conn()  # type: ignore[attr-defined]
 
 
@@ -698,8 +701,8 @@ class MySQLManager:
                 user=CONFIG["mysql_user"],
                 password=CONFIG["mysql_pass"],
                 database=CONFIG["mysql_db"],
-                pool_size=5,
-                timeout=10,
+                pool_size=int(os.getenv("DB_POOL_SIZE", "15")),
+                timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
             )
         except Exception as e:
             log.warning(f"Connection-Pool: {e} – Fallback auf direkte Verbindung")
@@ -751,6 +754,39 @@ class MySQLManager:
                     conn.close()
                 except Exception:
                     pass
+
+    def pool_stats(self) -> dict[str, int | float]:
+        """Gibt Pool-Statistiken zurück (oder leeres Dict ohne Pool)."""
+        if self._pool is not None:
+            return self._pool.pool_stats()
+        return {}
+
+    @contextmanager
+    def get_connection(self):
+        """Alias für _get_conn() – öffentlicher Context-Manager."""
+        with self._get_conn() as conn:
+            yield conn
+
+    def _check_pool_health(self) -> None:
+        """Prüft Pool-Auslastung und loggt Warnungen bei hoher Nutzung."""
+        if self._pool is None:
+            return
+        stats = self._pool.pool_stats()
+        util = stats.get("utilization_pct", 0)
+        if util >= 90:
+            log.warning(
+                "DB-Pool kritisch: %s%% Auslastung (%s/%s belegt)",
+                util,
+                stats.get("in_use", "?"),
+                stats.get("pool_size", "?"),
+            )
+        elif util >= 70:
+            log.info(
+                "DB-Pool hoch: %s%% Auslastung (%s/%s belegt)",
+                util,
+                stats.get("in_use", "?"),
+                stats.get("pool_size", "?"),
+            )
 
     # ── Encryption Helpers ───────────────────────────────────────────────────
     @staticmethod
@@ -4692,6 +4728,16 @@ backup_sched = BackupScheduler()
 state = BotState(db)
 ai_engine = AIEngine(db)
 
+# ── MCP-Tool-Integration für KI ────────────────────────────────────────────
+mcp_registry = MCPToolRegistry(
+    db_manager=db,
+    state=state,
+    knowledge_base=knowledge_base,
+    exchange_fn=None,  # Wird nach create_exchange gesetzt
+    config=CONFIG,
+)
+knowledge_base.set_mcp_registry(mcp_registry)
+
 # ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
 
 
@@ -4725,11 +4771,12 @@ cluster_ctrl = ClusterController(
 )
 
 
-def emit_event(event, data):
+def emit_event(event: str, data: Any, to: str | None = None) -> None:
+    """Sendet Socket.io Events sicher aus Background-Threads."""
     try:
-        socketio.emit(event, data)
-    except Exception:
-        pass
+        socketio.emit(event, data, to=to, namespace="/")
+    except Exception as e:
+        log.debug("emit_event(%s) fehlgeschlagen: %s", event, e)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -5661,6 +5708,13 @@ def bot_loop():
             risk.reset_daily(state.balance)
             regime.update(ex)
 
+            # DB-Pool Health Check (alle 10 Iterationen)
+            if state.iteration % 10 == 0:
+                try:
+                    db._check_pool_health()
+                except Exception:
+                    pass
+
             # Periodische Updates
             if state.iteration % 30 == 1:
                 threading.Thread(target=fg_idx.update, daemon=True).start()
@@ -5852,7 +5906,10 @@ def bot_loop():
 @app.route("/api/v1/state")
 @api_auth_required
 def api_state():
-    return jsonify(state.snapshot())
+    snap = state.snapshot()
+    # user_role aus Session oder JWT für Frontend Role-UI
+    snap["user_role"] = session.get("user_role", "user")
+    return jsonify(snap)
 
 
 @app.route("/api/v1/trades")
@@ -6078,7 +6135,8 @@ def api_knowledge_query():
         f"Top Symbole: {json.dumps(summary.get('top_symbols', [])[:5])}\n"
         f"Strategie-Ranking: {json.dumps(summary.get('strategy_ranking', [])[:5])}\n"
     )
-    answer = knowledge_base.query_llm(prompt, context)
+    # MCP-Tool-gestützte Analyse wenn verfügbar
+    answer = knowledge_base.query_llm_with_tools(prompt, context)
     if answer is None:
         return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
     return jsonify({"answer": answer})
@@ -6096,8 +6154,36 @@ def api_knowledge_llm_status():
             "trade_patterns": len(knowledge_base.get_category("trade_pattern", limit=100)),
             "model_analyses": len(knowledge_base.get_category("model_config", limit=100)),
             "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
+            "multi_llm_providers": (
+                knowledge_base._multi_llm.status() if knowledge_base._multi_llm else []
+            ),
         }
     )
+
+
+@app.route("/api/v1/mcp/tools")
+@api_auth_required
+def api_mcp_tools():
+    """Liste der verfügbaren MCP-Tools für die KI."""
+    return jsonify(
+        {
+            "tools": mcp_registry.get_tools_schema(),
+            "count": len(mcp_registry.get_tools_schema()),
+        }
+    )
+
+
+@app.route("/api/v1/mcp/execute", methods=["POST"])
+@api_auth_required
+def api_mcp_execute():
+    """Führt ein MCP-Tool direkt aus."""
+    data = request.json or {}
+    tool_name = data.get("tool", "")
+    arguments = data.get("arguments", {})
+    if not tool_name:
+        return jsonify({"error": "tool ist Pflichtfeld"}), 400
+    result = mcp_registry.execute(tool_name, arguments)
+    return jsonify(result)
 
 
 @app.route("/api/v1/admin/exchanges")
@@ -6533,16 +6619,12 @@ def api_health():
     db_ok = False
     pool_stats = {}
     try:
-        conn = db._conn()
-        with conn.cursor() as c:
-            c.execute("SELECT 1")
-        conn.close()
-        db_ok = True
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT 1")
+            db_ok = True
         if db._pool:
-            pool_stats = {
-                "pool_size": db._pool.pool_size,
-                "available": db._pool.available,
-            }
+            pool_stats = db._pool.pool_stats()
     except Exception:
         pass
     return jsonify(
@@ -7061,9 +7143,9 @@ def on_run_backtest(data):
                     CONFIG.get("min_vote_score", 0.3),
                 ),
             )
-            socketio.emit("backtest_result", result)
+            emit_event("backtest_result", result)
         except Exception as e:
-            socketio.emit("backtest_result", {"error": str(e)})
+            emit_event("backtest_result", {"error": str(e)})
 
     emit(
         "status",
@@ -7115,7 +7197,7 @@ def on_manual_backup():
         path = db.backup()
         if path:
             discord.backup_done(path)
-            socketio.emit(
+            emit_event(
                 "status",
                 {
                     "msg": f"💾 Backup: {os.path.basename(path)}",
@@ -7124,7 +7206,7 @@ def on_manual_backup():
                 },
             )
         else:
-            socketio.emit(
+            emit_event(
                 "status",
                 {"msg": "❌ Backup fehlgeschlagen", "key": "ws_backup_failed", "type": "error"},
             )
@@ -7164,7 +7246,7 @@ def on_scan_arb():
 
     def _arb():
         opps = arb_scanner.scan(state.markets[:30])
-        socketio.emit(
+        emit_event(
             "status",
             {
                 "msg": f"💹 {len(opps)} Arbitrage-Chancen",
