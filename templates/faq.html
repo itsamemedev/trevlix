@@ -8,7 +8,7 @@
 <meta property="og:description" content="Antworten auf die haeufigsten Fragen zum TREVLIX Trading Bot.">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.5.0 — FAQ</title>
+<title>TREVLIX v1.5.2 — FAQ</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/shared-nav.css">
@@ -104,7 +104,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <div class="faq-item">
   <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q3">Welche Exchanges werden unterstützt?</span> <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p data-i18n-html="faq_a3">Aktuell werden 5 Exchanges unterstützt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong> und <strong>KuCoin</strong>. Die Integration erfolgt über die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefügt werden können.</p></div>
+  <div class="faq-a"><p data-i18n-html="faq_a3">Aktuell werden 8 Exchanges unterstützt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong>, <strong>KuCoin</strong>, <strong>Kraken</strong>, <strong>Huobi</strong> und <strong>Coinbase</strong>. Die Integration erfolgt über die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefügt werden können.</p></div>
 </div>
 
 <div class="faq-item">
@@ -291,7 +291,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
   </div>
 </div>
 
-<h2>v1.5.0 Features</h2>
+<h2>v1.5.2 Features</h2>
 
 <div class="faq-item">
   <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist Trade DNA Fingerprinting?</span> <span class="arrow">&#9660;</span></div>
@@ -308,6 +308,21 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
   <div class="faq-a"><p>Im laufenden Trade passt die Smart Exit Engine Stop-Loss und Take-Profit dynamisch an: Im Gewinn wird der SL enger nachgezogen (nur nach oben, nie nach unten). Bei starkem Profit in einem Bullenmarkt wird das Take-Profit nach oben erweitert, um den Trend voll auszuschöpfen. Die Anpassung erfolgt regime-abhängig in jedem Scan-Zyklus.</p></div>
 </div>
 
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist der Auto-Healing Agent?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Der Auto-Healing Agent überwacht kontinuierlich alle kritischen Systeme: Trading-Prozesse, Exchange-APIs, Datenbank und Benachrichtigungsdienste. Bei Fehlern versucht er automatisch eine sanfte Wiederherstellung (Reconnect, Retry). Nach 3 fehlgeschlagenen Versuchen eskaliert er den Fehler über Discord/Telegram. Der Agent läuft als Hintergrund-Thread mit konfigurierbarem Health-Check-Intervall.</p></div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist Revenue Tracking?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Der Revenue Tracking Agent berechnet den echten PnL (Profit and Loss) nach Abzug von Gebühren und Slippage. Er erstellt tägliche, wöchentliche und monatliche Zusammenfassungen mit ROI-Berechnung und erkennt automatisch verlustbringende Strategien. Alle Daten sind über die REST API und das Dashboard verfügbar.</p></div>
+</div>
+
+<div class="faq-item">
+  <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Was ist Multi-Server Cluster Control?</span> <span class="arrow">&#9660;</span></div>
+  <div class="faq-a"><p>Mit dem Cluster Control Agent kannst du mehrere TREVLIX-Instanzen als Cluster verwalten. Remote-Nodes werden per API registriert und überwacht. Du kannst Nodes ferngesteuert starten, stoppen, neustarten und Updates deployen. Aggregierte Metriken zeigen den Gesamtstatus aller Instanzen.</p></div>
+</div>
+
 </div>
 
 <!-- Footer -->
@@ -316,7 +331,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.5.0 &middot; MIT License</div>
+      <div class="footer-version">v1.5.2 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="/" data-i18n="nav_home">Home</a><a href="/strategies" data-i18n="nav_strategies">Strategien</a><a href="/api-docs">API Docs</a><a href="/" data-i18n="nav_dashboard">Dashboard</a></div>

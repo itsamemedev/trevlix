@@ -748,8 +748,8 @@ function closePos(sym){
 function showUndoBar(sym){
   const bar = document.getElementById('undoBar');
   const msg = document.getElementById('undoMsg');
-  msg.textContent = sym + ' closed';
-  bar.style.display = 'flex';
+  if(msg) msg.textContent = sym + ' closed';
+  if(bar) bar.style.display = 'flex';
   clearTimeout(_undoTimeout);
   _undoTimeout = setTimeout(()=>{ bar.style.display='none'; }, 8000);
 }
@@ -758,7 +758,8 @@ function undoClose(){
   if(!_closeHistory.length) return;
   const sym = _closeHistory.pop();
   _emitSafe('undo_close', {symbol: sym});
-  document.getElementById('undoBar').style.display = 'none';
+  const undoBar = document.getElementById('undoBar');
+  if(undoBar) undoBar.style.display = 'none';
   clearTimeout(_undoTimeout);
   toast('↩ '+QI18n.t('msg_undo_close')+' '+sym,'info');
 }
@@ -1002,7 +1003,8 @@ function toggleTheme(){
   const root = document.documentElement;
   const isLight = root.getAttribute('data-theme') === 'light';
   root.setAttribute('data-theme', isLight ? 'dark' : 'light');
-  document.getElementById('themeBtn').textContent = isLight ? '🌙' : '☀️';
+  const themeBtn = document.getElementById('themeBtn');
+  if(themeBtn) themeBtn.textContent = isLight ? '🌙' : '☀️';
   _storage.set('trevlix_theme', isLight ? 'dark' : 'light');
 }
 // Restore theme
