@@ -9,7 +9,7 @@
 <meta property="og:url" content="https://trevlix.dev/api-docs">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.5.0 — API Dokumentation</title>
+<title>TREVLIX v1.5.2 — API Dokumentation</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/shared-nav.css">
@@ -119,7 +119,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 </div>
 
 <h1 data-i18n="api_h1">API Dokumentation</h1>
-<p class="subtitle" data-i18n="api_subtitle">Vollständige REST API Referenz für TREVLIX v1.5.0. Alle Endpunkte erfordern JWT-Authentifizierung.</p>
+<p class="subtitle" data-i18n="api_subtitle">Vollständige REST API Referenz für TREVLIX v1.5.2. Alle Endpunkte erfordern JWT-Authentifizierung.</p>
 
 <div class="card info">
   <p><strong>Base-URL:</strong> <code>http://localhost:5000/api/v1</code></p>
@@ -210,7 +210,7 @@ Authorization: Bearer &lt;JWT&gt;
 
 <!-- ── Trade DNA & Smart Exits ── -->
 <h2 id="trade-dna">&#129516; Trade DNA & Smart Exits</h2>
-<p>Die Trade DNA Engine erkennt wiederkehrende Muster in Ihren Trades und bewertet deren Erfolgsrate. Smart Exits passen Stop-Loss und Take-Profit dynamisch an das aktuelle Marktregime an. <span class="tag jade">v1.5.0</span></p>
+<p>Die Trade DNA Engine erkennt wiederkehrende Muster in Ihren Trades und bewertet deren Erfolgsrate. Smart Exits passen Stop-Loss und Take-Profit dynamisch an das aktuelle Marktregime an. <span class="tag jade">v1.5.2</span></p>
 
 <div class="ep-grid">
   <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
@@ -264,6 +264,70 @@ Authorization: Bearer &lt;JWT&gt;
   },
   <span class="c-str">"last_adjustments"</span>: [ ... ]
 }</pre>
+
+<!-- ── Auto-Healing & Health ── -->
+<h2 id="health">&#128154; Auto-Healing & Health</h2>
+<p>Der Auto-Healing Agent ueberwacht Prozesse, APIs und Datenbank. Bei Fehlern erfolgt automatische Wiederherstellung mit Eskalation. <span class="tag jade">v1.5.0</span></p>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/health/basic</div><div class="ep-cell ep-desc">Cluster Node Health Check</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/health/snapshot</div><div class="ep-cell ep-desc">Auto-Healing Status & Metriken</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/health/incidents</div><div class="ep-cell ep-desc">Incident-Verlauf</div>
+</div>
+
+<!-- ── Revenue Tracking ── -->
+<h2 id="revenue">&#128176; Revenue Tracking</h2>
+<p>Echtzeit-PnL-Berechnung nach Gebuehren und Slippage. Tages-, Wochen- und Monatszusammenfassungen. <span class="tag jade">v1.5.0</span></p>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/snapshot</div><div class="ep-cell ep-desc">Revenue-Uebersicht (Gesamt-PnL, ROI)</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/daily</div><div class="ep-cell ep-desc">Tages-Revenue</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/weekly</div><div class="ep-cell ep-desc">Wochen-Revenue</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/monthly</div><div class="ep-cell ep-desc">Monats-Revenue</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/strategies</div><div class="ep-cell ep-desc">PnL pro Strategie</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/revenue/losing</div><div class="ep-cell ep-desc">Verlustbringende Strategien erkennen</div>
+</div>
+
+<!-- ── Cluster Control ── -->
+<h2 id="cluster">&#127760; Multi-Server Cluster</h2>
+<p>Verwalte mehrere TREVLIX-Instanzen als Cluster. Remote-Monitoring, Start/Stop/Deploy, aggregierte Metriken. <span class="tag jade">v1.5.0</span></p>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/cluster/snapshot</div><div class="ep-cell ep-desc">Cluster-Uebersicht</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/cluster/nodes</div><div class="ep-cell ep-desc">Alle registrierten Nodes</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/cluster/metrics</div><div class="ep-cell ep-desc">Aggregierte Cluster-Metriken</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/cluster/nodes/&lt;name&gt;/start</div><div class="ep-cell ep-desc">Remote Node starten</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/cluster/nodes/&lt;name&gt;/stop</div><div class="ep-cell ep-desc">Remote Node stoppen</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/cluster/nodes/&lt;name&gt;/restart</div><div class="ep-cell ep-desc">Remote Node neustarten</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/cluster/nodes/&lt;name&gt;/deploy</div><div class="ep-cell ep-desc">Update auf Remote Node deployen</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/metrics</div><div class="ep-cell ep-desc">Lokale Node-Metriken fuer Cluster</div>
+</div>
+
+<!-- ── Alert Escalation ── -->
+<h2 id="alerts">&#128680; Alert Escalation</h2>
+<p>Mehrstufiges Alert-System mit automatischer Eskalation (INFO &rarr; WARNING &rarr; CRITICAL &rarr; EMERGENCY). <span class="tag jade">v1.5.0</span></p>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/alerts/active</div><div class="ep-cell ep-desc">Aktive Alerts</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/alerts/history</div><div class="ep-cell ep-desc">Alert-Verlauf</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/alerts/snapshot</div><div class="ep-cell ep-desc">Alert-Uebersicht mit Statistiken</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/alerts/&lt;id&gt;/acknowledge</div><div class="ep-cell ep-desc">Alert bestaetigen</div>
+  <div class="ep-cell ep-method m-post">POST</div><div class="ep-cell ep-path">/api/v1/alerts/&lt;id&gt;/resolve</div><div class="ep-cell ep-desc">Alert auflösen</div>
+</div>
+
+<!-- ── Performance & Weights ── -->
+<h2 id="performance">&#128200; Performance Attribution & Adaptive Weights</h2>
+<p>Hedge-Fund-Style Profit/Loss-Analyse und selbstlernende Strategie-Gewichtung. <span class="tag jade">v1.5.0</span></p>
+
+<div class="ep-grid">
+  <div class="ep-cell ep-head">Method</div><div class="ep-cell ep-head">Endpunkt</div><div class="ep-cell ep-head">Beschreibung</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/performance/attribution</div><div class="ep-cell ep-desc">PnL-Aufschlüsselung nach Strategie, Regime, Symbol</div>
+  <div class="ep-cell ep-method m-get">GET</div><div class="ep-cell ep-path">/api/v1/strategies/weights</div><div class="ep-cell ep-desc">Aktuelle adaptive Strategie-Gewichtung</div>
+</div>
 
 <!-- ── Marktdaten ── -->
 <h2 id="market">&#127758; Marktdaten</h2>
@@ -372,7 +436,7 @@ socket.on(<span class="c-str">'trade_update'</span>, (trade) => {
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence &mdash; Open Source Crypto Trading Bot</p>
-      <div class="footer-version">v1.5.0 &middot; MIT License</div>
+      <div class="footer-version">v1.5.2 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div>

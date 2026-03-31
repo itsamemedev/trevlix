@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.5.1**
+**Algorithmic Crypto Trading Bot — v1.5.2**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
-[![Tests](https://img.shields.io/badge/tests-250+-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.1-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.5.2-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -211,13 +211,13 @@ trevlix/
 │   ├── js/trevlix_translations.js     # i18n (5 languages)
 │   └── js/page_i18n.js               # Page translator
 │
-├── tests/                             # Pytest test suite (250+ tests)
+├── tests/                             # Pytest test suite (300+ tests)
 │   ├── conftest.py                    # Shared fixtures
 │   ├── test_adaptive_weights.py       # Adaptive weights tests [NEW]
 │   ├── test_performance_attribution.py # Attribution tests [NEW]
 │   ├── test_trade_dna.py              # DNA fingerprinting tests
 │   ├── test_smart_exits.py            # Smart exit tests
-│   └── ... (14 test modules, 250+ tests total)
+│   └── ... (18 test modules, 300+ tests total)
 │
 ├── docker/                            # Docker infrastructure
 │   ├── Dockerfile                     # Multi-stage Python 3.11 image

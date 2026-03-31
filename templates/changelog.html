@@ -9,7 +9,7 @@
 <meta property="og:url" content="https://trevlix.dev/changelog">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.5.0 — Changelog</title>
+<title>TREVLIX v1.5.2 — Changelog</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/shared-nav.css">
@@ -112,13 +112,75 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 <div class="timeline">
 
-  <!-- v1.5.0 -->
+  <!-- v1.5.2 -->
   <div class="release">
     <div class="release-dot latest"></div>
     <div class="release-header">
+      <span class="release-version">v1.5.2</span>
+      <span class="release-date">2026-03-31</span>
+      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
+    </div>
+    <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
+      <ul>
+        <li>JSON-Parsing in <code>load_ai_samples()</code> &mdash; fehlerhafte Zeilen werden nun einzeln validiert statt den gesamten Ladevorgang abzubrechen</li>
+        <li>JSON-Parsing in <code>get_user_settings()</code> &mdash; korrupte Settings werden abgefangen statt einen Crash auszulösen</li>
+        <li>Subprocess Return-Codes im GitHub Updater &mdash; <code>git</code>-Befehle prüfen nun den Erfolg vor Verwendung der Ausgabe</li>
+        <li>Null-Safety in <code>dashboard.js</code> &mdash; <code>showUndoBar()</code>, <code>undoClose()</code> und <code>toggleTheme()</code> prüfen DOM-Elemente vor Zugriff</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
+      <ul>
+        <li>404-Seite vollständig internationalisiert &mdash; 13 neue Übersetzungsschlüssel in allen 5 Sprachen (DE/EN/ES/RU/PT)</li>
+        <li>Versionsnummern auf allen Website-Seiten, Templates, API-Docs und Dashboard konsistent auf v1.5.2 aktualisiert</li>
+        <li>Changelog-Seite um v1.5.1 und v1.5.2 Einträge ergänzt</li>
+        <li>API-Dokumentation um 25+ neue v1.5-Endpunkte erweitert (Health, Revenue, Cluster, Alerts)</li>
+        <li>FAQ aktualisiert &mdash; Exchange-Anzahl korrigiert (5 &rarr; 8), neue v1.5-Features dokumentiert</li>
+        <li>About-Seite um v1.5.1 und v1.5.2 Timeline-Einträge ergänzt</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="changed" data-i18n="changelog_changed">Geändert</h4>
+      <ul>
+        <li>JSON-LD Schema-Version in <code>index.html</code> von 1.3.0 auf 1.5.2 korrigiert</li>
+        <li>Hero-Eyebrow Domain korrigiert: trevlix.com &rarr; trevlix.dev</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.5.1 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
+      <span class="release-version">v1.5.1</span>
+      <span class="release-date">2026-03-23</span>
+      <span class="release-tag tag-stable">Stable</span>
+    </div>
+    <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
+      <ul>
+        <li>Admin-Rolle wurde nicht per WebSocket übertragen &mdash; Admin-Buttons waren unsichtbar</li>
+        <li><code>applyStateToRole()</code> wurde nie aufgerufen &mdash; Admin-UI permanent versteckt</li>
+        <li><code>pool_status()</code> &rarr; <code>pool_stats()</code> Methodenname korrigiert</li>
+        <li>Fehlende WebSocket-Listener für <code>healing_update</code>, <code>revenue_update</code>, <code>cluster_update</code></li>
+        <li>Null-Referenz-Fehler in dashboard.js behoben (logPauseBtn, hReturn, updateGoal, updateCB)</li>
+        <li>45 hardcodierte deutsche Statusmeldungen internationalisiert</li>
+        <li>40 doppelte Übersetzungsschlüssel in JS entfernt</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
+      <ul>
+        <li>55+ neue Übersetzungsschlüssel in allen 5 Sprachen</li>
+        <li>Admin Analytics Tab mit 11 Metrik-Panels (System, API, LLM, DB, KI, Risk, Revenue, Attribution, Weights, Cache, Healing)</li>
+        <li>Neuer <code>request_system_analytics</code> WebSocket-Handler</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.5.0 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
       <span class="release-version">v1.5.0</span>
       <span class="release-date">2026-03-16</span>
-      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
+      <span class="release-tag tag-stable">Stable</span>
     </div>
     <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
       <ul>
@@ -294,7 +356,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.5.0 &middot; MIT License</div>
+      <div class="footer-version">v1.5.2 &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div><h4 data-i18n="footer_product">Produkt</h4><a href="/">Home</a><a href="/strategies" data-i18n="nav_strategies">Strategien</a><a href="/api-docs">API Docs</a><a href="/" data-i18n="nav_dashboard">Dashboard</a></div>

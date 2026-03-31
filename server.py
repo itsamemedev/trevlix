@@ -1169,9 +1169,20 @@ class MySQLManager:
                 with conn.cursor() as c:
                     c.execute("SELECT features,label,regime FROM ai_training")
                     rows = c.fetchall()
-            X = [np.array(json.loads(r.get("features", "[]")), dtype=np.float32) for r in rows]
-            y = [r.get("label", 0) for r in rows]
-            regimes = [r.get("regime", "range") for r in rows]
+            X: list = []
+            y: list = []
+            regimes: list = []
+            for r in rows:
+                try:
+                    feats = json.loads(r.get("features", "[]"))
+                    if not isinstance(feats, list):
+                        continue
+                    X.append(np.array(feats, dtype=np.float32))
+                    y.append(r.get("label", 0))
+                    regimes.append(r.get("regime", "range"))
+                except (json.JSONDecodeError, ValueError, TypeError):
+                    log.warning("load_ai_samples: skipping row with invalid features")
+                    continue
             return X, y, regimes
         except Exception as e:
             log.error(f"load_ai_samples: {e}")
@@ -1368,7 +1379,12 @@ class MySQLManager:
                     c.execute("SELECT settings_json FROM users WHERE id=%s", (user_id,))
                     row = c.fetchone()
             if row and row.get("settings_json"):
-                return json.loads(row["settings_json"])
+                try:
+                    settings = json.loads(row["settings_json"])
+                    return settings if isinstance(settings, dict) else {}
+                except (json.JSONDecodeError, TypeError):
+                    log.warning(f"get_user_settings({user_id}): invalid JSON in settings_json")
+                    return {}
             return {}
         except Exception as e:
             log.error(f"get_user_settings({user_id}): {e}")
@@ -7583,15 +7599,15 @@ def on_check_update():
         result = subprocess.run(
             ["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5
         )
-        repo_url = result.stdout.strip()
+        repo_url = result.stdout.strip() if result.returncode == 0 else ""
         result2 = subprocess.run(
             ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5
         )
-        branch = result2.stdout.strip()
+        branch = result2.stdout.strip() if result2.returncode == 0 else "main"
         result3 = subprocess.run(
             ["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True, timeout=5
         )
-        current = result3.stdout.strip() or BOT_VERSION
+        current = (result3.stdout.strip() if result3.returncode == 0 else "") or BOT_VERSION
         socketio.emit(
             "update_status",
             {
@@ -7651,7 +7667,9 @@ def on_rollback_update():
     try:
         import subprocess
 
-        subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
+        stash_result = subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
+        if stash_result.returncode != 0:
+            log.warning(f"git stash failed: {stash_result.stderr.strip()}")
         emit(
             "status",
             {"msg": "↩ Rollback: git stash angewendet", "key": "ws_rollback_done", "type": "info"},

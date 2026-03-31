@@ -7,6 +7,30 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.5.2] – 2026-03-31
+
+### Fixed — Bug Fixes, i18n Completeness & Code Hardening
+
+#### Bug Fixes
+- **JSON parsing in `load_ai_samples()`**: Added per-row error handling with type validation (`isinstance(feats, list)`) to prevent crashes from malformed JSON in `ai_training` table. Invalid rows are now skipped with a warning instead of crashing the entire load.
+- **JSON parsing in `get_user_settings()`**: Added `JSONDecodeError` handling and type validation to prevent crashes from corrupted `settings_json` in the users table.
+- **Subprocess return code checks in GitHub Updater**: `on_check_update()` now checks `returncode` on all three git subprocess calls (`git remote get-url`, `git rev-parse`, `git describe`) instead of blindly using stdout. Falls back to sensible defaults (empty string, "main", BOT_VERSION) on failure.
+- **Rollback handler (`on_rollback_update`)**: `git stash` return code now checked and logged on failure instead of silently ignored.
+
+#### Internationalization (i18n)
+- **404 page fully internationalized**: 13 new translation keys added for the 404 error page in all 5 languages (DE/EN/ES/RU/PT):
+  - `err404_suggestions`, `err404_all_pages`, `err404_terminal` — static text
+  - `err404_security`, `err404_about` — navigation links
+  - `err404_page_strategies`, `err404_page_api`, `err404_page_install`, `err404_page_faq`, `err404_page_security`, `err404_page_changelog`, `err404_page_roadmap`, `err404_page_about` — suggestion labels
+- **Hardcoded German removed from 404.html**: "Meintest du vielleicht...?", "Alle Seiten", "Seite nicht gefunden. Bot laeuft weiterhin...", page suggestion labels, and navigation links now use `data-i18n` attributes and `QI18n.t()` with fallbacks.
+
+#### Documentation & Versioning
+- Version bumped to 1.5.2 across: `pyproject.toml`, `services/utils.py`, `README.md`, `trevlix_translations.js`, `docs/ARCHITECTURE.md`, `docs/SERVICES.md`, `docs/API.md`
+- README.md: Updated test count badge from 250+ to 300+ (actual: 303 collected, 284 passed, 19 skipped)
+- Full codebase audit performed: linting clean, all 284 tests passing
+
+---
+
 ## [1.5.1] – 2026-03-23
 
 ### Fixed — Dashboard Bugs, i18n & Code Quality
