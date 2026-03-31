@@ -72,7 +72,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
     <!-- Search suggestion box -->
     <div style="background:rgba(0,255,136,.04);border:1px solid rgba(0,255,136,.12);border-radius:12px;padding:16px 20px;margin-bottom:28px;text-align:left">
-      <div style="font-family:var(--fc);font-size:13px;font-weight:700;color:var(--white);margin-bottom:10px">Meintest du vielleicht...?</div>
+      <div style="font-family:var(--fc);font-size:13px;font-weight:700;color:var(--white);margin-bottom:10px" data-i18n="err404_suggestions">Meintest du vielleicht...?</div>
       <div id="suggestions" style="display:flex;flex-direction:column;gap:6px"></div>
     </div>
 
@@ -82,17 +82,17 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     </div>
 
     <div style="margin-top:32px">
-      <div style="font-family:var(--fm);font-size:10px;color:var(--sub);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Alle Seiten</div>
+      <div style="font-family:var(--fm);font-size:10px;color:var(--sub);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px" data-i18n="err404_all_pages">Alle Seiten</div>
       <div class="error-pages">
         <a href="/">Home</a>
-        <a href="/strategies">Strategien</a>
+        <a href="/strategies" data-i18n="nav_strategies">Strategien</a>
         <a href="/api-docs">API Docs</a>
         <a href="/installation">Installation</a>
         <a href="/faq">FAQ</a>
-        <a href="/security">Sicherheit</a>
+        <a href="/security" data-i18n="err404_security">Sicherheit</a>
         <a href="/changelog">Changelog</a>
         <a href="/roadmap">Roadmap</a>
-        <a href="/about">About</a>
+        <a href="/about" data-i18n="err404_about">About</a>
         <a href="https://github.com/itsamemedev/Trevlix/issues" target="_blank" rel="noopener">GitHub Issue</a>
       </div>
     </div>
@@ -100,7 +100,7 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
     <!-- Fun terminal message -->
     <div style="margin-top:36px;font-family:var(--fm);font-size:11px;background:#010305;border:1px solid rgba(255,255,255,.06);border-radius:8px;padding:12px 16px;text-align:left;color:var(--sub)">
       <span style="color:var(--jade)">$</span> trevlix <span style="color:var(--blue)">find-page</span> --url "<span id="current-path" style="color:var(--amber)"></span>"<br>
-      <span style="color:var(--red)">[ERROR]</span> Seite nicht gefunden. Bot laeuft weiterhin... <span id="bot-status" style="color:var(--jade)">✓ ACTIVE</span><br>
+      <span style="color:var(--red)">[ERROR]</span> <span data-i18n="err404_terminal">Seite nicht gefunden. Bot laeuft weiterhin...</span> <span id="bot-status" style="color:var(--jade)">✓ ACTIVE</span><br>
       <span style="color:var(--jade)">$</span> <span style="animation:blink 1s infinite;display:inline-block;width:7px;height:11px;background:var(--jade);vertical-align:middle"></span>
     </div>
   </div>
@@ -113,14 +113,14 @@ if(pathEl) pathEl.textContent = window.location.pathname;
 
 // Smart suggestions based on path
 const PAGES = [
-  {path: '/strategies', label: 'Trading-Strategien', icon: '📈'},
-  {path: '/api-docs', label: 'API Dokumentation', icon: '🔌'},
-  {path: '/installation', label: 'Installationsanleitung', icon: '⚙️'},
-  {path: '/faq', label: 'Häufige Fragen (FAQ)', icon: '❓'},
-  {path: '/security', label: 'Sicherheitsleitfaden', icon: '🔒'},
-  {path: '/changelog', label: 'Changelog', icon: '📋'},
-  {path: '/roadmap', label: 'Roadmap', icon: '🗺️'},
-  {path: '/about', label: 'Über TREVLIX', icon: 'ℹ️'},
+  {path: '/strategies', label: 'Trading-Strategien', i18n: 'err404_page_strategies', icon: '📈'},
+  {path: '/api-docs', label: 'API Dokumentation', i18n: 'err404_page_api', icon: '🔌'},
+  {path: '/installation', label: 'Installationsanleitung', i18n: 'err404_page_install', icon: '⚙️'},
+  {path: '/faq', label: 'Häufige Fragen (FAQ)', i18n: 'err404_page_faq', icon: '❓'},
+  {path: '/security', label: 'Sicherheitsleitfaden', i18n: 'err404_page_security', icon: '🔒'},
+  {path: '/changelog', label: 'Changelog', i18n: 'err404_page_changelog', icon: '📋'},
+  {path: '/roadmap', label: 'Roadmap', i18n: 'err404_page_roadmap', icon: '🗺️'},
+  {path: '/about', label: 'Über TREVLIX', i18n: 'err404_page_about', icon: 'ℹ️'},
 ];
 const currPath = window.location.pathname.toLowerCase().replace(/\//g,'');
 const suggestions = PAGES.filter(p => {
@@ -129,10 +129,11 @@ const suggestions = PAGES.filter(p => {
 }).slice(0,3);
 const fallback = PAGES.slice(0,3);
 const shown = suggestions.length ? suggestions : fallback;
+const _t = (key, fallback) => (typeof QI18n !== 'undefined' && QI18n.t) ? (QI18n.t(key) || fallback) : fallback;
 document.getElementById('suggestions').innerHTML = shown.map(p =>
   `<a href="${p.path}" style="display:flex;align-items:center;gap:10px;color:var(--jade);text-decoration:none;font-size:13px;padding:4px 0;transition:.2s" onmouseover="this.style.paddingLeft='4px'" onmouseout="this.style.paddingLeft='0'">
     <span>${p.icon}</span>
-    <span style="color:var(--txt)">${p.label}</span>
+    <span style="color:var(--txt)">${_t(p.i18n, p.label)}</span>
     <span style="color:var(--sub);margin-left:auto;font-family:var(--fm);font-size:11px">${p.path}</span>
   </a>`
 ).join('');

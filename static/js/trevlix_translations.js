@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TREVLIX v1.5.1 – Translations
+   TREVLIX v1.5.2 – Translations
    Languages: de | en | es | ru | pt
    ═══════════════════════════════════════════════════════════ */
 const QLANG_NAMES = {de:'Deutsch',en:'English',es:'Español',ru:'Русский',pt:'Português'};
@@ -754,9 +754,22 @@ const QT = {
   changelog_tag_latest: {de:'Aktuell',en:'Latest',es:'Último',ru:'Последний',pt:'Mais Recente'},
 
   /* ── 404 ERROR PAGE ── */
-  err404_title:     {de:'Seite nicht gefunden',en:'Page not found',es:'Página no encontrada',ru:'Страница не найдена',pt:'Página não encontrada'},
-  err404_home:      {de:'Zur Startseite',en:'Go to homepage',es:'Ir al inicio',ru:'На главную',pt:'Ir para a página inicial'},
-  err404_dashboard: {de:'Zum Dashboard',en:'Go to dashboard',es:'Ir al panel',ru:'На панель',pt:'Ir para o painel'},
+  err404_title:          {de:'Seite nicht gefunden',en:'Page not found',es:'Página no encontrada',ru:'Страница не найдена',pt:'Página não encontrada'},
+  err404_home:           {de:'Zur Startseite',en:'Go to homepage',es:'Ir al inicio',ru:'На главную',pt:'Ir para a página inicial'},
+  err404_dashboard:      {de:'Zum Dashboard',en:'Go to dashboard',es:'Ir al panel',ru:'На панель',pt:'Ir para o painel'},
+  err404_suggestions:    {de:'Meintest du vielleicht...?',en:'Did you mean...?',es:'¿Quizás quisiste decir...?',ru:'Возможно, вы имели в виду...?',pt:'Talvez você quis dizer...?'},
+  err404_all_pages:      {de:'Alle Seiten',en:'All Pages',es:'Todas las páginas',ru:'Все страницы',pt:'Todas as páginas'},
+  err404_terminal:       {de:'Seite nicht gefunden. Bot laeuft weiterhin...',en:'Page not found. Bot still running...',es:'Página no encontrada. El bot sigue funcionando...',ru:'Страница не найдена. Бот продолжает работать...',pt:'Página não encontrada. Bot continua funcionando...'},
+  err404_security:       {de:'Sicherheit',en:'Security',es:'Seguridad',ru:'Безопасность',pt:'Segurança'},
+  err404_about:          {de:'Über TREVLIX',en:'About TREVLIX',es:'Sobre TREVLIX',ru:'О TREVLIX',pt:'Sobre o TREVLIX'},
+  err404_page_strategies:{de:'Trading-Strategien',en:'Trading Strategies',es:'Estrategias de Trading',ru:'Торговые стратегии',pt:'Estratégias de Trading'},
+  err404_page_api:       {de:'API Dokumentation',en:'API Documentation',es:'Documentación API',ru:'Документация API',pt:'Documentação da API'},
+  err404_page_install:   {de:'Installationsanleitung',en:'Installation Guide',es:'Guía de instalación',ru:'Руководство по установке',pt:'Guia de instalação'},
+  err404_page_faq:       {de:'Häufige Fragen (FAQ)',en:'Frequently Asked Questions',es:'Preguntas frecuentes',ru:'Часто задаваемые вопросы',pt:'Perguntas frequentes'},
+  err404_page_security:  {de:'Sicherheitsleitfaden',en:'Security Guide',es:'Guía de seguridad',ru:'Руководство по безопасности',pt:'Guia de segurança'},
+  err404_page_changelog: {de:'Changelog',en:'Changelog',es:'Registro de cambios',ru:'Журнал изменений',pt:'Registro de alterações'},
+  err404_page_roadmap:   {de:'Roadmap',en:'Roadmap',es:'Hoja de ruta',ru:'Дорожная карта',pt:'Roteiro'},
+  err404_page_about:     {de:'Über TREVLIX',en:'About TREVLIX',es:'Sobre TREVLIX',ru:'О TREVLIX',pt:'Sobre o TREVLIX'},
 
   /* ── FAQ PAGE ── */
   faq_h1:           {de:'Häufig gestellte Fragen',en:'Frequently Asked Questions',es:'Preguntas Frecuentes',ru:'Часто задаваемые вопросы',pt:'Perguntas Frequentes'},
