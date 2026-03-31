@@ -37,6 +37,13 @@ try:
 except ImportError:
     HTTPX_AVAILABLE = False
 
+try:
+    from services.llm_providers import MultiLLMProvider
+
+    _MULTI_LLM_AVAILABLE = True
+except ImportError:
+    _MULTI_LLM_AVAILABLE = False
+
 
 class KnowledgeBase:
     """Zentrales KI-Gemeinschaftswissen für alle User.
@@ -90,6 +97,17 @@ class KnowledgeBase:
         self._cached_market_analysis: str = ""
         self._cached_market_analysis_ts: float = 0.0
         self._mcp_registry: Any = None  # MCPToolRegistry (lazy init)
+        self._multi_llm: MultiLLMProvider | None = None
+        if _MULTI_LLM_AVAILABLE:
+            try:
+                self._multi_llm = MultiLLMProvider()
+                if self._multi_llm.available_providers:
+                    log.info(
+                        "Multi-LLM Provider aktiv: %s",
+                        ", ".join(self._multi_llm.available_providers),
+                    )
+            except Exception as e:
+                log.debug("Multi-LLM Init: %s", e)
 
     @staticmethod
     def _evict_cache(cache: dict, ts_dict: dict, max_size: int) -> None:
@@ -299,6 +317,9 @@ class KnowledgeBase:
         Returns:
             LLM-Antwort als String oder None bei Fehler.
         """
+        # Multi-LLM Fallback wenn kein lokaler Endpunkt konfiguriert
+        if not self._llm_endpoint and self._multi_llm:
+            return self._multi_llm.chat(prompt, system=context)
         if not self._llm_endpoint or not HTTPX_AVAILABLE:
             return None
         try:

@@ -49,6 +49,14 @@ const TrevlixSocket = (function() {
     _socket.on('connect', () => { _connected = true; });
     _socket.on('disconnect', () => { _connected = false; });
 
+    // Refresh token from cookie on reconnect attempt
+    _socket.on('reconnect_attempt', () => {
+      const freshToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+      if (freshToken) {
+        _socket.auth = { token: freshToken };
+      }
+    });
+
     return _socket;
   }
 

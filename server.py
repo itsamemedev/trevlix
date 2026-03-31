@@ -317,8 +317,9 @@ socketio = SocketIO(
     logger=False,
     engineio_logger=False,
     # [Socket.io Fix] Stabilere Verbindung durch längere Timeouts
-    ping_timeout=60,
+    ping_timeout=30,
     ping_interval=25,
+    max_http_buffer_size=1_000_000,
     # Session-Verwaltung aktiv halten
     manage_session=True,
 )
@@ -4770,11 +4771,12 @@ cluster_ctrl = ClusterController(
 )
 
 
-def emit_event(event, data):
+def emit_event(event: str, data: Any, to: str | None = None) -> None:
+    """Sendet Socket.io Events sicher aus Background-Threads."""
     try:
-        socketio.emit(event, data)
-    except Exception:
-        pass
+        socketio.emit(event, data, to=to, namespace="/")
+    except Exception as e:
+        log.debug("emit_event(%s) fehlgeschlagen: %s", event, e)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6152,6 +6154,9 @@ def api_knowledge_llm_status():
             "trade_patterns": len(knowledge_base.get_category("trade_pattern", limit=100)),
             "model_analyses": len(knowledge_base.get_category("model_config", limit=100)),
             "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
+            "multi_llm_providers": (
+                knowledge_base._multi_llm.status() if knowledge_base._multi_llm else []
+            ),
         }
     )
 
@@ -7138,9 +7143,9 @@ def on_run_backtest(data):
                     CONFIG.get("min_vote_score", 0.3),
                 ),
             )
-            socketio.emit("backtest_result", result)
+            emit_event("backtest_result", result)
         except Exception as e:
-            socketio.emit("backtest_result", {"error": str(e)})
+            emit_event("backtest_result", {"error": str(e)})
 
     emit(
         "status",
@@ -7192,7 +7197,7 @@ def on_manual_backup():
         path = db.backup()
         if path:
             discord.backup_done(path)
-            socketio.emit(
+            emit_event(
                 "status",
                 {
                     "msg": f"💾 Backup: {os.path.basename(path)}",
@@ -7201,7 +7206,7 @@ def on_manual_backup():
                 },
             )
         else:
-            socketio.emit(
+            emit_event(
                 "status",
                 {"msg": "❌ Backup fehlgeschlagen", "key": "ws_backup_failed", "type": "error"},
             )
@@ -7241,7 +7246,7 @@ def on_scan_arb():
 
     def _arb():
         opps = arb_scanner.scan(state.markets[:30])
-        socketio.emit(
+        emit_event(
             "status",
             {
                 "msg": f"💹 {len(opps)} Arbitrage-Chancen",
