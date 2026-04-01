@@ -5697,6 +5697,7 @@ def get_heatmap_data(ex) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 def bot_loop():
     ex = None
+    last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
             time.sleep(5)
@@ -5712,6 +5713,23 @@ def bot_loop():
                     ex = create_exchange()
                 except Exception as exc_err:
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
+                                "key": "ws_exchange_connect_failed",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Exchange-Verbindung fehlgeschlagen",
+                            str(exc_err)[:120],
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
                     time.sleep(30)
                     continue
             with state._lock:
@@ -5781,6 +5799,24 @@ def bot_loop():
                 new_markets = fetch_markets(ex)
                 with state._lock:
                     state.markets = new_markets
+                if not new_markets:
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": "⚠️ Keine Märkte geladen – Exchange/API prüfen",
+                                "key": "ws_no_markets_loaded",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Keine Märkte geladen",
+                            "Exchange liefert keine Marktdaten",
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
 
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
@@ -5900,10 +5936,18 @@ def bot_loop():
         except ccxt.ExchangeError as e:
             log.error(f"Exchange-Fehler: {e}")
             discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
+            emit_event(
+                "status",
+                {"msg": f"❌ Exchange-Fehler: {str(e)[:140]}", "key": "ws_exchange_error", "type": "error"},
+            )
             time.sleep(30)
         except Exception as e:
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
+            emit_event(
+                "status",
+                {"msg": f"❌ Bot-Loop Fehler: {str(e)[:140]}", "key": "ws_bot_loop_error", "type": "error"},
+            )
             time.sleep(10)
         time.sleep(CONFIG.get("scan_interval", 60))
 
@@ -6858,6 +6902,27 @@ def on_start_bot():
         emit(
             "status",
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
+        return
+    try:
+        preflight_ex = create_exchange()
+        test_markets = fetch_markets(preflight_ex)
+        if not test_markets:
+            raise RuntimeError("keine Märkte geladen")
+    except Exception as preflight_err:
+        emit(
+            "status",
+            {
+                "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                "key": "ws_bot_start_failed_exchange",
+                "type": "error",
+            },
+        )
+        state.add_activity(
+            "❌",
+            "Bot-Start fehlgeschlagen",
+            "Exchange/Marktdaten nicht erreichbar",
+            "error",
         )
         return
     with state._lock:
