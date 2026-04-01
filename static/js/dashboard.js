@@ -2029,6 +2029,34 @@ socket.on('exchange_update', mexUpdate);
 
 function mexUpdate(data) {
   if (!data) return;
+  // Legacy WS payload ({exchange, status}) -> Snapshot reload
+  if (data.exchange && data.status && !data.exchanges) {
+    mexReloadSnapshot();
+    return;
+  }
+  // Fallback for old HTTP shape: list of exchanges
+  if (Array.isArray(data)) {
+    const mapped = {};
+    data.forEach(ex => {
+      const name = String(ex.exchange || '').toLowerCase();
+      if (!name) return;
+      mapped[name] = {
+        enabled: !!ex.enabled,
+        running: false,
+        portfolio_value: 0,
+        return_pct: 0,
+        trade_count: 0,
+        open_trades: 0,
+        win_rate: 0,
+        total_pnl: 0,
+        markets_count: 0,
+        last_scan: '—',
+        positions: [],
+        error: ex.enabled ? 'Konfiguriert' : 'Nicht aktiviert',
+      };
+    });
+    data = { exchanges: mapped, combined_pv: 0, combined_pnl: 0, total_pv: 0, total_pnl: 0 };
+  }
   const exs = data.exchanges || {};
   const active = Object.values(exs).filter(e => e.running).length;
 
@@ -2139,6 +2167,19 @@ function mexUpdate(data) {
   }).join('');
 }
 
+async function mexReloadSnapshot() {
+  try{
+    const r = await fetch('/api/v1/exchanges', {
+      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+    });
+    if(!r.ok) return;
+    const payload = await r.json();
+    mexUpdate(payload);
+  }catch(e){
+    console.warn('Exchange-Status laden fehlgeschlagen:', e);
+  }
+}
+
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
 function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
 
@@ -2204,8 +2245,7 @@ async function mexLoadTrades() {
 onNav(id => { if (id === 'exchanges') mexLoadTrades(); });
 
 // Beim Start: Exchange-Status laden
-fetch('/api/v1/exchanges', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}})
-  .then(r => r.json()).then(mexUpdate).catch(e => console.warn('Exchange-Status laden fehlgeschlagen:', e));
+mexReloadSnapshot();
 
 // ── Init ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{
