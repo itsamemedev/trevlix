@@ -592,6 +592,17 @@ CONFIG: dict[str, Any] = {
     "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
 }
 
+
+def _enforce_paper_trading(source: str = "system") -> None:
+    """Erzwingt global Paper-Trading und deaktiviert Live-Modus."""
+    if not CONFIG.get("paper_trading", True):
+        log.warning("Paper-Trading erzwungen (%s): Live-Modus wurde deaktiviert.", source)
+    CONFIG["paper_trading"] = True
+
+
+_enforce_paper_trading("startup")
+
+
 # EXCHANGE_MAP importiert aus services.utils
 
 # [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
@@ -6043,6 +6054,7 @@ def api_create_token():
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
     settings = db.get_user_settings(request.user_id)
+    settings["paper_trading"] = True
     return jsonify(settings)
 
 
@@ -6085,9 +6097,11 @@ def api_user_settings_update():
         "max_daily_loss_pct",
     }
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    filtered["paper_trading"] = True
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
+    current["paper_trading"] = True
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
 
@@ -7057,6 +7071,9 @@ def on_update_config(data):
     for k, v in data.items():
         if k not in allowed:
             continue
+        if k == "paper_trading":
+            CONFIG[k] = True
+            continue
         if k in _numeric_keys:
             v = _safe_float(v, CONFIG.get(k, 0.0))
         elif k in _int_keys:
@@ -7064,6 +7081,7 @@ def on_update_config(data):
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
+    _enforce_paper_trading("socket:update_config")
     emit(
         "status",
         {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
