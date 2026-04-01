@@ -592,6 +592,17 @@ CONFIG: dict[str, Any] = {
     "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
 }
 
+
+def _enforce_paper_trading(source: str = "system") -> None:
+    """Erzwingt global Paper-Trading und deaktiviert Live-Modus."""
+    if not CONFIG.get("paper_trading", True):
+        log.warning("Paper-Trading erzwungen (%s): Live-Modus wurde deaktiviert.", source)
+    CONFIG["paper_trading"] = True
+
+
+_enforce_paper_trading("startup")
+
+
 # EXCHANGE_MAP importiert aus services.utils
 
 # [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
@@ -4928,16 +4939,26 @@ def fetch_markets(ex) -> list[str]:
             if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
         ]
         if CONFIG.get("use_vol_filter"):
-            tickers = safe_fetch_tickers(ex, syms[:150])
-            min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
-            syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
+            try:
+                tickers = safe_fetch_tickers(ex, syms[:150])
+                min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
+                syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
+            except (ccxt.BaseError, OSError, TimeoutError) as vol_err:
+                log.warning(
+                    "Volumenfilter übersprungen (Marktdaten-Timeout/API-Fehler): %s",
+                    vol_err,
+                )
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
         return (priority + rest)[:80]
     except Exception as e:
         log.error(f"Märkte: {e}")
-        return []
+        with state._lock:
+            cached = list(state.markets)
+        if cached:
+            log.warning("Nutze gecachte Märkte (%d), da Exchange-Daten fehlen.", len(cached))
+        return cached
 
 
 def scan_symbol(ex, symbol) -> dict | None:
@@ -5797,23 +5818,24 @@ def bot_loop():
             # Märkte laden
             if state.iteration % 10 == 1 or not state.markets:
                 new_markets = fetch_markets(ex)
-                with state._lock:
-                    state.markets = new_markets
-                if not new_markets:
+                if new_markets:
+                    with state._lock:
+                        state.markets = new_markets
+                else:
                     now_ts = time.time()
                     if now_ts - last_error_emit_ts > 15:
                         emit_event(
                             "status",
                             {
-                                "msg": "⚠️ Keine Märkte geladen – Exchange/API prüfen",
+                                "msg": "⚠️ Keine frischen Märkte geladen – nutze letzte Marktliste",
                                 "key": "ws_no_markets_loaded",
                                 "type": "warning",
                             },
                         )
                         state.add_activity(
                             "⚠️",
-                            "Keine Märkte geladen",
-                            "Exchange liefert keine Marktdaten",
+                            "Keine frischen Märkte geladen",
+                            "Fallback auf gecachte Marktliste aktiv",
                             "warning",
                         )
                         last_error_emit_ts = now_ts
@@ -6043,6 +6065,7 @@ def api_create_token():
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
     settings = db.get_user_settings(request.user_id)
+    settings["paper_trading"] = True
     return jsonify(settings)
 
 
@@ -6085,9 +6108,11 @@ def api_user_settings_update():
         "max_daily_loss_pct",
     }
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    filtered["paper_trading"] = True
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
+    current["paper_trading"] = True
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
 
@@ -7057,6 +7082,9 @@ def on_update_config(data):
     for k, v in data.items():
         if k not in allowed:
             continue
+        if k == "paper_trading":
+            CONFIG[k] = True
+            continue
         if k in _numeric_keys:
             v = _safe_float(v, CONFIG.get(k, 0.0))
         elif k in _int_keys:
@@ -7064,6 +7092,7 @@ def on_update_config(data):
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
+    _enforce_paper_trading("socket:update_config")
     emit(
         "status",
         {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
