@@ -271,59 +271,59 @@ body::before{content:'';position:fixed;inset:0;z-index:0;
   background:linear-gradient(135deg,#0a0608 0%%,#1a0f10 20%%,#12081a 40%%,#0f0a06 60%%,#0a0814 80%%,#0a0608 100%%);
   background-size:400%% 400%%;animation:gradMove 25s ease infinite}
 body::after{content:'';position:fixed;inset:0;z-index:0;
-  background:radial-gradient(ellipse 700px 500px at 25%% 15%%,rgba(255,180,0,.04),transparent),
+  background:radial-gradient(ellipse 700px 500px at 25%% 15%%,rgba(0,212,255,.05),transparent),
              radial-gradient(ellipse 600px 400px at 75%% 85%%,rgba(255,140,0,.03),transparent),
              radial-gradient(ellipse 400px 300px at 50%% 50%%,rgba(255,200,50,.02),transparent)}
 .orb{position:fixed;border-radius:50%%;filter:blur(80px);z-index:0;
   animation:pulseGlow 8s ease-in-out infinite;pointer-events:none}
 .orb-1{width:280px;height:280px;top:-70px;left:-50px;
-  background:radial-gradient(circle,rgba(255,180,0,.1),transparent 70%%)}
+  background:radial-gradient(circle,rgba(0,212,255,.1),transparent 70%%)}
 .orb-2{width:220px;height:220px;bottom:-50px;right:-30px;
   background:radial-gradient(circle,rgba(255,140,0,.08),transparent 70%%);
   animation-delay:4s}
 .box{position:relative;z-index:1;
   background:rgba(18,12,22,.6);
   backdrop-filter:blur(32px) saturate(1.4);-webkit-backdrop-filter:blur(32px) saturate(1.4);
-  border:1px solid rgba(255,180,0,.08);border-radius:28px;
+  border:1px solid rgba(0,212,255,.08);border-radius:28px;
   padding:48px 44px 36px;width:100%%;max-width:420px;margin:20px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 80px rgba(255,180,0,.03),
+  box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 80px rgba(0,212,255,.04),
     inset 0 1px 0 rgba(255,255,255,.04);
   animation:fadeUp .6s cubic-bezier(.22,1,.36,1)}
 .box::before{content:'';position:absolute;inset:-1px;border-radius:28px;
-  padding:1px;background:linear-gradient(160deg,rgba(255,180,0,.2),transparent 40%%,
-    transparent 60%%,rgba(255,140,0,.1));
+  padding:1px;background:linear-gradient(160deg,rgba(0,212,255,.15),transparent 40%%,
+    transparent 60%%,rgba(0,255,136,.12));
   -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
   -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
 .logo{text-align:center;margin-bottom:28px}
 .logo-icon{font-size:52px;margin-bottom:10px;
-  filter:drop-shadow(0 0 18px rgba(255,180,0,.35)) drop-shadow(0 0 40px rgba(255,140,0,.15));
+  filter:drop-shadow(0 0 18px rgba(0,212,255,.4)) drop-shadow(0 0 40px rgba(0,255,136,.15));
   animation:pulseGlow 4s ease-in-out infinite}
 .logo-name{font-size:32px;font-weight:900;letter-spacing:-1px;
   background:linear-gradient(135deg,#e0e8ff 0%%,#ccd6f6 50%%,#a0b4d0 100%%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   background-clip:text}
-.logo-name span{background:linear-gradient(135deg,#ffb400,#ffd060);
+.logo-name span{background:linear-gradient(135deg,#00d4ff,#00ff88);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;
   background-clip:text}
 .logo-sub{font-size:11px;color:#5a4a3a;letter-spacing:3px;
   text-transform:uppercase;margin-top:6px;font-weight:500}
 .admin-badge{display:inline-block;margin-top:12px;
-  background:rgba(255,180,0,.1);color:#ffb400;
+  background:rgba(0,212,255,.1);color:#00d4ff;
   font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  padding:5px 16px;border-radius:8px;border:1px solid rgba(255,180,0,.25);
-  box-shadow:0 0 20px rgba(255,180,0,.06)}
+  padding:5px 16px;border-radius:8px;border:1px solid rgba(0,212,255,.25);
+  box-shadow:0 0 20px rgba(0,212,255,.08)}
 .divider{height:1px;margin:0 0 24px;
-  background:linear-gradient(90deg,transparent,rgba(255,180,0,.15),transparent)}
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.15),transparent)}
 label{display:block;font-size:11px;font-weight:700;color:#907050;letter-spacing:.8px;
   text-transform:uppercase;margin-bottom:6px}
 input[type="text"],input[type="password"]{width:100%%;
-  background:rgba(15,10,20,.8);border:1px solid rgba(255,180,0,.08);
+  background:rgba(12,18,35,.8);border:1px solid rgba(0,212,255,.08);
   border-radius:14px;padding:15px 18px;color:#ccd6f6;font-size:14px;
   font-family:'Barlow',sans-serif;outline:none;margin-bottom:18px;
   transition:border-color .3s,box-shadow .3s,background .3s}
 input[type="text"]:focus,input[type="password"]:focus{
-  border-color:rgba(255,180,0,.4);background:rgba(15,10,20,.95);
-  box-shadow:0 0 0 3px rgba(255,180,0,.06),0 0 24px rgba(255,180,0,.05)}
+  border-color:rgba(0,212,255,.45);background:rgba(12,18,35,.95);
+  box-shadow:0 0 0 3px rgba(0,212,255,.08),0 0 24px rgba(255,180,0,.05)}
 input[type="text"]::placeholder,input[type="password"]::placeholder{
   color:#4a3a2a;font-weight:400}
 input[type="hidden"]{display:none;margin:0;padding:0}
@@ -333,38 +333,38 @@ input[type="hidden"]{display:none;margin:0;padding:0}
 .msg-err{background:rgba(255,61,113,.08);color:#ff5a85;
   border:1px solid rgba(255,61,113,.18)}
 button{width:100%%;padding:16px;border-radius:14px;
-  background:linear-gradient(135deg,#ffb400 0%%,#e09800 100%%);
+  background:linear-gradient(135deg,#00d4ff 0%%,#00a8d6 100%%);
   color:#0a0608;font-size:15px;font-weight:800;border:none;cursor:pointer;
   font-family:'Barlow',sans-serif;letter-spacing:.4px;
   transition:transform .18s,box-shadow .3s;position:relative;overflow:hidden;
-  box-shadow:0 4px 24px rgba(255,180,0,.18),0 0 60px rgba(255,140,0,.06)}
+  box-shadow:0 4px 24px rgba(255,180,0,.18),0 0 60px rgba(0,255,136,.08)}
 button::after{content:'';position:absolute;inset:0;
   background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);
   background-size:200%% 100%%;animation:shimmer 3s ease-in-out infinite}
 button:hover{transform:translateY(-2px);
-  box-shadow:0 8px 32px rgba(255,180,0,.3),0 0 80px rgba(255,140,0,.1)}
+  box-shadow:0 8px 32px rgba(255,180,0,.3),0 0 80px rgba(0,255,136,.12)}
 button:active{transform:translateY(0)}
 .ver{text-align:center;margin-top:24px;font-size:10px;color:#3a2a1a;
   letter-spacing:.5px;font-weight:500}
 .alt-link{text-align:center;margin-top:16px;font-size:13px;color:#5a7090;font-weight:500}
-.alt-link a{color:#ffb400;text-decoration:none;transition:color .2s;font-weight:600}
-.alt-link a:hover{color:#ffd060;text-shadow:0 0 12px rgba(255,180,0,.2)}
+.alt-link a{color:#00d4ff;text-decoration:none;transition:color .2s;font-weight:600}
+.alt-link a:hover{color:#00ff88;text-shadow:0 0 12px rgba(0,212,255,.15)}
 .pw-wrap{position:relative}
 .pw-wrap input{padding-right:48px}
 .pw-toggle{position:absolute;right:16px;top:15px;cursor:pointer;
   color:#6a5a3a;font-size:16px;line-height:1;user-select:none;
   transition:color .2s,transform .15s;background:none;border:none;width:auto;padding:0;
   box-shadow:none}
-.pw-toggle:hover{color:#ffb400;transform:scale(1.15)}
+.pw-toggle:hover{color:#00d4ff;transform:scale(1.15)}
 .lang-bar{display:flex;justify-content:center;gap:6px;margin-top:18px}
 .lang-btn{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
   border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;
   color:#5a4a3a;font-family:'Barlow',sans-serif;font-weight:600;
   transition:all .25s;width:auto;box-shadow:none;letter-spacing:.3px}
-.lang-btn:hover{color:#ffb400;border-color:rgba(255,180,0,.25);
-  background:rgba(255,180,0,.06)}
-.lang-btn.active{color:#ffb400;border-color:rgba(255,180,0,.35);
-  background:rgba(255,180,0,.1);box-shadow:0 0 12px rgba(255,180,0,.06)}
+.lang-btn:hover{color:#00d4ff;border-color:rgba(0,212,255,.25);
+  background:rgba(0,212,255,.08)}
+.lang-btn.active{color:#00d4ff;border-color:rgba(0,212,255,.4);
+  background:rgba(0,212,255,.1);box-shadow:0 0 12px rgba(0,212,255,.08)}
 @media(max-width:480px){.box{margin:12px;padding:36px 28px 28px;border-radius:22px}
   .logo-name{font-size:28px}.logo-icon{font-size:44px}}
 </style></head><body>
@@ -446,7 +446,7 @@ button:active{transform:translateY(0)}
     wrap.appendChild(btn);
     btn.addEventListener('click',function(){
       var t=inp.type==='password'?'text':'password';inp.type=t;
-      btn.style.color=t==='text'?'#ffb400':'';
+      btn.style.color=t==='text'?'#00d4ff':'';
     });
   });
 })();
