@@ -2029,7 +2029,36 @@ socket.on('exchange_update', mexUpdate);
 
 function mexUpdate(data) {
   if (!data) return;
+  // Legacy WS payload ({exchange, status}) -> Snapshot reload
+  if (data.exchange && data.status && !data.exchanges) {
+    mexReloadSnapshot();
+    return;
+  }
+  // Fallback for old HTTP shape: list of exchanges
+  if (Array.isArray(data)) {
+    const mapped = {};
+    data.forEach(ex => {
+      const name = String(ex.exchange || '').toLowerCase();
+      if (!name) return;
+      mapped[name] = {
+        enabled: !!ex.enabled,
+        running: false,
+        portfolio_value: 0,
+        return_pct: 0,
+        trade_count: 0,
+        open_trades: 0,
+        win_rate: 0,
+        total_pnl: 0,
+        markets_count: 0,
+        last_scan: '—',
+        positions: [],
+        error: ex.enabled ? 'Konfiguriert' : 'Nicht aktiviert',
+      };
+    });
+    data = { exchanges: mapped, combined_pv: 0, combined_pnl: 0, total_pv: 0, total_pnl: 0 };
+  }
   const exs = data.exchanges || {};
+  window._mexSnapshot = exs;
   const active = Object.values(exs).filter(e => e.running).length;
 
   // Gesamt-Header
@@ -2067,6 +2096,11 @@ function mexUpdate(data) {
     const pnl = ex.total_pnl || 0;
     const err = ex.error || '';
     const positions = ex.positions || [];
+    const hasKey = !!ex.has_api_key;
+    const hasSecret = !!ex.has_api_secret;
+    const keyState = hasKey && hasSecret
+      ? '<span style="color:var(--jade)">🔑 Keys gespeichert</span>'
+      : '<span style="color:var(--yellow)">🔐 Keys fehlen</span>';
 
     const statusDot = running
       ? '<span style="width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;box-shadow:0 0 6px #00ff88"></span>'
@@ -2090,6 +2124,7 @@ function mexUpdate(data) {
           <div>
             <div style="font-weight:800;font-size:14px;color:#e8f4ff">${label}</div>
             <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${ex.markets_count||0} Märkte · ${ex.last_scan||'—'}</div>
+            <div style="font-size:10px;font-family:var(--mono);margin-top:2px">${keyState}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
@@ -2137,6 +2172,29 @@ function mexUpdate(data) {
       </div>
     </div>`;
   }).join('');
+
+  const sel = document.getElementById('mex-key-exchange');
+  if (sel) mexOnExchangeSelect(sel.value);
+}
+
+async function mexReloadSnapshot() {
+  const meta = document.getElementById('mex-snapshot-meta');
+  if (meta) meta.textContent = 'Stand: lade…';
+  try{
+    const r = await fetch('/api/v1/exchanges', {
+      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+    });
+    if(!r.ok){
+      if (meta) meta.textContent = 'Stand: Fehler beim Laden';
+      return;
+    }
+    const payload = await r.json();
+    mexUpdate(payload);
+    if (meta) meta.textContent = 'Stand: ' + new Date().toLocaleTimeString();
+  }catch(e){
+    console.warn('Exchange-Status laden fehlgeschlagen:', e);
+    if (meta) meta.textContent = 'Stand: offline';
+  }
 }
 
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
@@ -2152,6 +2210,14 @@ function mexSetupKeys(name) {
 function mexOnExchangeSelect(name) {
   const needsPP = ['okx','kucoin'].includes(name);
   document.getElementById('mex-passphrase-wrap').style.display = needsPP ? '' : 'none';
+  const st = document.getElementById('mex-key-status');
+  const info = (window._mexSnapshot || {})[name] || {};
+  const hasKeys = !!info.has_api_key && !!info.has_api_secret;
+  if (st) {
+    st.innerHTML = hasKeys
+      ? '<span style="color:var(--jade)">🔑 Key-Status: gespeichert</span>'
+      : '<span style="color:var(--yellow)">🔐 Key-Status: nicht vollständig hinterlegt</span>';
+  }
 }
 
 function mexSaveKeys() {
@@ -2163,6 +2229,8 @@ function mexSaveKeys() {
   if(!_emitSafe('save_exchange_keys', {exchange, api_key, secret, passphrase})) return;
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
+  const st = document.getElementById('mex-key-status');
+  if (st) st.innerHTML = '<span style="color:var(--jade)">🔑 Key-Status: gespeichert (lokal)</span>';
 }
 
 function mexClosePos(exchange, symbol) {
@@ -2172,6 +2240,9 @@ function mexClosePos(exchange, symbol) {
 
 async function mexLoadTrades() {
   const el = document.getElementById('mex-trades-list');
+  if (el) {
+    el.innerHTML = '<div class="empty"><div class="empty-ico">⏳</div>Lade Trades…</div>';
+  }
   try {
     const r = await fetch('/api/v1/exchanges/combined/trades',
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
@@ -2204,8 +2275,7 @@ async function mexLoadTrades() {
 onNav(id => { if (id === 'exchanges') mexLoadTrades(); });
 
 // Beim Start: Exchange-Status laden
-fetch('/api/v1/exchanges', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}})
-  .then(r => r.json()).then(mexUpdate).catch(e => console.warn('Exchange-Status laden fehlgeschlagen:', e));
+mexReloadSnapshot();
 
 // ── Init ─────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded',()=>{

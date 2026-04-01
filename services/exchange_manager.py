@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Any
 
 try:
@@ -46,6 +47,9 @@ class ExchangeManager:
         self._config = config
         self._instances: dict[str, Any] = {}  # "user_id:exchange" → ccxt instance
         self._lock = threading.Lock()
+        self._request_timeout_ms = int(config.get("exchange_timeout_ms", 10000))
+        self._max_retries = int(config.get("exchange_retries", 3))
+        self._base_backoff = float(config.get("exchange_backoff_base", 0.5))
 
     def _create_instance(self, exchange_name: str, api_key: str, api_secret: str) -> Any | None:
         """Erstellt eine CCXT Exchange-Instanz.
@@ -71,6 +75,7 @@ class ExchangeManager:
                     "apiKey": api_key,
                     "secret": api_secret,
                     "enableRateLimit": True,
+                    "timeout": self._request_timeout_ms,
                     "options": {"defaultType": "spot"},
                 }
             )
@@ -103,7 +108,7 @@ class ExchangeManager:
             # DB reads are fast (indexed lookup) so this is acceptable.
             exchanges = self._db.get_enabled_exchanges(user_id)
             for ex_data in exchanges:
-                if ex_data["exchange"] == exchange_name:
+                if ex_data.get("exchange") == exchange_name:
                     api_key = decrypt_value(ex_data.get("api_key", ""))
                     api_secret = decrypt_value(ex_data.get("api_secret", ""))
                     if not api_key or not api_secret:
@@ -121,6 +126,49 @@ class ExchangeManager:
                         self._instances[cache_key] = inst
                     return inst
         return None
+
+    def _call_with_retry(self, exchange_name: str, fn: Any, operation: str) -> Any:
+        """Führt einen Exchange-Call mit Retry + exponentiellem Backoff aus."""
+        last_exc: Exception | None = None
+        for attempt in range(1, self._max_retries + 1):
+            try:
+                return fn()
+            except Exception as exc:
+                last_exc = exc
+                # Handle klassische Timeout-Signaturen (requests/ccxt/socket)
+                timeout_like = isinstance(exc, TimeoutError) or "timeout" in str(exc).lower()
+                if CCXT_AVAILABLE and isinstance(exc, ccxt.NetworkError):
+                    timeout_like = timeout_like or True
+                if CCXT_AVAILABLE and isinstance(exc, ccxt.RequestTimeout):
+                    timeout_like = True
+
+                if timeout_like:
+                    log.warning(
+                        "Exchange timeout (%s/%s) on %s.%s: %s",
+                        attempt,
+                        self._max_retries,
+                        exchange_name,
+                        operation,
+                        exc,
+                    )
+                else:
+                    log.warning(
+                        "Exchange error (%s/%s) on %s.%s: %s",
+                        attempt,
+                        self._max_retries,
+                        exchange_name,
+                        operation,
+                        exc,
+                    )
+
+                if attempt >= self._max_retries:
+                    break
+
+                sleep_seconds = self._base_backoff * (2 ** (attempt - 1))
+                time.sleep(sleep_seconds)
+
+        assert last_exc is not None
+        raise last_exc
 
     def get_active_exchanges(self, user_id: int) -> list[tuple[str, Any]]:
         """Gibt alle aktivierten Exchange-Instanzen eines Users zurück.
@@ -206,7 +254,7 @@ class ExchangeManager:
         result: dict[str, dict] = {}
         for name, inst in self.get_active_exchanges(user_id):
             try:
-                bal = inst.fetch_balance() or {}
+                bal = self._call_with_retry(name, inst.fetch_balance, "fetch_balance") or {}
                 result[name] = {
                     "total": {
                         k: float(v)
@@ -220,5 +268,11 @@ class ExchangeManager:
                     },
                 }
             except Exception as e:
-                result[name] = {"error": str(e)}
+                log.exception("Balance-Abruf fehlgeschlagen für %s", name)
+                err_msg = str(e).strip() or "Unbekannter Fehler"
+                if "timeout" in err_msg.lower():
+                    err_msg = (
+                        "Exchange-Antwort dauerte zu lange. Bitte später erneut versuchen."
+                    )
+                result[name] = {"error": err_msg}
         return result

@@ -777,14 +777,35 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
   body { background: #fff; color: #000; }
 }
 
-/* ══ ADMIN DASHBOARD – GOLD/AMBER THEME ══════════════════════════════ */
-/* Admin sections use gold/amber palette matching admin login */
-.admin-gold { --ag:#ffb400; --ag2:#ffd060; --ag3:#e09800; --ag-bg:rgba(255,180,0,.06); --ag-border:rgba(255,180,0,.15); }
+/* ══ ADMIN DASHBOARD – LOGIN-COLOR THEME (CYAN/JADE) ════════════════ */
+/* Nutzt das gleiche Schema wie der Login-Bereich, setzt sich aber sichtbar vom User-Dashboard ab. */
+.admin-gold {
+  --ag:#00d4ff;
+  --ag2:#00ff88;
+  --ag3:#00a8d6;
+  --ag-bg:rgba(0,212,255,.08);
+  --ag-border:rgba(0,212,255,.2);
+}
+
+body.is-admin {
+  background:#060912;
+}
+body.is-admin::before{
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 0%,rgba(0,255,136,.06),transparent 55%),
+    radial-gradient(ellipse 40% 30% at 90% 100%,rgba(0,212,255,.06),transparent 55%);
+}
+body.is-admin header{
+  border-bottom-color:rgba(0,212,255,.14);
+}
+body.is-admin .card{
+  border-color:rgba(0,212,255,.14);
+}
 
 /* Admin hero stat cards */
 .admin-stat-row { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:12px; }
 .admin-stat-card {
-  background:linear-gradient(135deg,#1a1208 0%,#12081a 100%);
+  background:linear-gradient(135deg,#081421 0%,#0b1a2a 100%);
   border:1px solid var(--ag-border,rgba(255,180,0,.15));
   border-radius:var(--r2); padding:16px 14px;
   position:relative; overflow:hidden;
@@ -800,13 +821,13 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
 
 /* Admin section header */
 .admin-sec-hd {
-  background:linear-gradient(135deg,#0a0608 0%,#12081a 50%,#0a0608 100%);
-  border:1px solid rgba(255,180,0,.12); border-radius:var(--r2);
+  background:linear-gradient(135deg,#060f1b 0%,#0a1a2e 50%,#06101c 100%);
+  border:1px solid rgba(0,212,255,.2); border-radius:var(--r2);
   padding:20px 18px; margin-bottom:4px; position:relative; overflow:hidden;
 }
 .admin-sec-hd::after {
   content:''; position:absolute; bottom:0; left:0; right:0; height:1px;
-  background:linear-gradient(90deg,transparent,rgba(255,180,0,.2),transparent);
+  background:linear-gradient(90deg,transparent,rgba(0,212,255,.3),transparent);
 }
 .admin-sec-title {
   font-size:20px; font-weight:900; font-family:var(--fc); color:#e8f0ff;
@@ -814,33 +835,44 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
 }
 .admin-sec-title .admin-badge {
   font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
-  background:rgba(255,180,0,.1); color:#ffb400; padding:3px 10px; border-radius:6px;
-  border:1px solid rgba(255,180,0,.25);
+  background:rgba(0,212,255,.12); color:#00d4ff; padding:3px 10px; border-radius:6px;
+  border:1px solid rgba(0,212,255,.3);
 }
-.admin-sec-sub { font-size:11px; color:#6a5a3a; margin-top:4px; font-family:var(--mono); letter-spacing:.5px; }
+.admin-sec-sub { font-size:11px; color:#4c7191; margin-top:4px; font-family:var(--mono); letter-spacing:.5px; }
 
 /* Admin cards with gold accents */
 .admin-card {
-  background:var(--bg1); border:1px solid rgba(255,180,0,.08); border-radius:var(--r);
+  background:linear-gradient(180deg,rgba(6,15,27,.9),rgba(7,17,30,.9));
+  border:1px solid rgba(0,212,255,.14); border-radius:var(--r);
   overflow:hidden; transition:border-color .25s, box-shadow .25s;
 }
-.admin-card:hover { border-color:rgba(255,180,0,.2); box-shadow:0 4px 24px rgba(255,180,0,.04); }
+.admin-card:hover { border-color:rgba(0,212,255,.3); box-shadow:0 4px 24px rgba(0,212,255,.08); }
 .admin-card .card-hd { display:flex; align-items:center; justify-content:space-between; padding:13px 16px 0; }
 .admin-card .card-title { font-family:var(--mono); font-size:9px; font-weight:500;
-  letter-spacing:2px; text-transform:uppercase; color:#ffb400; }
+  letter-spacing:2px; text-transform:uppercase; color:#00d4ff; }
 .admin-card .card-body { padding:12px 16px 16px; }
 
 /* Admin action buttons with gold style */
-.btn-gold { background:linear-gradient(135deg,#ffb400 0%,#e09800 100%);
-  color:#0a0608; font-weight:800; box-shadow:0 2px 12px rgba(255,180,0,.2); }
-.btn-gold:hover { box-shadow:0 4px 20px rgba(255,180,0,.35); transform:translateY(-1px); }
-.btn-gold-outline { background:rgba(255,180,0,.06); color:#ffb400;
-  border:1px solid rgba(255,180,0,.25); }
-.btn-gold-outline:hover { background:rgba(255,180,0,.12); border-color:rgba(255,180,0,.4); }
+.btn-gold { background:linear-gradient(135deg,#00ff88 0%,#00d4ff 100%);
+  color:#060912; font-weight:800; box-shadow:0 2px 12px rgba(0,212,255,.25); }
+.btn-gold:hover { box-shadow:0 4px 20px rgba(0,212,255,.4); transform:translateY(-1px); }
+.btn-gold-outline { background:rgba(0,212,255,.08); color:#00d4ff;
+  border:1px solid rgba(0,212,255,.3); }
+.btn-gold-outline:hover { background:rgba(0,212,255,.14); border-color:rgba(0,212,255,.45); }
 
 /* Admin KV grid gold variant */
-.admin-card .kv-label { color:#8a7a5a; }
-.admin-card .kv-value { color:#e0d8c8; }
+.admin-card .kv-label { color:#5f7e99; }
+.admin-card .kv-value { color:#d6e9ff; }
+.pro-status-note{
+  font-size:10px;
+  font-family:var(--mono);
+  color:var(--sub);
+  margin-bottom:8px;
+  padding:7px 9px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:8px;
+  background:rgba(6,15,27,.55);
+}
 
 /* Admin grid layout on desktop */
 @media(min-width:900px){
