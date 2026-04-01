@@ -4,7 +4,7 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 .PHONY: help install dev docker-up docker-down docker-logs docker-build \
-        test test-cov lint format clean backup keys
+        test test-cov lint format clean backup keys check-conflicts
 
 # Standardziel
 .DEFAULT_GOAL := help
@@ -32,6 +32,7 @@ help:
 	@echo "  make clean        → Temporäre Dateien löschen"
 	@echo "  make keys         → Neue Sicherheitsschlüssel generieren"
 	@echo "  make backup       → Datenbank-Backup erstellen"
+	@echo "  make check-conflicts → Merge-Konfliktmarker prüfen"
 	@echo ""
 
 # ── Installation ───────────────────────────────────────────────────────────────
@@ -116,3 +117,14 @@ clean:
 	find . -name "*.pyo" -delete 2>/dev/null || true
 	rm -rf .pytest_cache/ htmlcov/ .coverage coverage.xml 2>/dev/null || true
 	@echo "✓ Bereinigt"
+
+# ── Git Merge-Konflikte prüfen ────────────────────────────────────────────────
+check-conflicts:
+	@echo "→ Prüfe auf Merge-Konfliktmarker..."
+	@if rg -n "^(<<<<<<<|=======|>>>>>>>)" server.py static/css/dashboard.css >/dev/null; then \
+		echo "❌ Konfliktmarker gefunden in server.py oder static/css/dashboard.css"; \
+		rg -n "^(<<<<<<<|=======|>>>>>>>)" server.py static/css/dashboard.css; \
+		exit 1; \
+	else \
+		echo "✓ Keine Konfliktmarker in server.py und static/css/dashboard.css"; \
+	fi
