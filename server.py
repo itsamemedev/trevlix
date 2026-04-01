@@ -5697,6 +5697,7 @@ def get_heatmap_data(ex) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 def bot_loop():
     ex = None
+    last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
             time.sleep(5)
@@ -5712,6 +5713,23 @@ def bot_loop():
                     ex = create_exchange()
                 except Exception as exc_err:
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
+                                "key": "ws_exchange_connect_failed",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Exchange-Verbindung fehlgeschlagen",
+                            str(exc_err)[:120],
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
                     time.sleep(30)
                     continue
             with state._lock:
@@ -5781,6 +5799,24 @@ def bot_loop():
                 new_markets = fetch_markets(ex)
                 with state._lock:
                     state.markets = new_markets
+                if not new_markets:
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": "⚠️ Keine Märkte geladen – Exchange/API prüfen",
+                                "key": "ws_no_markets_loaded",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Keine Märkte geladen",
+                            "Exchange liefert keine Marktdaten",
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
 
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
@@ -5900,10 +5936,18 @@ def bot_loop():
         except ccxt.ExchangeError as e:
             log.error(f"Exchange-Fehler: {e}")
             discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
+            emit_event(
+                "status",
+                {"msg": f"❌ Exchange-Fehler: {str(e)[:140]}", "key": "ws_exchange_error", "type": "error"},
+            )
             time.sleep(30)
         except Exception as e:
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
+            emit_event(
+                "status",
+                {"msg": f"❌ Bot-Loop Fehler: {str(e)[:140]}", "key": "ws_bot_loop_error", "type": "error"},
+            )
             time.sleep(10)
         time.sleep(CONFIG.get("scan_interval", 60))
 
@@ -6858,6 +6902,27 @@ def on_start_bot():
         emit(
             "status",
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
+        return
+    try:
+        preflight_ex = create_exchange()
+        test_markets = fetch_markets(preflight_ex)
+        if not test_markets:
+            raise RuntimeError("keine Märkte geladen")
+    except Exception as preflight_err:
+        emit(
+            "status",
+            {
+                "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                "key": "ws_bot_start_failed_exchange",
+                "type": "error",
+            },
+        )
+        state.add_activity(
+            "❌",
+            "Bot-Start fehlgeschlagen",
+            "Exchange/Marktdaten nicht erreichbar",
+            "error",
         )
         return
     with state._lock:
@@ -7900,29 +7965,62 @@ def _collect_system_analytics() -> dict[str, Any]:
     }
 
     # LLM status
-    llm_endpoint = CONFIG.get("llm_endpoint", "")
+    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
+    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
     data["llm"] = {
         "endpoint": llm_endpoint or "—",
-        "model": CONFIG.get("llm_model", "—"),
-        "status": "—",
+        "model": llm_model,
+        "status": "⚪ Nicht konfiguriert",
         "latency": "—",
         "queries_24h": "—",
         "tokens_24h": "—",
     }
+
+    # Multi-LLM Fallback/Status wenn kein dedizierter Endpoint gesetzt ist
+    try:
+        multi_llm = getattr(knowledge_base, "_multi_llm", None)
+        if multi_llm:
+            provider_stats = multi_llm.status()
+            if provider_stats:
+                total_reqs = sum(int(p.get("requests", 0) or 0) for p in provider_stats)
+                total_tokens = sum(int(p.get("tokens", 0) or 0) for p in provider_stats)
+                active_ok = [p for p in provider_stats if str(p.get("status", "")).lower() == "healthy"]
+                if not llm_endpoint:
+                    data["llm"]["endpoint"] = "multi-provider"
+                if data["llm"]["model"] in ("", "—"):
+                    data["llm"]["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
+                data["llm"]["status"] = (
+                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
+                    if active_ok
+                    else "❌ Alle Provider offline"
+                )
+                data["llm"]["queries_24h"] = str(total_reqs)
+                data["llm"]["tokens_24h"] = str(total_tokens)
+    except Exception as e:
+        log.debug("Multi-LLM status query failed: %s", e)
+
     if llm_endpoint:
         try:
             import urllib.request
 
-            start_t = time.time()
-            req = urllib.request.Request(
-                llm_endpoint.rstrip("/") + "/models",
-                method="GET",
-            )
-            req.add_header("Connection", "close")
-            with urllib.request.urlopen(req, timeout=5):
-                latency_ms = int((time.time() - start_t) * 1000)
-                data["llm"]["status"] = "✅ Online"
-                data["llm"]["latency"] = f"{latency_ms} ms"
+            # Kompatibel mit OpenAI-/vLLM-Endpunkten (/models) und Ollama (/api/tags)
+            candidates = [llm_endpoint.rstrip("/") + "/models", llm_endpoint.rstrip("/") + "/api/tags"]
+            last_exc = None
+            for url in candidates:
+                try:
+                    start_t = time.time()
+                    req = urllib.request.Request(url, method="GET")
+                    req.add_header("Connection", "close")
+                    with urllib.request.urlopen(req, timeout=5):
+                        latency_ms = int((time.time() - start_t) * 1000)
+                        data["llm"]["status"] = "✅ Online"
+                        data["llm"]["latency"] = f"{latency_ms} ms"
+                        last_exc = None
+                        break
+                except Exception as exc:
+                    last_exc = exc
+            if last_exc is not None:
+                data["llm"]["status"] = "❌ Offline"
         except Exception:
             data["llm"]["status"] = "❌ Offline"
 
@@ -8819,26 +8917,66 @@ def api_gas():
 @app.route("/api/v1/exchanges")
 @api_auth_required
 def api_exchanges():
-    """Konfigurierte Exchanges für den aktuellen User."""
+    """Multi-Exchange Snapshot für das Dashboard des aktuellen Users."""
     try:
         uid = getattr(request, "user_id", None) or session.get("user_id")
         if not uid:
-            return jsonify([])
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT id, exchange, enabled, created_at FROM user_exchanges "
-                    "WHERE user_id = %s ORDER BY exchange",
-                    (uid,),
-                )
-                rows = c.fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
-                d["created_at"] = d["created_at"].isoformat()
-            result.append(d)
-        return jsonify(result)
+            return jsonify({"exchanges": {}, "combined_pv": 0, "combined_pnl": 0, "total_pv": 0, "total_pnl": 0})
+
+        # DB-only Snapshot (schnell, ohne externe API-Calls → keine Dashboard-Timeouts)
+        user_exchanges = db.get_user_exchanges(uid)
+        enabled_set = {str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")}
+
+        now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        ex_map: dict[str, dict[str, Any]] = {}
+        for ex in user_exchanges:
+            ex_name = str(ex.get("exchange", "")).lower()
+            if not ex_name:
+                continue
+            ex_map[ex_name] = {
+                "enabled": bool(ex.get("enabled")),
+                "running": False,  # Runtime-Engine für Multi-Exchange ist aktuell nicht aktiv
+                "portfolio_value": 0.0,
+                "return_pct": 0.0,
+                "trade_count": 0,
+                "open_trades": 0,
+                "win_rate": 0.0,
+                "total_pnl": 0.0,
+                "markets_count": 0,
+                "last_scan": now_iso,
+                "positions": [],
+                "error": "" if ex.get("enabled") else "Nicht aktiviert",
+            }
+
+        # Historische Kennzahlen aus lokalen closed_trades aggregieren (ohne Exchange-API)
+        for t in list(getattr(state, "closed_trades", [])):
+            ex_name = str(t.get("exchange", "")).lower()
+            if ex_name not in ex_map:
+                continue
+            ex_map[ex_name]["trade_count"] += 1
+            pnl_val = float(t.get("pnl", 0) or 0)
+            ex_map[ex_name]["total_pnl"] += pnl_val
+            if pnl_val > 0:
+                ex_map[ex_name]["win_rate"] += 1
+
+        for ex_name, meta in ex_map.items():
+            tc = int(meta.get("trade_count", 0) or 0)
+            wins = float(meta.get("win_rate", 0) or 0)
+            if tc > 0:
+                meta["win_rate"] = round((wins / tc) * 100, 1)
+            if ex_name in enabled_set and not meta.get("error"):
+                # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
+                meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+
+        combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
+        response = {
+            "exchanges": ex_map,
+            "combined_pv": 0.0,
+            "combined_pnl": combined_pnl,
+            "total_pv": 0.0,
+            "total_pnl": combined_pnl,
+        }
+        return jsonify(response)
     except Exception as e:
         log.error("API error: %s", e)
         return jsonify({"error": "Internal server error"}), 500
@@ -8891,7 +9029,35 @@ def api_ai_shared_status():
 @api_auth_required
 def api_exchanges_combined_trades():
     """Kombinierte Trade-History über alle Exchanges."""
-    return jsonify({"trades": [], "total": 0})
+    try:
+        uid = getattr(request, "user_id", None) or session.get("user_id")
+        if not uid:
+            return jsonify({"trades": [], "total": 0})
+
+        configured = {
+            str(e.get("exchange", "")).lower() for e in db.get_user_exchanges(uid) if e.get("exchange")
+        }
+        trades = []
+        for t in list(getattr(state, "closed_trades", [])):
+            ex_name = str(t.get("exchange", "")).lower()
+            if configured and ex_name not in configured:
+                continue
+            if not ex_name:
+                continue
+            trades.append(
+                {
+                    "exchange": ex_name,
+                    "symbol": t.get("symbol", ""),
+                    "pnl": float(t.get("pnl", 0) or 0),
+                    "reason": t.get("reason", ""),
+                    "closed": t.get("closed", ""),
+                }
+            )
+        trades.sort(key=lambda x: str(x.get("closed", "")), reverse=True)
+        return jsonify({"trades": trades[:200], "total": len(trades)})
+    except Exception as e:
+        log.error("combined trades error: %s", e)
+        return jsonify({"trades": [], "total": 0})
 
 
 @app.route("/api/v1/ai/shared/force-sync", methods=["POST"])
