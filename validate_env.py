@@ -68,7 +68,7 @@ def _check_hex(var: str, min_len: int, label: str) -> Issue | None:
     if len(val) < min_len:
         return Issue("critical", var, f"{label} zu kurz ({len(val)} Zeichen, min. {min_len})")
     if not re.fullmatch(r"[0-9a-fA-F]+", val):
-        return Issue("warning", var, f"{label} enthält Nicht-Hex-Zeichen – ist es wirklich Hex?")
+        return Issue("critical", var, f"{label} enthält Nicht-Hex-Zeichen – bitte sicheren Hex-Wert setzen")
     return None
 
 
@@ -100,6 +100,8 @@ def _check_password_policy(var: str, label: str) -> Issue | None:
         issues.append(f"min. 12 Zeichen (hat {len(val)})")
     if not re.search(r"[A-Z]", val):
         issues.append("min. 1 Großbuchstabe")
+    if not re.search(r"[a-z]", val):
+        issues.append("min. 1 Kleinbuchstabe")
     if not re.search(r"[0-9]", val):
         issues.append("min. 1 Ziffer")
     if not re.search(r"[^A-Za-z0-9]", val):

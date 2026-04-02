@@ -53,7 +53,16 @@ try:
     PYDANTIC_AVAILABLE = True
 except ImportError:
     try:
-        from pydantic import BaseSettings, Field  # noqa: F401
+        from pydantic import BaseSettings, Field, validator as _v1_validator  # type: ignore
+
+        # pydantic v1 compatibility: emulate pydantic v2 field_validator API
+        def field_validator(*fields, **kwargs):  # type: ignore[no-redef]
+            return _v1_validator(*fields, **kwargs)
+
+        class SettingsConfigDict(dict):  # type: ignore[no-redef]
+            """Compat placeholder for pydantic v1."""
+
+            pass
 
         PYDANTIC_AVAILABLE = True
     except ImportError:
