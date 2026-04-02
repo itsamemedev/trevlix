@@ -102,6 +102,9 @@ from services.db_pool import ConnectionPool
 
 # ── Service-Module ───────────────────────────────────────────────────────────
 from services.encryption import decrypt_value, encrypt_value
+from services.git_ops import apply_update as _apply_update
+from services.git_ops import get_update_status as _get_update_status
+from services.git_ops import rollback_update as _rollback_update
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
 from services.knowledge import KnowledgeBase
@@ -7688,33 +7691,8 @@ def on_check_update():
     if not _ws_auth_required():
         return
     try:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5
-        )
-        repo_url = result.stdout.strip() if result.returncode == 0 else ""
-        result2 = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5
-        )
-        branch = result2.stdout.strip() if result2.returncode == 0 else "main"
-        result3 = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True, timeout=5
-        )
-        current = (result3.stdout.strip() if result3.returncode == 0 else "") or BOT_VERSION
-        socketio.emit(
-            "update_status",
-            {
-                "current_version": current,
-                "latest_version": current,
-                "current": current,
-                "latest": current,
-                "update_available": False,
-                "repo": repo_url,
-                "branch": branch,
-                "last_check": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            },
-        )
+        status = _get_update_status()
+        socketio.emit("update_status", status.to_socket_payload())
     except Exception as e:
         emit(
             "status",
@@ -7731,11 +7709,7 @@ def on_apply_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        subprocess.run(
-            ["git", "pull", "--ff-only"], capture_output=True, text=True, timeout=30, check=True
-        )
+        _apply_update()
         emit("update_result", {"status": "success"}, broadcast=True)
         emit(
             "status",
@@ -7759,14 +7733,18 @@ def on_rollback_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        stash_result = subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
-        if stash_result.returncode != 0:
-            log.warning(f"git stash failed: {stash_result.stderr.strip()}")
+        stashed = _rollback_update()
         emit(
             "status",
-            {"msg": "↩ Rollback: git stash angewendet", "key": "ws_rollback_done", "type": "info"},
+            {
+                "msg": (
+                    "↩ Rollback: git stash angewendet"
+                    if stashed
+                    else "⚠ Rollback: git stash konnte nicht angewendet werden"
+                ),
+                "key": "ws_rollback_done" if stashed else "ws_rollback_partial",
+                "type": "info" if stashed else "warning",
+            },
             broadcast=True,
         )
     except Exception as e:
