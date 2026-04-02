@@ -2225,6 +2225,37 @@ def _safe_float(val: Any, default: float) -> float:
         return default
 
 
+def _safe_bool(val: Any, default: bool = False) -> bool:
+    """Sicherer Bool-Cast für JSON-/Form-Werte mit String-Support."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off", ""}:
+            return False
+    return default
+
+
+def _normalize_exchange_name(raw: Any) -> str:
+    """Normalisiert und validiert einen Exchange-Namen."""
+    if raw is None:
+        return ""
+    name = str(raw).strip().lower()
+    if not name:
+        return ""
+    if name in EXCHANGE_MAP:
+        return name
+    # Erlaube ccxt-Klassennamen in Requests (z.B. coinbaseadvanced -> coinbase)
+    for canonical, ccxt_name in EXCHANGE_MAP.items():
+        if name == ccxt_name:
+            return canonical
+    return ""
+
+
 def _generate_csrf_token() -> str:
     """[Verbesserung #2] CSRF-Token pro Session generieren."""
     if "_csrf_token" not in session:
@@ -6134,13 +6165,13 @@ def api_user_exchanges_list():
 def api_user_exchanges_upsert():
     """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
     data = request.json or {}
-    exchange = data.get("exchange", "").lower()
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
-    enabled = data.get("enabled", False)  # Default: deaktiviert
-    is_primary = data.get("is_primary", False)
-    if exchange not in EXCHANGE_MAP:
-        return jsonify({"error": f"Exchange '{exchange}' nicht unterstützt"}), 400
+    exchange = _normalize_exchange_name(data.get("exchange", ""))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    enabled = _safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
+    is_primary = _safe_bool(data.get("is_primary", False), False)
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.upsert_user_exchange(
@@ -6154,7 +6185,7 @@ def api_user_exchanges_upsert():
 @api_auth_required
 def api_user_exchange_toggle(exchange_id):
     """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = (request.json or {}).get("enabled", False)
+    enabled = _safe_bool((request.json or {}).get("enabled", False), False)
     ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
     return jsonify({"ok": ok})
 
@@ -6172,9 +6203,11 @@ def api_user_exchange_delete(exchange_id):
 def api_user_update_keys():
     """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
     data = request.json or {}
-    exchange = data.get("exchange", CONFIG["exchange"])
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
+    exchange = _normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
@@ -7798,7 +7831,13 @@ def on_rollback_update():
 def on_start_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7815,7 +7854,13 @@ def on_start_exchange(data):
 def on_stop_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7832,9 +7877,9 @@ def on_stop_exchange(data):
 def on_save_exchange_keys(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    api_key = data.get("api_key", "")
-    secret = data.get("secret", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    api_key = str((data or {}).get("api_key", "")).strip()
+    secret = str((data or {}).get("secret", "")).strip()
     if not ex_name or not api_key or not secret:
         emit(
             "status",
@@ -7851,7 +7896,11 @@ def on_save_exchange_keys(data):
     CONFIG["extra_exchanges"][ex_name] = {
         "api_key": encrypt_value(api_key),
         "secret": encrypt_value(secret),
-        "passphrase": encrypt_value(data.get("passphrase", "")) if data.get("passphrase") else "",
+        "passphrase": (
+            encrypt_value(str((data or {}).get("passphrase", "")).strip())
+            if (data or {}).get("passphrase")
+            else ""
+        ),
     }
     emit(
         "status",
@@ -7867,8 +7916,8 @@ def on_save_exchange_keys(data):
 def on_close_exchange_position(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    symbol = data.get("symbol", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    symbol = str((data or {}).get("symbol", "")).strip().upper()
     if not ex_name or not symbol:
         emit(
             "status",
@@ -7881,7 +7930,7 @@ def on_close_exchange_position(data):
         return
     try:
         # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
-        if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
+        if not ex_name:
             emit(
                 "status",
                 {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
