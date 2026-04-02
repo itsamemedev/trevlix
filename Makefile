@@ -4,7 +4,7 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 .PHONY: help install dev docker-up docker-down docker-logs docker-build \
-        test test-cov lint format clean backup keys
+        test test-cov lint format deep-scan clean backup keys
 
 # Standardziel
 .DEFAULT_GOAL := help
@@ -29,6 +29,7 @@ help:
 	@echo "  make test-cov     → Tests mit Coverage-Report"
 	@echo "  make lint         → Code-Qualität prüfen (ruff)"
 	@echo "  make format       → Code formatieren (ruff format)"
+	@echo "  make deep-scan    → Reproduzierbaren Projekt-Deep-Scan ausführen"
 	@echo "  make clean        → Temporäre Dateien löschen"
 	@echo "  make keys         → Neue Sicherheitsschlüssel generieren"
 	@echo "  make backup       → Datenbank-Backup erstellen"
@@ -89,6 +90,9 @@ lint:
 format:
 	@command -v ruff &>/dev/null || $(VENV)/bin/pip install --quiet ruff
 	$(VENV)/bin/ruff format server.py ai_engine.py trevlix_i18n.py services/ tests/
+
+deep-scan:
+	$(PYTHON) scripts/deep_scan.py
 
 # ── Sicherheit ─────────────────────────────────────────────────────────────────
 keys:
