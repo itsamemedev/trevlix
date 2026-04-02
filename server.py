@@ -4863,14 +4863,37 @@ def create_exchange():
         if _raw_sec
         else ""
     )
+    timeout_ms = _safe_int(CONFIG.get("exchange_timeout_ms", 15000), 15000)
     return ex_cls(
         {
             "apiKey": api_key,
             "secret": api_secret,
             "enableRateLimit": True,
+            "timeout": max(3000, timeout_ms),
             "options": {"defaultType": "spot"},
         }
     )
+
+
+def _preflight_exchange_markets(max_attempts: int = 2) -> tuple[list[str], str | None]:
+    """Preflight für Exchange + Märkte mit kurzem Retry.
+
+    Returns:
+        (markets, error_message). Bei Erfolg ist error_message None.
+    """
+    last_err = ""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            preflight_ex = create_exchange()
+            markets = fetch_markets(preflight_ex)
+            if markets:
+                return markets, None
+            last_err = "keine Märkte geladen"
+        except Exception as exc:
+            last_err = str(exc)
+        if attempt < max_attempts:
+            time.sleep(min(2 * attempt, 4))
+    return [], last_err or "Exchange/Marktdaten nicht erreichbar"
 
 
 def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USDT") -> float:
@@ -6966,27 +6989,47 @@ def on_start_bot():
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
-    try:
-        preflight_ex = create_exchange()
-        test_markets = fetch_markets(preflight_ex)
-        if not test_markets:
-            raise RuntimeError("keine Märkte geladen")
-    except Exception as preflight_err:
-        emit(
-            "status",
-            {
-                "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
-                "key": "ws_bot_start_failed_exchange",
-                "type": "error",
-            },
-        )
-        state.add_activity(
-            "❌",
-            "Bot-Start fehlgeschlagen",
-            "Exchange/Marktdaten nicht erreichbar",
-            "error",
-        )
-        return
+    test_markets, preflight_err = _preflight_exchange_markets(max_attempts=2)
+    if test_markets:
+        with state._lock:
+            state.markets = test_markets
+    if preflight_err:
+        is_paper = bool(CONFIG.get("paper_trading", True))
+        # Paper-Trading darf trotz Exchange-Ausfall starten (Loop reconnectet später).
+        if is_paper:
+            emit(
+                "status",
+                {
+                    "msg": (
+                        "⚠ Exchange/Marktdaten aktuell nicht erreichbar – "
+                        "Paper-Bot startet trotzdem (Auto-Reconnect aktiv)"
+                    ),
+                    "key": "ws_bot_start_degraded",
+                    "type": "warning",
+                },
+            )
+            state.add_activity(
+                "⚠️",
+                "Bot-Start im Degraded-Modus",
+                str(preflight_err)[:120],
+                "warning",
+            )
+        else:
+            emit(
+                "status",
+                {
+                    "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                    "key": "ws_bot_start_failed_exchange",
+                    "type": "error",
+                },
+            )
+            state.add_activity(
+                "❌",
+                "Bot-Start fehlgeschlagen",
+                "Exchange/Marktdaten nicht erreichbar",
+                "error",
+            )
+            return
     with state._lock:
         if state.running:
             return
