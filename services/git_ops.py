@@ -18,6 +18,15 @@ log = logging.getLogger("trevlix.git_ops")
 _DEFAULT_VERSION = os.getenv("TREVLIX_VERSION", "1.5.2")
 
 
+class GitOperationError(RuntimeError):
+    """Kontrollierter Fehler für Git-Operationen mit user-safe Message."""
+
+    def __init__(self, user_message: str, *, detail: str = "") -> None:
+        super().__init__(user_message)
+        self.user_message = user_message
+        self.detail = detail
+
+
 @dataclass(frozen=True)
 class UpdateStatus:
     current_version: str
@@ -46,14 +55,22 @@ def _repo_root() -> Path:
 
 def _run_git(args: list[str], timeout: int = 10, check: bool = False) -> subprocess.CompletedProcess:
     cmd = ["git", *args]
-    return subprocess.run(
-        cmd,
-        cwd=_repo_root(),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=check,
-    )
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=_repo_root(),
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=check,
+        )
+    except subprocess.TimeoutExpired as e:
+        raise GitOperationError("Git-Operation hat das Timeout überschritten", detail=str(e)) from e
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or e.stdout or str(e)).strip()
+        raise GitOperationError("Git-Operation fehlgeschlagen", detail=detail) from e
+    except OSError as e:
+        raise GitOperationError("Git ist nicht verfügbar", detail=str(e)) from e
 
 
 def get_update_status() -> UpdateStatus:

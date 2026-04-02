@@ -103,6 +103,7 @@ from services.db_pool import ConnectionPool
 # ── Service-Module ───────────────────────────────────────────────────────────
 from services.encryption import decrypt_value, encrypt_value
 from services.git_ops import apply_update as _apply_update
+from services.git_ops import GitOperationError
 from services.git_ops import get_update_status as _get_update_status
 from services.git_ops import rollback_update as _rollback_update
 from services.indicator_cache import get_cached as _ind_get
@@ -7693,11 +7694,22 @@ def on_check_update():
     try:
         status = _get_update_status()
         socketio.emit("update_status", status.to_socket_payload())
-    except Exception as e:
+    except GitOperationError as e:
+        log.warning("Update check failed: %s", e.detail or e.user_message)
         emit(
             "status",
             {
-                "msg": f"⚠ Update-Check fehlgeschlagen: {e}",
+                "msg": f"⚠ Update-Check fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_check_failed",
+                "type": "warning",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected update check error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "⚠ Update-Check fehlgeschlagen",
                 "key": "ws_update_check_failed",
                 "type": "warning",
             },
@@ -7720,11 +7732,23 @@ def on_apply_update():
             },
             broadcast=True,
         )
-    except Exception as e:
-        emit("update_result", {"status": "error", "msg": str(e)})
+    except GitOperationError as e:
+        log.warning("Apply update failed: %s", e.detail or e.user_message)
+        emit("update_result", {"status": "error", "msg": e.user_message})
         emit(
             "status",
-            {"msg": f"❌ Update fehlgeschlagen: {e}", "key": "ws_update_failed", "type": "error"},
+            {
+                "msg": f"❌ Update fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected apply update error: %s", e)
+        emit("update_result", {"status": "error", "msg": "Unbekannter Fehler"})
+        emit(
+            "status",
+            {"msg": "❌ Update fehlgeschlagen", "key": "ws_update_failed", "type": "error"},
         )
 
 
@@ -7747,11 +7771,22 @@ def on_rollback_update():
             },
             broadcast=True,
         )
-    except Exception as e:
+    except GitOperationError as e:
+        log.warning("Rollback failed: %s", e.detail or e.user_message)
         emit(
             "status",
             {
-                "msg": f"❌ Rollback fehlgeschlagen: {e}",
+                "msg": f"❌ Rollback fehlgeschlagen: {e.user_message}",
+                "key": "ws_rollback_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected rollback error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "❌ Rollback fehlgeschlagen",
                 "key": "ws_rollback_failed",
                 "type": "error",
             },
