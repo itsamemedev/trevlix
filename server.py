@@ -102,6 +102,10 @@ from services.db_pool import ConnectionPool
 
 # ── Service-Module ───────────────────────────────────────────────────────────
 from services.encryption import decrypt_value, encrypt_value
+from services.git_ops import apply_update as _apply_update
+from services.git_ops import GitOperationError
+from services.git_ops import get_update_status as _get_update_status
+from services.git_ops import rollback_update as _rollback_update
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
 from services.knowledge import KnowledgeBase
@@ -2219,6 +2223,37 @@ def _safe_float(val: Any, default: float) -> float:
         return result
     except (ValueError, TypeError):
         return default
+
+
+def _safe_bool(val: Any, default: bool = False) -> bool:
+    """Sicherer Bool-Cast für JSON-/Form-Werte mit String-Support."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off", ""}:
+            return False
+    return default
+
+
+def _normalize_exchange_name(raw: Any) -> str:
+    """Normalisiert und validiert einen Exchange-Namen."""
+    if raw is None:
+        return ""
+    name = str(raw).strip().lower()
+    if not name:
+        return ""
+    if name in EXCHANGE_MAP:
+        return name
+    # Erlaube ccxt-Klassennamen in Requests (z.B. coinbaseadvanced -> coinbase)
+    for canonical, ccxt_name in EXCHANGE_MAP.items():
+        if name == ccxt_name:
+            return canonical
+    return ""
 
 
 def _generate_csrf_token() -> str:
@@ -6130,13 +6165,13 @@ def api_user_exchanges_list():
 def api_user_exchanges_upsert():
     """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
     data = request.json or {}
-    exchange = data.get("exchange", "").lower()
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
-    enabled = data.get("enabled", False)  # Default: deaktiviert
-    is_primary = data.get("is_primary", False)
-    if exchange not in EXCHANGE_MAP:
-        return jsonify({"error": f"Exchange '{exchange}' nicht unterstützt"}), 400
+    exchange = _normalize_exchange_name(data.get("exchange", ""))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    enabled = _safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
+    is_primary = _safe_bool(data.get("is_primary", False), False)
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.upsert_user_exchange(
@@ -6150,7 +6185,7 @@ def api_user_exchanges_upsert():
 @api_auth_required
 def api_user_exchange_toggle(exchange_id):
     """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = (request.json or {}).get("enabled", False)
+    enabled = _safe_bool((request.json or {}).get("enabled", False), False)
     ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
     return jsonify({"ok": ok})
 
@@ -6168,9 +6203,11 @@ def api_user_exchange_delete(exchange_id):
 def api_user_update_keys():
     """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
     data = request.json or {}
-    exchange = data.get("exchange", CONFIG["exchange"])
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
+    exchange = _normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
@@ -7688,38 +7725,24 @@ def on_check_update():
     if not _ws_auth_required():
         return
     try:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5
-        )
-        repo_url = result.stdout.strip() if result.returncode == 0 else ""
-        result2 = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5
-        )
-        branch = result2.stdout.strip() if result2.returncode == 0 else "main"
-        result3 = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True, timeout=5
-        )
-        current = (result3.stdout.strip() if result3.returncode == 0 else "") or BOT_VERSION
-        socketio.emit(
-            "update_status",
-            {
-                "current_version": current,
-                "latest_version": current,
-                "current": current,
-                "latest": current,
-                "update_available": False,
-                "repo": repo_url,
-                "branch": branch,
-                "last_check": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            },
-        )
-    except Exception as e:
+        status = _get_update_status()
+        socketio.emit("update_status", status.to_socket_payload())
+    except GitOperationError as e:
+        log.warning("Update check failed: %s", e.detail or e.user_message)
         emit(
             "status",
             {
-                "msg": f"⚠ Update-Check fehlgeschlagen: {e}",
+                "msg": f"⚠ Update-Check fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_check_failed",
+                "type": "warning",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected update check error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "⚠ Update-Check fehlgeschlagen",
                 "key": "ws_update_check_failed",
                 "type": "warning",
             },
@@ -7731,11 +7754,7 @@ def on_apply_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        subprocess.run(
-            ["git", "pull", "--ff-only"], capture_output=True, text=True, timeout=30, check=True
-        )
+        _apply_update()
         emit("update_result", {"status": "success"}, broadcast=True)
         emit(
             "status",
@@ -7746,11 +7765,23 @@ def on_apply_update():
             },
             broadcast=True,
         )
-    except Exception as e:
-        emit("update_result", {"status": "error", "msg": str(e)})
+    except GitOperationError as e:
+        log.warning("Apply update failed: %s", e.detail or e.user_message)
+        emit("update_result", {"status": "error", "msg": e.user_message})
         emit(
             "status",
-            {"msg": f"❌ Update fehlgeschlagen: {e}", "key": "ws_update_failed", "type": "error"},
+            {
+                "msg": f"❌ Update fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected apply update error: %s", e)
+        emit("update_result", {"status": "error", "msg": "Unbekannter Fehler"})
+        emit(
+            "status",
+            {"msg": "❌ Update fehlgeschlagen", "key": "ws_update_failed", "type": "error"},
         )
 
 
@@ -7759,21 +7790,36 @@ def on_rollback_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        stash_result = subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
-        if stash_result.returncode != 0:
-            log.warning(f"git stash failed: {stash_result.stderr.strip()}")
-        emit(
-            "status",
-            {"msg": "↩ Rollback: git stash angewendet", "key": "ws_rollback_done", "type": "info"},
-            broadcast=True,
-        )
-    except Exception as e:
+        stashed = _rollback_update()
         emit(
             "status",
             {
-                "msg": f"❌ Rollback fehlgeschlagen: {e}",
+                "msg": (
+                    "↩ Rollback: git stash angewendet"
+                    if stashed
+                    else "⚠ Rollback: git stash konnte nicht angewendet werden"
+                ),
+                "key": "ws_rollback_done" if stashed else "ws_rollback_partial",
+                "type": "info" if stashed else "warning",
+            },
+            broadcast=True,
+        )
+    except GitOperationError as e:
+        log.warning("Rollback failed: %s", e.detail or e.user_message)
+        emit(
+            "status",
+            {
+                "msg": f"❌ Rollback fehlgeschlagen: {e.user_message}",
+                "key": "ws_rollback_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected rollback error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "❌ Rollback fehlgeschlagen",
                 "key": "ws_rollback_failed",
                 "type": "error",
             },
@@ -7785,7 +7831,13 @@ def on_rollback_update():
 def on_start_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7802,7 +7854,13 @@ def on_start_exchange(data):
 def on_stop_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7819,9 +7877,9 @@ def on_stop_exchange(data):
 def on_save_exchange_keys(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    api_key = data.get("api_key", "")
-    secret = data.get("secret", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    api_key = str((data or {}).get("api_key", "")).strip()
+    secret = str((data or {}).get("secret", "")).strip()
     if not ex_name or not api_key or not secret:
         emit(
             "status",
@@ -7838,7 +7896,11 @@ def on_save_exchange_keys(data):
     CONFIG["extra_exchanges"][ex_name] = {
         "api_key": encrypt_value(api_key),
         "secret": encrypt_value(secret),
-        "passphrase": encrypt_value(data.get("passphrase", "")) if data.get("passphrase") else "",
+        "passphrase": (
+            encrypt_value(str((data or {}).get("passphrase", "")).strip())
+            if (data or {}).get("passphrase")
+            else ""
+        ),
     }
     emit(
         "status",
@@ -7854,8 +7916,8 @@ def on_save_exchange_keys(data):
 def on_close_exchange_position(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    symbol = data.get("symbol", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    symbol = str((data or {}).get("symbol", "")).strip().upper()
     if not ex_name or not symbol:
         emit(
             "status",
@@ -7868,7 +7930,7 @@ def on_close_exchange_position(data):
         return
     try:
         # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
-        if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
+        if not ex_name:
             emit(
                 "status",
                 {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
