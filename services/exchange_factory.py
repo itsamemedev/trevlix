@@ -57,6 +57,21 @@ _SINGLE_TICKER_EXCHANGES: frozenset[str] = frozenset({"cryptocom"})
 # Maximale Anzahl Symbole für Einzel-Ticker-Fallback
 _MAX_SINGLE_TICKER_FETCH = 30
 
+# Exchange-spezifische Timeout-Overrides (Millisekunden).
+# Crypto.com ist historisch langsam und benötigt mehr Zeit für volle Ticker-Dumps.
+_EXCHANGE_TIMEOUT_OVERRIDES: dict[str, int] = {
+    "cryptocom": 20000,
+    "bybit": 15000,
+    "okx": 15000,
+    "kucoin": 15000,
+    "binance": 10000,
+}
+_DEFAULT_TIMEOUT_MS = 15000
+
+# Retry-Konfiguration für transiente Netzwerkfehler
+_TICKER_RETRY_ATTEMPTS = 3
+_TICKER_RETRY_BACKOFF_S = 0.5
+
 # Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
 _fee_cache: dict[str, dict] = {}
 _fee_cache_lock = threading.Lock()
@@ -113,6 +128,7 @@ def create_ccxt_exchange(
 
     params: dict[str, Any] = {
         "enableRateLimit": True,
+        "timeout": _EXCHANGE_TIMEOUT_OVERRIDES.get(exchange_name, _DEFAULT_TIMEOUT_MS),
         "options": {"defaultType": default_type},
     }
     if api_key:
@@ -158,27 +174,55 @@ def safe_fetch_tickers(ex: Any, symbols: list[str]) -> dict[str, Any]:
     ex_id = getattr(ex, "id", "")
     sym_set = set(symbols)
 
-    # Strategie 1: Bekannt-problematische Exchanges direkt mit Filter-Fallback
-    if ex_id in _SINGLE_TICKER_EXCHANGES:
-        return _fetch_tickers_filtered(ex, sym_set, symbols)
+    # Strategie 1: Batch-Aufruf mit Symbolen und Retry (bevorzugt, auch für crypto.com)
+    # Viele CCXT-Versionen unterstützen mittlerweile Batch-Tickers auf Crypto.com.
+    result = _with_retry(lambda: ex.fetch_tickers(symbols), ex_id, "fetch_tickers(symbols)")
+    if result is not None:
+        return result
 
-    # Strategie 2: Batch-Aufruf mit Symbolen (bevorzugt)
-    try:
-        return ex.fetch_tickers(symbols)
-    except Exception as e:
-        log.debug("fetch_tickers(symbols) fehlgeschlagen bei %s: %s", ex_id, e)
-
-    # Strategie 3: Ohne Argumente + filtern
+    # Strategie 2: Ohne Argumente + filtern (für single-ticker Exchanges oder als Fallback)
     return _fetch_tickers_filtered(ex, sym_set, symbols)
+
+
+def _with_retry(fn: Any, ex_id: str, op: str) -> Any:
+    """Führt einen Exchange-Call mit exponentiellem Backoff aus.
+
+    Gibt bei Erfolg das Ergebnis zurück, bei endgültigem Scheitern ``None``.
+    Retries nur bei transienten Netzwerk-/Timeout-Fehlern.
+    """
+    backoff = _TICKER_RETRY_BACKOFF_S
+    for attempt in range(1, _TICKER_RETRY_ATTEMPTS + 1):
+        try:
+            return fn()
+        except Exception as exc:
+            msg = str(exc).lower()
+            is_transient = "timeout" in msg or "timed out" in msg or "network" in msg
+            if CCXT_AVAILABLE:
+                is_transient = is_transient or isinstance(
+                    exc, (ccxt.RequestTimeout, ccxt.NetworkError)
+                )
+            if not is_transient or attempt == _TICKER_RETRY_ATTEMPTS:
+                log.debug("%s fehlgeschlagen bei %s (Versuch %d): %s", op, ex_id, attempt, exc)
+                return None
+            log.debug(
+                "%s Timeout bei %s (Versuch %d/%d) – retry in %.1fs",
+                op,
+                ex_id,
+                attempt,
+                _TICKER_RETRY_ATTEMPTS,
+                backoff,
+            )
+            time.sleep(backoff)
+            backoff *= 2
+    return None
 
 
 def _fetch_tickers_filtered(ex: Any, sym_set: set[str], symbols: list[str]) -> dict[str, Any]:
     """Interner Helper: fetch_tickers() ohne Args, dann filtern; bei Fehler einzeln."""
-    try:
-        all_tickers = ex.fetch_tickers()
+    ex_id = getattr(ex, "id", "")
+    all_tickers = _with_retry(ex.fetch_tickers, ex_id, "fetch_tickers()")
+    if all_tickers:
         return {s: t for s, t in all_tickers.items() if s in sym_set}
-    except Exception as e:
-        log.debug("fetch_tickers() ohne Args fehlgeschlagen: %s", e)
 
     # Letzter Fallback: einzeln abrufen (limitiert, um Rate-Limits zu schonen)
     result: dict[str, Any] = {}

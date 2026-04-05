@@ -4,9 +4,30 @@
   --jade:#00ff88;--cyan:#00ff88;--green:#00ff88;
   --red:#ef4444;--yellow:#f59e0b;--blue:#0ea5e9;
   --purple:#0ea5e9;--orange:#f59e0b;--teal:#00cc6a;--pink:#ef4444;
-  --text:#b8d0e4;--muted:#1e3344;--sub:#3a5568;--dim:#7a9ab0;
+  --text:#b8d0e4;--muted:#1e3344;--sub:#5a7890;--dim:#7a9ab0;
   --font:'Barlow',sans-serif;--fc:'Barlow Condensed',sans-serif;--mono:'Fira Code',monospace;--r:10px;--r2:14px;
+  /* Semantic status tokens */
+  --status-ok:var(--jade);--status-warn:var(--yellow);--status-err:var(--red);
+  --chip-bg:rgba(0,255,136,.08);
 }
+/* Header status chip row */
+.status-chips{display:flex;flex-wrap:wrap;gap:8px;padding:8px 18px 2px;align-items:center;position:relative;z-index:1}
+.status-chips .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;background:var(--bg2);border:1px solid var(--line2);font-size:11px;font-family:var(--mono);color:var(--text);line-height:1;white-space:nowrap}
+.status-chips .chip-icon{font-size:12px}
+.status-chips .chip-label{color:var(--dim);font-weight:500}
+.status-chips .chip-value{font-weight:700;letter-spacing:.3px}
+.status-chips .chip-dot{width:7px;height:7px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:2px}
+.status-chips .chip--ok{border-color:rgba(0,255,136,.35);background:rgba(0,255,136,.06)}
+.status-chips .chip--ok .chip-value{color:var(--status-ok)}
+.status-chips .chip--ok .chip-dot{background:var(--status-ok);box-shadow:0 0 6px var(--status-ok)}
+.status-chips .chip--warn{border-color:rgba(245,158,11,.35);background:rgba(245,158,11,.06)}
+.status-chips .chip--warn .chip-value{color:var(--status-warn)}
+.status-chips .chip--warn .chip-dot{background:var(--status-warn)}
+.status-chips .chip--err{border-color:rgba(239,68,68,.35);background:rgba(239,68,68,.06)}
+.status-chips .chip--err .chip-value{color:var(--status-err)}
+.status-chips .chip--err .chip-dot{background:var(--status-err)}
+.status-chips .chip--muted{opacity:.75}
+@media(max-width:700px){.status-chips{padding:6px 10px 2px;gap:5px}.status-chips .chip{font-size:10px;padding:4px 8px}.status-chips .chip-label{display:none}}
 *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{font-family:var(--font);background:var(--bg0);color:var(--text);min-height:100vh;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 body::before{content:'';position:fixed;inset:0;background:

@@ -158,6 +158,65 @@ function initCharts(){
 }
 
 // ── Main UI Update ───────────────────────────────────────────────────
+// Header-Status-Chips: Exchange, API-Keys, LLM, Paper-Trading
+const _SUPPORTED_EXCHANGES = ['binance','bybit','okx','kucoin','cryptocom'];
+let _installedKeysCount = null;
+async function _refreshInstalledKeys(){
+  try{
+    const res = await fetch('/api/v1/user/exchanges', {credentials:'same-origin'});
+    if(!res.ok) return;
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (data.exchanges||data.items||[]);
+    _installedKeysCount = list.filter(x => (x && (x.api_key || x.enabled))).length;
+  }catch(_e){}
+}
+function _setChip(id, cls, value){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.className = 'chip '+cls;
+  const v = document.getElementById(id+'Val');
+  if(v && value !== undefined) v.textContent = value;
+}
+function renderHeaderStatus(d){
+  // Exchange + Verbindung
+  const exName = (d.exchange||'—').toUpperCase();
+  const connectedFlag = d.api && typeof d.api.connected === 'string'
+    ? d.api.connected
+    : (d.running ? '✅' : '⏸️');
+  let exCls = 'chip--muted';
+  if(connectedFlag.indexOf('✅')>=0) exCls='chip--ok';
+  else if(connectedFlag.indexOf('⚠')>=0||connectedFlag.indexOf('❌')>=0) exCls='chip--err';
+  _setChip('chipExchange', exCls, exName);
+  const dot = document.getElementById('chipExchangeDot');
+  if(dot) dot.setAttribute('data-state', exCls.replace('chip--',''));
+  // LLM
+  const llm = d.llm || {};
+  const provider = llm.provider && llm.provider !== '—' ? llm.provider : null;
+  let llmCls = 'chip--muted', llmVal = 'nicht konfiguriert';
+  if(provider){
+    llmVal = provider;
+    const st = String(llm.status||'');
+    if(st.indexOf('✅')>=0) llmCls='chip--ok';
+    else if(st.indexOf('❌')>=0) llmCls='chip--err';
+    else llmCls='chip--warn';
+  }
+  _setChip('chipLlm', llmCls, llmVal);
+  // API-Keys installiert
+  if(_installedKeysCount === null){
+    _setChip('chipKeys', 'chip--muted', '…');
+  }else{
+    const n = _installedKeysCount, m = _SUPPORTED_EXCHANGES.length;
+    const cls = n>0 ? 'chip--ok' : 'chip--warn';
+    _setChip('chipKeys', cls, n+'/'+m);
+  }
+  // Paper-Trading-Badge
+  const paper = d.paper_trading !== false;
+  _setChip('chipPaper', paper?'chip--warn':'chip--err', paper?'Paper Trading':'LIVE Trading');
+}
+// Initial beim Laden holen, dann alle 60s aktualisieren
+_refreshInstalledKeys();
+setInterval(_refreshInstalledKeys, 60000);
+
 function updateUI(d){
   if(!d || typeof d !== 'object') return;
   try {
@@ -165,6 +224,7 @@ function updateUI(d){
   const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   // Header
   _s('hSub', (d.exchange||'TREVLIX').toUpperCase()+' · '+(d.paper_trading?'PAPER':'LIVE')+' · v'+(d.bot_version||'1.0.0'));
+  try { renderHeaderStatus(d); } catch(_e){}
   // Hero
   const hValEl=document.getElementById('hVal');
   if(hValEl){hValEl.textContent=fmt(d.portfolio_value)+' USDT';}
@@ -839,8 +899,9 @@ function saveSettings(){
   });
 }
 function saveKeys(){
-  _emitSafe('save_api_keys',{api_key:document.getElementById('cfgKey').value,
-    secret:document.getElementById('cfgSecret').value,exchange:document.getElementById('sExchange').value});
+  // Legacy-Alias: API-Key-Verwaltung ist jetzt unter Exchanges (#sec-exchanges).
+  const nbEx=document.getElementById('nb-ex');
+  if(typeof nav==='function'&&nbEx){nav('exchanges',nbEx);}
 }
 function saveDiscord(){
   _emitSafe('update_discord',{webhook:document.getElementById('sDiscord').value,
@@ -1169,6 +1230,7 @@ socket.on('system_analytics', d => {
   // LLM status
   if (d.llm) {
     const l = d.llm;
+    _set('llmProvider', l.provider || '—');
     _set('llmEndpoint', l.endpoint); _set('llmModel', l.model);
     _set('llmStatus', l.status); _set('llmLatency', l.latency);
     _set('llmQueries24h', l.queries_24h); _set('llmTokens24h', l.tokens_24h);
