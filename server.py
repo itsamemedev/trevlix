@@ -111,6 +111,10 @@ from services.exchange_factory import (
 from services.exchange_factory import (
     safe_fetch_tickers as _factory_safe_fetch_tickers,
 )
+from services.git_ops import GitOperationError
+from services.git_ops import apply_update as _apply_update
+from services.git_ops import get_update_status as _get_update_status
+from services.git_ops import rollback_update as _rollback_update
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
 from services.knowledge import KnowledgeBase
@@ -602,6 +606,17 @@ CONFIG: dict[str, Any] = {
     "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
     "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
 }
+
+
+def _enforce_paper_trading(source: str = "system") -> None:
+    """Erzwingt global Paper-Trading und deaktiviert Live-Modus."""
+    if not CONFIG.get("paper_trading", True):
+        log.warning("Paper-Trading erzwungen (%s): Live-Modus wurde deaktiviert.", source)
+    CONFIG["paper_trading"] = True
+
+
+_enforce_paper_trading("startup")
+
 
 # EXCHANGE_MAP importiert aus services.utils
 # EXCHANGE_DEFAULT_FEES importiert aus services.exchange_factory
@@ -2205,6 +2220,37 @@ def _safe_float(val: Any, default: float) -> float:
         return result
     except (ValueError, TypeError):
         return default
+
+
+def _safe_bool(val: Any, default: bool = False) -> bool:
+    """Sicherer Bool-Cast für JSON-/Form-Werte mit String-Support."""
+    if isinstance(val, bool):
+        return val
+    if isinstance(val, (int, float)):
+        return bool(val)
+    if isinstance(val, str):
+        v = val.strip().lower()
+        if v in {"1", "true", "yes", "on"}:
+            return True
+        if v in {"0", "false", "no", "off", ""}:
+            return False
+    return default
+
+
+def _normalize_exchange_name(raw: Any) -> str:
+    """Normalisiert und validiert einen Exchange-Namen."""
+    if raw is None:
+        return ""
+    name = str(raw).strip().lower()
+    if not name:
+        return ""
+    if name in EXCHANGE_MAP:
+        return name
+    # Erlaube ccxt-Klassennamen in Requests (z.B. coinbaseadvanced -> coinbase)
+    for canonical, ccxt_name in EXCHANGE_MAP.items():
+        if name == ccxt_name:
+            return canonical
+    return ""
 
 
 def _generate_csrf_token() -> str:
@@ -4639,16 +4685,39 @@ def create_exchange():
     api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
     api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
     passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
+    timeout_ms = _safe_int(CONFIG.get("exchange_timeout_ms", 15000), 15000)
     inst = create_ccxt_exchange(
         name,
         api_key=api_key,
         api_secret=api_secret,
         passphrase=passphrase,
         default_type="spot",
+        extra_options={"timeout": max(3000, timeout_ms)},
     )
     if inst is None:
         raise ValueError(f"Exchange '{name}' konnte nicht erstellt werden")
     return inst
+
+
+def _preflight_exchange_markets(max_attempts: int = 2) -> tuple[list[str], str | None]:
+    """Preflight für Exchange + Märkte mit kurzem Retry.
+
+    Returns:
+        (markets, error_message). Bei Erfolg ist error_message None.
+    """
+    last_err = ""
+    for attempt in range(1, max_attempts + 1):
+        try:
+            preflight_ex = create_exchange()
+            markets = fetch_markets(preflight_ex)
+            if markets:
+                return markets, None
+            last_err = "keine Märkte geladen"
+        except Exception as exc:
+            last_err = str(exc)
+        if attempt < max_attempts:
+            time.sleep(min(2 * attempt, 4))
+    return [], last_err or "Exchange/Marktdaten nicht erreichbar"
 
 
 def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USDT") -> float:
@@ -4675,16 +4744,26 @@ def fetch_markets(ex) -> list[str]:
             if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
         ]
         if CONFIG.get("use_vol_filter"):
-            tickers = safe_fetch_tickers(ex, syms[:150])
-            min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
-            syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
+            try:
+                tickers = safe_fetch_tickers(ex, syms[:150])
+                min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
+                syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
+            except (ccxt.BaseError, OSError, TimeoutError) as vol_err:
+                log.warning(
+                    "Volumenfilter übersprungen (Marktdaten-Timeout/API-Fehler): %s",
+                    vol_err,
+                )
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
         return (priority + rest)[:80]
     except Exception as e:
         log.error(f"Märkte: {e}")
-        return []
+        with state._lock:
+            cached = list(state.markets)
+        if cached:
+            log.warning("Nutze gecachte Märkte (%d), da Exchange-Daten fehlen.", len(cached))
+        return cached
 
 
 def scan_symbol(ex, symbol) -> dict | None:
@@ -5444,6 +5523,7 @@ def get_heatmap_data(ex) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 def bot_loop():
     ex = None
+    last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
             time.sleep(5)
@@ -5459,6 +5539,23 @@ def bot_loop():
                     ex = create_exchange()
                 except Exception as exc_err:
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
+                                "key": "ws_exchange_connect_failed",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Exchange-Verbindung fehlgeschlagen",
+                            str(exc_err)[:120],
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
                     time.sleep(30)
                     continue
             with state._lock:
@@ -5526,8 +5623,27 @@ def bot_loop():
             # Märkte laden
             if state.iteration % 10 == 1 or not state.markets:
                 new_markets = fetch_markets(ex)
-                with state._lock:
-                    state.markets = new_markets
+                if new_markets:
+                    with state._lock:
+                        state.markets = new_markets
+                else:
+                    now_ts = time.time()
+                    if now_ts - last_error_emit_ts > 15:
+                        emit_event(
+                            "status",
+                            {
+                                "msg": "⚠️ Keine frischen Märkte geladen – nutze letzte Marktliste",
+                                "key": "ws_no_markets_loaded",
+                                "type": "warning",
+                            },
+                        )
+                        state.add_activity(
+                            "⚠️",
+                            "Keine frischen Märkte geladen",
+                            "Fallback auf gecachte Marktliste aktiv",
+                            "warning",
+                        )
+                        last_error_emit_ts = now_ts
 
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
@@ -5647,10 +5763,26 @@ def bot_loop():
         except ccxt.ExchangeError as e:
             log.error(f"Exchange-Fehler: {e}")
             discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
+            emit_event(
+                "status",
+                {
+                    "msg": f"❌ Exchange-Fehler: {str(e)[:140]}",
+                    "key": "ws_exchange_error",
+                    "type": "error",
+                },
+            )
             time.sleep(30)
         except Exception as e:
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
+            emit_event(
+                "status",
+                {
+                    "msg": f"❌ Bot-Loop Fehler: {str(e)[:140]}",
+                    "key": "ws_bot_loop_error",
+                    "type": "error",
+                },
+            )
             time.sleep(10)
         time.sleep(CONFIG.get("scan_interval", 60))
 
@@ -5746,6 +5878,7 @@ def api_create_token():
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
     settings = db.get_user_settings(request.user_id)
+    settings["paper_trading"] = True
     return jsonify(settings)
 
 
@@ -5788,9 +5921,11 @@ def api_user_settings_update():
         "max_daily_loss_pct",
     }
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    filtered["paper_trading"] = True
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
+    current["paper_trading"] = True
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
 
@@ -5808,13 +5943,13 @@ def api_user_exchanges_list():
 def api_user_exchanges_upsert():
     """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
     data = request.json or {}
-    exchange = data.get("exchange", "").lower()
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
-    enabled = data.get("enabled", False)  # Default: deaktiviert
-    is_primary = data.get("is_primary", False)
-    if exchange not in EXCHANGE_MAP:
-        return jsonify({"error": f"Exchange '{exchange}' nicht unterstützt"}), 400
+    exchange = _normalize_exchange_name(data.get("exchange", ""))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    enabled = _safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
+    is_primary = _safe_bool(data.get("is_primary", False), False)
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.upsert_user_exchange(
@@ -5828,7 +5963,7 @@ def api_user_exchanges_upsert():
 @api_auth_required
 def api_user_exchange_toggle(exchange_id):
     """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = (request.json or {}).get("enabled", False)
+    enabled = _safe_bool((request.json or {}).get("enabled", False), False)
     ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
     return jsonify({"ok": ok})
 
@@ -5846,9 +5981,11 @@ def api_user_exchange_delete(exchange_id):
 def api_user_update_keys():
     """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
     data = request.json or {}
-    exchange = data.get("exchange", CONFIG["exchange"])
-    api_key = data.get("api_key", "")
-    api_secret = data.get("api_secret", "")
+    exchange = _normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
+    api_key = str(data.get("api_key", "")).strip()
+    api_secret = str(data.get("api_secret", "")).strip()
+    if not exchange:
+        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
@@ -6610,6 +6747,47 @@ def on_start_bot():
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
+    test_markets, preflight_err = _preflight_exchange_markets(max_attempts=2)
+    if test_markets:
+        with state._lock:
+            state.markets = test_markets
+    if preflight_err:
+        is_paper = bool(CONFIG.get("paper_trading", True))
+        # Paper-Trading darf trotz Exchange-Ausfall starten (Loop reconnectet später).
+        if is_paper:
+            emit(
+                "status",
+                {
+                    "msg": (
+                        "⚠ Exchange/Marktdaten aktuell nicht erreichbar – "
+                        "Paper-Bot startet trotzdem (Auto-Reconnect aktiv)"
+                    ),
+                    "key": "ws_bot_start_degraded",
+                    "type": "warning",
+                },
+            )
+            state.add_activity(
+                "⚠️",
+                "Bot-Start im Degraded-Modus",
+                str(preflight_err)[:120],
+                "warning",
+            )
+        else:
+            emit(
+                "status",
+                {
+                    "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                    "key": "ws_bot_start_failed_exchange",
+                    "type": "error",
+                },
+            )
+            state.add_activity(
+                "❌",
+                "Bot-Start fehlgeschlagen",
+                "Exchange/Marktdaten nicht erreichbar",
+                "error",
+            )
+            return
     with state._lock:
         if state.running:
             return
@@ -6742,6 +6920,9 @@ def on_update_config(data):
     for k, v in data.items():
         if k not in allowed:
             continue
+        if k == "paper_trading":
+            CONFIG[k] = True
+            continue
         if k in _numeric_keys:
             v = _safe_float(v, CONFIG.get(k, 0.0))
         elif k in _int_keys:
@@ -6749,6 +6930,7 @@ def on_update_config(data):
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
+    _enforce_paper_trading("socket:update_config")
     emit(
         "status",
         {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
@@ -7344,38 +7526,24 @@ def on_check_update():
     if not _ws_auth_required():
         return
     try:
-        import subprocess
-
-        result = subprocess.run(
-            ["git", "remote", "get-url", "origin"], capture_output=True, text=True, timeout=5
-        )
-        repo_url = result.stdout.strip() if result.returncode == 0 else ""
-        result2 = subprocess.run(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=5
-        )
-        branch = result2.stdout.strip() if result2.returncode == 0 else "main"
-        result3 = subprocess.run(
-            ["git", "describe", "--tags", "--abbrev=0"], capture_output=True, text=True, timeout=5
-        )
-        current = (result3.stdout.strip() if result3.returncode == 0 else "") or BOT_VERSION
-        socketio.emit(
-            "update_status",
-            {
-                "current_version": current,
-                "latest_version": current,
-                "current": current,
-                "latest": current,
-                "update_available": False,
-                "repo": repo_url,
-                "branch": branch,
-                "last_check": datetime.now().strftime("%Y-%m-%d %H:%M"),
-            },
-        )
-    except Exception as e:
+        status = _get_update_status()
+        socketio.emit("update_status", status.to_socket_payload())
+    except GitOperationError as e:
+        log.warning("Update check failed: %s", e.detail or e.user_message)
         emit(
             "status",
             {
-                "msg": f"⚠ Update-Check fehlgeschlagen: {e}",
+                "msg": f"⚠ Update-Check fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_check_failed",
+                "type": "warning",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected update check error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "⚠ Update-Check fehlgeschlagen",
                 "key": "ws_update_check_failed",
                 "type": "warning",
             },
@@ -7387,11 +7555,7 @@ def on_apply_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        subprocess.run(
-            ["git", "pull", "--ff-only"], capture_output=True, text=True, timeout=30, check=True
-        )
+        _apply_update()
         emit("update_result", {"status": "success"}, broadcast=True)
         emit(
             "status",
@@ -7402,11 +7566,23 @@ def on_apply_update():
             },
             broadcast=True,
         )
-    except Exception as e:
-        emit("update_result", {"status": "error", "msg": str(e)})
+    except GitOperationError as e:
+        log.warning("Apply update failed: %s", e.detail or e.user_message)
+        emit("update_result", {"status": "error", "msg": e.user_message})
         emit(
             "status",
-            {"msg": f"❌ Update fehlgeschlagen: {e}", "key": "ws_update_failed", "type": "error"},
+            {
+                "msg": f"❌ Update fehlgeschlagen: {e.user_message}",
+                "key": "ws_update_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected apply update error: %s", e)
+        emit("update_result", {"status": "error", "msg": "Unbekannter Fehler"})
+        emit(
+            "status",
+            {"msg": "❌ Update fehlgeschlagen", "key": "ws_update_failed", "type": "error"},
         )
 
 
@@ -7415,21 +7591,36 @@ def on_rollback_update():
     if not _ws_admin_required():
         return
     try:
-        import subprocess
-
-        stash_result = subprocess.run(["git", "stash"], capture_output=True, text=True, timeout=15)
-        if stash_result.returncode != 0:
-            log.warning(f"git stash failed: {stash_result.stderr.strip()}")
-        emit(
-            "status",
-            {"msg": "↩ Rollback: git stash angewendet", "key": "ws_rollback_done", "type": "info"},
-            broadcast=True,
-        )
-    except Exception as e:
+        stashed = _rollback_update()
         emit(
             "status",
             {
-                "msg": f"❌ Rollback fehlgeschlagen: {e}",
+                "msg": (
+                    "↩ Rollback: git stash angewendet"
+                    if stashed
+                    else "⚠ Rollback: git stash konnte nicht angewendet werden"
+                ),
+                "key": "ws_rollback_done" if stashed else "ws_rollback_partial",
+                "type": "info" if stashed else "warning",
+            },
+            broadcast=True,
+        )
+    except GitOperationError as e:
+        log.warning("Rollback failed: %s", e.detail or e.user_message)
+        emit(
+            "status",
+            {
+                "msg": f"❌ Rollback fehlgeschlagen: {e.user_message}",
+                "key": "ws_rollback_failed",
+                "type": "error",
+            },
+        )
+    except Exception as e:
+        log.exception("Unexpected rollback error: %s", e)
+        emit(
+            "status",
+            {
+                "msg": "❌ Rollback fehlgeschlagen",
                 "key": "ws_rollback_failed",
                 "type": "error",
             },
@@ -7441,7 +7632,13 @@ def on_rollback_update():
 def on_start_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7458,7 +7655,13 @@ def on_start_exchange(data):
 def on_stop_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    if not ex_name:
+        emit(
+            "status",
+            {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
+        )
+        return
     emit(
         "status",
         {
@@ -7475,9 +7678,9 @@ def on_stop_exchange(data):
 def on_save_exchange_keys(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    api_key = data.get("api_key", "")
-    secret = data.get("secret", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    api_key = str((data or {}).get("api_key", "")).strip()
+    secret = str((data or {}).get("secret", "")).strip()
     if not ex_name or not api_key or not secret:
         emit(
             "status",
@@ -7494,7 +7697,11 @@ def on_save_exchange_keys(data):
     CONFIG["extra_exchanges"][ex_name] = {
         "api_key": encrypt_value(api_key),
         "secret": encrypt_value(secret),
-        "passphrase": encrypt_value(data.get("passphrase", "")) if data.get("passphrase") else "",
+        "passphrase": (
+            encrypt_value(str((data or {}).get("passphrase", "")).strip())
+            if (data or {}).get("passphrase")
+            else ""
+        ),
     }
     emit(
         "status",
@@ -7510,8 +7717,8 @@ def on_save_exchange_keys(data):
 def on_close_exchange_position(data):
     if not _ws_admin_required():
         return
-    ex_name = data.get("exchange", "")
-    symbol = data.get("symbol", "")
+    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    symbol = str((data or {}).get("symbol", "")).strip().upper()
     if not ex_name or not symbol:
         emit(
             "status",
@@ -7524,7 +7731,7 @@ def on_close_exchange_position(data):
         return
     try:
         # Nur bekannte Exchanges zulassen (kein beliebiges getattr auf ccxt)
-        if ex_name not in EXCHANGE_MAP and ex_name not in {v for v in EXCHANGE_MAP.values()}:
+        if not ex_name:
             emit(
                 "status",
                 {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
@@ -7647,29 +7854,67 @@ def _collect_system_analytics() -> dict[str, Any]:
     }
 
     # LLM status
-    llm_endpoint = CONFIG.get("llm_endpoint", "")
+    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
+    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
     data["llm"] = {
         "endpoint": llm_endpoint or "—",
-        "model": CONFIG.get("llm_model", "—"),
-        "status": "—",
+        "model": llm_model,
+        "status": "⚪ Nicht konfiguriert",
         "latency": "—",
         "queries_24h": "—",
         "tokens_24h": "—",
     }
+
+    # Multi-LLM Fallback/Status wenn kein dedizierter Endpoint gesetzt ist
+    try:
+        multi_llm = getattr(knowledge_base, "_multi_llm", None)
+        if multi_llm:
+            provider_stats = multi_llm.status()
+            if provider_stats:
+                total_reqs = sum(int(p.get("requests", 0) or 0) for p in provider_stats)
+                total_tokens = sum(int(p.get("tokens", 0) or 0) for p in provider_stats)
+                active_ok = [
+                    p for p in provider_stats if str(p.get("status", "")).lower() == "healthy"
+                ]
+                if not llm_endpoint:
+                    data["llm"]["endpoint"] = "multi-provider"
+                if data["llm"]["model"] in ("", "—"):
+                    data["llm"]["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
+                data["llm"]["status"] = (
+                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
+                    if active_ok
+                    else "❌ Alle Provider offline"
+                )
+                data["llm"]["queries_24h"] = str(total_reqs)
+                data["llm"]["tokens_24h"] = str(total_tokens)
+    except Exception as e:
+        log.debug("Multi-LLM status query failed: %s", e)
+
     if llm_endpoint:
         try:
             import urllib.request
 
-            start_t = time.time()
-            req = urllib.request.Request(
+            # Kompatibel mit OpenAI-/vLLM-Endpunkten (/models) und Ollama (/api/tags)
+            candidates = [
                 llm_endpoint.rstrip("/") + "/models",
-                method="GET",
-            )
-            req.add_header("Connection", "close")
-            with urllib.request.urlopen(req, timeout=5):
-                latency_ms = int((time.time() - start_t) * 1000)
-                data["llm"]["status"] = "✅ Online"
-                data["llm"]["latency"] = f"{latency_ms} ms"
+                llm_endpoint.rstrip("/") + "/api/tags",
+            ]
+            last_exc = None
+            for url in candidates:
+                try:
+                    start_t = time.time()
+                    req = urllib.request.Request(url, method="GET")
+                    req.add_header("Connection", "close")
+                    with urllib.request.urlopen(req, timeout=5):
+                        latency_ms = int((time.time() - start_t) * 1000)
+                        data["llm"]["status"] = "✅ Online"
+                        data["llm"]["latency"] = f"{latency_ms} ms"
+                        last_exc = None
+                        break
+                except Exception as exc:
+                    last_exc = exc
+            if last_exc is not None:
+                data["llm"]["status"] = "❌ Offline"
         except Exception:
             data["llm"]["status"] = "❌ Offline"
 
@@ -8495,26 +8740,76 @@ def api_gas():
 @app.route("/api/v1/exchanges")
 @api_auth_required
 def api_exchanges():
-    """Konfigurierte Exchanges für den aktuellen User."""
+    """Multi-Exchange Snapshot für das Dashboard des aktuellen Users."""
     try:
         uid = getattr(request, "user_id", None) or session.get("user_id")
         if not uid:
-            return jsonify([])
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT id, exchange, enabled, created_at FROM user_exchanges "
-                    "WHERE user_id = %s ORDER BY exchange",
-                    (uid,),
-                )
-                rows = c.fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
-                d["created_at"] = d["created_at"].isoformat()
-            result.append(d)
-        return jsonify(result)
+            return jsonify(
+                {
+                    "exchanges": {},
+                    "combined_pv": 0,
+                    "combined_pnl": 0,
+                    "total_pv": 0,
+                    "total_pnl": 0,
+                }
+            )
+
+        # DB-only Snapshot (schnell, ohne externe API-Calls → keine Dashboard-Timeouts)
+        user_exchanges = db.get_user_exchanges(uid)
+        enabled_set = {
+            str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
+        }
+
+        now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        ex_map: dict[str, dict[str, Any]] = {}
+        for ex in user_exchanges:
+            ex_name = str(ex.get("exchange", "")).lower()
+            if not ex_name:
+                continue
+            ex_map[ex_name] = {
+                "enabled": bool(ex.get("enabled")),
+                "running": False,  # Runtime-Engine für Multi-Exchange ist aktuell nicht aktiv
+                "portfolio_value": 0.0,
+                "return_pct": 0.0,
+                "trade_count": 0,
+                "open_trades": 0,
+                "win_rate": 0.0,
+                "total_pnl": 0.0,
+                "markets_count": 0,
+                "last_scan": now_iso,
+                "positions": [],
+                "error": "" if ex.get("enabled") else "Nicht aktiviert",
+            }
+
+        # Historische Kennzahlen aus lokalen closed_trades aggregieren (ohne Exchange-API)
+        for t in list(getattr(state, "closed_trades", [])):
+            ex_name = str(t.get("exchange", "")).lower()
+            if ex_name not in ex_map:
+                continue
+            ex_map[ex_name]["trade_count"] += 1
+            pnl_val = float(t.get("pnl", 0) or 0)
+            ex_map[ex_name]["total_pnl"] += pnl_val
+            if pnl_val > 0:
+                ex_map[ex_name]["win_rate"] += 1
+
+        for ex_name, meta in ex_map.items():
+            tc = int(meta.get("trade_count", 0) or 0)
+            wins = float(meta.get("win_rate", 0) or 0)
+            if tc > 0:
+                meta["win_rate"] = round((wins / tc) * 100, 1)
+            if ex_name in enabled_set and not meta.get("error"):
+                # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
+                meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+
+        combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
+        response = {
+            "exchanges": ex_map,
+            "combined_pv": 0.0,
+            "combined_pnl": combined_pnl,
+            "total_pv": 0.0,
+            "total_pnl": combined_pnl,
+        }
+        return jsonify(response)
     except Exception as e:
         log.error("API error: %s", e)
         return jsonify({"error": "Internal server error"}), 500
@@ -8567,7 +8862,37 @@ def api_ai_shared_status():
 @api_auth_required
 def api_exchanges_combined_trades():
     """Kombinierte Trade-History über alle Exchanges."""
-    return jsonify({"trades": [], "total": 0})
+    try:
+        uid = getattr(request, "user_id", None) or session.get("user_id")
+        if not uid:
+            return jsonify({"trades": [], "total": 0})
+
+        configured = {
+            str(e.get("exchange", "")).lower()
+            for e in db.get_user_exchanges(uid)
+            if e.get("exchange")
+        }
+        trades = []
+        for t in list(getattr(state, "closed_trades", [])):
+            ex_name = str(t.get("exchange", "")).lower()
+            if configured and ex_name not in configured:
+                continue
+            if not ex_name:
+                continue
+            trades.append(
+                {
+                    "exchange": ex_name,
+                    "symbol": t.get("symbol", ""),
+                    "pnl": float(t.get("pnl", 0) or 0),
+                    "reason": t.get("reason", ""),
+                    "closed": t.get("closed", ""),
+                }
+            )
+        trades.sort(key=lambda x: str(x.get("closed", "")), reverse=True)
+        return jsonify({"trades": trades[:200], "total": len(trades)})
+    except Exception as e:
+        log.error("combined trades error: %s", e)
+        return jsonify({"trades": [], "total": 0})
 
 
 @app.route("/api/v1/ai/shared/force-sync", methods=["POST"])
