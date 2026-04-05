@@ -102,6 +102,16 @@ from services.db_pool import ConnectionPool
 
 # ── Service-Module ───────────────────────────────────────────────────────────
 from services.encryption import decrypt_value, encrypt_value
+from services.exchange_factory import (
+    EXCHANGE_DEFAULT_FEES,
+    create_ccxt_exchange,
+)
+from services.exchange_factory import (
+    get_fee_rate as _factory_get_fee_rate,
+)
+from services.exchange_factory import (
+    safe_fetch_tickers as _factory_safe_fetch_tickers,
+)
 from services.indicator_cache import get_cached as _ind_get
 from services.indicator_cache import set_cached as _ind_set
 from services.knowledge import KnowledgeBase
@@ -421,6 +431,7 @@ CONFIG: dict[str, Any] = {
     "exchange": os.getenv("EXCHANGE", "cryptocom"),
     "api_key": _secret(os.getenv("API_KEY", "")),
     "secret": _secret(os.getenv("API_SECRET", "")),
+    "api_passphrase": _secret(os.getenv("API_PASSPHRASE", "")),
     "quote_currency": "USDT",
     "min_volume_usdt": 1_000_000,
     "blacklist": ["USDC/USDT", "BUSD/USDT", "DAI/USDT", "TUSD/USDT", "FRAX/USDT", "USDP/USDT"],
@@ -593,22 +604,7 @@ CONFIG: dict[str, Any] = {
 }
 
 # EXCHANGE_MAP importiert aus services.utils
-
-# [#29] Exchange-spezifische Standard-Fees (Maker-Fee als Fallback)
-EXCHANGE_DEFAULT_FEES: dict[str, float] = {
-    "binance": 0.0010,  # 0.10% Standard (0.075% mit BNB)
-    "bybit": 0.0010,  # 0.10% Standard (0.06% Maker)
-    "okx": 0.0008,  # 0.08% Standard (0.06% Maker)
-    "kucoin": 0.0010,  # 0.10% Standard
-    "cryptocom": 0.0004,  # 0.04% Standard
-    "kraken": 0.0016,  # 0.16% Standard
-    "huobi": 0.0020,  # 0.20% Standard
-    "coinbase": 0.0060,  # 0.60% Standard (Advanced Trade niedriger)
-}
-
-# Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
-_fee_cache: dict[str, dict] = {}
-_fee_cache_lock = threading.Lock()
+# EXCHANGE_DEFAULT_FEES importiert aus services.exchange_factory
 # STRATEGY_NAMES importiert aus services.strategies
 
 
@@ -4447,23 +4443,17 @@ class ArbitrageScanner:
     def _get_ex(self, name: str):
         with self._lock:
             if name not in self._exchanges:
-                try:
-                    keys = CONFIG.get("arb_api_keys", {}).get(name, {})
-                    ex_cls_name = EXCHANGE_MAP.get(name, name)
-                    ex_cls = getattr(ccxt, ex_cls_name, None)
-                    if not ex_cls:
-                        return None
-                    self._exchanges[name] = ex_cls(
-                        {
-                            "apiKey": keys.get("key", ""),
-                            "secret": keys.get("secret", ""),
-                            "enableRateLimit": True,
-                            "options": {"defaultType": "spot"},
-                        }
-                    )
-                except Exception as e:
-                    log.debug(f"ARB Exchange {name}: {e}")
+                keys = CONFIG.get("arb_api_keys", {}).get(name, {})
+                inst = create_ccxt_exchange(
+                    name,
+                    api_key=keys.get("key", ""),
+                    api_secret=keys.get("secret", ""),
+                    passphrase=keys.get("passphrase", ""),
+                    default_type="spot",
+                )
+                if inst is None:
                     return None
+                self._exchanges[name] = inst
             return self._exchanges.get(name)
 
     def scan(self, symbols: list[str]) -> list[dict]:
@@ -4547,28 +4537,18 @@ class ShortEngine:
         with self._ex_lock:
             if self._ex:
                 return self._ex
-            try:
-                name = CONFIG.get("short_exchange", "bybit")
-                ex_cls_name = EXCHANGE_MAP.get(name, name)
-                ex_cls = getattr(ccxt, ex_cls_name, None)
-                if not ex_cls:
-                    return None
-                sk = CONFIG.get("short_api_key", "")
-                ss = CONFIG.get("short_secret", "")
-                raw_key = sk.reveal() if hasattr(sk, "reveal") else sk
-                raw_sec = ss.reveal() if hasattr(ss, "reveal") else ss
-                self._ex = ex_cls(
-                    {
-                        "apiKey": decrypt_value(raw_key) if raw_key else "",
-                        "secret": decrypt_value(raw_sec) if raw_sec else "",
-                        "enableRateLimit": True,
-                        "options": {"defaultType": "swap"},
-                    }
-                )
-                return self._ex
-            except Exception as e:
-                log.debug(f"Short Ex: {e}")
-                return None
+            name = CONFIG.get("short_exchange", "bybit")
+            api_key = _reveal_and_decrypt(CONFIG.get("short_api_key", ""))
+            api_secret = _reveal_and_decrypt(CONFIG.get("short_secret", ""))
+            passphrase = _reveal_and_decrypt(CONFIG.get("short_passphrase", ""))
+            self._ex = create_ccxt_exchange(
+                name,
+                api_key=api_key,
+                api_secret=api_secret,
+                passphrase=passphrase,
+                default_type="swap",
+            )
+            return self._ex
 
     def open_short(self, symbol: str, invest: float, price: float) -> bool:
         if not CONFIG.get("use_shorts"):
@@ -4796,122 +4776,45 @@ def emit_event(event: str, data: Any, to: str | None = None) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# EXCHANGE FACTORY
+# EXCHANGE FACTORY – delegiert an services.exchange_factory
 # ═══════════════════════════════════════════════════════════════════════════════
+def _reveal_and_decrypt(val: Any) -> str:
+    """Entschlüsselt einen SecretStr/Str-Wert aus CONFIG zu plain text."""
+    if not val:
+        return ""
+    raw = val.reveal() if hasattr(val, "reveal") else val
+    return decrypt_value(raw) if raw else ""
+
+
 def create_exchange():
+    """Erstellt die primäre Exchange-Instanz aus CONFIG.
+
+    Unterstützt Passphrase für OKX, KuCoin und Crypto.com automatisch.
+    """
     name = CONFIG.get("exchange", "cryptocom")
-    ex_cls_name = EXCHANGE_MAP.get(name, name)
-    ex_cls = getattr(ccxt, ex_cls_name, None)
-    if ex_cls is None:
-        raise ValueError(f"Exchange '{ex_cls_name}' nicht in ccxt verfügbar")
-    # API-Keys entschlüsseln und als plain str sicherstellen (kein SecretStr)
-    _raw_key = CONFIG.get("api_key", "")
-    _raw_sec = CONFIG.get("secret", "")
-    api_key = (
-        decrypt_value(_raw_key.reveal() if hasattr(_raw_key, "reveal") else _raw_key)
-        if _raw_key
-        else ""
+    api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
+    api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
+    passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
+    inst = create_ccxt_exchange(
+        name,
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        default_type="spot",
     )
-    api_secret = (
-        decrypt_value(_raw_sec.reveal() if hasattr(_raw_sec, "reveal") else _raw_sec)
-        if _raw_sec
-        else ""
-    )
-    return ex_cls(
-        {
-            "apiKey": api_key,
-            "secret": api_secret,
-            "enableRateLimit": True,
-            "options": {"defaultType": "spot"},
-        }
-    )
+    if inst is None:
+        raise ValueError(f"Exchange '{name}' konnte nicht erstellt werden")
+    return inst
 
 
 def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USDT") -> float:
-    """Gibt die Taker-Fee für eine Exchange zurück.
-
-    Versucht zuerst, die Fee via CCXT abzurufen (gecacht für 1 Stunde).
-    Fällt auf Exchange-spezifische Defaults zurück, dann auf CONFIG["fee_rate"].
-
-    Args:
-        exchange_id: Exchange-Name (z.B. "binance"). None = aktuelle Exchange.
-        symbol: Trading-Pair für Fee-Abfrage.
-
-    Returns:
-        Fee-Rate als Dezimalzahl (z.B. 0.001 = 0.1%).
-    """
+    """Gibt die Taker-Fee für eine Exchange zurück (gecached)."""
     ex_id = exchange_id or CONFIG.get("exchange", "cryptocom")
-    now = time.time()
-    with _fee_cache_lock:
-        cached = _fee_cache.get(ex_id)
-        if cached and now - cached.get("ts", 0) < 3600:
-            return cached["rate"]
-    # Versuche CCXT-Fee-Abfrage
-    try:
-        ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
-        if ex_cls:
-            ex = ex_cls({"enableRateLimit": True})
-            fee_info = ex.fetch_trading_fee(symbol)
-            rate = float(
-                fee_info.get(
-                    "taker", EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG.get("fee_rate", 0.001))
-                )
-            )
-            with _fee_cache_lock:
-                _fee_cache[ex_id] = {"rate": rate, "ts": now}
-            return rate
-    except Exception:
-        pass
-    # Fallback: Exchange-Default oder CONFIG
-    rate = EXCHANGE_DEFAULT_FEES.get(ex_id, CONFIG.get("fee_rate", 0.001))
-    with _fee_cache_lock:
-        _fee_cache[ex_id] = {"rate": rate, "ts": now}
-    return rate
+    return _factory_get_fee_rate(ex_id, symbol, fallback=CONFIG.get("fee_rate", 0.001))
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# SAFE FETCH TICKERS (Exchange-Kompatibilität)
-# ═══════════════════════════════════════════════════════════════════════════════
-# Einige Exchanges (z.B. crypto.com) unterstützen kein Batch-fetchTickers
-# mit mehreren Symbolen. Diese Hilfsfunktion behandelt diesen Fall.
-_SINGLE_TICKER_EXCHANGES = frozenset({"cryptocom"})
-
-
-def safe_fetch_tickers(ex, symbols: list[str]) -> dict:
-    """Holt Ticker-Daten Exchange-kompatibel.
-
-    Für Exchanges die kein Batch-fetchTickers unterstützen (z.B. crypto.com)
-    wird fetch_tickers() ohne Argumente aufgerufen und das Ergebnis gefiltert.
-
-    Args:
-        ex: CCXT Exchange-Instanz.
-        symbols: Liste der gewünschten Symbole.
-
-    Returns:
-        Dict mit Ticker-Daten {symbol: ticker_dict}.
-    """
-    if not symbols:
-        return {}
-    ex_id = getattr(ex, "id", "")
-    if ex_id in _SINGLE_TICKER_EXCHANGES:
-        # crypto.com: fetch_tickers() ohne Argumente holt alle, dann filtern
-        try:
-            all_tickers = ex.fetch_tickers()
-            sym_set = set(symbols)
-            return {s: t for s, t in all_tickers.items() if s in sym_set}
-        except Exception:
-            # Fallback: einzeln abrufen
-            result = {}
-            for sym in symbols[:30]:
-                try:
-                    t = ex.fetch_ticker(sym)
-                    if t:
-                        result[sym] = t
-                except Exception:
-                    pass
-            return result
-    else:
-        return ex.fetch_tickers(symbols)
+# safe_fetch_tickers ist ein Alias auf die Factory-Implementierung
+safe_fetch_tickers = _factory_safe_fetch_tickers
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -6349,14 +6252,17 @@ def api_balance_all():
 @api_auth_required
 def api_fees():
     """[#29] Gibt Exchange-spezifische Fee-Rates zurück."""
+    from services.exchange_factory import _fee_cache, _fee_cache_lock
+
     current_ex = CONFIG.get("exchange", "cryptocom")
     fees = {}
-    for ex_id in EXCHANGE_DEFAULT_FEES:
-        fees[ex_id] = {
-            "default": EXCHANGE_DEFAULT_FEES[ex_id],
-            "cached": _fee_cache.get(ex_id, {}).get("rate"),
-            "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
-        }
+    with _fee_cache_lock:
+        for ex_id in EXCHANGE_DEFAULT_FEES:
+            fees[ex_id] = {
+                "default": EXCHANGE_DEFAULT_FEES[ex_id],
+                "cached": _fee_cache.get(ex_id, {}).get("rate"),
+                "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
+            }
     return jsonify(
         {
             "current_exchange": current_ex,
@@ -7781,17 +7687,6 @@ def on_close_exchange_position(data):
             )
             return
         ex_cfg = CONFIG.get("extra_exchanges", {}).get(ex_name, {})
-        ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_name, ex_name), None)
-        if ex_cls is None:
-            emit(
-                "status",
-                {
-                    "msg": "❌ Exchange nicht verfügbar",
-                    "key": "err_exchange_unavailable",
-                    "type": "error",
-                },
-            )
-            return
         raw_key = ex_cfg.get("api_key", "")
         raw_secret = ex_cfg.get("secret", "")
         if not raw_key or not raw_secret:
@@ -7804,14 +7699,22 @@ def on_close_exchange_position(data):
                 },
             )
             return
-        ex = ex_cls(
-            {
-                "apiKey": decrypt_value(raw_key),
-                "secret": decrypt_value(raw_secret),
-                "password": decrypt_value(ex_cfg.get("passphrase", "")) or None,
-                "enableRateLimit": True,
-            }
+        ex = create_ccxt_exchange(
+            ex_name,
+            api_key=decrypt_value(raw_key),
+            api_secret=decrypt_value(raw_secret),
+            passphrase=decrypt_value(ex_cfg.get("passphrase", "")),
         )
+        if ex is None:
+            emit(
+                "status",
+                {
+                    "msg": "❌ Exchange nicht verfügbar",
+                    "key": "err_exchange_unavailable",
+                    "type": "error",
+                },
+            )
+            return
         pos = state.positions.get(symbol)
         amount = pos.get("qty", 0) if pos else 0
         if amount > 0:
