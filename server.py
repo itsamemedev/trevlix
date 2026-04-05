@@ -3976,8 +3976,9 @@ class PriceAlertManager:
 # ═══════════════════════════════════════════════════════════════════════════════
 class DailyReportScheduler:
     def run(self):
-        while True:
-            time.sleep(60)
+        while not _SHUTDOWN_EVENT.is_set():
+            if _SHUTDOWN_EVENT.wait(60):
+                return
             now = datetime.now()
             if now.hour == CONFIG.get("discord_report_hour", 20) and now.minute < 5:
                 if not db.report_sent_today():
@@ -4035,8 +4036,9 @@ class DailyReportScheduler:
 # ═══════════════════════════════════════════════════════════════════════════════
 class BackupScheduler:
     def run(self):
-        while True:
-            time.sleep(60)
+        while not _SHUTDOWN_EVENT.is_set():
+            if _SHUTDOWN_EVENT.wait(60):
+                return
             now = datetime.now()
             if now.hour == 3 and now.minute < 5 and CONFIG.get("backup_enabled"):
                 path = db.backup()
@@ -4424,6 +4426,9 @@ class ShortEngine:
         self._ex_lock = threading.Lock()
 
     def _get_ex(self):
+        # Paper-Trading: keine Exchange-Instanz nötig, Shorts sind rein virtuell.
+        if CONFIG.get("paper_trading", True):
+            return None
         with self._ex_lock:
             if self._ex:
                 return self._ex
@@ -4612,6 +4617,9 @@ short_engine = ShortEngine()
 daily_sched = DailyReportScheduler()
 backup_sched = BackupScheduler()
 state = BotState(db)
+
+# Globales Shutdown-Event: alle kooperativen Hintergrund-Threads prüfen dieses Event.
+_SHUTDOWN_EVENT = threading.Event()
 ai_engine = AIEngine(db)
 
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
@@ -4682,17 +4690,27 @@ def create_exchange():
     Unterstützt Passphrase für OKX, KuCoin und Crypto.com automatisch.
     """
     name = CONFIG.get("exchange", "cryptocom")
-    api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
-    api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
-    passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
-    timeout_ms = _safe_int(CONFIG.get("exchange_timeout_ms", 15000), 15000)
+    # Im Paper-Trading-Modus reine Public-Instanzen: keine Credentials nötig,
+    # damit auch ohne API-Keys (z.B. Bybit ohne Keys) Preis-/Markt-Daten laden.
+    if CONFIG.get("paper_trading", True):
+        api_key = ""
+        api_secret = ""
+        passphrase = ""
+    else:
+        api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
+        api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
+        passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
+    timeout_ms = _safe_int(CONFIG.get("exchange_timeout_ms", 0), 0)
+    extra: dict[str, Any] = {}
+    if timeout_ms > 0:
+        extra["timeout"] = max(3000, timeout_ms)
     inst = create_ccxt_exchange(
         name,
         api_key=api_key,
         api_secret=api_secret,
         passphrase=passphrase,
         default_type="spot",
-        extra_options={"timeout": max(3000, timeout_ms)},
+        extra_options=extra or None,
     )
     if inst is None:
         raise ValueError(f"Exchange '{name}' konnte nicht erstellt werden")
@@ -7786,6 +7804,30 @@ def on_close_exchange_position(data):
         )
 
 
+def _derive_llm_provider_name(endpoint: str) -> str:
+    """Leitet einen lesbaren Provider-Namen aus der Endpoint-URL ab."""
+    if not endpoint:
+        return "—"
+    ep = endpoint.lower()
+    mapping = {
+        "openai.com": "OpenAI",
+        "anthropic.com": "Anthropic",
+        "groq.com": "Groq",
+        "cerebras.ai": "Cerebras",
+        "openrouter.ai": "OpenRouter",
+        "huggingface.co": "HuggingFace",
+        "together.xyz": "Together",
+        "mistral.ai": "Mistral",
+        "localhost": "Local",
+        "127.0.0.1": "Local",
+        "0.0.0.0": "Local",
+    }
+    for needle, label in mapping.items():
+        if needle in ep:
+            return label
+    return "Custom"
+
+
 def _collect_system_analytics() -> dict[str, Any]:
     """Collect system analytics data (shared by WS and HTTP)."""
     import platform
@@ -7859,11 +7901,16 @@ def _collect_system_analytics() -> dict[str, Any]:
     data["llm"] = {
         "endpoint": llm_endpoint or "—",
         "model": llm_model,
+        "provider": "—",
         "status": "⚪ Nicht konfiguriert",
         "latency": "—",
         "queries_24h": "—",
         "tokens_24h": "—",
     }
+    if llm_endpoint:
+        # Einzel-Endpoint: Provider aus URL ableiten
+        data["llm"]["provider"] = _derive_llm_provider_name(llm_endpoint)
+        data["llm"]["status"] = "✅ Konfiguriert"
 
     # Multi-LLM Fallback/Status wenn kein dedizierter Endpoint gesetzt ist
     try:
@@ -7880,6 +7927,10 @@ def _collect_system_analytics() -> dict[str, Any]:
                     data["llm"]["endpoint"] = "multi-provider"
                 if data["llm"]["model"] in ("", "—"):
                     data["llm"]["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
+                # Aktiver Provider-Name (erster gesunder, sonst erster insgesamt)
+                primary = (active_ok or provider_stats)[0] if provider_stats else None
+                if primary:
+                    data["llm"]["provider"] = str(primary.get("name", "—")).title()
                 data["llm"]["status"] = (
                     f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
                     if active_ok
@@ -9149,6 +9200,7 @@ def _graceful_shutdown(signum, _frame):
     sig_name = signal.Signals(signum).name
     log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
     state.running = False
+    _SHUTDOWN_EVENT.set()
     # Stop autonomous agents
     try:
         healer.stop()
@@ -9170,8 +9222,14 @@ def _graceful_shutdown(signum, _frame):
             db.cleanup_old_data()
     except Exception as e:
         log.debug(f"Cleanup bei Shutdown: {e}")
+    # SocketIO sauber stoppen (falls initialisiert)
+    try:
+        socketio.stop()
+    except Exception as e:
+        log.debug(f"socketio.stop: {e}")
     log.info("Shutdown abgeschlossen.")
-    raise SystemExit(0)
+    # os._exit garantiert Terminierung auch wenn Flask/SocketIO noch blockiert.
+    os._exit(0)
 
 
 signal.signal(signal.SIGTERM, _graceful_shutdown)
