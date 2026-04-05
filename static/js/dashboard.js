@@ -2253,7 +2253,7 @@ function mexSetupKeys(name) {
 }
 
 function mexOnExchangeSelect(name) {
-  const needsPP = ['okx','kucoin'].includes(name);
+  const needsPP = ['okx','kucoin','cryptocom'].includes(name);
   document.getElementById('mex-passphrase-wrap').style.display = needsPP ? '' : 'none';
 }
 
