@@ -110,6 +110,9 @@ class TestMetrics:
     """Tests für Prometheus-Metriken (Verbesserung #48)."""
 
     def test_metrics_endpoint(self, app_client):
+        # /metrics ist auth-geschützt (api_auth_required) – setze Session-User
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
         resp = app_client.get("/metrics")
         assert resp.status_code == 200
         body = resp.data.decode()

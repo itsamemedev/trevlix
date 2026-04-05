@@ -23,10 +23,11 @@ try:
 
     CCXT_AVAILABLE = True
 except ImportError:
+    ccxt = None  # type: ignore[assignment]
     CCXT_AVAILABLE = False
 
 from services.encryption import decrypt_value
-from services.utils import EXCHANGE_MAP
+from services.exchange_factory import create_ccxt_exchange
 
 log = logging.getLogger("trevlix.exchange_manager")
 
@@ -51,37 +52,32 @@ class ExchangeManager:
         self._max_retries = int(config.get("exchange_retries", 3))
         self._base_backoff = float(config.get("exchange_backoff_base", 0.5))
 
-    def _create_instance(self, exchange_name: str, api_key: str, api_secret: str) -> Any | None:
-        """Erstellt eine CCXT Exchange-Instanz.
+    def _create_instance(
+        self,
+        exchange_name: str,
+        api_key: str,
+        api_secret: str,
+        passphrase: str = "",
+    ) -> Any | None:
+        """Erstellt eine CCXT Exchange-Instanz via zentrale Factory.
 
         Args:
             exchange_name: Name der Exchange (binance, bybit, etc.)
             api_key: Entschlüsselter API-Key.
             api_secret: Entschlüsseltes API-Secret.
+            passphrase: Optionale Passphrase (für OKX, KuCoin, Crypto.com).
 
         Returns:
             CCXT Exchange-Instanz oder None bei Fehler.
         """
-        if not CCXT_AVAILABLE:
-            log.error("CCXT nicht installiert")
-            return None
-        try:
-            cls_name = EXCHANGE_MAP.get(exchange_name, exchange_name)
-            ex_cls = getattr(ccxt, cls_name, None)
-            if ex_cls is None:
-                raise ValueError(f"Exchange class '{cls_name}' not found in ccxt")
-            return ex_cls(
-                {
-                    "apiKey": api_key,
-                    "secret": api_secret,
-                    "enableRateLimit": True,
-                    "timeout": self._request_timeout_ms,
-                    "options": {"defaultType": "spot"},
-                }
-            )
-        except Exception as e:
-            log.error(f"Exchange erstellen fehlgeschlagen ({exchange_name}): {e}")
-            return None
+        return create_ccxt_exchange(
+            exchange_name,
+            api_key=api_key,
+            api_secret=api_secret,
+            passphrase=passphrase,
+            default_type="spot",
+            extra_options={"timeout": self._request_timeout_ms},
+        )
 
     def get_user_exchange(self, user_id: int, exchange_name: str) -> Any | None:
         """Gibt eine cached Exchange-Instanz für einen User zurück.
@@ -111,6 +107,7 @@ class ExchangeManager:
                 if ex_data.get("exchange") == exchange_name:
                     api_key = decrypt_value(ex_data.get("api_key", ""))
                     api_secret = decrypt_value(ex_data.get("api_secret", ""))
+                    passphrase = decrypt_value(ex_data.get("passphrase", "")) or ""
                     if not api_key or not api_secret:
                         log.warning(
                             "Exchange %s: API-Schlüssel konnten nicht entschlüsselt werden",
@@ -121,6 +118,7 @@ class ExchangeManager:
                         exchange_name,
                         api_key,
                         api_secret,
+                        passphrase,
                     )
                     if inst:
                         self._instances[cache_key] = inst
@@ -196,6 +194,7 @@ class ExchangeManager:
                     name,
                     decrypt_value(ex_data.get("api_key", "")),
                     decrypt_value(ex_data.get("api_secret", "")),
+                    decrypt_value(ex_data.get("passphrase", "")) or "",
                 )
                 if inst:
                     self._instances[cache_key] = inst
@@ -211,6 +210,7 @@ class ExchangeManager:
         """
         raw_key = self._config.get("api_key", "")
         raw_sec = self._config.get("secret", "")
+        raw_pass = self._config.get("api_passphrase", "")
         api_key = (
             decrypt_value(raw_key.reveal() if hasattr(raw_key, "reveal") else raw_key)
             if raw_key
@@ -221,10 +221,16 @@ class ExchangeManager:
             if raw_sec
             else ""
         )
+        passphrase = (
+            decrypt_value(raw_pass.reveal() if hasattr(raw_pass, "reveal") else raw_pass)
+            if raw_pass
+            else ""
+        )
         return self._create_instance(
             self._config.get("exchange", "cryptocom"),
             api_key,
             api_secret,
+            passphrase,
         )
 
     def invalidate_cache(self, user_id: int, exchange_name: str | None = None) -> None:
@@ -271,8 +277,6 @@ class ExchangeManager:
                 log.exception("Balance-Abruf fehlgeschlagen für %s", name)
                 err_msg = str(e).strip() or "Unbekannter Fehler"
                 if "timeout" in err_msg.lower():
-                    err_msg = (
-                        "Exchange-Antwort dauerte zu lange. Bitte später erneut versuchen."
-                    )
+                    err_msg = "Exchange-Antwort dauerte zu lange. Bitte später erneut versuchen."
                 result[name] = {"error": err_msg}
         return result

@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TREVLIX v1.5.2 – Static Page i18n
+   TREVLIX v1.5.3 – Static Page i18n
    Languages: de | en | es | ru | pt
    Features:
      - localStorage language persistence

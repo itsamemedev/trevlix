@@ -293,6 +293,33 @@ class TelegramNotifier:
     def _chat_id(self) -> str:
         return self._config.get("telegram_chat_id", "") or os.getenv("TELEGRAM_CHAT_ID", "")
 
+    @property
+    def enabled(self) -> bool:
+        """True, wenn Token und Chat-ID konfiguriert sind."""
+        return bool(self._token() and self._chat_id())
+
+    def test(self) -> bool:
+        """Sendet eine Test-Nachricht. Gibt True bei Erfolg zurück."""
+        token = self._token()
+        chat_id = self._chat_id()
+        if not token or not chat_id:
+            return False
+        try:
+            url = self._API_BASE.format(token=token)
+            resp = httpx.post(
+                url,
+                json={
+                    "chat_id": chat_id,
+                    "text": f"🤖 <b>{(self._bot_full.split() or ['TREVLIX'])[0]}</b> — Verbindung erfolgreich!",
+                    "parse_mode": "HTML",
+                },
+                timeout=5,
+            )
+            return resp.status_code == 200
+        except Exception as e:
+            log.warning("Telegram test failed: %s", e)
+            return False
+
     def send(self, text: str, parse_mode: str = "HTML") -> None:
         """Sends a plain text (or HTML-formatted) message to the configured chat."""
         token = self._token()

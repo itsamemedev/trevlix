@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.5.3] – 2026-04-05
+
+### Fixed — Exchange Integration & Passphrase Bug
+
+#### Critical Bug Fixes
+- **OKX / KuCoin / Crypto.com could not authenticate as primary exchange**: `create_exchange()` in `server.py` never passed the API passphrase, so all three exchanges (which require a passphrase in addition to key/secret) silently failed authentication. Now fixed via the new `exchange_factory` module — passphrase is correctly passed as CCXT's `password` parameter in all code paths.
+- **`safe_fetch_tickers` had no fallback for non-`cryptocom` exchanges**: If `ex.fetch_tickers(symbols)` failed for Kraken, Huobi, Coinbase (or any other exchange), the entire scan crashed. Now implements a 3-stage robust fallback chain: `batch(symbols) → batch() + client-filter → per-symbol fetch`.
+
+#### New — Centralized Exchange Factory (`services/exchange_factory.py`)
+- `create_ccxt_exchange()` — single source of truth for CCXT instance creation across all 8 supported exchanges (cryptocom, binance, bybit, okx, kucoin, kraken, huobi, coinbase).
+- `safe_fetch_tickers()` — robust ticker fetching with automatic fallback strategies.
+- `get_fee_rate()` — cached per-exchange fee rate lookup (1h TTL).
+- `EXCHANGE_DEFAULT_FEES`, `PASSPHRASE_REQUIRED` constants.
+- **4 places deduplicated**: `create_exchange()`, `ArbitrageScanner._get_ex()`, `ShortEngine._get_ex()`, `ExchangeManager._create_instance()` all now delegate to the factory.
+
+#### Configuration
+- **New env var `API_PASSPHRASE`**: Required for OKX, KuCoin, Crypto.com when used as primary exchange. Added to `CONFIG` dict and `services/config.py` `_PROTECTED_KEYS`.
+- **New env var `SHORT_PASSPHRASE`**: For the short-selling exchange (if passphrase-protected).
+- **`.env.example` updated**: Now documents all 8 supported exchanges (previously only 5). Added sections for Kraken, Huobi/HTX and Coinbase Advanced Trade.
+- `EXCHANGES_ENABLED` example extended with all 8 exchanges.
+
+#### Testing
+- **25 new tests** in `tests/test_exchange_factory.py` verify:
+  - All 8 exchanges instantiate without errors
+  - Passphrase is correctly passed as `password` for OKX/KuCoin/Crypto.com
+  - `safe_fetch_tickers` fallback strategy (batch fails → filter strategy kicks in)
+  - Empty-symbols edge case
+  - Fee cache invalidation
+- Total tests: **297 passing** (272 existing + 25 new).
+
+#### Modularization
+- Removed duplicated `EXCHANGE_DEFAULT_FEES`, `_fee_cache`, `_fee_cache_lock`, `_SINGLE_TICKER_EXCHANGES` from `server.py` (~50 lines deleted — now imported from `services/exchange_factory`).
+- Introduced `_reveal_and_decrypt()` helper to eliminate repeated SecretStr-to-plaintext unwrap code.
+
+---
+
 ## [1.5.2] – 2026-03-31
 
 ### Fixed — Bug Fixes, i18n Completeness & Code Hardening
