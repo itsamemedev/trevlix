@@ -64,12 +64,12 @@ def _validate_host(host: str) -> None:
         try:
             resolved = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
             addrs = {ipaddress.ip_address(r[4][0]) for r in resolved}
-        except socket.gaierror:
-            raise ValueError(f"Cannot resolve hostname: {host}")
+        except socket.gaierror as e:
+            raise ValueError(f"Cannot resolve hostname: {host}") from e
         for addr in addrs:
             for net in _BLOCKED_NETWORKS:
                 if addr in net:
-                    raise ValueError(f"Host '{host}' resolves to blocked IP range {net}")
+                    raise ValueError(f"Host '{host}' resolves to blocked IP range {net}") from None
         return
 
     for net in _BLOCKED_NETWORKS:

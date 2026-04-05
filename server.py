@@ -74,7 +74,6 @@ from functools import wraps
 from typing import Any
 
 import ccxt
-import httpx
 import numpy as np
 import pandas as pd
 import requests
@@ -123,6 +122,7 @@ from services.market_data import (
     SentimentFetcher,
 )
 from services.mcp_tools import MCPToolRegistry
+from services.notifications import DiscordNotifier, TelegramNotifier
 from services.performance_attribution import PerformanceAttribution
 from services.revenue_tracking import RevenueTracker
 from services.risk import (
@@ -1879,7 +1879,8 @@ class MySQLManager:
                     try:
                         with self._get_conn() as conn:
                             with conn.cursor() as c:
-                                c.execute(f"SELECT * FROM `{table}` LIMIT 100000")
+                                # Table name comes from _ALLOWED_TABLES frozenset (allowlist), not user input.
+                                c.execute(f"SELECT * FROM `{table}` LIMIT 100000")  # noqa: S608
                                 rows = c.fetchall()
                         data = []
                         for r in rows:
@@ -2270,164 +2271,7 @@ def admin_required(f):
 # ═══════════════════════════════════════════════════════════════════════════════
 # DISCORD
 # ═══════════════════════════════════════════════════════════════════════════════
-class DiscordNotifier:
-    COLORS = {
-        "buy": 3066993,
-        "sell_win": 3066993,
-        "sell_loss": 15158332,
-        "error": 15158332,
-        "circuit": 16776960,
-        "info": 3447003,
-        "report": 9442302,
-        "alert": 16776960,
-        "arb": 16744272,
-        "anomaly": 16711680,
-    }
-
-    def send(self, title: str, desc: str, color_key="info", fields: list = None):
-        url = CONFIG.get("discord_webhook", "")
-        if not url:
-            return
-        try:
-            embed = {
-                "title": title,
-                "description": desc,
-                "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.now(UTC).isoformat(),
-                "footer": {"text": f"{BOT_FULL} · {CONFIG['exchange'].upper()}"},
-            }
-            if fields:
-                embed["fields"] = [
-                    {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
-                    for f in fields
-                    if len(f) >= 2
-                ]
-            httpx.post(url, json={"embeds": [embed]}, timeout=5)
-        except Exception as e:
-            log.debug(f"Discord: {e}")
-
-    def trade_buy(self, symbol, price, invest, ai_score, win_prob, news_score=0):
-        if not CONFIG.get("discord_on_buy"):
-            return
-        news_txt = f"📰 {news_score:+.2f}" if news_score != 0 else "—"
-        self.send(
-            f"🟢 KAUF: {symbol}",
-            f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n"
-            f"KI-Score:   {ai_score:.0f}%\nWin-Chance: {win_prob:.0f}%\n"
-            f"News:       {news_txt}\n```",
-            "buy",
-            fields=[
-                ("Exchange", CONFIG["exchange"].upper()),
-                ("Modus", "📝 Paper" if CONFIG["paper_trading"] else "💰 Live"),
-            ],
-        )
-
-    def trade_sell(self, symbol, price, pnl, pnl_pct, reason, partial=False):
-        if not CONFIG.get("discord_on_sell"):
-            return
-        won = pnl >= 0
-        pref = "🔶 PARTIAL" if partial else ("✅ GEWINN" if won else "❌ VERLUST")
-        self.send(
-            f"{pref}: {symbol}",
-            f"```\nPreis:  {price:.4f} USDT\nPnL:    {pnl:+.2f} ({pnl_pct:+.2f}%)\n"
-            f"Grund:  {reason}\n```",
-            "sell_win" if won else "sell_loss",
-        )
-
-    def short_open(self, symbol, price, invest):
-        self.send(
-            f"🔴 SHORT: {symbol}",
-            f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n```",
-            "sell_loss",
-        )
-
-    def circuit_breaker(self, losses, pause_min):
-        if not CONFIG.get("discord_on_circuit"):
-            return
-        self.send(
-            "⚡ CIRCUIT BREAKER",
-            f"```\n{losses} Verluste hintereinander!\nPause: {pause_min} Minuten\n```",
-            "circuit",
-        )
-
-    def price_alert(self, symbol, price, target, direction):
-        self.send(
-            f"🔔 PREIS-ALERT: {symbol}",
-            f"```\nAktuell: {price:.4f}\nZiel:    {target:.4f}\nRichtung: {'↑' if direction == 'above' else '↓'}\n```",
-            "alert",
-        )
-
-    def arb_found(self, symbol, buy_ex, sell_ex, spread):
-        self.send(
-            f"💹 ARBITRAGE: {symbol}",
-            f"```\nKauf:   {buy_ex}\nVerkauf:{sell_ex}\nSpread: {spread:.2f}%\n```",
-            "arb",
-        )
-
-    def anomaly_detected(self, symbol, score):
-        self.send(
-            f"🚨 ANOMALIE: {symbol}",
-            f"```\nAnomalie-Score: {score:.3f}\nBot pausiert!\n```",
-            "anomaly",
-        )
-
-    def daily_report(self, report: dict):
-        if not CONFIG.get("discord_daily_report"):
-            return
-        s = report.get("summary", {})
-        self.send(
-            f"📊 {BOT_NAME} Tages-Report – {report.get('date', '')}",
-            f"```\nPnL heute:  {s.get('daily_pnl', 0):+.2f} USDT\n"
-            f"Trades:     {s.get('trades_today', 0)}\n"
-            f"Win-Rate:   {s.get('win_rate', 0):.1f}%\n"
-            f"Portfolio:  {s.get('portfolio_value', 0):.2f} USDT\n"
-            f"Rendite:    {s.get('return_pct', 0):+.2f}%\n"
-            f"Arbitrage:  {s.get('arb_found', 0)} Chancen\n```",
-            "report",
-            fields=[
-                ("Bester Coin", s.get("best_coin", "—")),
-                ("Schlechtester", s.get("worst_coin", "—")),
-                ("KI-Genauigkeit", f"{s.get('ai_acc', 0):.1f}%"),
-            ],
-        )
-
-    def error(self, msg: str):
-        if not CONFIG.get("discord_on_error"):
-            return
-        self.send(f"🔴 {BOT_NAME} FEHLER", f"```\n{msg[:500]}\n```", "error")
-
-    def backup_done(self, path: str):
-        self.send("💾 Backup erstellt", f"```\n{os.path.basename(path)}\n```", "info")
-
-    def genetic_result(self, gen: int, fitness: float, genome: dict):
-        self.send(
-            f"🧬 Genetik Gen.{gen}",
-            f"```\nFitness: {fitness:.3f}\nSL: {genome.get('sl', 0) * 100:.1f}% TP: {genome.get('tp', 0) * 100:.1f}%\n```",
-            "info",
-        )
-
-    def dna_boost(
-        self, symbol: str, action: str, win_rate: float, matches: int, multiplier: float
-    ) -> None:
-        """Benachrichtigung bei DNA-Pattern-Match (Boost oder Block)."""
-        emoji = "🧬✅" if action == "boost" else "🧬⛔"
-        color = "buy" if action == "boost" else "sell_loss"
-        self.send(
-            f"{emoji} DNA-{action.upper()}: {symbol}",
-            f"```\nWin-Rate:    {win_rate:.0f}%\n"
-            f"Matches:     {matches}\n"
-            f"Multiplikator: {multiplier:.2f}x\n```",
-            color,
-        )
-
-    def smart_exit(self, symbol: str, sl: float, tp: float, regime: str, atr_pct: float) -> None:
-        """Benachrichtigung über Smart Exit Level."""
-        self.send(
-            f"📐 Smart Exit: {symbol}",
-            f"```\nRegime:  {regime}\nATR:     {atr_pct:.2f}%\n"
-            f"SL:      {sl:.4f}\nTP:      {tp:.4f}\n```",
-            "info",
-        )
+# DiscordNotifier importiert aus services.notifications (siehe Instantiation unten)
 
 
 # FearGreedIndex importiert aus services.market_data
@@ -4700,7 +4544,7 @@ knowledge_base = KnowledgeBase(
     llm_api_key=os.getenv("LLM_API_KEY", ""),
     llm_model=os.getenv("LLM_MODEL", ""),
 )
-discord = DiscordNotifier()
+discord = DiscordNotifier(CONFIG, BOT_FULL)
 fg_idx = FearGreedIndex(CONFIG)
 dominance = DominanceFilter(CONFIG)
 news_fetcher = NewsSentimentAnalyzer()
@@ -8073,78 +7917,8 @@ def api_monte_carlo():
 # ════════════════════════════════════════════════════════════════════════════════
 
 
-class TelegramNotifier:
-    """Sendet Benachrichtigungen via Telegram Bot API."""
-
-    BASE = "https://api.telegram.org/bot"
-
-    def __init__(self):
-        self.token = CONFIG.get("telegram_token", "")
-        self.chat_id = CONFIG.get("telegram_chat_id", "")
-
-    @property
-    def enabled(self) -> bool:
-        return bool(self.token and self.chat_id)
-
-    def send(self, text: str, parse_mode: str = "HTML") -> bool:
-        if not self.enabled:
-            return False
-        try:
-            resp = requests.post(
-                f"{self.BASE}{self.token}/sendMessage",
-                json={
-                    "chat_id": self.chat_id,
-                    "text": text,
-                    "parse_mode": parse_mode,
-                    "disable_web_page_preview": True,
-                },
-                timeout=5,
-            )
-            return resp.status_code == 200
-        except Exception as e:
-            log.warning(f"[TG] Senden fehlgeschlagen: {e}")
-            return False
-
-    def trade_open(
-        self, symbol: str, price: float, invest: float, confidence: float, exchange: str = "main"
-    ):
-        self.send(
-            f"⚡ <b>KAUF</b> [{exchange.upper()}]\n"
-            f"Symbol: <code>{symbol}</code>\n"
-            f"Preis: <code>{price:.4f} USDT</code>\n"
-            f"Invest: <code>{invest:.2f} USDT</code>\n"
-            f"KI-Konfidenz: <code>{confidence * 100:.0f}%</code>"
-        )
-
-    def trade_close(
-        self, symbol: str, price: float, pnl: float, reason: str, exchange: str = "main"
-    ):
-        icon = "✅" if pnl >= 0 else "❌"
-        self.send(
-            f"{icon} <b>{reason}</b> [{exchange.upper()}]\n"
-            f"Symbol: <code>{symbol}</code>\n"
-            f"Preis: <code>{price:.4f} USDT</code>\n"
-            f"PnL: <code>{pnl:+.2f} USDT</code>"
-        )
-
-    def alert(self, title: str, body: str):
-        self.send(f"🚨 <b>{title}</b>\n{body}")
-
-    def daily_report(self, pnl: float, wr: float, trades: int, pv: float):
-        icon = "📈" if pnl >= 0 else "📉"
-        self.send(
-            f"{icon} <b>TREVLIX Tagesbericht</b>\n"
-            f"Portfolio: <code>{pv:.2f} USDT</code>\n"
-            f"PnL heute: <code>{pnl:+.2f} USDT</code>\n"
-            f"Win-Rate: <code>{wr:.1f}%</code>\n"
-            f"Trades: <code>{trades}</code>"
-        )
-
-    def test(self) -> bool:
-        return self.send("🤖 <b>TREVLIX</b> — Verbindung erfolgreich!")
-
-
-telegram = TelegramNotifier()
+# TelegramNotifier bereits oben aus services.notifications importiert
+telegram = TelegramNotifier(CONFIG, BOT_FULL)
 
 
 @app.route("/api/v1/telegram/test", methods=["POST"])
@@ -8166,8 +7940,7 @@ def api_telegram_configure():
         return jsonify({"error": "token und chat_id erforderlich"}), 400
     CONFIG["telegram_token"] = token
     CONFIG["telegram_chat_id"] = chat_id
-    telegram.token = token
-    telegram.chat_id = chat_id
+    # telegram liest Token/Chat-ID dynamisch aus CONFIG – keine weitere Zuweisung nötig
     # Persist to .env
     _set_env_var("TELEGRAM_TOKEN", token)
     _set_env_var("TELEGRAM_CHAT_ID", chat_id)

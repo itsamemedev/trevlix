@@ -112,13 +112,44 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 <div class="timeline">
 
-  <!-- v1.5.2 -->
+  <!-- v1.5.3 -->
   <div class="release">
     <div class="release-dot latest"></div>
     <div class="release-header">
+      <span class="release-version">v1.5.3</span>
+      <span class="release-date">2026-04-05</span>
+      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
+    </div>
+    <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
+      <ul>
+        <li><strong>Kritisch:</strong> OKX, KuCoin und Crypto.com konnten sich als Primary Exchange nicht authentifizieren &mdash; die API-Passphrase wurde in <code>create_exchange()</code> nie übergeben. Behoben via neuer Exchange Factory.</li>
+        <li><code>safe_fetch_tickers</code> hatte keinen Fallback für Kraken/Huobi/Coinbase &mdash; wenn <code>fetch_tickers(symbols)</code> scheiterte, stürzte der komplette Scan ab. Neue 3-stufige Fallback-Strategie für alle Exchanges.</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
+      <ul>
+        <li>Neues Modul <code>services/exchange_factory.py</code> &mdash; zentrale Factory für alle 8 CCXT-Exchange-Instanzen (cryptocom, binance, bybit, okx, kucoin, kraken, huobi, coinbase)</li>
+        <li>Env-Variable <code>API_PASSPHRASE</code> für OKX/KuCoin/Crypto.com &mdash; jetzt als Primary Exchange nutzbar</li>
+        <li><code>.env.example</code> dokumentiert nun alle 8 Exchanges (vorher nur 5) &mdash; neue Sektionen für Kraken, Huobi und Coinbase Advanced Trade</li>
+        <li>25 neue Tests in <code>tests/test_exchange_factory.py</code> &mdash; Factory-Erstellung, Passphrase-Handling, Ticker-Fallback für alle 8 Exchanges</li>
+        <li><code>get_fee_rate()</code> Helper mit 1h TTL-Cache im Factory-Modul</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="changed" data-i18n="changelog_changed">Geändert</h4>
+      <ul>
+        <li>4 duplizierte Exchange-Creation-Codepfade dedupliziert &mdash; <code>create_exchange()</code>, <code>ArbitrageScanner._get_ex()</code>, <code>ShortEngine._get_ex()</code> und <code>ExchangeManager._create_instance()</code> delegieren jetzt an die Factory</li>
+        <li><code>EXCHANGE_DEFAULT_FEES</code>, <code>_fee_cache</code> und <code>_SINGLE_TICKER_EXCHANGES</code> aus <code>server.py</code> entfernt (&sim;50 Zeilen)</li>
+        <li>Neuer <code>_reveal_and_decrypt()</code> Helper in <code>server.py</code> eliminiert duplizierten SecretStr-Unwrap-Code</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.5.2 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
       <span class="release-version">v1.5.2</span>
       <span class="release-date">2026-03-31</span>
-      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
     </div>
     <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
       <ul>

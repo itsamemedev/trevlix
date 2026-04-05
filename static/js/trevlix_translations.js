@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════════
-   TREVLIX v1.5.2 – Translations
+   TREVLIX v1.5.3 – Translations
    Languages: de | en | es | ru | pt
    ═══════════════════════════════════════════════════════════ */
 const QLANG_NAMES = {de:'Deutsch',en:'English',es:'Español',ru:'Русский',pt:'Português'};
@@ -274,7 +274,7 @@ const QT = {
   web_nav_install:     {de:'Installation',en:'Installation',es:'Instalación',ru:'Установка',pt:'Instalação'},
   web_nav_specs:       {de:'Spezifikationen',en:'Specifications',es:'Especificaciones',ru:'Технические характеристики',pt:'Especificações'},
   web_nav_download:    {de:'Download',en:'Download',es:'Descargar',ru:'Скачать',pt:'Download'},
-  web_hero_eyebrow:    {de:'v1.5.2 · trevlix.dev · Open Source',en:'v1.5.2 · trevlix.dev · Open Source',es:'v1.5.2 · trevlix.dev · Código Abierto',ru:'v1.5.2 · trevlix.dev · Открытый код',pt:'v1.5.2 · trevlix.dev · Código Aberto'},
+  web_hero_eyebrow:    {de:'v1.5.3 · trevlix.dev · Open Source',en:'v1.5.3 · trevlix.dev · Open Source',es:'v1.5.3 · trevlix.dev · Código Abierto',ru:'v1.5.3 · trevlix.dev · Открытый код',pt:'v1.5.3 · trevlix.dev · Código Aberto'},
   web_hero_sub:        {de:'Der fortschrittlichste Crypto Trading Bot. KI-gesteuert, selbstlernend, mit 14 Echtzeit-Features — von Anomalie-Detektion bis Arbitrage.',en:'The most advanced Crypto Trading Bot. AI-powered, self-learning, with 14 real-time features — from anomaly detection to arbitrage.',es:'El bot de trading cripto más avanzado. Impulsado por IA, autoaprendizaje, con 14 características en tiempo real.',ru:'Самый продвинутый крипто-торговый бот. ИИ-управление, самообучение, 14 функций в реальном времени.',pt:'O bot de trading cripto mais avançado. Alimentado por IA, autoaprendizagem, com 14 recursos em tempo real.'},
   web_btn_start:       {de:'⚡ Jetzt starten',en:'⚡ Get started',es:'⚡ Comenzar ahora',ru:'⚡ Начать сейчас',pt:'⚡ Começar agora'},
   web_btn_discover:    {de:'Features entdecken',en:'Explore Features',es:'Explorar Características',ru:'Изучить возможности',pt:'Explorar Recursos'},
