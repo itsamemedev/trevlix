@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS user_exchanges (
     exchange    VARCHAR(20) NOT NULL,
     api_key     VARCHAR(500),
     api_secret  VARCHAR(500),
+    passphrase  VARCHAR(500),
     enabled     TINYINT DEFAULT 0,
     is_primary  TINYINT DEFAULT 0,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,

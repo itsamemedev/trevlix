@@ -977,6 +977,7 @@ class MySQLManager:
                     exchange VARCHAR(20) NOT NULL,
                     api_key VARCHAR(500),
                     api_secret VARCHAR(500),
+                    passphrase VARCHAR(500),
                     enabled TINYINT DEFAULT 0,
                     is_primary TINYINT DEFAULT 0,
                     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -984,6 +985,21 @@ class MySQLManager:
                     INDEX idx_user(user_id),
                     INDEX idx_enabled(user_id, enabled)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Migration: passphrase-Spalte für bestehende Installationen ergänzen
+                c.execute(
+                    "SELECT COUNT(*) AS n FROM information_schema.columns "
+                    "WHERE table_schema=%s AND table_name='user_exchanges' "
+                    "AND column_name='passphrase'",
+                    (CONFIG["mysql_db"],),
+                )
+                row = c.fetchone() or {}
+                if int(row.get("n", 0) or 0) == 0:
+                    try:
+                        c.execute(
+                            "ALTER TABLE user_exchanges ADD COLUMN passphrase VARCHAR(500) AFTER api_secret"
+                        )
+                    except Exception as e:
+                        log.debug(f"user_exchanges passphrase migration: {e}")
                 # Shared Knowledge (KI-Gemeinschaftswissen)
                 c.execute("""CREATE TABLE IF NOT EXISTS shared_knowledge (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1071,7 +1087,8 @@ class MySQLManager:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ensure admin user
                 c.execute("SELECT id FROM users WHERE username=%s", ("admin",))
-                if not c.fetchone():
+                admin_row = c.fetchone()
+                if not admin_row:
                     pw = CONFIG["admin_password"].encode()
                     if BCRYPT_AVAILABLE:
                         h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
@@ -1081,6 +1098,41 @@ class MySQLManager:
                         "INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES('admin',%s,'admin',10000,10000)",
                         (h,),
                     )
+                    admin_id = c.lastrowid
+                else:
+                    admin_id = admin_row["id"]
+                # Seed admin's user_exchanges from env vars (nur wenn noch nichts in DB hinterlegt ist).
+                # Das migriert die .env-Exchange-Keys einmalig ins Admin-Konto.
+                env_key_plain = os.getenv("API_KEY", "").strip()
+                env_secret_plain = os.getenv("API_SECRET", "").strip()
+                env_exchange = (os.getenv("EXCHANGE", "") or "").strip().lower()
+                env_passphrase = os.getenv("API_PASSPHRASE", "").strip()
+                if admin_id and env_exchange and env_key_plain and env_secret_plain:
+                    c.execute(
+                        "SELECT COUNT(*) AS n FROM user_exchanges WHERE user_id=%s",
+                        (admin_id,),
+                    )
+                    has_any = int((c.fetchone() or {}).get("n", 0) or 0) > 0
+                    if not has_any:
+                        try:
+                            enc_key = encrypt_value(env_key_plain)
+                            enc_sec = encrypt_value(env_secret_plain)
+                            enc_pass = encrypt_value(env_passphrase) if env_passphrase else ""
+                            c.execute(
+                                "INSERT INTO user_exchanges "
+                                "(user_id, exchange, api_key, api_secret, passphrase, enabled, is_primary) "
+                                "VALUES(%s,%s,%s,%s,%s,1,1)",
+                                (
+                                    admin_id,
+                                    env_exchange,
+                                    enc_key,
+                                    enc_sec,
+                                    enc_pass,
+                                ),
+                            )
+                            log.info("🔑 Admin-Exchange aus .env migriert: %s", env_exchange)
+                        except Exception as e:
+                            log.debug(f"admin exchange seed: {e}")
             # Pool NACH erfolgreicher Init erstellen
             self._pool = self._build_pool()
             log.info(f"✅ MySQL: {CONFIG['mysql_host']}/{CONFIG['mysql_db']}")
@@ -1419,12 +1471,14 @@ class MySQLManager:
 
     # ── User Exchanges (Multi-Exchange pro User) ─────────────────────────────
     def get_user_exchanges(self, user_id: int) -> list[dict]:
-        """Gibt alle Exchange-Konfigurationen eines Users zurück."""
+        """Gibt alle Exchange-Konfigurationen eines Users zurück (ohne Keys, nur Flags)."""
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
-                        "SELECT id, exchange, enabled, is_primary, created_at "
+                        "SELECT id, exchange, enabled, is_primary, created_at, "
+                        "(api_key IS NOT NULL AND api_key!='') AS has_key, "
+                        "(passphrase IS NOT NULL AND passphrase!='') AS has_passphrase "
                         "FROM user_exchanges WHERE user_id=%s ORDER BY is_primary DESC, exchange",
                         (user_id,),
                     )
@@ -1434,6 +1488,10 @@ class MySQLManager:
                 d = dict(r)
                 if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
                     d["created_at"] = d["created_at"].isoformat()
+                d["has_key"] = bool(d.get("has_key"))
+                d["has_passphrase"] = bool(d.get("has_passphrase"))
+                # Für Dashboard-Chip-Zählung: api_key-Feld weiterhin als Indikator
+                d["api_key"] = "***" if d["has_key"] else ""
                 result.append(d)
             return result
         except Exception as e:
@@ -1448,6 +1506,7 @@ class MySQLManager:
         api_secret: str,
         enabled: bool = False,
         is_primary: bool = False,
+        passphrase: str = "",
     ) -> bool:
         """Erstellt oder aktualisiert eine Exchange-Konfiguration für einen User.
 
@@ -1465,10 +1524,11 @@ class MySQLManager:
                     if existing:
                         c.execute(
                             "UPDATE user_exchanges SET api_key=%s, api_secret=%s, "
-                            "enabled=%s, is_primary=%s WHERE id=%s",
+                            "passphrase=%s, enabled=%s, is_primary=%s WHERE id=%s",
                             (
                                 self._enc(api_key),
                                 self._enc(api_secret),
+                                self._enc(passphrase) if passphrase else "",
                                 enabled,
                                 is_primary,
                                 existing["id"],
@@ -1477,13 +1537,14 @@ class MySQLManager:
                     else:
                         c.execute(
                             "INSERT INTO user_exchanges "
-                            "(user_id, exchange, api_key, api_secret, enabled, is_primary) "
-                            "VALUES(%s,%s,%s,%s,%s,%s)",
+                            "(user_id, exchange, api_key, api_secret, passphrase, enabled, is_primary) "
+                            "VALUES(%s,%s,%s,%s,%s,%s,%s)",
                             (
                                 user_id,
                                 exchange,
                                 self._enc(api_key),
                                 self._enc(api_secret),
+                                self._enc(passphrase) if passphrase else "",
                                 enabled,
                                 is_primary,
                             ),
@@ -1520,7 +1581,8 @@ class MySQLManager:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
-                        "SELECT * FROM user_exchanges WHERE user_id=%s AND enabled=1",
+                        "SELECT * FROM user_exchanges WHERE user_id=%s AND enabled=1 "
+                        "ORDER BY is_primary DESC, id ASC",
                         (user_id,),
                     )
                     rows = c.fetchall()
@@ -1529,6 +1591,7 @@ class MySQLManager:
                 d = dict(r)
                 d["api_key"] = self._dec(d.get("api_key", ""))
                 d["api_secret"] = self._dec(d.get("api_secret", ""))
+                d["passphrase"] = self._dec(d.get("passphrase", "")) if d.get("passphrase") else ""
                 result.append(d)
             return result
         except Exception as e:
@@ -4589,6 +4652,38 @@ class ShortEngine:
 # GLOBALE INSTANZEN
 # ═══════════════════════════════════════════════════════════════════════════════
 db = MySQLManager()
+
+
+def _rehydrate_config_from_admin() -> None:
+    """Überlagert CONFIG mit den in der DB gespeicherten Admin-Einstellungen.
+
+    So bleiben Dashboard-Einstellungen nach einem Restart erhalten.
+    """
+    try:
+        if not getattr(db, "db_available", False):
+            return
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                row = c.fetchone()
+        if not row:
+            return
+        stored = db.get_user_settings(row["id"]) or {}
+        if not isinstance(stored, dict) or not stored:
+            return
+        applied = 0
+        for k, v in stored.items():
+            if k in CONFIG:
+                CONFIG[k] = v
+                applied += 1
+        if applied:
+            log.info("⚙️  %d Einstellungen aus Admin-DB geladen", applied)
+    except Exception as e:
+        log.debug(f"_rehydrate_config_from_admin: {e}")
+
+
+_rehydrate_config_from_admin()
+
 knowledge_base = KnowledgeBase(
     db,
     llm_endpoint=os.getenv("LLM_ENDPOINT", ""),
@@ -4684,18 +4779,94 @@ def _reveal_and_decrypt(val: Any) -> str:
     return decrypt_value(raw) if raw else ""
 
 
-def create_exchange():
-    """Erstellt die primäre Exchange-Instanz aus CONFIG.
-
-    Unterstützt Passphrase für OKX, KuCoin und Crypto.com automatisch.
+def _is_single_exchange_mode() -> bool:
+    """Single-Exchange-Mode ist aktiv, wenn EXCHANGE in der env gesetzt ist
+    UND zugehörige Keys vorhanden sind. Andernfalls wird Multi-Exchange-Mode
+    aktiv und die primäre Exchange wird aus der DB (user_exchanges) ermittelt.
     """
-    name = CONFIG.get("exchange", "cryptocom")
+    env_exchange = (os.getenv("EXCHANGE", "") or "").strip()
+    if not env_exchange:
+        return False
+    # Wenn EXCHANGE gesetzt ist, aber keine Keys: behandeln wir als aktiv
+    # (Paper-Trading funktioniert ohne Keys). Single-Mode ist ON.
+    return True
+
+
+def _get_admin_primary_exchange() -> dict | None:
+    """Liefert die primäre Exchange-Konfiguration des Admin-Users aus der DB.
+
+    Gibt dict mit keys {exchange, api_key, api_secret, passphrase} zurück oder None.
+    """
+    try:
+        if db is None or not getattr(db, "db_available", False):
+            return None
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                row = c.fetchone()
+                if not row:
+                    return None
+                admin_id = row["id"]
+        enabled = db.get_enabled_exchanges(admin_id)
+        if not enabled:
+            return None
+        # get_enabled_exchanges sortiert bereits is_primary DESC
+        e = enabled[0]
+        return {
+            "exchange": e.get("exchange", ""),
+            "api_key": e.get("api_key", "") or "",
+            "api_secret": e.get("api_secret", "") or "",
+            "passphrase": e.get("passphrase", "") or "",
+        }
+    except Exception as e:
+        log.debug(f"_get_admin_primary_exchange: {e}")
+        return None
+
+
+def create_exchange():
+    """Erstellt die primäre Exchange-Instanz.
+
+    Priorität der Quelle für Keys + Exchange-Name:
+      1. Admin-Exchange aus DB (user_exchanges, is_primary + enabled)
+      2. EXCHANGE aus .env (Single-Mode)
+      3. Fallback: "cryptocom" als Default
+    Im Paper-Trading-Modus werden keine Credentials verwendet (public-only).
+    """
+    # Admin-DB-Konfiguration bevorzugt, wenn vorhanden
+    db_cfg = _get_admin_primary_exchange()
+    single_mode = _is_single_exchange_mode()
+
+    if db_cfg and db_cfg.get("exchange"):
+        name = db_cfg["exchange"]
+        db_key = db_cfg["api_key"]
+        db_secret = db_cfg["api_secret"]
+        db_pass = db_cfg["passphrase"]
+        # CONFIG-Anzeige synchronisieren, damit Dashboard/Stats die DB-Exchange anzeigen.
+        if CONFIG.get("exchange") != name:
+            CONFIG["exchange"] = name
+    elif single_mode:
+        name = CONFIG.get("exchange", "cryptocom")
+        db_key = db_secret = db_pass = ""
+    else:
+        # Kein Single-Mode und keine DB-Exchange: Multi-Mode ohne Eintrag.
+        # Nutze den Config-Default damit der Bot Public-Daten laden kann.
+        name = CONFIG.get("exchange", "cryptocom")
+        db_key = db_secret = db_pass = ""
+        log.info(
+            "ℹ️  Multi-Exchange-Mode aktiv (EXCHANGE env leer) – "
+            "richte Exchange-Keys im Dashboard unter 'Exchanges' ein."
+        )
+
     # Im Paper-Trading-Modus reine Public-Instanzen: keine Credentials nötig,
     # damit auch ohne API-Keys (z.B. Bybit ohne Keys) Preis-/Markt-Daten laden.
     if CONFIG.get("paper_trading", True):
         api_key = ""
         api_secret = ""
         passphrase = ""
+    elif db_key or db_secret:
+        api_key = db_key
+        api_secret = db_secret
+        passphrase = db_pass
     else:
         api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
         api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
@@ -5964,6 +6135,7 @@ def api_user_exchanges_upsert():
     exchange = _normalize_exchange_name(data.get("exchange", ""))
     api_key = str(data.get("api_key", "")).strip()
     api_secret = str(data.get("api_secret", "")).strip()
+    passphrase = str(data.get("passphrase", "")).strip()
     enabled = _safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
     is_primary = _safe_bool(data.get("is_primary", False), False)
     if not exchange:
@@ -5971,7 +6143,13 @@ def api_user_exchanges_upsert():
     if not api_key or not api_secret:
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.upsert_user_exchange(
-        request.user_id, exchange, api_key, api_secret, enabled, is_primary
+        request.user_id,
+        exchange,
+        api_key,
+        api_secret,
+        enabled,
+        is_primary,
+        passphrase=passphrase,
     )
     _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
     return jsonify({"ok": ok})
@@ -6935,11 +7113,13 @@ def on_update_config(data):
         "lstm_lookback",
         "discord_report_hour",
     }
+    updated: dict[str, Any] = {}
     for k, v in data.items():
         if k not in allowed:
             continue
         if k == "paper_trading":
             CONFIG[k] = True
+            updated[k] = True
             continue
         if k in _numeric_keys:
             v = _safe_float(v, CONFIG.get(k, 0.0))
@@ -6948,7 +7128,18 @@ def on_update_config(data):
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
+        updated[k] = v
     _enforce_paper_trading("socket:update_config")
+    # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
+    try:
+        uid = getattr(request, "user_id", session.get("user_id"))
+        if uid and updated:
+            current = db.get_user_settings(uid) or {}
+            current.update(updated)
+            current["paper_trading"] = True
+            db.update_user_settings(uid, current)
+    except Exception as e:
+        log.debug(f"update_config persist: {e}")
     emit(
         "status",
         {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
@@ -7709,24 +7900,41 @@ def on_save_exchange_keys(data):
             },
         )
         return
-    # Keys werden nur im laufenden Config-Objekt gespeichert (nicht persistiert)
+    passphrase = str((data or {}).get("passphrase", "")).strip()
+    is_primary = _safe_bool((data or {}).get("is_primary", False), False)
+    enabled = _safe_bool((data or {}).get("enabled", True), True)
+    # Persistent in user_exchanges speichern
+    uid = getattr(request, "user_id", session.get("user_id"))
+    if uid:
+        ok = db.upsert_user_exchange(
+            uid,
+            ex_name,
+            api_key,
+            secret,
+            enabled=enabled,
+            is_primary=is_primary,
+            passphrase=passphrase,
+        )
+    else:
+        ok = False
+    # Zusätzlich in CONFIG für sofortige Nutzung im laufenden Prozess spiegeln
     if "extra_exchanges" not in CONFIG:
         CONFIG["extra_exchanges"] = {}
     CONFIG["extra_exchanges"][ex_name] = {
         "api_key": encrypt_value(api_key),
         "secret": encrypt_value(secret),
-        "passphrase": (
-            encrypt_value(str((data or {}).get("passphrase", "")).strip())
-            if (data or {}).get("passphrase")
-            else ""
-        ),
+        "passphrase": encrypt_value(passphrase) if passphrase else "",
     }
     emit(
         "status",
         {
-            "msg": f"🔑 Keys für {ex_name.upper()} gespeichert",
-            "key": "ws_exchange_keys_saved",
-            "type": "success",
+            "msg": (
+                f"🔑 Keys für {ex_name.upper()} gespeichert"
+                if ok
+                else f"⚠️ Keys für {ex_name.upper()} nur im Speicher – DB-Persistenz fehlgeschlagen"
+            ),
+            "key": "ws_exchange_keys_saved" if ok else "ws_exchange_keys_memonly",
+            "type": "success" if ok else "warning",
         },
     )
 
