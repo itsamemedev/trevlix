@@ -1,6 +1,6 @@
 # ╔══════════════════════════════════════════════════════════════╗
-# ║  TREVLIX – CI/CD Pipeline (Verbesserung #44)               ║
-# ║  Lint → Test → Coverage → Docker Build                      ║
+# ║  TREVLIX – CI/CD Pipeline                                    ║
+# ║  Lint → Test → Coverage → Docker Build                       ║
 # ╚══════════════════════════════════════════════════════════════╝
 
 name: CI
@@ -10,6 +10,15 @@ on:
     branches: [main, "claude/**"]
   pull_request:
     branches: [main]
+
+# Gemeinsame Umgebungsvariablen für Test-Jobs
+env:
+  PAPER_TRADING: "true"
+  ADMIN_PASSWORD: "test-admin-password-12345"
+  JWT_SECRET: "test-jwt-secret-32-bytes-hex-0123456789abcdef0123456789abcdef"
+  SECRET_KEY: "test-flask-secret-key-0123456789abcdef0123456789abcdef0123456789"
+  ENCRYPTION_KEY: "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtMTIzNDU2Nzg="
+  LANGUAGE: "de"
 
 jobs:
   lint:
@@ -36,14 +45,7 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Run tests
-        env:
-          PAPER_TRADING: "true"
-          ADMIN_PASSWORD: "test-admin-password-12345"
-          JWT_SECRET: "test-jwt-secret-32-bytes-hex"
-          SECRET_KEY: "test-flask-secret-key"
-          ENCRYPTION_KEY: "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtb25seS0xMjM0"
-          LANGUAGE: "de"
-        run: pytest tests/ -v --tb=short -x
+        run: pytest tests/ -v --tb=short
 
   coverage:
     name: Coverage
@@ -57,13 +59,6 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Run coverage
-        env:
-          PAPER_TRADING: "true"
-          ADMIN_PASSWORD: "test-admin-password-12345"
-          JWT_SECRET: "test-jwt-secret-32-bytes-hex"
-          SECRET_KEY: "test-flask-secret-key"
-          ENCRYPTION_KEY: "dGVzdC1rZXktZm9yLXVuaXQtdGVzdHMtb25seS0xMjM0"
-          LANGUAGE: "de"
         run: pytest tests/ --cov=. --cov-report=term-missing --tb=short
 
   docker:
