@@ -4891,8 +4891,8 @@ def create_exchange():
     return inst
 
 
-def _preflight_exchange_markets(max_attempts: int = 2) -> tuple[list[str], str | None]:
-    """Preflight für Exchange + Märkte mit kurzem Retry.
+def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str | None]:
+    """Preflight für Exchange + Märkte mit Retry und persistentem Cache-Fallback.
 
     Returns:
         (markets, error_message). Bei Erfolg ist error_message None.
@@ -4908,7 +4908,15 @@ def _preflight_exchange_markets(max_attempts: int = 2) -> tuple[list[str], str |
         except Exception as exc:
             last_err = str(exc)
         if attempt < max_attempts:
-            time.sleep(min(2 * attempt, 4))
+            time.sleep(min(2**attempt, 10))  # 2s, 4s, 8s, 10s
+    # Fallback: Persistenter Disk-Cache ermöglicht Start trotz Exchange-Ausfall
+    disk_cached = _load_market_cache()
+    if disk_cached:
+        log.warning(
+            "Preflight: Exchange nicht erreichbar – nutze persistenten Cache (%d Märkte).",
+            len(disk_cached),
+        )
+        return disk_cached, None
     return [], last_err or "Exchange/Marktdaten nicht erreichbar"
 
 
@@ -4925,6 +4933,61 @@ safe_fetch_tickers = _factory_safe_fetch_tickers
 # ═══════════════════════════════════════════════════════════════════════════════
 # MARKT-SCANNER
 # ═══════════════════════════════════════════════════════════════════════════════
+
+# Persistenter Markt-Cache: überlebt Neustarts, damit der Bot auch bei
+# temporären Exchange-Ausfällen mit der letzten bekannten Marktliste starten kann.
+_MARKET_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+_MARKET_CACHE_FILE = os.path.join(_MARKET_CACHE_DIR, "market_cache.json")
+_MARKET_CACHE_MAX_AGE = 86400  # 24h – danach wird der Cache als veraltet betrachtet
+
+
+def _save_market_cache(markets: list[str]) -> None:
+    """Speichert Marktliste auf Disk für Restart-Resilienz."""
+    try:
+        os.makedirs(_MARKET_CACHE_DIR, exist_ok=True)
+        payload = {"ts": time.time(), "markets": markets}
+        tmp = _MARKET_CACHE_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(payload, f)
+        os.replace(tmp, _MARKET_CACHE_FILE)
+    except Exception as e:
+        log.debug("Markt-Cache schreiben fehlgeschlagen: %s", e)
+
+
+def _load_market_cache(max_age: int = _MARKET_CACHE_MAX_AGE) -> list[str]:
+    """Lädt gecachte Marktliste von Disk (falls vorhanden und nicht veraltet)."""
+    try:
+        with open(_MARKET_CACHE_FILE) as f:
+            data = json.load(f)
+        age = time.time() - data.get("ts", 0)
+        markets = data.get("markets", [])
+        if not markets:
+            return []
+        if age > max_age:
+            log.warning(
+                "Markt-Cache veraltet (%.0f h) – wird trotzdem als Fallback genutzt.",
+                age / 3600,
+            )
+        return markets
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        return []
+    except Exception as e:
+        log.debug("Markt-Cache lesen fehlgeschlagen: %s", e)
+        return []
+
+
+# Beim Start: persistenten Cache in state.markets laden, damit der Bot sofort
+# eine Marktliste hat, auch wenn die Exchange beim ersten Preflight nicht antwortet.
+_startup_cached_markets = _load_market_cache()
+if _startup_cached_markets and not state.markets:
+    with state._lock:
+        state.markets = _startup_cached_markets
+    log.info(
+        "📦 %d Märkte aus persistentem Cache geladen (Startup-Seed).",
+        len(_startup_cached_markets),
+    )
+
+
 def fetch_markets(ex) -> list[str]:
     try:
         markets = ex.load_markets()
@@ -4948,14 +5011,27 @@ def fetch_markets(ex) -> list[str]:
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
-        return (priority + rest)[:80]
+        result = (priority + rest)[:80]
+        # Erfolgreiche Marktliste persistent cachen
+        if result:
+            _save_market_cache(result)
+        return result
     except Exception as e:
         log.error(f"Märkte: {e}")
+        # Fallback 1: In-Memory Cache
         with state._lock:
             cached = list(state.markets)
         if cached:
             log.warning("Nutze gecachte Märkte (%d), da Exchange-Daten fehlen.", len(cached))
-        return cached
+            return cached
+        # Fallback 2: Persistenter Disk-Cache
+        disk_cached = _load_market_cache()
+        if disk_cached:
+            log.warning(
+                "Nutze persistenten Markt-Cache (%d Märkte) – Exchange nicht erreichbar.",
+                len(disk_cached),
+            )
+        return disk_cached
 
 
 def scan_symbol(ex, symbol) -> dict | None:
@@ -5847,20 +5923,43 @@ def bot_loop():
                                 "warning",
                             )
                         else:
-                            emit_event(
-                                "status",
-                                {
-                                    "msg": "❌ Keine Märkte verfügbar – Exchange nicht erreichbar",
-                                    "key": "ws_no_markets_available",
-                                    "type": "error",
-                                },
-                            )
-                            state.add_activity(
-                                "❌",
-                                "Keine Märkte verfügbar",
-                                "Exchange nicht erreichbar – kein Cache vorhanden",
-                                "error",
-                            )
+                            # Letzter Fallback: persistenten Disk-Cache prüfen
+                            disk_fb = _load_market_cache()
+                            if disk_fb:
+                                with state._lock:
+                                    state.markets = disk_fb
+                                emit_event(
+                                    "status",
+                                    {
+                                        "msg": (
+                                            "⚠️ Exchange nicht erreichbar – "
+                                            f"nutze persistenten Cache ({len(disk_fb)} Märkte)"
+                                        ),
+                                        "key": "ws_markets_disk_cache",
+                                        "type": "warning",
+                                    },
+                                )
+                                state.add_activity(
+                                    "⚠️",
+                                    "Persistenter Markt-Cache geladen",
+                                    f"{len(disk_fb)} Märkte aus Disk-Cache",
+                                    "warning",
+                                )
+                            else:
+                                emit_event(
+                                    "status",
+                                    {
+                                        "msg": "❌ Keine Märkte verfügbar – Exchange nicht erreichbar",
+                                        "key": "ws_no_markets_available",
+                                        "type": "error",
+                                    },
+                                )
+                                state.add_activity(
+                                    "❌",
+                                    "Keine Märkte verfügbar",
+                                    "Exchange nicht erreichbar – kein Cache vorhanden",
+                                    "error",
+                                )
                         last_error_emit_ts = now_ts
 
             # Arbitrage
