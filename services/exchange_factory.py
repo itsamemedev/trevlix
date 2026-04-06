@@ -48,7 +48,8 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
 }
 
 # Exchanges die eine API-Passphrase zusätzlich zu Key/Secret benötigen
-PASSPHRASE_REQUIRED: frozenset[str] = frozenset({"okx", "kucoin", "cryptocom"})
+# Crypto.com benötigt KEINE Passphrase – nur OKX und KuCoin.
+PASSPHRASE_REQUIRED: frozenset[str] = frozenset({"okx", "kucoin"})
 
 # Exchanges, bei denen fetch_tickers(symbols) ineffizient oder nicht unterstützt ist.
 # Für diese wird fetch_tickers() ohne Argumente aufgerufen und client-seitig gefiltert.

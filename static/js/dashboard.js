@@ -2303,7 +2303,8 @@ function mexSetupKeys(name) {
 }
 
 function mexOnExchangeSelect(name) {
-  const needsPP = ['okx','kucoin','cryptocom'].includes(name);
+  // Only OKX and KuCoin require a passphrase – Crypto.com does NOT
+  const needsPP = ['okx','kucoin'].includes(name);
   document.getElementById('mex-passphrase-wrap').style.display = needsPP ? '' : 'none';
 }
 
