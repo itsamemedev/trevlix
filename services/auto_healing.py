@@ -26,8 +26,8 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
-from enum import StrEnum
+from datetime import datetime, timezone
+from enum import Enum
 from typing import Any
 
 from trevlix_i18n import t
@@ -45,7 +45,7 @@ _ESCALATION_WINDOW: int = 600  # 10 minutes in seconds
 _ESCALATION_LIMIT: int = 3  # failures within window before escalation
 
 
-class ServiceName(StrEnum):
+class ServiceName(str, Enum):
     """Identifiers for each monitored subsystem."""
 
     BOT_LOOP = "bot_loop"
@@ -55,7 +55,7 @@ class ServiceName(StrEnum):
     MEMORY = "memory"
 
 
-class Severity(StrEnum):
+class Severity(str, Enum):
     """Incident severity levels."""
 
     WARNING = "warning"
@@ -385,7 +385,7 @@ class AutoHealingAgent:
     ) -> None:
         """Log a failure, update tracker, and escalate if needed."""
         now_mono = time.monotonic()
-        now_utc = datetime.now(UTC)
+        now_utc = datetime.now(timezone.utc)
 
         incident = Incident(
             timestamp=now_utc,

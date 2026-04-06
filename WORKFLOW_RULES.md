@@ -4,6 +4,8 @@ Diese Regeln gelten dauerhaft für Änderungen im Repository.
 
 1. **Versionspflege bei jeder relevanten Änderung**
    - Version prüfen/erhöhen (`VERSION.md`, `pyproject.toml`, `services/utils.py`, README/Dokumentation falls angezeigt).
+   - Sicherstellen, dass der Dashboard-Updater dieselbe Version meldet (Fallback-Kette in `services/git_ops.py`: Git-Tag -> `VERSION.md` -> `BOT_VERSION`).
+   - Nach Versionsänderungen den i18n-/Updater-Check ausführen: `python scripts/check_i18n_keys.py`.
 2. **Dokumentation immer mitziehen**
    - `CHANGELOG.md` ergänzen.
    - `LAST_WORK.md` aktualisieren.

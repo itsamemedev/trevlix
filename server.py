@@ -5848,12 +5848,25 @@ def get_heatmap_data(ex) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 # HAUPT BOT LOOP
 # ═══════════════════════════════════════════════════════════════════════════════
+def _heartbeat_sleep(seconds: float) -> None:
+    """Sleep in short chunks while emitting loop heartbeats."""
+    remaining = max(0.0, float(seconds))
+    while remaining > 0 and state.running:
+        try:
+            healer.heartbeat()
+        except Exception:
+            pass
+        chunk = min(1.0, remaining)
+        time.sleep(chunk)
+        remaining -= chunk
+
+
 def bot_loop():
     ex = None
     last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
-            time.sleep(5)
+            _heartbeat_sleep(5)
             continue
         # Auto-Healing: Signal that bot loop is alive
         try:
@@ -5889,7 +5902,7 @@ def bot_loop():
                             "warning",
                         )
                         last_error_emit_ts = now_ts
-                    time.sleep(30)
+                    _heartbeat_sleep(30)
                     continue
             with state._lock:
                 state.iteration += 1
@@ -5950,7 +5963,7 @@ def bot_loop():
             # Anomalie global prüfen
             if anomaly.is_anomaly:
                 emit_event("update", state.snapshot())
-                time.sleep(CONFIG.get("scan_interval", 60))
+                _heartbeat_sleep(CONFIG.get("scan_interval", 60))
                 continue
 
             # Märkte laden
@@ -6122,16 +6135,16 @@ def bot_loop():
         # [Verbesserung #5] Differenzierte ccxt-Fehlerbehandlung
         except ccxt.RateLimitExceeded as e:
             log.warning(f"Rate-Limit: {e} – warte 60s")
-            time.sleep(60)
+            _heartbeat_sleep(60)
         except ccxt.ExchangeNotAvailable as e:
             log.warning(f"Exchange nicht verfügbar: {e} – warte 120s, Circuit Breaker")
             ex = None
             risk.record_result(False)  # Zählt als Verlust für Circuit Breaker
-            time.sleep(120)
+            _heartbeat_sleep(120)
         except ccxt.NetworkError as e:
             log.warning(f"Netzwerkfehler: {e} – reconnect in 15s")
             ex = None
-            time.sleep(15)
+            _heartbeat_sleep(15)
         except ccxt.ExchangeError as e:
             log.error(f"Exchange-Fehler: {e}")
             discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
@@ -6143,7 +6156,7 @@ def bot_loop():
                     "type": "error",
                 },
             )
-            time.sleep(30)
+            _heartbeat_sleep(30)
         except Exception as e:
             log.error(f"Bot-Loop: {e}", exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
@@ -6155,8 +6168,8 @@ def bot_loop():
                     "type": "error",
                 },
             )
-            time.sleep(10)
-        time.sleep(CONFIG.get("scan_interval", 60))
+            _heartbeat_sleep(10)
+        _heartbeat_sleep(CONFIG.get("scan_interval", 60))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

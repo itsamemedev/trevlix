@@ -602,3 +602,71 @@ if errors:
 ### Konfiguration
 
 Keine eigenen Umgebungsvariablen. Stellt Validierungslogik fuer andere Module bereit.
+
+---
+
+## git_ops.py -- GitHub Updater Service
+
+### Zweck
+
+Kapselt alle Git-Operationen fuer den Admin-Updater (Check, Apply, Rollback)
+mit festen Argumentlisten und Repository-gebundenem Arbeitsverzeichnis.
+Damit werden Shell-Injection-Risiken minimiert und Fehler kontrolliert
+als `GitOperationError` surfaciert.
+
+### Kernlogik (Versionsermittlung)
+
+`get_update_status()` berechnet die Version jetzt robust ueber eine
+Fallback-Kette und SemVer-Vergleich:
+
+1. Lokale Git-Tag-Version (`git describe --tags --abbrev=0`)
+2. `VERSION.md`
+3. `services.utils.BOT_VERSION`
+4. Umgebungsvariable `TREVLIX_VERSION` (falls gesetzt)
+
+Fuer `latest_version` wird zusaetzlich versucht, die hoechste Remote-Tag-Version
+ueber `git ls-remote --tags --refs origin` zu bestimmen. Falls das fehlschlaegt,
+wird auf die lokale Kette zurueckgefallen.
+
+### Wichtige Funktionen
+
+| Name | Signatur | Beschreibung |
+|------|----------|--------------|
+| `get_update_status` | `() -> UpdateStatus` | Liefert `current_version`, `latest_version`, `update_available`, `repo`, `branch`, `last_check`. |
+| `apply_update` | `() -> None` | Fuehrt `git pull --ff-only` aus. |
+| `rollback_update` | `() -> bool` | Fuehrt `git stash` aus, gibt Erfolg als Bool zurueck. |
+| `_pick_latest_version` | `(candidates: list[str]) -> str` | Waehlt die hoechste gueltige SemVer-Version aus Kandidaten. |
+| `_git_latest_remote_tag` | `() -> str` | Liefert die hoechste Remote-Tag-Version, falls verfuegbar. |
+
+### Fehlermodell
+
+- Timeouts/OS-Fehler/Subprocess-Fehler werden in `GitOperationError`
+  mit user-sicherer Message + internem Detailtext transformiert.
+- Nicht-kritische Teilfehler (z. B. fehlender Tag) degradieren den Status,
+  brechen aber nicht den gesamten Update-Check.
+
+---
+
+## i18n Qualitaetssicherung (Dashboard/WebSocket)
+
+### Zweck
+
+Sicherstellen, dass alle WebSocket-Statuskeys (`ws_*`) aus `server.py`
+in `static/js/trevlix_translations.js` vorhanden sind und alle
+unterstuetzten Sprachen abdecken (`de`, `en`, `es`, `ru`, `pt`).
+
+### Pruefskript
+
+```bash
+python scripts/check_i18n_keys.py
+```
+
+### Was wird geprueft?
+
+1. **Key-Abdeckung:** Jeder in `server.py` emittierte `ws_*`-Key existiert in den UI-Translations.
+2. **Sprach-Abdeckung:** Jeder vorhandene `ws_*`-Eintrag enthaelt alle Pflichtsprachen.
+
+### Empfohlener Einsatz
+
+- Vor jedem Commit mit WebSocket-/Dashboard-Aenderungen.
+- Verpflichtend bei Release-/Versions-Bumps.
