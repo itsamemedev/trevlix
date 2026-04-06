@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.6.6**
+**Algorithmic Crypto Trading Bot — v1.6.8**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.6-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.8-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -178,10 +178,12 @@ trevlix/
 │       ├── __init__.py
 │       ├── bootstrap.py               # Flask/CORS/Socket.IO/Limiter Bootstrap
 │       ├── logging_setup.py           # Logging-Konfiguration
+│       ├── default_config.py          # Zentrale Default-Konfiguration (CONFIG-Builder)
 │       ├── runtime.py                 # Runtime-Startsequenz
 │       ├── http_routes.py             # System-Routen + Error-Handling
 │       ├── lifecycle.py               # Graceful Shutdown + Signals
 │       ├── request_helpers.py         # Sichere Request-Parser + Exchange-Normalisierung
+│       ├── websocket_guard.py         # Gemeinsame Socket.IO-Rate-Limiter-Helfer
 │       └── security.py                # Security-Header + CSRF-Token-Helfer
 ├── routes/                            # Flask Blueprints (Auth, Dashboard, WS-Migration)
 ├── services/                          # Business-Logik (Trading, Risk, AI, Integrationen)

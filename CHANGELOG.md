@@ -7,6 +7,26 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.8] – 2026-04-06
+
+### Changed — WebSocket-Rate-Limiting aus `server.py` ausgelagert
+
+- **Neues Core-Modul `app/core/websocket_guard.py`** eingeführt mit `WsRateLimiter`, um Socket-Event-Rate-Limiting zentral und testbar zu kapseln.
+- **`server.py` weiter entschlackt**: Die lokalen `_ws_limits`-Global-States und Cleanup-Logik wurden entfernt; `_ws_rate_check(...)` delegiert jetzt auf `WsRateLimiter`.
+- **`routes/websocket.py` vereinheitlicht**: nutzt ebenfalls `WsRateLimiter` statt eigener duplizierter Rate-Limit-Implementierung.
+- **Neue Tests**: `tests/test_websocket_guard.py` prüft Blockierung im Intervall, Freigabe nach Intervall und Stale-Cleanup.
+- **Qualitätssicherung**: `python -m compileall -q server.py app routes tests`, `pytest -q tests/test_default_config.py tests/test_websocket_guard.py tests/test_bootstrap.py tests/test_auth.py tests/test_api.py`, `python scripts/check_i18n_keys.py` erfolgreich.
+
+## [1.6.7] – 2026-04-06
+
+### Changed — Weitere Entschlackung von `server.py` (Konfigurationsmodul)
+
+- **Neues Core-Modul `app/core/default_config.py`** eingeführt, das die komplette Default-`CONFIG`-Erzeugung kapselt.
+- **`server.py` entschlackt**: Das große Inline-`CONFIG`-Dictionary wurde entfernt und durch `build_default_config(_secret)` ersetzt; Verhalten und Schlüsselnamen bleiben kompatibel.
+- **Robustere Env-Parser zentralisiert**: Bool-/Int-Umgebungsvariablen (`ALLOW_REGISTRATION`, `DISCORD_ON_SIGNALS`, `DISCORD_SIGNAL_COOLDOWN_SEC`, `MYSQL_PORT`) werden zentral und defensiv geparst.
+- **Neue Tests**: `tests/test_default_config.py` prüft Standardwerte, Env-Overrides und Fallback bei ungültigen Integer-Werten.
+- **Qualitätssicherung**: `python -m compileall -q server.py app services routes tests` sowie `pytest -q tests/test_default_config.py tests/test_bootstrap.py tests/test_auth.py tests/test_api.py` erfolgreich.
+
 ## [1.6.6] – 2026-04-06
 
 ### Added — Detailliertere Discord-Trading-Notifications & Signal-Hinweise

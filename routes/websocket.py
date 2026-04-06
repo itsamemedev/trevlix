@@ -16,6 +16,8 @@ Verwendung (nach vollständiger Migration):
 
 import logging
 
+from app.core.websocket_guard import WsRateLimiter
+
 log = logging.getLogger("trevlix.websocket")
 
 
@@ -60,52 +62,14 @@ def register_handlers(
     """
 
     # ── Rate-Limit-Hilfsfunktion ────────────────────────────────────────────
-    _last_cleanup = [0.0]  # Mutable Container für nonlocal-freien Zugriff
-
-    import threading
-
-    _ws_limits_lock = threading.Lock()
+    limiter = WsRateLimiter()
 
     def _ws_rate_check(sid: str, action: str, min_interval: float = 2.0) -> bool:
-        """Gibt True zurück wenn der Request erlaubt ist.
-
-        Blockiert wenn min_interval seit letztem gleichen Event nicht vergangen.
-        Bereinigt stale Einträge alle 60 Sekunden um Memory-Leaks zu verhindern.
-
-        Args:
-            sid: Socket-ID des Clients.
-            action: Name des Events (z.B. 'start_bot').
-            min_interval: Minimale Sekunden zwischen gleichen Events.
-
-        Returns:
-            True wenn der Request erlaubt ist, False wenn Rate-Limited.
-        """
-        import time
-
-        key = f"{sid}:{action}"
-        now = time.time()
-        with _ws_limits_lock:
-            last = _ws_limits.get(key, 0)
-            if now - last < min_interval:
-                return False
-            _ws_limits[key] = now
-
-            # Zeitbasierte Eviction alle 60s (statt nur bei >1000 Einträgen)
-            if now - _last_cleanup[0] > 60:
-                _last_cleanup[0] = now
-                cutoff = now - 300  # Einträge älter als 5 Minuten entfernen
-                stale = [k for k, v in _ws_limits.items() if v < cutoff]
-                for k in stale:
-                    _ws_limits.pop(k, None)
-                if stale:
-                    log.debug(f"WS Rate-Limit: {len(stale)} stale Einträge entfernt")
-
-            # Hard cap: prevent unbounded growth between cleanups
-            if len(_ws_limits) > 5000:
-                _ws_limits.clear()
-                log.warning("WS Rate-Limit: Hard cap erreicht, Dict geleert")
-
-        return True
+        """Gibt True zurück wenn der Request erlaubt ist."""
+        allowed = limiter.check(sid, action, min_interval_sec=min_interval)
+        if not allowed:
+            log.debug("WS Rate-Limit getroffen sid=%s action=%s", sid, action)
+        return allowed
 
     # Die eigentliche Handler-Registrierung erfolgt noch in server.py.
     # Dieses Modul enthält die Hilfsfunktionen und dient als Migrations-Target.

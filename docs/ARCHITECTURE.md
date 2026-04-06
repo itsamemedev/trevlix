@@ -1,4 +1,4 @@
-# TREVLIX v1.6.6 -- Architektur-Dokumentation
+# TREVLIX v1.6.8 -- Architektur-Dokumentation
 
 ## 1. Uebersicht
 

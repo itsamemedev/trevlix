@@ -8,10 +8,12 @@ trevlix/
 │   └── core/
 │       ├── bootstrap.py       # Flask/CORS/Socket.IO/Limiter Setup
 │       ├── logging_setup.py   # Logging-Konfiguration & Formatter
+│       ├── default_config.py  # Zentrale Erzeugung der Runtime-Default-Config
 │       ├── runtime.py         # Startsequenz/Hintergrund-Thread-Wiring
 │       ├── http_routes.py     # Systemrouten + Error-Handler + Blueprint-Wiring
 │       ├── lifecycle.py       # Graceful Shutdown + Signal-Handling
 │       ├── request_helpers.py # Sichere Request-Parser + Exchange-Normalisierung
+│       ├── websocket_guard.py # Gemeinsame Socket.IO-Rate-Limit-Helfer
 │       └── security.py        # Security-Header + CSRF-Token-Handling
 ├── routes/                    # Flask Blueprints & Websocket-Migrationsmodule
 ├── services/                  # Business-Logik
