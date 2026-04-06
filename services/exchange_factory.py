@@ -158,7 +158,7 @@ def safe_fetch_tickers(ex: Any, symbols: list[str]) -> dict[str, Any]:
 
     Strategie:
     1. Für Exchanges in _SINGLE_TICKER_EXCHANGES: fetch_tickers() ohne Args
-       und anschließend client-seitig filtern.
+       und anschließend client-seitig filtern (z.B. Crypto.com).
     2. Für alle anderen: fetch_tickers(symbols) versuchen.
     3. Bei Fehler: fetch_tickers() ohne Args + filtern.
     4. Bei weiterem Fehler: fetch_ticker() einzeln (limitiert).
@@ -175,13 +175,17 @@ def safe_fetch_tickers(ex: Any, symbols: list[str]) -> dict[str, Any]:
     ex_id = getattr(ex, "id", "")
     sym_set = set(symbols)
 
-    # Strategie 1: Batch-Aufruf mit Symbolen und Retry (bevorzugt, auch für crypto.com)
-    # Viele CCXT-Versionen unterstützen mittlerweile Batch-Tickers auf Crypto.com.
+    # Strategie 1: Für Exchanges in _SINGLE_TICKER_EXCHANGES direkt ohne Args + filtern.
+    # Crypto.com unterstützt keine Batch-Ticker-Abfragen mit mehreren Symbolen.
+    if ex_id in _SINGLE_TICKER_EXCHANGES:
+        return _fetch_tickers_filtered(ex, sym_set, symbols)
+
+    # Strategie 2: Batch-Aufruf mit Symbolen und Retry (bevorzugt)
     result = _with_retry(lambda: ex.fetch_tickers(symbols), ex_id, "fetch_tickers(symbols)")
     if result is not None:
         return result
 
-    # Strategie 2: Ohne Argumente + filtern (für single-ticker Exchanges oder als Fallback)
+    # Strategie 3: Ohne Argumente + filtern (Fallback für andere Exchanges)
     return _fetch_tickers_filtered(ex, sym_set, symbols)
 
 
