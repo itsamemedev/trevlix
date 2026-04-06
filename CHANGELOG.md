@@ -7,6 +7,23 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.6] – 2026-04-06
+
+### Added — Detailliertere Discord-Trading-Notifications & Signal-Hinweise
+
+- **Discord-Benachrichtigungen verbessert** (`services/notifications.py`):
+  - Kauf-/Verkaufsmeldungen visuell überarbeitet (strukturierter `yaml`-Block + zusätzliche Embed-Felder).
+  - Mehr Kontext in Buy-Events: Signal-Confidence, RSI, Regime, Vote-Verteilung.
+  - Neue Methode `signal_opportunity(...)` für Kauf-/Verkaufskandidaten mit Cooldown gegen Spam.
+- **Bot-Loop integriert** (`server.py`):
+  - Erkenntnisse aus Long-/Short-Scans können jetzt als Opportunity-Hinweise nach Discord gesendet werden, bevor ein Trade ausgeführt wird.
+- **Neue Konfigurationsoptionen**:
+  - `DISCORD_ON_SIGNALS`
+  - `DISCORD_SIGNAL_COOLDOWN_SEC`
+- **Testabdeckung erweitert**:
+  - Neue Tests in `tests/test_notifications.py` für Cooldown-Logik und erweiterte Buy-Embed-Felder.
+  - Voller Testlauf erfolgreich: `338 passed, 1 skipped`.
+
 ## [1.6.5] – 2026-04-06
 
 ### Fixed — Kompatibilität & Stabilität nach Refactoring

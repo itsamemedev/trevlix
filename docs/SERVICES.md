@@ -343,6 +343,8 @@ telegram.send("Bot gestartet")
 | Variable | Beschreibung |
 |----------|--------------|
 | `DISCORD_WEBHOOK` | Vollstaendige Discord-Webhook-URL. |
+| `DISCORD_ON_SIGNALS` | Schaltet Opportunity-Signal-Notifications (Buy/Sell-Kandidaten) ein/aus. |
+| `DISCORD_SIGNAL_COOLDOWN_SEC` | Cooldown in Sekunden pro Symbol/Richtung, um Discord-Spam zu vermeiden. |
 | `TELEGRAM_TOKEN` | Telegram-Bot-Token. |
 | `TELEGRAM_CHAT_ID` | Telegram-Chat-ID fuer Nachrichten. |
 
@@ -582,7 +584,7 @@ Gemeinsame Konstanten, Hilfsklassen und Validierungsfunktionen fuer das gesamte 
 | `validate_symbol` | `validate_symbol(symbol: str) -> bool` | Validiert ein Handelspaar-Format (z.B. `BTC/USDT`). |
 | `validate_config` | `validate_config(cfg: dict) -> list[str]` | Validiert CONFIG-Werte, gibt Liste von Fehlermeldungen zurueck (leer = OK). |
 | `BOT_NAME` | `str = "TREVLIX"` | Bot-Name. |
-| `BOT_VERSION` | `str = "1.6.5"` | Aktuelle Version. |
+| `BOT_VERSION` | `str = "1.6.6"` | Aktuelle Version. |
 | `EXCHANGE_MAP` | `dict[str, str]` | Mapping von Exchange-Namen zu CCXT-Klassennamen. |
 
 ### Verwendung

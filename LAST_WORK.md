@@ -2,13 +2,14 @@
 
 ## Zuletzt erledigt (2026-04-06)
 
-1. `server.py` weiter modularisiert: Request-Casting (`safe_int/safe_float/safe_bool`) und Exchange-Normalisierung in `app/core/request_helpers.py` ausgelagert.
-2. Security-Helfer extrahiert: Header-Setzung und CSRF-Token-Generierung in `app/core/security.py` verschoben und in `server.py` integriert.
-3. Passwort-Fallback-Hashing aus dem Monolith gelöst: neue Datei `services/passwords.py` (`pbkdf2_hash`, `pbkdf2_verify`), Nutzung in `server.py` umgestellt.
-4. Nachgelagerte Regressionen beseitigt:
-   - Python-3.10-Inkompatibilitäten (`datetime.UTC`, `StrEnum`) behoben.
-   - CSRF-Token-Wrapper in `server.py` für rückwärtskompatibles Verhalten ergänzt.
-5. Vollständigen Testlauf erfolgreich durchgeführt (`336 passed, 1 skipped`) und Versions-/Doku-Update auf `1.6.5`.
+1. Discord-Notifications deutlich verbessert (`services/notifications.py`):
+   - besser lesbare Buy/Sell-Embeds mit strukturierten Feldern,
+   - zusätzliche Kontextdaten (Confidence, RSI, Regime, Vote-Verteilung),
+   - neue Opportunity-Hinweise mit Cooldown (`signal_opportunity`).
+2. Bot-Loop erweitert (`server.py`): Long-/Short-Scans können jetzt bereits vor Trade-Ausführung als potenzielle Kauf-/Verkaufschancen an Discord gemeldet werden.
+3. Neue Env-/Config-Optionen ergänzt: `DISCORD_ON_SIGNALS`, `DISCORD_SIGNAL_COOLDOWN_SEC` (`.env.example`, `README.md`, `CONFIG`).
+4. Testabdeckung für Notifications erweitert (`tests/test_notifications.py`) und vollständigen Testlauf erfolgreich ausgeführt (`338 passed, 1 skipped`).
+5. Version und Dokumentation auf `1.6.6` synchronisiert (`CHANGELOG.md`, `VERSION.md`, README, technische Docs).
 
 ## Nächste sinnvolle Schritte
 

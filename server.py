@@ -459,6 +459,9 @@ CONFIG: dict[str, Any] = {
     "discord_on_error": True,
     "discord_on_circuit": True,
     "discord_daily_report": True,
+    "discord_on_signals": os.getenv("DISCORD_ON_SIGNALS", "true").lower()
+    in ("true", "1", "yes"),
+    "discord_signal_cooldown_sec": int(os.getenv("DISCORD_SIGNAL_COOLDOWN_SEC", "900")),
     "discord_report_hour": 20,
     # Alerts
     "price_alerts": [],
@@ -5331,7 +5334,18 @@ def open_position(ex, scan: dict):
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%",
         "success",
     )
-    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, news_score)
+    discord.trade_buy(
+        symbol,
+        price,
+        invest,
+        ai_score * 100,
+        win_prob,
+        news_score,
+        confidence=scan.get("confidence"),
+        rsi=scan.get("rsi"),
+        regime=pos_data.get("regime"),
+        votes=scan.get("votes"),
+    )
     # DNA + Smart Exit Discord-Notifications
     if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
         discord.dna_boost(
@@ -6010,6 +6024,14 @@ def bot_loop():
                                     and scan.get("confidence", 0)
                                     >= CONFIG.get("min_vote_score", 0.3)
                                 ):
+                                    discord.signal_opportunity(
+                                        scan["symbol"],
+                                        "sell",
+                                        float(scan.get("confidence", 0.0)),
+                                        float(scan.get("price", 0.0)),
+                                        news_score=float(scan.get("news_score", 0.0)),
+                                        note="Short-Kandidat erkannt (Signal -1)",
+                                    )
                                     invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
                                     short_engine.open_short(scan["symbol"], invest, scan["price"])
                             except Exception as se:
@@ -6034,6 +6056,14 @@ def bot_loop():
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
                         if res and res["signal"] == 1:
+                            discord.signal_opportunity(
+                                res["symbol"],
+                                "buy",
+                                float(res.get("confidence", 0.0)),
+                                float(res.get("price", 0.0)),
+                                news_score=float(res.get("news_score", 0.0)),
+                                note=res.get("mtf_desc", "") or "Long-Kandidat erkannt (Signal +1)",
+                            )
                             # Re-check max_open_trades to prevent exceeding limit
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
