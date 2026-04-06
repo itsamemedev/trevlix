@@ -48,8 +48,8 @@ class TestPassphraseRequirements:
     def test_kucoin_requires_passphrase(self):
         assert requires_passphrase("kucoin")
 
-    def test_cryptocom_requires_passphrase(self):
-        assert requires_passphrase("cryptocom")
+    def test_cryptocom_no_passphrase(self):
+        assert not requires_passphrase("cryptocom")
 
     def test_binance_no_passphrase(self):
         assert not requires_passphrase("binance")

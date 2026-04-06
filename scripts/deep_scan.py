@@ -118,39 +118,47 @@ def main() -> int:
     for result in cmd_results:
         report.append(f"| `{result.cmd}` | {status(result.code)} | {result.code} |")
 
-    report.extend([
-        "",
-        "### Command Output (abridged)",
-        "",
-    ])
+    report.extend(
+        [
+            "",
+            "### Command Output (abridged)",
+            "",
+        ]
+    )
 
     for result in cmd_results:
         output = result.output[:2000] if result.output else "(no output)"
-        report.extend([
-            f"#### `{result.cmd}`",
-            "```text",
-            output,
-            "```",
-            "",
-        ])
+        report.extend(
+            [
+                f"#### `{result.cmd}`",
+                "```text",
+                output,
+                "```",
+                "",
+            ]
+        )
 
-    report.extend([
-        "## Size Hotspots (Top 10)",
-        "",
-        "| Lines | File |",
-        "|---:|---|",
-    ])
+    report.extend(
+        [
+            "## Size Hotspots (Top 10)",
+            "",
+            "| Lines | File |",
+            "|---:|---|",
+        ]
+    )
 
     for lines, file_path in top_files:
         report.append(f"| {lines:,} | `{file_path}` |")
 
-    report.extend([
-        "",
-        "## Security Notes",
-        "",
-        "`subprocess.run` locations in `server.py`:",
-        "",
-    ])
+    report.extend(
+        [
+            "",
+            "## Security Notes",
+            "",
+            "`subprocess.run` locations in `server.py`:",
+            "",
+        ]
+    )
 
     for loc in subprocess_locations:
         report.append(f"- `{loc}`")
@@ -158,15 +166,17 @@ def main() -> int:
     if not subprocess_locations:
         report.append("- (none)")
 
-    report.extend([
-        "",
-        "## Production-Readiness Next Steps",
-        "",
-        "1. Run scan and tests in a Python 3.11 runtime to match project metadata.",
-        "2. Ensure dependencies are installed before `pytest` to avoid false-negative CI/local conclusions.",
-        "3. Continue decomposing `server.py` into bounded modules (routes, websocket handlers, updater/admin ops).",
-        "4. Add stricter audit logs and policy checks around admin-triggered git updater flows.",
-    ])
+    report.extend(
+        [
+            "",
+            "## Production-Readiness Next Steps",
+            "",
+            "1. Run scan and tests in a Python 3.11 runtime to match project metadata.",
+            "2. Ensure dependencies are installed before `pytest` to avoid false-negative CI/local conclusions.",
+            "3. Continue decomposing `server.py` into bounded modules (routes, websocket handlers, updater/admin ops).",
+            "4. Add stricter audit logs and policy checks around admin-triggered git updater flows.",
+        ]
+    )
 
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text("\n".join(report) + "\n", encoding="utf-8")

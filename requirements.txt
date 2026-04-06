@@ -15,7 +15,7 @@ simple-websocket>=1.0.0,<2.0.0   # WebSocket-Transport für async_mode="threadin
 ccxt>=4.2.0,<5.0.0
 
 # ── Database ───────────────────────────────────────────────────
-PyMySQL>=1.5.0,<2.0.0
+PyMySQL>=1.1.0,<2.0.0
 cryptography>=41.0.0,<44.0.0   # Fernet API-Key-Verschlüsselung
 
 # ── Data Processing ────────────────────────────────────────────

@@ -68,7 +68,9 @@ def _check_hex(var: str, min_len: int, label: str) -> Issue | None:
     if len(val) < min_len:
         return Issue("critical", var, f"{label} zu kurz ({len(val)} Zeichen, min. {min_len})")
     if not re.fullmatch(r"[0-9a-fA-F]+", val):
-        return Issue("critical", var, f"{label} enthält Nicht-Hex-Zeichen – bitte sicheren Hex-Wert setzen")
+        return Issue(
+            "critical", var, f"{label} enthält Nicht-Hex-Zeichen – bitte sicheren Hex-Wert setzen"
+        )
     return None
 
 
