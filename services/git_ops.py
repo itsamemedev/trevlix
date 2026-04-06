@@ -14,8 +14,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from services.utils import BOT_VERSION
+
 log = logging.getLogger("trevlix.git_ops")
-_DEFAULT_VERSION = os.getenv("TREVLIX_VERSION", "1.5.2")
+_DEFAULT_VERSION = os.getenv("TREVLIX_VERSION", BOT_VERSION)
 
 
 class GitOperationError(RuntimeError):

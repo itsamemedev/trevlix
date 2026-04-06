@@ -7,6 +7,64 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.4] – 2026-04-06
+
+### Fixed — Bot-Loop Heartbeat Stall & Updater-Version
+
+- **Bot-Loop-Stall entschärft**: `bot_loop` sendet Heartbeats nun auch während langer Scan-Phasen (throttled), nicht nur einmal pro Iteration.
+- **Future-Timeouts ergänzt**: Long-/Short-Scan über `ThreadPoolExecutor` nutzt jetzt Batch-Timeouts und bricht hängende Futures kontrolliert ab statt potenziell unbegrenzt zu blockieren.
+- **Updater-Version korrigiert**: `services/git_ops.py` verwendet keinen harten Fallback auf `1.5.2` mehr, sondern standardmäßig die aktuelle `BOT_VERSION` (bzw. `TREVLIX_VERSION`, falls gesetzt).
+
+## [1.6.3] – 2026-04-06
+
+### Fixed — Exchange-Wechsel & Auto-Recovery
+
+- **Dashboard-Exchange-Wechsel greift jetzt konsistent**: Bei `select_exchange`, `update_config(exchange)`, `save_api_keys` und `start_exchange` wird die aktive Exchange nicht nur in `CONFIG`, sondern auch als primäre User-Exchange gepinnt (falls vorhanden), damit `create_exchange()` nicht ungewollt auf alte Primärwerte (z. B. `cryptocom`) zurückfällt.
+- **`create_exchange()` priorisiert gewünschte Exchange**: Wenn in `CONFIG` eine valide Exchange gewählt ist, wird gezielt versucht, die passende aktivierte Admin-Exchange-Konfiguration zu laden, bevor der DB-Primärfallback greift.
+- **Automatische Exchange-Recovery beim Start**: Wenn Markt-Preflight fehlschlägt, probiert der Bot automatisch andere aktivierte Admin-Exchanges durch und schaltet bei Erfolg auf den funktionierenden Fallback um.
+
+## [1.6.2] – 2026-04-06
+
+### Changed — Weitere Entkopplung von HTTP/Lifecycle aus `server.py`
+
+#### Neue Core-Module
+- **HTTP-Routen/Handler ausgelagert**: `app/core/http_routes.py` registriert jetzt Systemrouten (`/favicon.ico`, `/robots.txt`, `/sitemap.xml`, `/404`) und globale Error-Handler (`404/500/429`) über `register_system_routes(...)`.
+- **Blueprint-Registrierung ausgelagert**: Auth- und Dashboard-Blueprints werden zentral in `register_default_blueprints(...)` eingebunden.
+- **Lifecycle ausgelagert**: Graceful-Shutdown und Signal-Registration (`SIGTERM`, `SIGINT`) in `app/core/lifecycle.py` verschoben.
+
+#### Server-Entrypoint weiter vereinfacht
+- `server.py` delegiert HTTP-Systemrouten, Graceful-Shutdown und Blueprint-Wiring nun an `app/core/*` statt Inline-Blöcken.
+
+#### Version & Doku
+- Version auf **1.6.2** angehoben und in zentralen Dateien synchronisiert.
+
+## [1.6.1] – 2026-04-06
+
+### Changed — Weitere Modularisierung von `server.py`
+
+#### Core-Module erweitert
+- **Logging ausgelagert**: Formatter- und Logging-Setup aus `server.py` in `app/core/logging_setup.py` verschoben (`configure_logging`).
+- **Runtime-Start ausgelagert**: `__main__`-Startsequenz (Thread-Start, Agent-Start, Auto-Start-Entscheidung, SocketIO-Run) in `app/core/runtime.py` überführt (`run_server`).
+- **`server.py` weiter entschlackt**: Einstiegspunkt ruft nun zentrale Core-Helfer auf, statt Inline-Bootstrap + Inline-Startlogik.
+
+#### Dokumentation
+- Version auf **1.6.1** angehoben und über zentrale Versionsquellen synchronisiert.
+- `LAST_WORK.md` aktualisiert mit den neuesten Modularisierungsschritten.
+
+## [1.6.0] – 2026-04-06
+
+### Changed — Strukturierung & Modularisierung
+
+#### Server-Refactoring
+- **App-Bootstrap ausgelagert**: Grundlegende Initialisierung von Flask, CORS, Socket.IO und Limiter wurde aus `server.py` in `app/core/bootstrap.py` verschoben. `server.py` verwendet nun die zentralen Bootstrap-Funktionen statt Inline-Setup-Logik.
+- **Klare Verantwortlichkeiten**: `server.py` bleibt Einstiegspunkt und Orchestrator; Setup-Details liegen in einem dedizierten Core-Modul.
+- **Neue Paketstruktur**: `app/` und `app/core/` als Basis für weitere schrittweise Modularisierung eingeführt.
+
+#### Dokumentation & Workflow
+- **README überarbeitet**: Strukturübersicht aktualisiert (inkl. neuem `app/core`-Bereich), Wartungshinweise ergänzt.
+- **Versionspflege vereinheitlicht**: Version auf `1.6.0` synchronisiert in `pyproject.toml`, `services/utils.py`, `README.md`, `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/SERVICES.md`, `static/js/trevlix_translations.js`.
+- **Neue Betriebsdokumente**: `VERSION.md`, `LAST_WORK.md`, `WORKFLOW_RULES.md`, `PROJECT_STRUCTURE.md`, `TODO.md` erstellt, damit Änderungen und offene Aufgaben nachvollziehbar bleiben.
+
 ## [1.5.3] – 2026-04-05
 
 ### Fixed — Exchange Integration & Passphrase Bug

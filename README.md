@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.5.3**
+**Algorithmic Crypto Trading Bot — v1.6.4**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.5.3-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.4-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -163,81 +163,41 @@ Full guide: [INSTALLATION.html](templates/INSTALLATION.html)
 
 ```
 trevlix/
-├── server.py                          # Flask + WebSocket Backend (7400+ lines)
-├── ai_engine.py                       # AI Engine reference (XGBoost, LSTM, ...)
-├── trevlix_i18n.py                    # Internationalization (Python)
-├── validate_env.py                    # Pre-startup environment validation
-│
-├── routes/                            # Flask Blueprints
-│   ├── auth.py                        # Login, register, 2FA, admin
-│   ├── dashboard.py                   # Static page routes
-│   └── websocket.py                   # WebSocket event handlers
-│
-├── services/                          # Modular business logic (19 modules)
-│   ├── adaptive_weights.py            # Self-learning strategy weights
-│   ├── auto_healing.py                # Auto-Healing Agent (system recovery) [NEW v1.5]
-│   ├── cluster_control.py             # Multi-Server Control Agent [NEW v1.5]
-│   ├── config.py                      # Pydantic BaseSettings configuration
-│   ├── cryptopanic.py                 # CryptoPanic news sentiment client
-│   ├── db_pool.py                     # Thread-safe MySQL connection pooling
-│   ├── encryption.py                  # Fernet API key encryption
-│   ├── exchange_manager.py            # Multi-exchange manager (CCXT)
-│   ├── indicator_cache.py             # Technical indicator TTL caching
-│   ├── knowledge.py                   # AI knowledge base + LLM integration
-│   ├── market_data.py                 # FearGreed, dominance, sentiment, on-chain
-│   ├── notifications.py               # Discord & Telegram alerts
-│   ├── performance_attribution.py     # Profit/loss factor analysis
-│   ├── revenue_tracking.py            # Revenue Tracking Agent (PnL/ROI) [NEW v1.5]
-│   ├── risk.py                        # Circuit breaker, VaR, correlation filter
-│   ├── smart_exits.py                 # Volatility-adaptive SL/TP
-│   ├── strategies.py                  # 9 voting trading strategies
-│   ├── trade_dna.py                   # Trade DNA fingerprinting
-│   └── utils.py                       # Shared utilities & constants
-│
-├── templates/                         # Jinja2 HTML templates (11 pages)
-│   ├── index.html                     # Landing page
-│   ├── dashboard.html                 # Real-time trading dashboard
-│   ├── INSTALLATION.html              # Setup guide
-│   ├── strategies.html                # Strategy documentation
-│   ├── api-docs.html                  # REST API reference
-│   ├── faq.html, security.html        # FAQ & security
-│   ├── changelog.html, roadmap.html   # History & roadmap
-│   ├── about.html, 404.html           # About & error page
-│
-├── static/                            # Frontend assets
-│   ├── css/shared-nav.css             # Shared navigation styles
-│   ├── css/dashboard.css              # Dashboard styles
-│   ├── js/dashboard.js                # Dashboard logic (1823 lines)
-│   ├── js/trevlix_translations.js     # i18n (5 languages)
-│   └── js/page_i18n.js               # Page translator
-│
-├── tests/                             # Pytest test suite (300+ tests)
-│   ├── conftest.py                    # Shared fixtures
-│   ├── test_adaptive_weights.py       # Adaptive weights tests [NEW]
-│   ├── test_performance_attribution.py # Attribution tests [NEW]
-│   ├── test_trade_dna.py              # DNA fingerprinting tests
-│   ├── test_smart_exits.py            # Smart exit tests
-│   └── ... (18 test modules, 300+ tests total)
-│
-├── docker/                            # Docker infrastructure
-│   ├── Dockerfile                     # Multi-stage Python 3.11 image
-│   ├── docker-compose.yml             # 3 services: trevlix, mysql, nginx
-│   ├── mysql-init.sql                 # 17-table database schema
-│   └── nginx.conf                     # Reverse proxy (HTTPS, WebSocket)
-│
-├── docs/                              # Extended documentation
-│   ├── API.md, ARCHITECTURE.md        # API & architecture docs
-│   ├── DATABASE.md, SECURITY.md       # DB schema & security
-│   ├── SERVICES.md, SETUP.md          # Services & setup guide
-│   └── TRADING.md                     # Trading strategies & config
-│
-├── CHANGELOG.md                       # Detailed version history
-├── CLAUDE.md                          # Claude Code workflow guidelines
-├── README.md                          # This file
-└── LICENSE                            # MIT License
+├── server.py                          # Entry Point + Laufzeit-Orchestrierung
+├── app/
+│   ├── __init__.py
+│   └── core/
+│       ├── __init__.py
+│       ├── bootstrap.py               # Flask/CORS/Socket.IO/Limiter Bootstrap
+│       ├── logging_setup.py           # Logging-Konfiguration
+│       ├── runtime.py                 # Runtime-Startsequenz
+│       ├── http_routes.py             # System-Routen + Error-Handling
+│       └── lifecycle.py               # Graceful Shutdown + Signals
+├── routes/                            # Flask Blueprints (Auth, Dashboard, WS-Migration)
+├── services/                          # Business-Logik (Trading, Risk, AI, Integrationen)
+├── templates/                         # HTML Templates
+├── static/                            # Frontend Assets
+├── tests/                             # Pytest Test-Suite
+├── docs/                              # Technische Dokumentation
+├── CHANGELOG.md                       # Versionshistorie
+├── VERSION.md                         # Aktuelle Projektversion
+├── LAST_WORK.md                       # Letzte Arbeiten + nächste Schritte
+├── WORKFLOW_RULES.md                  # Dauerhafte Änderungsregeln
+├── PROJECT_STRUCTURE.md               # Struktur-Leitbild
+├── TODO.md                            # Offene Refactoring-Aufgaben
+└── README.md                          # Einstieg & Bedienung
 ```
 
 ---
+
+
+## Maintenance Workflow
+
+Bei jeder relevanten Änderung gilt:
+- Version prüfen/aktualisieren (`VERSION.md`, `pyproject.toml`, `services/utils.py`)
+- `CHANGELOG.md` und `LAST_WORK.md` aktualisieren
+- Bei Strukturänderungen zusätzlich `README.md` und `PROJECT_STRUCTURE.md` anpassen
+- Neue große Logik **nicht** direkt in `server.py`, sondern in passende Module auslagern
 
 ## REST API (85+ Endpoints)
 
