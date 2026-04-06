@@ -16,7 +16,7 @@ import logging
 import os
 import secrets
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt as pyjwt
@@ -576,7 +576,7 @@ def create_auth_blueprint(
                         {
                             "user_id": user["id"],
                             "username": user["username"],
-                            "exp": datetime.now(UTC) + timedelta(hours=8),
+                            "exp": datetime.now(timezone.utc) + timedelta(hours=8),
                         },
                         jwt_secret,
                         algorithm="HS256",

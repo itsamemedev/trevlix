@@ -1,6 +1,6 @@
 # TREVLIX REST API Dokumentation
 
-> **Version:** 1.6.3
+> **Version:** 1.6.5
 > **Base-URL:** `http://localhost:5000/api/v1`
 > Alle Endpunkte erfordern einen `Authorization: Bearer <JWT>` Header, sofern nicht anders angegeben.
 

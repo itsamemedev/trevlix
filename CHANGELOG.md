@@ -7,6 +7,35 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.5] – 2026-04-06
+
+### Fixed — Kompatibilität & Stabilität nach Refactoring
+
+- **Python-3.10-Kompatibilität wiederhergestellt**:
+  - Verwendungen von `datetime.UTC`/`from datetime import UTC` in kritischen Modulen und Tests auf `timezone.utc` umgestellt (`server.py`, `routes/auth.py`, `services/{alert_escalation,cluster_control,notifications,revenue_tracking}.py`, `tests/test_alert_escalation.py`).
+  - `services/cluster_control.py` um Fallback für fehlendes `enum.StrEnum` auf Python < 3.11 ergänzt.
+- **CSRF-Regression behoben**:
+  - Kompatiblen Wrapper `_generate_csrf_token()` in `server.py` eingeführt, damit Jinja-Global und bestehende Tests weiterhin ohne Argumente funktionieren.
+- **Qualitätssicherung erweitert**:
+  - Voller Testlauf erfolgreich: `336 passed, 1 skipped`.
+
+## [1.6.4] – 2026-04-06
+
+### Changed — Weitere Entkopplung aus `server.py`
+
+- **Neue Helper-Module in `app/core/`**:
+  - `request_helpers.py` bündelt robuste Request-Parser (`safe_int`, `safe_float`, `safe_bool`) und Exchange-Normalisierung.
+  - `security.py` kapselt Security-Header-Setzung und CSRF-Token-Generierung.
+- **Passwort-Hashing ausgelagert**: PBKDF2-Fallback aus `server.py` in `services/passwords.py` verschoben (`pbkdf2_hash`, `pbkdf2_verify`).
+- **`server.py` entschlackt**:
+  - Duplizierte Low-Level-Helfer entfernt und auf Core/Service-Module umgestellt.
+  - Security-Header-Wiring delegiert an Core-Helper.
+  - Exchange-Normalisierung weiterhin kompatibel, jetzt über dedizierten Wrapper mit zentralem `EXCHANGE_MAP`.
+- **Qualitätssicherung**:
+  - `ruff check --fix server.py`
+  - `python -m compileall -q server.py app services routes`
+  - `pytest -q tests/test_bootstrap.py tests/test_auth.py tests/test_api.py`
+
 ## [1.6.3] – 2026-04-06
 
 ### Fixed — Exchange-Wechsel & Auto-Recovery

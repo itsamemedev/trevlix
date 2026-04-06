@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.6.3**
+**Algorithmic Crypto Trading Bot — v1.6.5**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.3-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.5-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -172,9 +172,12 @@ trevlix/
 │       ├── logging_setup.py           # Logging-Konfiguration
 │       ├── runtime.py                 # Runtime-Startsequenz
 │       ├── http_routes.py             # System-Routen + Error-Handling
-│       └── lifecycle.py               # Graceful Shutdown + Signals
+│       ├── lifecycle.py               # Graceful Shutdown + Signals
+│       ├── request_helpers.py         # Sichere Request-Parser + Exchange-Normalisierung
+│       └── security.py                # Security-Header + CSRF-Token-Helfer
 ├── routes/                            # Flask Blueprints (Auth, Dashboard, WS-Migration)
 ├── services/                          # Business-Logik (Trading, Risk, AI, Integrationen)
+│   └── passwords.py                   # PBKDF2 Passwort-Hashing-Fallback
 ├── templates/                         # HTML Templates
 ├── static/                            # Frontend Assets
 ├── tests/                             # Pytest Test-Suite
