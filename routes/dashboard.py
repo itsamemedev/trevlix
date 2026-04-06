@@ -21,14 +21,12 @@ log = logging.getLogger("NEXUS.dashboard")
 
 def create_dashboard_blueprint(
     template_dir: str,
-    static_dir: str,
     require_auth_fn: Callable,
 ) -> Blueprint:
     """Erstellt den Dashboard-Blueprint für statische Web-Seiten.
 
     Args:
         template_dir: Absoluter Pfad zum Templates-Verzeichnis.
-        static_dir: Absoluter Pfad zum Static-Files-Verzeichnis.
         require_auth_fn: Decorator-Funktion für Login-Anforderung.
 
     Returns:
@@ -36,76 +34,31 @@ def create_dashboard_blueprint(
     """
     bp = Blueprint("dashboard", __name__)
 
-    @bp.route("/about")
-    def about():
-        """About-Seite der TREVLIX-Anwendung.
+    @bp.route("/dashboard")
+    @require_auth_fn
+    def dashboard():
+        """Login-geschützte Dashboard-Seite."""
+        return send_from_directory(template_dir, "dashboard.html")
 
-        Returns:
-            about.html Template als Response.
-        """
-        return send_from_directory(template_dir, "about.html")
+    page_routes = {
+        "/about": "about.html",
+        "/api-docs": "api-docs.html",
+        "/strategies": "strategies.html",
+        "/faq": "faq.html",
+        "/security": "security.html",
+        "/changelog": "changelog.html",
+        "/roadmap": "roadmap.html",
+        "/installation": "INSTALLATION.html",
+    }
 
-    @bp.route("/api-docs")
-    def api_docs():
-        """API-Dokumentationsseite.
+    def _make_handler(filename: str):
+        def _handler():
+            return send_from_directory(template_dir, filename)
 
-        Returns:
-            api-docs.html Template als Response.
-        """
-        return send_from_directory(template_dir, "api-docs.html")
+        _handler.__name__ = f"page_{filename.replace('.', '_').replace('-', '_')}"
+        return _handler
 
-    @bp.route("/strategies")
-    def strategies():
-        """Strategien-Übersichtsseite.
-
-        Returns:
-            strategies.html Template als Response.
-        """
-        return send_from_directory(template_dir, "strategies.html")
-
-    @bp.route("/faq")
-    def faq():
-        """FAQ-Seite.
-
-        Returns:
-            faq.html Template als Response.
-        """
-        return send_from_directory(template_dir, "faq.html")
-
-    @bp.route("/security")
-    def security():
-        """Sicherheits-Informationsseite.
-
-        Returns:
-            security.html Template als Response.
-        """
-        return send_from_directory(template_dir, "security.html")
-
-    @bp.route("/changelog")
-    def changelog():
-        """Changelog-Seite mit Versionsverlauf.
-
-        Returns:
-            changelog.html Template als Response.
-        """
-        return send_from_directory(template_dir, "changelog.html")
-
-    @bp.route("/roadmap")
-    def roadmap():
-        """Roadmap-Seite mit geplanten Features.
-
-        Returns:
-            roadmap.html Template als Response.
-        """
-        return send_from_directory(template_dir, "roadmap.html")
-
-    @bp.route("/installation")
-    def installation():
-        """Installationsanleitung.
-
-        Returns:
-            INSTALLATION.html Template als Response.
-        """
-        return send_from_directory(template_dir, "INSTALLATION.html")
+    for route, filename in page_routes.items():
+        bp.add_url_rule(route, view_func=_make_handler(filename))
 
     return bp

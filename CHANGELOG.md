@@ -7,6 +7,42 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.13] – 2026-04-06
+
+### Changed — User/Admin-Dashboard-Aufräumrunde + Validierungsfixes
+
+- **Admin-User-Validierung zentralisiert**:
+  - Neues Modul `app/core/admin_user_validation.py` eingeführt.
+  - Einheitliche Payload-Validierung (`validate_admin_user_payload`) wird jetzt sowohl von HTTP (`/api/v1/admin/users`) als auch WebSocket (`admin_create_user`) genutzt.
+  - Bugfix: HTTP-Admin-User-Erstellung akzeptiert keine schwachen Passwörter/ungültigen Rollen mehr (nun konsistent mit WS-Flow).
+- **Dashboard-Blueprint strukturell aufgeräumt**:
+  - Duplizierte statische Seitenrouten in eine Route-Map überführt.
+  - Neue geschützte Route `/dashboard` ergänzt (verwendet jetzt `require_auth_fn` aktiv).
+  - Nicht mehr benötigter `static_dir`-Parameter im Dashboard-Blueprint entfernt.
+- **Tests erweitert**:
+  - `tests/test_admin_user_validation.py` für Validierungsfälle (ok/weak password/invalid role).
+  - `tests/test_dashboard_blueprint.py` für Auth-Schutz auf `/dashboard` und öffentliche Seitenroute.
+- **Qualitätssicherung**:
+  - `python -m compileall -q server.py app services routes tests`
+  - `pytest -q tests/test_admin_user_validation.py tests/test_dashboard_blueprint.py tests/test_app_setup.py tests/test_bootstrap.py tests/test_auth.py tests/test_websocket_guard.py tests/test_api.py` (`43 passed, 1 skipped`)
+
+## [1.6.12] – 2026-04-06
+
+### Changed — Entrypoint-Aufräumrunde (`server.py` weiter entschlackt)
+
+- **Neues Core-Modul `app/core/app_setup.py`** ergänzt:
+  - Kapselt Entrypoint-Bootstrap für App, CORS, Socket.IO, Limiter und Logging.
+  - Führt robuste Parser-Funktion `parse_session_timeout_minutes(...)` ein.
+- **`server.py` weiter modularisiert**:
+  - Inline-Setup für App/Limiter/Logger/Session-Timeout durch einen zentralen Aufruf von `initialize_runtime_objects(...)` ersetzt.
+  - Unbenutzten Flask-Import `redirect` entfernt.
+  - Verhalten der bestehenden API-/Socket-Routen unverändert beibehalten.
+- **Testabdeckung erweitert**:
+  - Neue Tests in `tests/test_app_setup.py` für gültige/ungültige/default Session-Timeout-Parsingfälle.
+- **Qualitätssicherung**:
+  - `python -m compileall -q server.py app services routes tests`
+  - `pytest -q tests/test_app_setup.py tests/test_bootstrap.py tests/test_auth.py tests/test_websocket_guard.py tests/test_api.py` (`38 passed, 1 skipped`)
+
 ## [1.6.11] – 2026-04-06
 
 ### Changed — Zusätzliche Entkopplung von `server.py` (weitere 15 Core-Module)
