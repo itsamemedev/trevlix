@@ -7044,8 +7044,14 @@ def on_connect(auth=None):
 @socketio.on("disconnect")
 def on_disconnect(reason: str = "") -> None:
     """Cleanup bei Client-Disconnect – Session-State aufräumen."""
-    username = session.get("username", "?")
-    sid = getattr(request, "sid", "?")
+    try:
+        username = session.get("username", "?")
+    except RuntimeError:
+        username = "?"
+    try:
+        sid = getattr(request, "sid", "?")
+    except RuntimeError:
+        sid = "?"
     log.info(f"📴 Client getrennt: {username} (sid={sid})")
 
 
