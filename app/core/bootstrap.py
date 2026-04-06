@@ -75,12 +75,47 @@ def init_cors(app: Flask, flask_cors_origins: Any) -> None:
     )
 
 
+def resolve_socketio_async_mode() -> str:
+    """Ermittelt einen robusten Async-Modus für Flask-SocketIO.
+
+    Priorität:
+      1) `SOCKETIO_ASYNC_MODE` aus Environment (wenn gesetzt)
+      2) eventlet (falls importierbar)
+      3) gevent (falls importierbar)
+      4) threading (Fallback)
+
+    Hintergrund:
+    Im reinen `threading`-Modus sind WebSocket-Verbindungen nicht verfügbar.
+    Einige Clients versuchen dennoch den `websocket`-Transport zuerst, was mit
+    Werkzeug in Fehlern enden kann. Mit eventlet/gevent wird echter WebSocket-
+    Support aktiviert.
+    """
+    forced = os.getenv("SOCKETIO_ASYNC_MODE", "").strip().lower()
+    if forced:
+        return forced
+
+    try:
+        import eventlet  # noqa: F401
+
+        return "eventlet"
+    except Exception:  # noqa: BLE001
+        pass
+
+    try:
+        import gevent  # noqa: F401
+
+        return "gevent"
+    except Exception:  # noqa: BLE001
+        return "threading"
+
+
 def create_socketio(app: Flask, allowed_origins: Any) -> SocketIO:
     """Erzeugt die SocketIO-Instanz mit stabilen Standardwerten."""
+    async_mode = resolve_socketio_async_mode()
     return SocketIO(
         app,
         cors_allowed_origins=allowed_origins,
-        async_mode="threading",
+        async_mode=async_mode,
         logger=False,
         engineio_logger=False,
         ping_timeout=30,

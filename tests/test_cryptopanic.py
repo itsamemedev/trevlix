@@ -243,6 +243,30 @@ class TestFetchPosts:
         posts = client.fetch_posts("BTC")
         assert posts == []
 
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_rate_limited_sets_pause(self, mock_get):
+        import httpx as hx
+
+        response = hx.Response(429, headers={"Retry-After": "15"}, request=hx.Request("GET", "https://x"))
+        mock_get.side_effect = hx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+        client = CryptoPanicClient(token="test-token")
+        posts = client.fetch_posts("BTC")
+
+        assert posts == []
+        assert client._last_fetch_was_rate_limited is True
+        assert client._rate_limited_until > 0
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_skips_http_while_rate_limited(self, mock_get):
+        client = CryptoPanicClient(token="test-token")
+        client._rate_limited_until = 9999999999.0
+
+        posts = client.fetch_posts("BTC")
+
+        assert posts == []
+        mock_get.assert_not_called()
+
 
 # ── get_score Integration ─────────────────────────────────────────────────────
 
@@ -293,3 +317,24 @@ class TestGetScore:
         assert score == 0.0
         assert headline == "—"
         assert count == 0
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_get_score_uses_stale_cache_on_rate_limit(self, mock_get):
+        import httpx as hx
+
+        response = hx.Response(429, headers={"Retry-After": "10"}, request=hx.Request("GET", "https://x"))
+        mock_get.side_effect = hx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+        client = CryptoPanicClient(token="test-token")
+        client._cache["BTC/USDT"] = {
+            "score": 0.42,
+            "headline": "Cached BTC headline",
+            "count": 7,
+            "ts": 1.0,  # absichtlich veraltet
+        }
+
+        score, headline, count = client.get_score("BTC/USDT")
+
+        assert score == 0.42
+        assert headline == "Cached BTC headline"
+        assert count == 7

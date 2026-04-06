@@ -73,6 +73,7 @@ _REQUEST_TIMEOUT = 10
 
 # Cache-Dauer in Sekunden (30 Minuten)
 CACHE_TTL = 1800
+_RATE_LIMIT_FALLBACK_SECONDS = 60
 
 
 class CryptoPanicClient:
@@ -93,6 +94,8 @@ class CryptoPanicClient:
         self._base_url = _API_V2_URL.format(plan=self.plan)
         self._cache: dict = {}
         self._cache_max_size: int = 200
+        self._rate_limited_until: float = 0.0
+        self._last_fetch_was_rate_limited: bool = False
 
     @property
     def is_configured(self) -> bool:
@@ -122,6 +125,14 @@ class CryptoPanicClient:
         """
         if not self.is_configured:
             return []
+        self._last_fetch_was_rate_limited = False
+
+        now = time.time()
+        if now < self._rate_limited_until:
+            self._last_fetch_was_rate_limited = True
+            wait_s = int(self._rate_limited_until - now)
+            log.debug("CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency)
+            return []
 
         params = {
             "auth_token": self.token,
@@ -137,6 +148,21 @@ class CryptoPanicClient:
             resp.raise_for_status()
             return resp.json().get("results", [])
         except httpx.HTTPStatusError as e:
+            if e.response is not None and e.response.status_code == 429:
+                retry_after_raw = (e.response.headers or {}).get("Retry-After", "").strip()
+                try:
+                    retry_after = max(int(float(retry_after_raw)), 1)
+                except (TypeError, ValueError):
+                    retry_after = _RATE_LIMIT_FALLBACK_SECONDS
+
+                self._rate_limited_until = max(self._rate_limited_until, time.time() + retry_after)
+                self._last_fetch_was_rate_limited = True
+                log.warning(
+                    "CryptoPanic API v2 Rate-Limit (429) für %s – pausiere %ss",
+                    currency,
+                    retry_after,
+                )
+                return []
             log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)
             return []
         except httpx.RequestError as e:
@@ -224,7 +250,13 @@ class CryptoPanicClient:
             score, headline, count = 0.0, "—", 0
         else:
             posts = self.fetch_posts(coin)
+            if self._last_fetch_was_rate_limited and symbol in self._cache:
+                c = self._cache[symbol]
+                return c["score"], c["headline"], c["count"]
             score, headline, count = self.analyze_sentiment(posts)
+
+            if self._last_fetch_was_rate_limited and count == 0:
+                return 0.0, "—", 0
 
         # Caches aktualisieren (mit Max-Size-Eviction)
         self._cache[symbol] = {

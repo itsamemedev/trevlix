@@ -1429,18 +1429,26 @@ class MySQLManager:
                 with conn.cursor() as c:
                     # Prüfe ob Exchange schon existiert
                     c.execute(
-                        "SELECT id FROM user_exchanges WHERE user_id=%s AND exchange=%s",
+                        "SELECT id, api_key, api_secret, passphrase "
+                        "FROM user_exchanges WHERE user_id=%s AND exchange=%s",
                         (user_id, exchange),
                     )
                     existing = c.fetchone()
                     if existing:
+                        enc_key = self._enc(api_key) if api_key else (existing.get("api_key") or "")
+                        enc_secret = (
+                            self._enc(api_secret) if api_secret else (existing.get("api_secret") or "")
+                        )
+                        enc_passphrase = (
+                            self._enc(passphrase) if passphrase else (existing.get("passphrase") or "")
+                        )
                         c.execute(
                             "UPDATE user_exchanges SET api_key=%s, api_secret=%s, "
                             "passphrase=%s, enabled=%s, is_primary=%s WHERE id=%s",
                             (
-                                self._enc(api_key),
-                                self._enc(api_secret),
-                                self._enc(passphrase) if passphrase else "",
+                                enc_key,
+                                enc_secret,
+                                enc_passphrase,
                                 enabled,
                                 is_primary,
                                 existing["id"],
@@ -6336,7 +6344,8 @@ def api_user_exchanges_upsert():
     is_primary = _safe_bool(data.get("is_primary", False), False)
     if not exchange:
         return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
-    if not api_key or not api_secret:
+    requires_keys = not bool(CONFIG.get("paper_trading", True))
+    if requires_keys and (not api_key or not api_secret):
         return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
     ok = db.upsert_user_exchange(
         request.user_id,

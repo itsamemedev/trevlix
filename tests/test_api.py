@@ -120,6 +120,63 @@ class TestMetrics:
         assert "trevlix_open_trades" in body
 
 
+class TestPaperTradingExchangeUpsert:
+    """Tests für Exchange-Upsert Verhalten im Paper-/Live-Modus."""
+
+    def test_exchange_upsert_allows_empty_keys_in_paper_mode(self, app_client, monkeypatch):
+        from server import CONFIG, db
+
+        old_paper = CONFIG.get("paper_trading", True)
+        CONFIG["paper_trading"] = True
+        called = {}
+
+        def _fake_upsert(user_id, exchange, api_key, api_secret, enabled=False, is_primary=False, passphrase=""):
+            called.update(
+                {
+                    "user_id": user_id,
+                    "exchange": exchange,
+                    "api_key": api_key,
+                    "api_secret": api_secret,
+                    "enabled": enabled,
+                    "is_primary": is_primary,
+                    "passphrase": passphrase,
+                }
+            )
+            return True
+
+        monkeypatch.setattr(db, "upsert_user_exchange", _fake_upsert)
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post(
+            "/api/v1/user/exchanges",
+            json={"exchange": "bybit", "enabled": True, "is_primary": True},
+        )
+
+        CONFIG["paper_trading"] = old_paper
+        assert resp.status_code == 200
+        assert called["exchange"] == "bybit"
+        assert called["api_key"] == ""
+        assert called["api_secret"] == ""
+
+    def test_exchange_upsert_requires_keys_in_live_mode(self, app_client):
+        from server import CONFIG
+
+        old_paper = CONFIG.get("paper_trading", True)
+        CONFIG["paper_trading"] = False
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post(
+            "/api/v1/user/exchanges",
+            json={"exchange": "okx", "enabled": True},
+        )
+
+        CONFIG["paper_trading"] = old_paper
+        assert resp.status_code == 400
+
+
 class TestSecurityHeaders:
     """Tests für Security Headers (Verbesserung #6)."""
 
