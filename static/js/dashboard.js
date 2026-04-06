@@ -795,6 +795,48 @@ function _emitSafe(event, data){
 function startBot(){_emitSafe('start_bot');}
 function stopBot(){_emitSafe('stop_bot');}
 function pauseBot(){_emitSafe('pause_bot');}
+
+// ── Exchange Selector ─────────────────────────────────────────────────
+let _selectedExchange = '';
+
+function selectExchange(ex, el) {
+  if (!ex) return;
+  _selectedExchange = ex;
+  // Highlight active button
+  document.querySelectorAll('.ex-btn').forEach(b => b.classList.remove('active'));
+  if (!el) el = document.getElementById('ex-btn-' + ex);
+  if (el) el.classList.add('active');
+  // Sync settings dropdown
+  const sEl = document.getElementById('sExchange');
+  if (sEl) sEl.value = ex;
+  // Update badge + button label
+  const badge = document.getElementById('activeExBadge');
+  if (badge) badge.textContent = ex.toUpperCase();
+  const lbl = document.getElementById('exStartLabel');
+  const running = document.getElementById('statusBadge')?.classList.contains('run');
+  if (lbl) lbl.textContent = running ? 'Exchange wechseln & neu starten' : 'Bot mit ' + ex.toUpperCase() + ' starten';
+}
+
+function startBotWithExchange() {
+  const ex = _selectedExchange || document.getElementById('sExchange')?.value;
+  if (!ex) { toast('⚠️ Bitte zuerst eine Exchange wählen', 'warning'); return; }
+  // Emit dedicated select_exchange event (available to all auth users), then start bot
+  _emitSafe('select_exchange', { exchange: ex });
+  setTimeout(() => { _emitSafe('start_bot'); }, 400);
+  toast('🚀 Starte Bot auf ' + ex.toUpperCase() + '…', 'info');
+}
+
+function _initExchangeSelector(activeEx, keyStates) {
+  // keyStates: {cryptocom: true, binance: false, ...}
+  const exchanges = ['cryptocom','binance','bybit','okx','kucoin','kraken','huobi','coinbase'];
+  exchanges.forEach(ex => {
+    const btn = document.getElementById('ex-btn-' + ex);
+    if (!btn) return;
+    if (keyStates && keyStates[ex]) btn.classList.add('has-keys');
+    else btn.classList.remove('has-keys');
+  });
+  if (activeEx) selectExchange(activeEx, document.getElementById('ex-btn-' + activeEx));
+}
 const _closeHistory = [];
 let _undoTimeout = null;
 
@@ -896,6 +938,7 @@ function saveSettings(){
     backup_enabled:document.getElementById('sBackup').checked,
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
+    exchange:document.getElementById('sExchange')?.value||undefined,
   });
 }
 function saveKeys(){
@@ -923,7 +966,7 @@ function wizNext(){
   if(wizStep<4){document.getElementById('wz'+wizStep).classList.remove('active');wizStep++;document.getElementById('wz'+wizStep).classList.add('active');updateWizDots();}
 }
 function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).className='wd'+(i<=wizStep?' done':'');}
-function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>b.style.borderColor='rgba(0,255,136,.2)');el.style.borderColor='var(--cyan)';wizEx=ex;document.getElementById('sExchange').value=ex;}
+function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>{b.style.borderColor='rgba(212,175,55,.15)';b.style.background='';});el.style.borderColor='var(--jade)';el.style.background='rgba(212,175,55,.08)';wizEx=ex;document.getElementById('sExchange').value=ex;selectExchange(ex,document.getElementById('ex-btn-'+ex));}
 function wizSaveKeys(){_emitSafe('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
 function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
@@ -968,6 +1011,13 @@ socket.on('update', d=>{
   if(d){
     updateUI(d);
     if(d.user_role) applyStateToRole(d);
+    // Initialize exchange selector from server state
+    if(d.exchange && !_selectedExchange) {
+      _initExchangeSelector(d.exchange, d.exchange_key_states || {});
+    } else if(d.exchange) {
+      // Always keep has-keys markers in sync
+      _initExchangeSelector(_selectedExchange || d.exchange, d.exchange_key_states || {});
+    }
     // Auto-refresh stats if stats tab is active
     const statsTab=document.getElementById('sec-stats');
     if(statsTab && statsTab.classList.contains('active')) updateStats(d);
@@ -2253,7 +2303,8 @@ function mexSetupKeys(name) {
 }
 
 function mexOnExchangeSelect(name) {
-  const needsPP = ['okx','kucoin','cryptocom'].includes(name);
+  // Only OKX and KuCoin require a passphrase – Crypto.com does NOT
+  const needsPP = ['okx','kucoin'].includes(name);
   document.getElementById('mex-passphrase-wrap').style.display = needsPP ? '' : 'none';
 }
 
