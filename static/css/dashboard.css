@@ -41,36 +41,30 @@ body::before{content:'';position:fixed;inset:0;background:
   /* Home page - 2 column grid */
   #sec-home{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
   #sec-home .card.hero{grid-column:1/-1}
-  #sec-home .card.circuit-banner{grid-column:1/-1}
 
-  /* Stats 3-col on desktop */
-  #sec-stats{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
+  /* Trading tab - 2 column grid */
+  #sec-trading{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
+  #sec-trading>:first-child{grid-column:1/-1}
 
-  /* Trades - full single col */
-  #sec-trades{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
-  #sec-trades>:first-child{grid-column:1/-1}
+  /* Trades - 2-col */
+  #sec-pos{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
+  #sec-pos>:first-child{grid-column:1/-1}
 
-  /* AI section 2-col */
-  #sec-ai{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
-  
-  /* Market 2-col */
-  #sec-market{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
-  
   /* Settings wider */
   #sec-settings{display:grid!important;grid-template-columns:1fr 1fr;gap:14px}
   #sec-settings .save-btn-wrap{grid-column:1/-1}
-  
+
   /* Wider stat grid */
   .sg{grid-template-columns:repeat(6,1fr)!important}
 
   /* Larger chart areas */
   .chart-wrap{height:200px!important}
   .mini-chart{height:160px!important}
-  
+
   /* Card hover effect */
   .card{transition:border-color .25s, box-shadow .25s}
   .card:hover{border-color:rgba(212,175,55,.18);box-shadow:0 4px 24px rgba(0,0,0,.2)}
-  
+
   /* Section heading */
   .card-title{font-size:10px!important;letter-spacing:2.5px!important}
 }
@@ -330,7 +324,7 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
   backdrop-filter:blur(24px) saturate(1.8);
   -webkit-backdrop-filter:blur(24px) saturate(1.8);
   border-top:1px solid rgba(212,175,55,.08);
-  display:grid;grid-template-columns:repeat(10,1fr);
+  display:grid;grid-template-columns:repeat(6,1fr);
   padding-bottom:env(safe-area-inset-bottom,0);
 }
 .nb{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:7px 2px;color:var(--muted);cursor:pointer;transition:.2s;font-size:5px;font-weight:700;letter-spacing:.1px;text-transform:uppercase;position:relative}
@@ -757,11 +751,13 @@ button:focus-visible, .btn:focus-visible, .nb:focus-visible {
 [data-theme="light"] .mob-nav-overlay { background:rgba(0,0,0,.3) !important; }
 
 @media(max-width:899px) {
-  /* Show only 5 primary tabs + "More" button */
+  /* Show 4 primary tabs + "More" button on mobile */
   .bnav {
     grid-template-columns: repeat(5,1fr) !important;
     overflow:hidden !important;
   }
+  /* Hide secondary items on mobile (they go in drawer) */
+  .nb.nb-secondary:not(.nb-more) { display:none !important; }
   /* Hide secondary nav items on mobile (they go in drawer) */
   .nb.nb-secondary { display:none !important; }
   /* Show the "More" button on mobile */
