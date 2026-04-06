@@ -61,7 +61,6 @@ import math
 import os
 import random
 import secrets
-import signal
 import threading
 import time
 import traceback
@@ -78,8 +77,20 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+
+from app.core.bootstrap import (
+    create_flask_app,
+    create_limiter,
+    create_socketio,
+    init_cors,
+    parse_origins_from_env,
+    resolve_project_paths,
+)
+from app.core.http_routes import register_default_blueprints, register_system_routes
+from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
+from app.core.logging_setup import configure_logging
+from app.core.runtime import run_server
 from flask import (
-    Flask,
     Response,
     g,
     jsonify,
@@ -89,8 +100,7 @@ from flask import (
     send_from_directory,
     session,
 )
-from flask_cors import CORS
-from flask_socketio import SocketIO, emit
+from flask_socketio import emit
 
 from services.adaptive_weights import AdaptiveWeights
 from services.alert_escalation import AlertEscalationManager
@@ -287,20 +297,8 @@ load_dotenv()
 # ═══════════════════════════════════════════════════════════════════════════════
 # APP
 # ═══════════════════════════════════════════════════════════════════════════════
-_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-_TEMPLATE_DIR = os.path.join(_BASE_DIR, "templates")
-_STATIC_DIR = os.path.join(_BASE_DIR, "static")
-
-app = Flask(
-    __name__, static_folder=_STATIC_DIR, static_url_path="/static", template_folder=_TEMPLATE_DIR
-)
-app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
-
-# ── [Verbesserung #5] Secure Cookie Flags ────────────────────────────────────
-app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
-    app.config["SESSION_COOKIE_SECURE"] = True
+_BASE_DIR, _TEMPLATE_DIR, _STATIC_DIR = resolve_project_paths(__file__)
+app = create_flask_app(template_dir=_TEMPLATE_DIR, static_dir=_STATIC_DIR)
 
 # ── [Verbesserung #1] Session-Timeout ─────────────────────────────────────────
 try:
@@ -309,56 +307,17 @@ except (ValueError, TypeError):
     _SESSION_TIMEOUT_MIN = 30
 
 # ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
-_raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
-if _raw_origins.strip() == "*":
-    _allowed_origins: Any = "*"
-    _flask_cors_origins: Any = "*"
-else:
-    _allowed_origins = [o.strip() for o in _raw_origins.split(",") if o.strip()]
-    # Reverse-Proxy Origin automatisch hinzufügen falls nicht bereits enthalten
-    _app_domain = os.getenv("APP_DOMAIN", "")
-    if _app_domain:
-        for scheme in ("https://", "http://"):
-            origin = f"{scheme}{_app_domain}"
-            if origin not in _allowed_origins:
-                _allowed_origins.append(origin)
-    _flask_cors_origins = _allowed_origins
-CORS(app, origins=_flask_cors_origins, supports_credentials=(_flask_cors_origins != "*"))
-socketio = SocketIO(
-    app,
-    cors_allowed_origins=_allowed_origins,
-    async_mode="threading",
-    logger=False,
-    engineio_logger=False,
-    # [Socket.io Fix] Stabilere Verbindung durch längere Timeouts
-    ping_timeout=30,
-    ping_interval=25,
-    max_http_buffer_size=1_000_000,
-    # Session-Verwaltung aktiv halten
-    manage_session=True,
-)
+_allowed_origins, _flask_cors_origins = parse_origins_from_env()
+init_cors(app, flask_cors_origins=_flask_cors_origins)
+socketio = create_socketio(app, allowed_origins=_allowed_origins)
 
 # ── Rate Limiter ─────────────────────────────────────────────────────────────
-if LIMITER_AVAILABLE:
-    limiter = Limiter(
-        key_func=get_remote_address,
-        app=app,
-        default_limits=["200 per minute"],
-        storage_uri="memory://",
-    )
-else:
-    # Dummy-Limiter wenn flask-limiter nicht installiert
-    class _DummyLimiter:
-        def limit(self, *a, **kw):
-            return lambda f: f
-
-        def shared_limit(self, *a, **kw):
-            return lambda f: f
-
-    limiter = _DummyLimiter()
-
-_log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
-os.makedirs(_log_dir, exist_ok=True)
+limiter = create_limiter(
+    app=app,
+    limiter_available=LIMITER_AVAILABLE,
+    limiter_cls=Limiter if LIMITER_AVAILABLE else None,
+    key_func=get_remote_address if LIMITER_AVAILABLE else None,
+)
 
 # ── [Verbesserung #14] Konfigurierbares Log-Level ─────────────────────────────
 _LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
@@ -367,61 +326,14 @@ _LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.IN
 _USE_JSON_LOGS = os.getenv("JSON_LOGS", "false").lower() in ("true", "1", "yes")
 _USE_COLOR_LOGS = os.getenv("COLOR_LOGS", "true").lower() in ("true", "1", "yes")
 
-
-# ── [Verbesserung #51] Farbige Konsolenausgabe ───────────────────────────────
-class _ColorFormatter(logging.Formatter):
-    """ANSI-farbiger Log-Formatter für die Konsole."""
-
-    COLORS = {
-        "DEBUG": "\033[36m",  # Cyan
-        "INFO": "\033[32m",  # Grün
-        "WARNING": "\033[33m",  # Gelb
-        "ERROR": "\033[31m",  # Rot
-        "CRITICAL": "\033[41m",  # Rot Hintergrund
-    }
-    RESET = "\033[0m"
-    BOLD = "\033[1m"
-    DIM = "\033[2m"
-
-    def format(self, record):
-        color = self.COLORS.get(record.levelname, "")
-        ts = self.formatTime(record, datefmt="%H:%M:%S")
-        level = f"{color}{self.BOLD}{record.levelname:<8}{self.RESET}"
-        msg = record.getMessage()
-        return f"{self.DIM}{ts}{self.RESET} {level} {msg}"
-
-
-_file_handler = logging.FileHandler(os.path.join(_log_dir, "trevlix.log"), encoding="utf-8")
-_console_handler = logging.StreamHandler()
-
-if _USE_COLOR_LOGS and not _USE_JSON_LOGS:
-    _console_handler.setFormatter(_ColorFormatter())
-
-_log_handlers: list[logging.Handler] = [_file_handler, _console_handler]
-
-if _USE_JSON_LOGS:
-
-    class _JSONFormatter(logging.Formatter):
-        def format(self, record):
-            return json.dumps(
-                {
-                    "ts": self.formatTime(record),
-                    "level": record.levelname,
-                    "logger": record.name,
-                    "msg": record.getMessage(),
-                },
-                ensure_ascii=False,
-            )
-
-    for h in _log_handlers:
-        h.setFormatter(_JSONFormatter())
-
-logging.basicConfig(
-    level=_LOG_LEVEL,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=_log_handlers,
+log = configure_logging(
+    base_dir=_BASE_DIR,
+    log_level=_LOG_LEVEL,
+    use_json_logs=_USE_JSON_LOGS,
+    use_color_logs=_USE_COLOR_LOGS,
+    logger_name="TREVLIX",
 )
-log = logging.getLogger("TREVLIX")
+
 
 
 # SecretStr, _secret importiert aus services.utils
@@ -1597,6 +1509,36 @@ class MySQLManager:
         except Exception as e:
             log.error(f"get_enabled_exchanges({user_id}): {e}")
             return []
+
+    def set_primary_exchange(self, user_id: int, exchange: str, enable: bool = True) -> bool:
+        """Setzt eine vorhandene User-Exchange als primär (optional inkl. Aktivierung)."""
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT id FROM user_exchanges WHERE user_id=%s AND exchange=%s LIMIT 1",
+                        (user_id, exchange),
+                    )
+                    row = c.fetchone()
+                    if not row:
+                        return False
+                    if enable:
+                        c.execute(
+                            "UPDATE user_exchanges SET enabled=1 WHERE user_id=%s AND exchange=%s",
+                            (user_id, exchange),
+                        )
+                    c.execute(
+                        "UPDATE user_exchanges SET is_primary=0 WHERE user_id=%s",
+                        (user_id,),
+                    )
+                    c.execute(
+                        "UPDATE user_exchanges SET is_primary=1 WHERE user_id=%s AND exchange=%s",
+                        (user_id, exchange),
+                    )
+            return True
+        except Exception as e:
+            log.error(f"set_primary_exchange({user_id}, {exchange}): {e}")
+            return False
 
     def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
         """Löscht eine Exchange-Konfiguration eines Users."""
@@ -4853,6 +4795,45 @@ def _get_admin_primary_exchange() -> dict | None:
         return None
 
 
+def _get_admin_exchange_by_name(exchange_name: str) -> dict | None:
+    """Liefert eine aktivierte Exchange-Konfiguration des Admins für einen konkreten Namen."""
+    if not exchange_name:
+        return None
+    try:
+        if db is None or not getattr(db, "db_available", False):
+            return None
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                row = c.fetchone()
+                if not row:
+                    return None
+                admin_id = row["id"]
+        enabled = db.get_enabled_exchanges(admin_id)
+        for ex in enabled:
+            if ex.get("exchange") == exchange_name:
+                return {
+                    "exchange": ex.get("exchange", ""),
+                    "api_key": ex.get("api_key", "") or "",
+                    "api_secret": ex.get("api_secret", "") or "",
+                    "passphrase": ex.get("passphrase", "") or "",
+                }
+    except Exception as e:
+        log.debug(f"_get_admin_exchange_by_name({exchange_name}): {e}")
+    return None
+
+
+def _pin_user_exchange(user_id: int | None, exchange_name: str) -> bool:
+    """Setzt die gewünschte Exchange für den User als primär (falls vorhanden)."""
+    if not user_id or not exchange_name or db is None:
+        return False
+    try:
+        return bool(db.set_primary_exchange(user_id, exchange_name, enable=True))
+    except Exception as e:
+        log.debug(f"_pin_user_exchange({user_id}, {exchange_name}): {e}")
+        return False
+
+
 def create_exchange():
     """Erstellt die primäre Exchange-Instanz.
 
@@ -4862,8 +4843,13 @@ def create_exchange():
       3. Fallback: "cryptocom" als Default
     Im Paper-Trading-Modus werden keine Credentials verwendet (public-only).
     """
-    # Admin-DB-Konfiguration bevorzugt, wenn vorhanden
-    db_cfg = _get_admin_primary_exchange()
+    # Admin-DB-Konfiguration bevorzugt, wenn vorhanden.
+    # Falls im Dashboard manuell eine Exchange gewählt wurde, versuchen wir
+    # gezielt diese aktive Exchange zu verwenden (statt starr is_primary).
+    desired_name = _normalize_exchange_name(CONFIG.get("exchange", ""))
+    db_cfg = _get_admin_exchange_by_name(desired_name) if desired_name else None
+    if db_cfg is None:
+        db_cfg = _get_admin_primary_exchange()
     single_mode = _is_single_exchange_mode()
 
     if db_cfg and db_cfg.get("exchange"):
@@ -4875,12 +4861,12 @@ def create_exchange():
         if CONFIG.get("exchange") != name:
             CONFIG["exchange"] = name
     elif single_mode:
-        name = CONFIG.get("exchange", "cryptocom")
+        name = desired_name or CONFIG.get("exchange", "cryptocom")
         db_key = db_secret = db_pass = ""
     else:
         # Kein Single-Mode und keine DB-Exchange: Multi-Mode ohne Eintrag.
         # Nutze den Config-Default damit der Bot Public-Daten laden kann.
-        name = CONFIG.get("exchange", "cryptocom")
+        name = desired_name or CONFIG.get("exchange", "cryptocom")
         db_key = db_secret = db_pass = ""
         log.info(
             "ℹ️  Multi-Exchange-Mode aktiv (EXCHANGE env leer) – "
@@ -4936,6 +4922,42 @@ def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str |
             last_err = str(exc)
         if attempt < max_attempts:
             time.sleep(min(2**attempt, 10))  # 2s, 4s, 8s, 10s
+
+    # Auto-Recovery: versuche andere aktivierte Admin-Exchanges als Fallback.
+    try:
+        current_ex = _normalize_exchange_name(CONFIG.get("exchange", ""))
+        if db is not None and getattr(db, "db_available", False):
+            with db._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                    row = c.fetchone()
+                    admin_id = row["id"] if row else None
+            if admin_id:
+                enabled = db.get_enabled_exchanges(admin_id)
+                for ex_cfg in enabled:
+                    ex_name = _normalize_exchange_name(ex_cfg.get("exchange", ""))
+                    if not ex_name or ex_name == current_ex:
+                        continue
+                    try:
+                        CONFIG["exchange"] = ex_name
+                        candidate = create_exchange()
+                        markets = fetch_markets(candidate)
+                        if markets:
+                            log.warning(
+                                "Auto-Recovery: Exchange-Fallback aktiv %s -> %s",
+                                (current_ex or "unknown").upper(),
+                                ex_name.upper(),
+                            )
+                            _pin_user_exchange(admin_id, ex_name)
+                            return markets, None
+                    except Exception as ex_err:
+                        log.debug("Auto-Recovery Exchange %s fehlgeschlagen: %s", ex_name, ex_err)
+                # Falls kein Fallback funktioniert: ursprüngliche Exchange wiederherstellen
+                if current_ex:
+                    CONFIG["exchange"] = current_ex
+    except Exception as fallback_err:
+        log.debug("Auto-Recovery übersprungen: %s", fallback_err)
+
     # Fallback: Persistenter Disk-Cache ermöglicht Start trotz Exchange-Ausfall
     disk_cached = _load_market_cache()
     if disk_cached:
@@ -7129,6 +7151,7 @@ def on_select_exchange(data: dict) -> None:
     prev = CONFIG.get("exchange", "—")
     CONFIG["exchange"] = ex
     state._exchange_reset = True  # Signal an bot_loop: Exchange-Instanz neu erstellen
+    _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
     log.info(
         f"🔀 Exchange gewechselt: {prev} → {ex.upper()} (user={getattr(request, 'user_id', '?')})"
     )
@@ -7348,6 +7371,8 @@ def on_update_config(data):
             ex = _normalize_exchange_name(str(v))
             if ex and ex in _valid_exchanges:
                 CONFIG["exchange"] = ex
+                state._exchange_reset = True
+                _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
                 updated["exchange"] = ex
                 log.info(f"🔀 Exchange manuell gewechselt → {ex.upper()}")
             continue
@@ -7387,7 +7412,10 @@ def on_save_keys(data):
     CONFIG["api_key"] = encrypt_value(raw_key) if raw_key else ""
     CONFIG["secret"] = encrypt_value(raw_secret) if raw_secret else ""
     if data.get("exchange") and data["exchange"] in EXCHANGE_MAP:
-        CONFIG["exchange"] = data["exchange"]
+        ex = _normalize_exchange_name(data["exchange"])
+        CONFIG["exchange"] = ex
+        state._exchange_reset = True
+        _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
     emit(
         "status",
         {
@@ -8078,6 +8106,9 @@ def on_start_exchange(data):
             {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
         )
         return
+    CONFIG["exchange"] = ex_name
+    state._exchange_reset = True
+    _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex_name)
     emit(
         "status",
         {
@@ -9567,145 +9598,47 @@ def startup_banner():
 # ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #12] Zentrale Fehlerbehandlung
 # ═══════════════════════════════════════════════════════════════════════════════
-@app.route("/favicon.ico")
-def favicon():
-    """Favicon – gibt 204 No Content zurück wenn keine Datei vorhanden."""
-    favicon_path = os.path.join(_STATIC_DIR, "favicon.ico")
-    if os.path.isfile(favicon_path):
-        return send_from_directory(_STATIC_DIR, "favicon.ico", mimetype="image/x-icon")
-    return "", 204
-
-
-@app.route("/robots.txt")
-def robots_txt():
-    """robots.txt aus dem Projektverzeichnis."""
-    return send_from_directory(_BASE_DIR, "robots.txt", mimetype="text/plain")
-
-
-@app.route("/sitemap.xml")
-def sitemap_xml():
-    """sitemap.xml aus dem Projektverzeichnis."""
-    sitemap_path = os.path.join(_BASE_DIR, "sitemap.xml")
-    if os.path.isfile(sitemap_path):
-        return send_from_directory(_BASE_DIR, "sitemap.xml", mimetype="application/xml")
-    return "", 404
-
-
-@app.route("/static/icon-192.png")
-def icon_192():
-    """PWA Icon – gibt 204 zurück wenn nicht vorhanden."""
-    icon_path = os.path.join(_STATIC_DIR, "icon-192.png")
-    if os.path.isfile(icon_path):
-        return send_from_directory(_STATIC_DIR, "icon-192.png", mimetype="image/png")
-    return "", 204
-
-
-@app.route("/404")
-def page_not_found():
-    """Zeigt die 404-Fehlerseite an."""
-    return send_from_directory(_TEMPLATE_DIR, "404.html"), 404
-
-
-@app.errorhandler(404)
-def _handle_404(_e):
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Endpunkt nicht gefunden", "path": request.path}), 404
-    # Nur weiterleiten wenn wir nicht bereits auf /404 sind (verhindert Loop)
-    if request.path == "/404":
-        return send_from_directory(_TEMPLATE_DIR, "404.html"), 404
-    return redirect("/404")
-
-
-@app.errorhandler(500)
-def _handle_500(e):
-    log.error(f"Internal Server Error: {e}", exc_info=True)
-    if request.path.startswith("/api/"):
-        return jsonify({"error": "Interner Serverfehler"}), 500
-    return "Interner Fehler", 500
-
-
-@app.errorhandler(429)
-def _handle_429(_e):
-    return jsonify({"error": "Zu viele Anfragen. Bitte warten."}), 429
-
+register_system_routes(
+    app,
+    base_dir=_BASE_DIR,
+    static_dir=_STATIC_DIR,
+    template_dir=_TEMPLATE_DIR,
+    log=log,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # [Verbesserung #15] Graceful Shutdown
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-def _graceful_shutdown(signum, _frame):
-    sig_name = signal.Signals(signum).name
-    log.info(f"Shutdown-Signal empfangen ({sig_name}) – räume auf...")
-    state.running = False
-    _SHUTDOWN_EVENT.set()
-    # Stop autonomous agents
-    try:
-        healer.stop()
-    except Exception as e:
-        log.debug(f"Healer stop: {e}")
-    try:
-        cluster_ctrl.shutdown()
-    except Exception as e:
-        log.debug(f"Cluster shutdown: {e}")
-    # DB-Pool schließen
-    try:
-        if db is not None and db._pool is not None:
-            db._pool.close_all()
-    except Exception as e:
-        log.debug(f"Pool-Close bei Shutdown: {e}")
-    # [Verbesserung #24] Data Retention bei Shutdown
-    try:
-        if db is not None:
-            db.cleanup_old_data()
-    except Exception as e:
-        log.debug(f"Cleanup bei Shutdown: {e}")
-    # SocketIO sauber stoppen (falls initialisiert)
-    try:
-        socketio.stop()
-    except Exception as e:
-        log.debug(f"socketio.stop: {e}")
-    log.info("Shutdown abgeschlossen.")
-    # os._exit garantiert Terminierung auch wenn Flask/SocketIO noch blockiert.
-    os._exit(0)
-
-
-signal.signal(signal.SIGTERM, _graceful_shutdown)
-signal.signal(signal.SIGINT, _graceful_shutdown)
-
+_graceful_shutdown = build_graceful_shutdown_handler(
+    state=state,
+    shutdown_event=_SHUTDOWN_EVENT,
+    healer=healer,
+    cluster_ctrl=cluster_ctrl,
+    db=db,
+    socketio=socketio,
+    log=log,
+)
+register_signal_handlers(_graceful_shutdown)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # [#9] BLUEPRINT-REGISTRIERUNG
 # Auth- und Dashboard-Routen über externe Blueprint-Module einbinden.
 # Erlaubt schrittweise Modularisierung von server.py.
 # ═══════════════════════════════════════════════════════════════════════════════
-try:
-    from routes.auth import create_auth_blueprint
-    from routes.dashboard import create_dashboard_blueprint
-
-    _auth_bp = create_auth_blueprint(
-        db=db,
-        config=CONFIG,
-        limiter=limiter,
-        db_audit_fn=db_audit,
-        check_login_rate_fn=_check_login_rate,
-        record_login_attempt_fn=_record_login_attempt,
-        audit_fn=_audit,
-        template_dir=_TEMPLATE_DIR,
-    )
-    _dashboard_bp = create_dashboard_blueprint(
-        template_dir=_TEMPLATE_DIR,
-        static_dir=_STATIC_DIR,
-        require_auth_fn=dashboard_auth,
-    )
-    # Blueprints mit Prefix-freiem URL-Raum registrieren
-    # (Routen mit gleichem Pfad wie bestehende werden vom Blueprint ignoriert)
-    app.register_blueprint(_auth_bp, name="auth_bp")
-    app.register_blueprint(_dashboard_bp, name="dashboard_bp")
-    log.info("✅ Blueprints registriert: auth, dashboard")
-except Exception as _bp_err:
-    log.error(f"Blueprint-Registrierung fehlgeschlagen: {_bp_err}", exc_info=True)
-
+register_default_blueprints(
+    app,
+    db=db,
+    config=CONFIG,
+    limiter=limiter,
+    db_audit_fn=db_audit,
+    check_login_rate_fn=_check_login_rate,
+    record_login_attempt_fn=_record_login_attempt,
+    audit_fn=_audit,
+    template_dir=_TEMPLATE_DIR,
+    static_dir=_STATIC_DIR,
+    require_auth_fn=dashboard_auth,
+    log=log,
+)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTO-START: Bot startet automatisch ohne Admin-Login
@@ -9714,42 +9647,21 @@ _AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
 
 
 if __name__ == "__main__":
-    startup_banner()
-    # [Verbesserung #7] Konfigurationsvalidierung
-    _cfg_errors = validate_config(CONFIG)
-    if _cfg_errors:
-        for _err in _cfg_errors:
-            log.error(f"⚠️  CONFIG-Fehler: {_err}")
-        log.warning("⚠️  Konfigurationsfehler gefunden – bitte prüfen. Bot startet trotzdem.")
-    os.makedirs(CONFIG["backup_dir"], exist_ok=True)
-    # Hintergrund-Threads
-    threading.Thread(target=daily_sched.run, daemon=True, name="DailyReport").start()
-    threading.Thread(target=backup_sched.run, daemon=True, name="Backup").start()
-    # Initialisierung
-    threading.Thread(target=fg_idx.update, daemon=True).start()
-    threading.Thread(target=dominance.update, daemon=True).start()
-    threading.Thread(target=safety_scan, daemon=True).start()
-
-    # Start autonomous agents
-    try:
-        healer.start()
-        log.info("🩺 Auto-Healing Agent gestartet")
-    except Exception as e:
-        log.warning(f"Auto-Healing Agent Start fehlgeschlagen: {e}")
-
-    # Auto-Start: Bot sofort starten ohne Login
-    if _AUTO_START:
-        state.running = True
-        state.paused = False
-        threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-        log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
-        state.add_activity(
-            "🚀", "Auto-Start", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
-        )
-    else:
-        log.info("⏸️  Bot wartet auf manuellen Start (AUTO_START=false)")
-
-    log.info("🌐 Dashboard: http://0.0.0.0:5000")
-    log.info("📡 REST-API:  http://0.0.0.0:5000/api/v1/")
-    log.info("📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    run_server(
+        startup_banner=startup_banner,
+        validate_config=validate_config,
+        config=CONFIG,
+        log=log,
+        daily_sched=daily_sched,
+        backup_sched=backup_sched,
+        fg_idx=fg_idx,
+        dominance=dominance,
+        safety_scan=safety_scan,
+        healer=healer,
+        state=state,
+        bot_loop=bot_loop,
+        bot_version=BOT_VERSION,
+        socketio=socketio,
+        app=app,
+        auto_start=_AUTO_START,
+    )
