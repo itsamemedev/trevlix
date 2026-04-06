@@ -4373,6 +4373,7 @@ class BotState:
             "genetic": genetic.to_dict(),
             "rl": rl_agent.to_dict(),
             "exchange": CONFIG.get("exchange", "cryptocom"),
+            "exchange_key_states": _get_exchange_key_states(),
             "paper_trading": CONFIG.get("paper_trading", True),
             "goal": {"target": goal, "current": pv, "pct": goal_pct, "eta": goal_eta},
             "price_alerts": db.get_all_alerts()[:20],
@@ -4793,6 +4794,31 @@ def _is_single_exchange_mode() -> bool:
     # Wenn EXCHANGE gesetzt ist, aber keine Keys: behandeln wir als aktiv
     # (Paper-Trading funktioniert ohne Keys). Single-Mode ist ON.
     return True
+
+
+def _get_exchange_key_states() -> dict[str, bool]:
+    """Returns which exchanges have API keys configured (admin user)."""
+    _exchanges = ("cryptocom", "binance", "bybit", "okx", "kucoin")
+    result = {ex: False for ex in _exchanges}
+    try:
+        if db is None or not getattr(db, "db_available", False):
+            return result
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                row = c.fetchone()
+                if not row:
+                    return result
+                admin_id = row["id"]
+        enabled = db.get_enabled_exchanges(admin_id)
+        for ex_info in enabled:
+            ex_name = ex_info.get("exchange", "")
+            if ex_name in result:
+                has_key = bool(ex_info.get("api_key") and ex_info.get("api_key") != "")
+                result[ex_name] = has_key
+    except Exception:
+        pass
+    return result
 
 
 def _get_admin_primary_exchange() -> dict | None:
@@ -7077,6 +7103,30 @@ def on_request_state():
     emit("update", snap)
 
 
+@socketio.on("select_exchange")
+def on_select_exchange(data: dict) -> None:
+    """Allow any authenticated user to switch the active exchange for the bot."""
+    if not _ws_auth_required():
+        return
+    if not _ws_rate_check("select_exchange", min_interval=2.0):
+        emit("status", {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"})
+        return
+    _valid = {"cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase"}
+    ex = _normalize_exchange_name(str((data or {}).get("exchange", "")))
+    if not ex or ex not in _valid:
+        emit("status", {"msg": "❌ Ungültige Exchange", "key": "ws_bad_exchange", "type": "error"})
+        return
+    prev = CONFIG.get("exchange", "—")
+    CONFIG["exchange"] = ex
+    log.info(f"🔀 Exchange gewechselt: {prev} → {ex.upper()} (user={getattr(request,'user_id','?')})")
+    emit(
+        "status",
+        {"msg": f"🔀 Exchange gewechselt → {ex.upper()}", "key": "ws_exchange_changed", "type": "success"},
+        broadcast=True,
+    )
+    emit("update", state.snapshot(), broadcast=True)
+
+
 @socketio.on("start_bot")
 def on_start_bot():
     if not _ws_auth_required():
@@ -7232,6 +7282,8 @@ def on_update_config(data):
         "use_grid",
         "use_rl",
         "use_lstm",
+        # Exchange selection – allowed for all authenticated users
+        "exchange",
     }
     # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
     _numeric_keys = {
@@ -7257,6 +7309,7 @@ def on_update_config(data):
         "lstm_lookback",
         "discord_report_hour",
     }
+    _valid_exchanges = {"cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase"}
     updated: dict[str, Any] = {}
     for k, v in data.items():
         if k not in allowed:
@@ -7264,6 +7317,13 @@ def on_update_config(data):
         if k == "paper_trading":
             CONFIG[k] = True
             updated[k] = True
+            continue
+        if k == "exchange":
+            ex = _normalize_exchange_name(str(v))
+            if ex and ex in _valid_exchanges:
+                CONFIG["exchange"] = ex
+                updated["exchange"] = ex
+                log.info(f"🔀 Exchange manuell gewechselt → {ex.upper()}")
             continue
         if k in _numeric_keys:
             v = _safe_float(v, CONFIG.get(k, 0.0))

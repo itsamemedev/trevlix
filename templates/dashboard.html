@@ -42,7 +42,7 @@
     </div>
     <div class="wizard-step active" id="wz0">
       <div style="font-size:44px;margin-bottom:12px">⚡</div>
-      <div style="font-size:22px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_welcome_title">Willkommen bei</span> <span style="color:var(--cyan)">TREVLIX</span>!</div>
+      <div style="font-size:22px;font-weight:900;margin-bottom:6px"><span data-i18n="wiz_welcome_title">Willkommen bei</span> <span style="color:var(--jade)">TREVLIX</span>!</div>
       <div style="font-size:13px;color:var(--sub);line-height:1.7;margin-bottom:20px">Algorithmic Trading Intelligence v1.5.3 – Assistent richtet deinen Bot in 5 Schritten ein.</div>
       <button class="save-btn" onclick="wizNext()" data-i18n="wiz_start">→ Los geht's!</button>
     </div>
@@ -140,6 +140,45 @@
         <span class="pill up" id="hReturn">▲ +0,00%</span>
         <span style="font-size:11px;color:var(--sub);font-family:var(--mono)" id="hPnl">+0,00 USDT Gesamt</span>
       </div>
+    </div>
+  </div>
+
+  <!-- ══ EXCHANGE SELECTOR ══ -->
+  <div class="card" id="exchangeSelectorCard" style="border-color:rgba(212,175,55,.18);background:linear-gradient(145deg,#0f0c02 0%,#080600 100%)">
+    <div class="card-hd">
+      <span class="card-title">🌐 <span data-i18n="sec_exchange">Exchange & Bot-Start</span></span>
+      <span class="card-badge" id="activeExBadge" style="color:var(--jade);border-color:rgba(212,175,55,.3)">—</span>
+    </div>
+    <div class="card-body">
+      <div class="ex-grid">
+        <button class="ex-btn" id="ex-btn-cryptocom" onclick="selectExchange('cryptocom',this)">
+          <div class="ex-name">Crypto.com</div>
+          <div class="ex-fee">0.04% Fee</div>
+        </button>
+        <button class="ex-btn" id="ex-btn-binance" onclick="selectExchange('binance',this)">
+          <div class="ex-name">Binance</div>
+          <div class="ex-fee">0.10% Fee</div>
+        </button>
+        <button class="ex-btn" id="ex-btn-bybit" onclick="selectExchange('bybit',this)">
+          <div class="ex-name">Bybit</div>
+          <div class="ex-fee">0.10% Fee</div>
+        </button>
+        <button class="ex-btn" id="ex-btn-okx" onclick="selectExchange('okx',this)">
+          <div class="ex-name">OKX</div>
+          <div class="ex-fee">0.08% Fee</div>
+        </button>
+        <button class="ex-btn" id="ex-btn-kucoin" onclick="selectExchange('kucoin',this)" style="grid-column:span 2">
+          <div class="ex-name">KuCoin</div>
+          <div class="ex-fee">0.10% Fee</div>
+        </button>
+      </div>
+      <div style="font-size:10px;color:var(--sub);font-family:var(--mono);margin-bottom:10px;text-align:center">
+        ✓ = API-Keys konfiguriert &nbsp;·&nbsp; Aktiv = Bot nutzt diese Exchange
+      </div>
+      <button class="ex-start-btn" id="exStartBtn" onclick="startBotWithExchange()">
+        <span style="font-size:18px">▶</span>
+        <span id="exStartLabel">Bot starten</span>
+      </button>
     </div>
   </div>
 
@@ -300,7 +339,7 @@
   <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="perf_capital">Performance</span></span>
       <div style="display:flex;gap:6px">
-        <button onclick="exportCSV()"  style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid rgba(0,212,255,.2);background:rgba(0,212,255,.08);color:var(--cyan);cursor:pointer;font-family:var(--font);font-weight:700">📥 CSV</button>
+        <button onclick="exportCSV()"  style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid rgba(212,175,55,.2);background:rgba(212,175,55,.06);color:var(--jade);cursor:pointer;font-family:var(--font);font-weight:700">📥 CSV</button>
         <button onclick="exportJSON()" style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--bg3);color:var(--sub);cursor:pointer;font-family:var(--font);font-weight:700">JSON</button>
       </div>
     </div>
@@ -346,7 +385,7 @@
       </div>
       <!-- 6 KI-Module -->
       <div class="ai-grid" style="margin-bottom:6px">
-        <div class="ai-box ai-box-global"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--cyan)" id="aiWF">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="walk_forward">Walk-Forward</div></div>
+        <div class="ai-box ai-box-global"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--jade)" id="aiWF">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="walk_forward">Walk-Forward</div></div>
         <div class="ai-box ai-box-bull"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--green)" id="aiBullAcc">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="bull_model">🐂 Bull-Modell</div></div>
         <div class="ai-box ai-box-bear"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--red)" id="aiBearAcc">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="bear_model">🐻 Bear-Modell</div></div>
       </div>
@@ -540,7 +579,7 @@
     <div class="card-hd"><span class="card-title"><span data-i18n="system_log">📋 System-Log</span></span>
       <div style="display:flex;gap:5px">
         <button onclick="clearLog()" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer" data-i18n="btn_clear">Leer</button>
-        <button onclick="pauseLog()" id="logPauseBtn" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--cyan);cursor:pointer">⏸</button>
+        <button onclick="pauseLog()" id="logPauseBtn" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--jade);cursor:pointer">⏸</button>
       </div>
     </div>
     <div class="log-tabs">
@@ -582,7 +621,7 @@
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_presets">🎛️ Risiko-Presets</span></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
         <button onclick="applyPreset('conservative')" style="padding:12px 6px;border-radius:9px;background:var(--bg2);border:1px solid var(--line);cursor:pointer;font-size:11px;font-weight:600;color:var(--teal);font-family:var(--font)">🛡️<br><span data-i18n="preset_conservative">Konservativ</span></button>
-        <button onclick="applyPreset('balanced')"     style="padding:12px 6px;border-radius:9px;background:var(--bg2);border:1px solid var(--cyan);cursor:pointer;font-size:11px;font-weight:600;color:var(--cyan);font-family:var(--font)">⚖️<br><span data-i18n="preset_balanced">Ausgewogen</span></button>
+        <button onclick="applyPreset('balanced')"     style="padding:12px 6px;border-radius:9px;background:var(--bg2);border:1px solid var(--jade);cursor:pointer;font-size:11px;font-weight:600;color:var(--jade);font-family:var(--font)">⚖️<br><span data-i18n="preset_balanced">Ausgewogen</span></button>
         <button onclick="applyPreset('aggressive')"   style="padding:12px 6px;border-radius:9px;background:var(--bg2);border:1px solid var(--line);cursor:pointer;font-size:11px;font-weight:600;color:var(--purple);font-family:var(--font)">🚀<br><span data-i18n="preset_aggressive">Aggressiv</span></button>
       </div>
     </div>
