@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.6.8**
+**Algorithmic Crypto Trading Bot — v1.6.11**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.8-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.6.11-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -184,6 +184,28 @@ trevlix/
 │       ├── lifecycle.py               # Graceful Shutdown + Signals
 │       ├── request_helpers.py         # Sichere Request-Parser + Exchange-Normalisierung
 │       ├── websocket_guard.py         # Gemeinsame Socket.IO-Rate-Limiter-Helfer
+│       ├── auth_guards.py             # Login-Rate-Limiter + Auth-Decorator-Builder
+│       ├── session_guard.py           # Session-Timeout + CSRF-Prüfungen (before_request)
+│       ├── socket_emit.py             # Sichere Socket.IO-Emission aus Worker-Threads
+│       ├── exchange_secret.py         # Secret-Entschlüsselung + Single-Mode-Helfer
+│       ├── admin_exchange.py          # Admin-Exchange-Auswahl/DB-Helfer
+│       ├── market_cache.py            # Persistenter Markt-Cache (Disk)
+│       ├── exchange_runtime.py        # Exchange-Erzeugung + Preflight/Recovery
+│       ├── paper_mode.py              # Erzwingt sicheren Paper-Modus beim Start
+│       ├── admin_password_policy.py   # Schwache Admin-Passwort-Erkennung
+│       ├── db_request_context.py      # Request-skopierte DB-Connection-Helfer
+│       ├── audit_writer.py            # Audit-Log Persistenz-Helfer
+│       ├── bot_heartbeat.py           # Heartbeat-basiertes Sleep im Bot-Loop
+│       ├── api_docs_schema.py         # API-Dokumentationspayload-Builder
+│       ├── websocket_state.py         # WebSocket-State-Snapshot-Helfer
+│       ├── socket_error_logger.py     # Einheitliches SocketIO-Error-Logging
+│       ├── websocket_authz.py         # WS Auth/Admin-Prüfungen
+│       ├── ws_rate_gate.py            # WS Rate-Gate Delegation
+│       ├── backup_verify.py           # Backup-Verify-Helfer (latest file)
+│       ├── tax_export.py              # Steuerreport-CSV-Konvertierung
+│       ├── trade_export.py            # Trade-JSON-Export-Konvertierung
+│       ├── startup_view.py            # Startup-Banner Renderer
+│       ├── prometheus_metrics.py      # Prometheus-Metrikzeilen-Builder
 │       └── security.py                # Security-Header + CSRF-Token-Helfer
 ├── routes/                            # Flask Blueprints (Auth, Dashboard, WS-Migration)
 ├── services/                          # Business-Logik (Trading, Risk, AI, Integrationen)

@@ -69,7 +69,6 @@ from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from functools import wraps
 from typing import Any
 
 import ccxt
@@ -109,7 +108,39 @@ from app.core.request_helpers import (
     safe_int,
 )
 from app.core.runtime import run_server
+from app.core.session_guard import handle_session_and_csrf
 from app.core.websocket_guard import WsRateLimiter
+from app.core.socket_emit import emit_socket_event
+from app.core.exchange_secret import is_single_exchange_mode, reveal_and_decrypt
+from app.core.paper_mode import enforce_paper_trading
+from app.core.admin_password_policy import is_admin_password_weak
+from app.core.db_request_context import close_request_db_conn, get_request_db_conn
+from app.core.audit_writer import write_audit_entry
+from app.core.bot_heartbeat import heartbeat_sleep
+from app.core.api_docs_schema import build_api_docs_payload
+from app.core.websocket_state import build_ws_state_snapshot
+from app.core.socket_error_logger import log_socket_error
+from app.core.websocket_authz import ws_admin_required, ws_auth_required
+from app.core.ws_rate_gate import ws_rate_check
+from app.core.backup_verify import verify_latest_backup
+from app.core.tax_export import tax_rows_to_csv
+from app.core.trade_export import trades_to_json
+from app.core.startup_view import render_startup_banner
+from app.core.prometheus_metrics import build_prometheus_lines
+from app.core.admin_exchange import (
+    get_admin_exchange_by_name,
+    get_admin_primary_exchange,
+    get_exchange_key_states,
+    pin_user_exchange,
+)
+from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
+from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
+from app.core.auth_guards import (
+    LoginAttemptTracker,
+    build_admin_required,
+    build_api_auth_required,
+    build_dashboard_auth,
+)
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
 )
@@ -343,9 +374,7 @@ CONFIG: dict[str, Any] = build_default_config(_secret)
 
 def _enforce_paper_trading(source: str = "system") -> None:
     """Erzwingt global Paper-Trading und deaktiviert Live-Modus."""
-    if not CONFIG.get("paper_trading", True):
-        log.warning("Paper-Trading erzwungen (%s): Live-Modus wurde deaktiviert.", source)
-    CONFIG["paper_trading"] = True
+    enforce_paper_trading(CONFIG, log, source)
 
 
 _enforce_paper_trading("startup")
@@ -359,12 +388,7 @@ _enforce_paper_trading("startup")
 # ═══════════════════════════════════════════════════════════════════════════════
 # Sicherheitswarnung: Default-Passwort erkennen
 # ═══════════════════════════════════════════════════════════════════════════════
-if not os.getenv("ADMIN_PASSWORD") or os.getenv("ADMIN_PASSWORD", "") in (
-    "trevlix",
-    "admin",
-    "password",
-    "test",
-):
+if is_admin_password_weak(os.getenv("ADMIN_PASSWORD")):
     log.warning(
         "⚠️  ADMIN_PASSWORD ist nicht gesetzt oder unsicher! "
         "Setze ein starkes Passwort (min. 12 Zeichen) in .env: ADMIN_PASSWORD=..."
@@ -396,14 +420,7 @@ def get_db():
             with conn.cursor() as c:
                 c.execute('SELECT 1')
     """
-    try:
-        if "db_conn" not in g:
-            g.db_conn = db._conn()  # type: ignore[attr-defined]
-        return g.db_conn
-    except RuntimeError:
-        # Außerhalb des Request-Kontexts – Warnung loggen
-        log.debug("get_db() außerhalb Request-Kontext – verwende db._get_conn() stattdessen")
-        return db._conn()  # type: ignore[attr-defined]
+    return get_request_db_conn(flask_g=g, db=db, log=log)
 
 
 @app.teardown_appcontext
@@ -413,12 +430,7 @@ def close_db_connection(exc: BaseException | None = None) -> None:
     Args:
         exc: Optionale Exception, die den Request beendet hat.
     """
-    conn = g.pop("db_conn", None)
-    if conn is not None:
-        try:
-            conn.close()
-        except Exception as e:
-            log.debug(f"close_db_connection: {e}")
+    close_request_db_conn(flask_g=g, log=log)
 
 
 # validate_config importiert aus services.utils
@@ -1897,127 +1909,40 @@ class MySQLManager:
 # [Verbesserung #6] SECURITY HEADERS
 # [Verbesserung #8] AUDIT-LOG HELPER
 # ═══════════════════════════════════════════════════════════════════════════════
-_login_attempts: dict[str, list[float]] = {}  # IP → [timestamps]
-_login_attempts_lock = threading.Lock()
+_login_attempt_tracker = LoginAttemptTracker()
+_login_attempts = _login_attempt_tracker._attempts  # Backward-compatible alias for tests
 
 
 def _check_login_rate(ip: str, max_attempts: int = 5, window: int = 60) -> bool:
     """[Verbesserung #3] Prüft ob IP zu viele Login-Versuche hatte."""
-    now = time.time()
-    with _login_attempts_lock:
-        attempts = _login_attempts.get(ip, [])
-        attempts = [t for t in attempts if now - t < window]
-        if attempts:
-            _login_attempts[ip] = attempts
-        else:
-            # Leere Listen entfernen → verhindert unbegrenztes Dict-Wachstum (Memory-Leak)
-            _login_attempts.pop(ip, None)
-        return len(attempts) < max_attempts
+    return _login_attempt_tracker.check_rate(ip, max_attempts=max_attempts, window=window)
 
 
 def _record_login_attempt(ip: str):
-    with _login_attempts_lock:
-        attempts = _login_attempts.setdefault(ip, [])
-        attempts.append(time.time())
-        # Timestamps pro IP auf letzte 50 begrenzen (Memory-Leak-Schutz)
-        if len(attempts) > 50:
-            _login_attempts[ip] = attempts[-50:]
-        # Periodisch ältere IPs bereinigen wenn Dict zu groß wird (>10.000 Einträge)
-        if len(_login_attempts) > 10_000:
-            cutoff = time.time() - 3600  # Einträge die älter als 1 Stunde sind löschen
-            stale = [k for k, v in _login_attempts.items() if not v or max(v) < cutoff]
-            for k in stale:
-                _login_attempts.pop(k, None)
+    _login_attempt_tracker.record_attempt(ip)
 
 
 def _audit(action: str, detail: str = "", user_id: int = 0):
     """[Verbesserung #8] Audit-Log Hilfsfunktion."""
-    try:
-        try:
-            ip = request.remote_addr or "unknown"
-        except RuntimeError:
-            ip = "system"
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "INSERT INTO audit_log (user_id,action,detail,ip) VALUES(%s,%s,%s,%s)",
-                    (user_id, str(action)[:80], str(detail)[:500], str(ip)[:45]),
-                )
-    except Exception as e:
-        log.debug(f"_audit: {e}")
+    write_audit_entry(
+        db=db,
+        log=log,
+        request_obj=request,
+        action=action,
+        detail=detail,
+        user_id=user_id,
+    )
 
 
 @app.before_request
 def _before_request_hooks():
     """[Verbesserung #1] Session-Timeout + [Verbesserung #2] CSRF-Check."""
-    # Session-Timeout prüfen
-    if session.get("user_id"):
-        now = datetime.now()
-        last = session.get("last_active")
-        created = session.get("session_created")
-        if last:
-            try:
-                elapsed = (now - datetime.fromisoformat(last)).total_seconds()
-                if elapsed > _SESSION_TIMEOUT_MIN * 60:
-                    uid = session.get("user_id", 0)
-                    session.clear()
-                    _audit("session_timeout", f"user_id={uid}", uid)
-                    if request.path.startswith("/api/"):
-                        from flask import abort
-
-                        abort(401)
-                    return redirect("/login")
-            except (ValueError, TypeError):
-                # Ungültiger Timestamp → Session sicherheitshalber beenden
-                session.clear()
-                if request.path.startswith("/api/"):
-                    from flask import abort
-
-                    abort(401)
-                return redirect("/login")
-        # Absolute session lifetime: max 8 hours regardless of activity
-        if created:
-            try:
-                age = (now - datetime.fromisoformat(created)).total_seconds()
-                if age > 8 * 3600:
-                    uid = session.get("user_id", 0)
-                    session.clear()
-                    _audit("session_expired", f"user_id={uid} age={age:.0f}s", uid)
-                    if request.path.startswith("/api/"):
-                        from flask import abort
-
-                        abort(401)
-                    return redirect("/login")
-            except (ValueError, TypeError):
-                # Ungültiger session_created → Session sicherheitshalber beenden
-                session.clear()
-                if request.path.startswith("/api/"):
-                    from flask import abort
-
-                    abort(401)
-                return redirect("/login")
-        session["last_active"] = now.isoformat()
-
-    # CSRF-Check für state-changing Requests (nicht für API mit Bearer Token)
-    if request.method in ("POST", "PUT", "DELETE", "PATCH"):
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer ") and session.get("user_id"):
-            # Ausnahme für Socket.io, statische Assets und favicon
-            if not (
-                request.path.startswith("/socket.io")
-                or request.path.startswith("/static/")
-                or request.path in ("/favicon.ico", "/robots.txt", "/sitemap.xml")
-            ):
-                try:
-                    token = request.form.get("_csrf") or (request.json or {}).get("_csrf")
-                except Exception:
-                    token = None
-                expected = session.get("_csrf_token")
-                if expected and (not token or not hmac.compare_digest(str(token), str(expected))):
-                    _audit("csrf_violation", request.path, session.get("user_id", 0))
-                    from flask import abort
-
-                    abort(403)  # CSRF-Verletzung → Request ablehnen
+    return handle_session_and_csrf(
+        session_obj=session,
+        request_obj=request,
+        session_timeout_min=_SESSION_TIMEOUT_MIN,
+        audit_fn=_audit,
+    )
 
 
 @app.after_request
@@ -2043,51 +1968,14 @@ app.jinja_env.globals["csrf_token"] = _generate_csrf_token
 # JWT AUTH
 # ═══════════════════════════════════════════════════════════════════════════════
 def api_auth_required(f):
-    """Für REST-API Endpunkte — prüft Bearer Token."""
-
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        auth = request.headers.get("Authorization", "")
-        token = auth.replace("Bearer ", "").strip() if auth.startswith("Bearer ") else ""
-        # Auch aus Query-Param
-        if not token:
-            token = request.args.get("token", "")
-        if token:
-            uid = db.verify_api_token(token)
-            if uid:
-                request.user_id = uid
-                return f(*args, **kwargs)
-        # Session-Fallback für Dashboard
-        if session.get("user_id"):
-            request.user_id = session["user_id"]
-            return f(*args, **kwargs)
-        return jsonify({"error": "Nicht autorisiert"}), 401
-
-    return decorated
+    return build_api_auth_required(db)(f)
 
 
-def dashboard_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if not session.get("user_id"):
-            return redirect("/login")
-        return f(*args, **kwargs)
-
-    return decorated
+dashboard_auth = build_dashboard_auth()
 
 
 def admin_required(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        uid = getattr(request, "user_id", session.get("user_id"))
-        if not uid:
-            return jsonify({"error": "Nicht autorisiert"}), 401
-        user = db.get_user_by_id(uid)
-        if not user or user.get("role") != "admin":
-            return jsonify({"error": "Nur Admin"}), 403
-        return f(*args, **kwargs)
-
-    return decorated
+    return build_admin_required(db)(f)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4480,10 +4368,7 @@ cluster_ctrl = ClusterController(
 
 def emit_event(event: str, data: Any, to: str | None = None) -> None:
     """Sendet Socket.io Events sicher aus Background-Threads."""
-    try:
-        socketio.emit(event, data, to=to, namespace="/")
-    except Exception as e:
-        log.debug("emit_event(%s) fehlgeschlagen: %s", event, e)
+    emit_socket_event(socketio=socketio, log=log, event=event, data=data, to=to)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4491,10 +4376,7 @@ def emit_event(event: str, data: Any, to: str | None = None) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 def _reveal_and_decrypt(val: Any) -> str:
     """Entschlüsselt einen SecretStr/Str-Wert aus CONFIG zu plain text."""
-    if not val:
-        return ""
-    raw = val.reveal() if hasattr(val, "reveal") else val
-    return decrypt_value(raw) if raw else ""
+    return reveal_and_decrypt(val, decrypt_value_fn=decrypt_value)
 
 
 def _is_single_exchange_mode() -> bool:
@@ -4502,37 +4384,12 @@ def _is_single_exchange_mode() -> bool:
     UND zugehörige Keys vorhanden sind. Andernfalls wird Multi-Exchange-Mode
     aktiv und die primäre Exchange wird aus der DB (user_exchanges) ermittelt.
     """
-    env_exchange = (os.getenv("EXCHANGE", "") or "").strip()
-    if not env_exchange:
-        return False
-    # Wenn EXCHANGE gesetzt ist, aber keine Keys: behandeln wir als aktiv
-    # (Paper-Trading funktioniert ohne Keys). Single-Mode ist ON.
-    return True
+    return is_single_exchange_mode(env_exchange=os.getenv("EXCHANGE", ""))
 
 
 def _get_exchange_key_states() -> dict[str, bool]:
     """Returns which exchanges have API keys configured (admin user)."""
-    _exchanges = ("cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase")
-    result = {ex: False for ex in _exchanges}
-    try:
-        if db is None or not getattr(db, "db_available", False):
-            return result
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
-                row = c.fetchone()
-                if not row:
-                    return result
-                admin_id = row["id"]
-        enabled = db.get_enabled_exchanges(admin_id)
-        for ex_info in enabled:
-            ex_name = ex_info.get("exchange", "")
-            if ex_name in result:
-                has_key = bool(ex_info.get("api_key") and ex_info.get("api_key") != "")
-                result[ex_name] = has_key
-    except Exception:
-        pass
-    return result
+    return get_exchange_key_states(db)
 
 
 def _get_admin_primary_exchange() -> dict | None:
@@ -4540,69 +4397,17 @@ def _get_admin_primary_exchange() -> dict | None:
 
     Gibt dict mit keys {exchange, api_key, api_secret, passphrase} zurück oder None.
     """
-    try:
-        if db is None or not getattr(db, "db_available", False):
-            return None
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
-                row = c.fetchone()
-                if not row:
-                    return None
-                admin_id = row["id"]
-        enabled = db.get_enabled_exchanges(admin_id)
-        if not enabled:
-            return None
-        # get_enabled_exchanges sortiert bereits is_primary DESC
-        e = enabled[0]
-        return {
-            "exchange": e.get("exchange", ""),
-            "api_key": e.get("api_key", "") or "",
-            "api_secret": e.get("api_secret", "") or "",
-            "passphrase": e.get("passphrase", "") or "",
-        }
-    except Exception as e:
-        log.debug(f"_get_admin_primary_exchange: {e}")
-        return None
+    return get_admin_primary_exchange(db, log)
 
 
 def _get_admin_exchange_by_name(exchange_name: str) -> dict | None:
     """Liefert eine aktivierte Exchange-Konfiguration des Admins für einen konkreten Namen."""
-    if not exchange_name:
-        return None
-    try:
-        if db is None or not getattr(db, "db_available", False):
-            return None
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
-                row = c.fetchone()
-                if not row:
-                    return None
-                admin_id = row["id"]
-        enabled = db.get_enabled_exchanges(admin_id)
-        for ex in enabled:
-            if ex.get("exchange") == exchange_name:
-                return {
-                    "exchange": ex.get("exchange", ""),
-                    "api_key": ex.get("api_key", "") or "",
-                    "api_secret": ex.get("api_secret", "") or "",
-                    "passphrase": ex.get("passphrase", "") or "",
-                }
-    except Exception as e:
-        log.debug(f"_get_admin_exchange_by_name({exchange_name}): {e}")
-    return None
+    return get_admin_exchange_by_name(db, exchange_name, log)
 
 
 def _pin_user_exchange(user_id: int | None, exchange_name: str) -> bool:
     """Setzt die gewünschte Exchange für den User als primär (falls vorhanden)."""
-    if not user_id or not exchange_name or db is None:
-        return False
-    try:
-        return bool(db.set_primary_exchange(user_id, exchange_name, enable=True))
-    except Exception as e:
-        log.debug(f"_pin_user_exchange({user_id}, {exchange_name}): {e}")
-        return False
+    return pin_user_exchange(db, user_id, exchange_name, log)
 
 
 def create_exchange():
@@ -4614,65 +4419,17 @@ def create_exchange():
       3. Fallback: "cryptocom" als Default
     Im Paper-Trading-Modus werden keine Credentials verwendet (public-only).
     """
-    # Admin-DB-Konfiguration bevorzugt, wenn vorhanden.
-    # Falls im Dashboard manuell eine Exchange gewählt wurde, versuchen wir
-    # gezielt diese aktive Exchange zu verwenden (statt starr is_primary).
-    desired_name = normalize_exchange_name(CONFIG.get("exchange", ""))
-    db_cfg = _get_admin_exchange_by_name(desired_name) if desired_name else None
-    if db_cfg is None:
-        db_cfg = _get_admin_primary_exchange()
-    single_mode = _is_single_exchange_mode()
-
-    if db_cfg and db_cfg.get("exchange"):
-        name = db_cfg["exchange"]
-        db_key = db_cfg["api_key"]
-        db_secret = db_cfg["api_secret"]
-        db_pass = db_cfg["passphrase"]
-        # CONFIG-Anzeige synchronisieren, damit Dashboard/Stats die DB-Exchange anzeigen.
-        if CONFIG.get("exchange") != name:
-            CONFIG["exchange"] = name
-    elif single_mode:
-        name = desired_name or CONFIG.get("exchange", "cryptocom")
-        db_key = db_secret = db_pass = ""
-    else:
-        # Kein Single-Mode und keine DB-Exchange: Multi-Mode ohne Eintrag.
-        # Nutze den Config-Default damit der Bot Public-Daten laden kann.
-        name = desired_name or CONFIG.get("exchange", "cryptocom")
-        db_key = db_secret = db_pass = ""
-        log.info(
-            "ℹ️  Multi-Exchange-Mode aktiv (EXCHANGE env leer) – "
-            "richte Exchange-Keys im Dashboard unter 'Exchanges' ein."
-        )
-
-    # Im Paper-Trading-Modus reine Public-Instanzen: keine Credentials nötig,
-    # damit auch ohne API-Keys (z.B. Bybit ohne Keys) Preis-/Markt-Daten laden.
-    if CONFIG.get("paper_trading", True):
-        api_key = ""
-        api_secret = ""
-        passphrase = ""
-    elif db_key or db_secret:
-        api_key = db_key
-        api_secret = db_secret
-        passphrase = db_pass
-    else:
-        api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
-        api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
-        passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
-    timeout_ms = safe_int(CONFIG.get("exchange_timeout_ms", 0), 0)
-    extra: dict[str, Any] = {}
-    if timeout_ms > 0:
-        extra["timeout"] = max(3000, timeout_ms)
-    inst = create_ccxt_exchange(
-        name,
-        api_key=api_key,
-        api_secret=api_secret,
-        passphrase=passphrase,
-        default_type="spot",
-        extra_options=extra or None,
+    return create_exchange_instance(
+        config=CONFIG,
+        normalize_exchange_name=normalize_exchange_name,
+        get_admin_exchange_by_name=_get_admin_exchange_by_name,
+        get_admin_primary_exchange=_get_admin_primary_exchange,
+        is_single_exchange_mode=_is_single_exchange_mode,
+        reveal_and_decrypt=_reveal_and_decrypt,
+        safe_int=safe_int,
+        create_ccxt_exchange=create_ccxt_exchange,
+        log=log,
     )
-    if inst is None:
-        raise ValueError(f"Exchange '{name}' konnte nicht erstellt werden")
-    return inst
 
 
 def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str | None]:
@@ -4681,63 +4438,17 @@ def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str |
     Returns:
         (markets, error_message). Bei Erfolg ist error_message None.
     """
-    last_err = ""
-    for attempt in range(1, max_attempts + 1):
-        try:
-            preflight_ex = create_exchange()
-            markets = fetch_markets(preflight_ex)
-            if markets:
-                return markets, None
-            last_err = "keine Märkte geladen"
-        except Exception as exc:
-            last_err = str(exc)
-        if attempt < max_attempts:
-            time.sleep(min(2**attempt, 10))  # 2s, 4s, 8s, 10s
-
-    # Auto-Recovery: versuche andere aktivierte Admin-Exchanges als Fallback.
-    try:
-        current_ex = normalize_exchange_name(CONFIG.get("exchange", ""))
-        if db is not None and getattr(db, "db_available", False):
-            with db._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
-                    row = c.fetchone()
-                    admin_id = row["id"] if row else None
-            if admin_id:
-                enabled = db.get_enabled_exchanges(admin_id)
-                for ex_cfg in enabled:
-                    ex_name = normalize_exchange_name(ex_cfg.get("exchange", ""))
-                    if not ex_name or ex_name == current_ex:
-                        continue
-                    try:
-                        CONFIG["exchange"] = ex_name
-                        candidate = create_exchange()
-                        markets = fetch_markets(candidate)
-                        if markets:
-                            log.warning(
-                                "Auto-Recovery: Exchange-Fallback aktiv %s -> %s",
-                                (current_ex or "unknown").upper(),
-                                ex_name.upper(),
-                            )
-                            _pin_user_exchange(admin_id, ex_name)
-                            return markets, None
-                    except Exception as ex_err:
-                        log.debug("Auto-Recovery Exchange %s fehlgeschlagen: %s", ex_name, ex_err)
-                # Falls kein Fallback funktioniert: ursprüngliche Exchange wiederherstellen
-                if current_ex:
-                    CONFIG["exchange"] = current_ex
-    except Exception as fallback_err:
-        log.debug("Auto-Recovery übersprungen: %s", fallback_err)
-
-    # Fallback: Persistenter Disk-Cache ermöglicht Start trotz Exchange-Ausfall
-    disk_cached = _load_market_cache()
-    if disk_cached:
-        log.warning(
-            "Preflight: Exchange nicht erreichbar – nutze persistenten Cache (%d Märkte).",
-            len(disk_cached),
-        )
-        return disk_cached, None
-    return [], last_err or "Exchange/Marktdaten nicht erreichbar"
+    return preflight_exchange_markets(
+        max_attempts=max_attempts,
+        create_exchange=create_exchange,
+        fetch_markets=fetch_markets,
+        normalize_exchange_name=normalize_exchange_name,
+        config=CONFIG,
+        db=db,
+        pin_user_exchange=_pin_user_exchange,
+        log=log,
+        load_market_cache=_load_market_cache,
+    )
 
 
 def get_exchange_fee_rate(exchange_id: str | None = None, symbol: str = "BTC/USDT") -> float:
@@ -4756,44 +4467,18 @@ safe_fetch_tickers = _factory_safe_fetch_tickers
 
 # Persistenter Markt-Cache: überlebt Neustarts, damit der Bot auch bei
 # temporären Exchange-Ausfällen mit der letzten bekannten Marktliste starten kann.
-_MARKET_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
-_MARKET_CACHE_FILE = os.path.join(_MARKET_CACHE_DIR, "market_cache.json")
 _MARKET_CACHE_MAX_AGE = 86400  # 24h – danach wird der Cache als veraltet betrachtet
+_MARKET_CACHE_DIR, _MARKET_CACHE_FILE = build_cache_paths(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _save_market_cache(markets: list[str]) -> None:
     """Speichert Marktliste auf Disk für Restart-Resilienz."""
-    try:
-        os.makedirs(_MARKET_CACHE_DIR, exist_ok=True)
-        payload = {"ts": time.time(), "markets": markets}
-        tmp = _MARKET_CACHE_FILE + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(payload, f)
-        os.replace(tmp, _MARKET_CACHE_FILE)
-    except Exception as e:
-        log.debug("Markt-Cache schreiben fehlgeschlagen: %s", e)
+    save_market_cache(markets=markets, cache_dir=_MARKET_CACHE_DIR, cache_file=_MARKET_CACHE_FILE, log=log)
 
 
 def _load_market_cache(max_age: int = _MARKET_CACHE_MAX_AGE) -> list[str]:
     """Lädt gecachte Marktliste von Disk (falls vorhanden und nicht veraltet)."""
-    try:
-        with open(_MARKET_CACHE_FILE) as f:
-            data = json.load(f)
-        age = time.time() - data.get("ts", 0)
-        markets = data.get("markets", [])
-        if not markets:
-            return []
-        if age > max_age:
-            log.warning(
-                "Markt-Cache veraltet (%.0f h) – wird trotzdem als Fallback genutzt.",
-                age / 3600,
-            )
-        return markets
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
-        return []
-    except Exception as e:
-        log.debug("Markt-Cache lesen fehlgeschlagen: %s", e)
-        return []
+    return load_market_cache(cache_file=_MARKET_CACHE_FILE, max_age=max_age, log=log)
 
 
 # Beim Start: persistenten Cache in state.markets laden, damit der Bot sofort
@@ -5632,15 +5317,7 @@ def get_heatmap_data(ex) -> list[dict]:
 # ═══════════════════════════════════════════════════════════════════════════════
 def _heartbeat_sleep(seconds: float) -> None:
     """Sleep in short chunks while emitting loop heartbeats."""
-    remaining = max(0.0, float(seconds))
-    while remaining > 0 and state.running:
-        try:
-            healer.heartbeat()
-        except Exception:
-            pass
-        chunk = min(1.0, remaining)
-        time.sleep(chunk)
-        remaining -= chunk
+    heartbeat_sleep(seconds=seconds, state=state, healer=healer)
 
 
 def bot_loop():
@@ -6602,14 +6279,8 @@ def api_tax_report():
     report = tax.generate(trades, year, method)
     if fmt == "csv":
         rows = report.get("gains", []) + report.get("losses", [])
-        buf = io.StringIO()
-        if rows:
-            all_keys = list(dict.fromkeys(k for r in rows for k in r.keys()))
-            w = csv.DictWriter(buf, fieldnames=all_keys, extrasaction="ignore")
-            w.writeheader()
-            w.writerows(rows)
         return Response(
-            buf.getvalue(),
+            tax_rows_to_csv(rows),
             mimetype="text/csv",
             headers={"Content-Disposition": f"attachment;filename=trevlix_tax_{year}.csv"},
         )
@@ -6631,7 +6302,7 @@ def api_export_csv():
 def api_export_json():
     trades = db.load_trades(limit=10000)
     return Response(
-        json.dumps(trades, ensure_ascii=False),
+        trades_to_json(trades),
         mimetype="application/json",
         headers={"Content-Disposition": "attachment;filename=trevlix_trades.json"},
     )
@@ -6658,12 +6329,9 @@ def api_backup_verify():
     """[Verbesserung #9] Prüft das neueste Backup auf SHA-256-Integrität."""
     bdir = CONFIG.get("backup_dir", "backups")
     try:
-        # Neuestes Backup finden
-        files = [os.path.join(bdir, f) for f in os.listdir(bdir) if f.endswith((".zip", ".enc"))]
-        if not files:
-            return jsonify({"error": "Keine Backups vorhanden"}), 404
-        latest = max(files, key=os.path.getmtime)
-        result = db.verify_backup(latest)
+        result, err = verify_latest_backup(backup_dir=bdir, db=db)
+        if err:
+            return jsonify({"error": err}), 404
         return jsonify(result)
     except Exception as e:
         log.error("API error: %s", e)
@@ -6672,35 +6340,7 @@ def api_backup_verify():
 
 @app.route("/api/v1/docs")
 def api_docs():
-    return jsonify(
-        {
-            "name": BOT_FULL,
-            "version": BOT_VERSION,
-            "website": "https://trevlix.dev",
-            "endpoints": {
-                "GET /api/v1/status": "Healthcheck (öffentlich, kein Auth)",
-                "GET /api/v1/update/status": "Healthcheck alias (Docker HEALTHCHECK)",
-                "GET /api/v1/state": "Bot-Status (Auth: Bearer Token)",
-                "GET /api/v1/trades": "Trade-Liste (?limit=&symbol=&year=)",
-                "GET /api/v1/portfolio": "Portfolio-Snapshot",
-                "GET /api/v1/heatmap": "Markt-Heatmap",
-                "POST /api/v1/backtest": "Backtest {symbol,timeframe,candles,sl,tp,vote}",
-                "GET /api/v1/tax": "Steuer-Report (?year=&method=)",
-                "POST /api/v1/signal": "TradingView Webhook {symbol,action}",
-                "GET /api/v1/ai": "KI-Status",
-                "GET /api/v1/dominance": "BTC/USDT Dominanz",
-                "GET /api/v1/anomaly": "Anomalie-Detektor Status",
-                "GET /api/v1/genetic": "Genetischer Optimizer",
-                "GET /api/v1/rl": "Reinforcement Learning Agent",
-                "GET /api/v1/news/{sym}": "News-Sentiment für Symbol",
-                "GET /api/v1/onchain/{sym}": "On-Chain Score für Symbol",
-                "GET /api/v1/arb": "Arbitrage-Chancen",
-                "POST /api/v1/token": "API-Token erstellen",
-                "GET /api/v1/admin/users": "Alle User (Admin)",
-                "POST /api/v1/admin/users": "User anlegen (Admin)",
-            },
-        }
-    )
+    return jsonify(build_api_docs_payload(bot_full=BOT_FULL, bot_version=BOT_VERSION))
 
 
 # ── Health / Status ──────────────────────────────────────────────────────────
@@ -6762,20 +6402,7 @@ def api_revoke_token(token_id):
 @api_auth_required
 def prometheus_metrics():
     """Exportiert Bot-Metriken im Prometheus-Format."""
-    lines = []
-    lines.append(f'trevlix_bot_running {{version="{BOT_VERSION}"}} {1 if state.running else 0}')
-    lines.append(f"trevlix_open_trades {len(state.positions)}")
-    lines.append(f"trevlix_closed_trades_total {len(getattr(state, 'closed_trades', []))}")
-    total_pnl = sum(t.get("pnl", 0) for t in getattr(state, "closed_trades", []))
-    lines.append(f"trevlix_total_pnl {total_pnl:.2f}")
-    wins = sum(1 for t in getattr(state, "closed_trades", []) if t.get("pnl", 0) > 0)
-    n = len(getattr(state, "closed_trades", []))
-    lines.append(f"trevlix_win_rate {wins / n * 100 if n else 0:.1f}")
-    if hasattr(state, "_start_time"):
-        lines.append(f"trevlix_uptime_seconds {time.time() - state._start_time:.0f}")
-    if db._pool:
-        lines.append(f"trevlix_db_pool_available {db._pool.available}")
-        lines.append(f"trevlix_db_pool_size {db._pool.pool_size}")
+    lines = build_prometheus_lines(bot_version=BOT_VERSION, state=state, db=db)
     return Response("\n".join(lines) + "\n", mimetype="text/plain; charset=utf-8")
 
 
@@ -6792,10 +6419,7 @@ def _ws_auth_required() -> bool:
     Returns:
         True if authenticated, False otherwise (also emits error).
     """
-    if not session.get("user_id"):
-        emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
-        return False
-    return True
+    return ws_auth_required(session_obj=session, emit_fn=emit)
 
 
 def _ws_admin_required() -> bool:
@@ -6807,24 +6431,18 @@ def _ws_admin_required() -> bool:
     Returns:
         True if admin, False otherwise (also emits error).
     """
-    if not _ws_auth_required():
-        return False
-    uid = session.get("user_id")
-    try:
-        user = db.get_user_by_id(uid)
-        if not user or user.get("role") != "admin":
-            emit("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
-            return False
-    except Exception:
-        emit("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
-        return False
-    return True
+    return ws_admin_required(
+        session_obj=session,
+        emit_fn=emit,
+        db=db,
+        ws_auth_required_fn=_ws_auth_required,
+    )
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
     """Prüft ob ein Socket-Event zu schnell wiederholt wird."""
     sid = request.sid if hasattr(request, "sid") else "global"
-    return _ws_rate_limiter.check(sid, action, min_interval_sec=min_interval)
+    return ws_rate_check(limiter=_ws_rate_limiter, sid=sid, action=action, min_interval=min_interval)
 
 
 @socketio.on("connect")
@@ -6897,7 +6515,7 @@ def on_disconnect(reason: str = "") -> None:
 @socketio.on_error_default
 def default_error_handler(e: Exception) -> None:
     """Globaler Fallback-Handler für unbehandelte SocketIO-Fehler."""
-    log.error(f"⚠️ SocketIO-Fehler: {type(e).__name__}: {e}")
+    log_socket_error(log=log, error=e)
 
 
 @socketio.on("request_state")
@@ -6907,12 +6525,7 @@ def on_request_state():
     if not uid:
         emit("auth_error", {"msg": "Nicht authentifiziert"})
         return
-    snap = state.snapshot()
-    try:
-        u = db.get_user_by_id(uid)
-        snap["user_role"] = u.get("role", "user") if u else "user"
-    except Exception:
-        snap["user_role"] = "user"
+    snap = build_ws_state_snapshot(uid=uid, state=state, db=db)
     emit("update", snap)
 
 
@@ -9359,24 +8972,7 @@ def api_position_update_sl(symbol):
 
 
 def startup_banner():
-    print(f"""
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                                                                              ║
-║ ████████╗██████╗ ███████╗██╗   ██╗██╗     ██╗██╗  ██╗                    ║
-║ ╚══██╔══╝██╔══██╗██╔════╝██║   ██║██║     ██║╚██╗██╔╝                    ║
-║    ██║   ██████╔╝█████╗  ██║   ██║██║     ██║ ╚███╔╝                     ║
-║    ██║   ██╔══██╗██╔══╝  ╚██╗ ██╔╝██║     ██║ ██╔██╗                     ║
-║    ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                    ║
-║    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                    ║
-║                                                                              ║
-║  Algorithmic Crypto Trading  ·  v{BOT_VERSION}  ·  trevlix.dev                ║
-╠══════════════════════════════════════════════════════════════════════════════╣
-║  MySQL:   {CONFIG["mysql_host"]}/{CONFIG["mysql_db"]:<44}║
-║  Exchange:{CONFIG["exchange"]:<51}║
-║  Modus:   {"📝 Paper Trading" if CONFIG["paper_trading"] else "💰 Live Trading":<50}║
-║  Kapital: {CONFIG["paper_balance"]:<50}║
-╚══════════════════════════════════════════════════════════════════════════════╝
-    """)
+    print(render_startup_banner(bot_version=BOT_VERSION, config=CONFIG))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

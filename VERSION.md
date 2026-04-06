@@ -1,6 +1,6 @@
 # VERSION
 
-Aktuelle Projektversion: **1.6.8**
+Aktuelle Projektversion: **1.6.11**
 
 Schema: **Semantic Versioning** (`MAJOR.MINOR.PATCH`)
 

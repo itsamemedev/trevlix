@@ -7,6 +7,58 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.6.11] – 2026-04-06
+
+### Changed — Zusätzliche Entkopplung von `server.py` (weitere 15 Core-Module)
+
+- **15 neue Core-Module** ergänzt und in `server.py` verdrahtet:
+  - `paper_mode.py`, `admin_password_policy.py`, `db_request_context.py`, `audit_writer.py`, `bot_heartbeat.py`
+  - `api_docs_schema.py`, `websocket_state.py`, `socket_error_logger.py`, `websocket_authz.py`, `ws_rate_gate.py`
+  - `backup_verify.py`, `tax_export.py`, `trade_export.py`, `startup_view.py`, `prometheus_metrics.py`
+- **`server.py` weiter entschlackt**:
+  - Paper-/Admin-Passwort-Checks, Request-DB-Helfer und Audit-Persistenz delegiert.
+  - WebSocket-Auth/Admin/Rate-Gates, Fehlerlogging und State-Snapshot-Erstellung delegiert.
+  - Tax/Trade-Export und Backup-Verify-Flow delegiert.
+  - Startup-Banner-Rendering und Prometheus-Metrics-Building ausgelagert.
+  - Trading-Ablauf (Live/Paper) bewusst unverändert gelassen; Wrapper-Namen bleiben kompatibel.
+- **Qualitätssicherung**:
+  - `python -m py_compile server.py app/core/paper_mode.py app/core/admin_password_policy.py app/core/db_request_context.py app/core/audit_writer.py app/core/bot_heartbeat.py app/core/api_docs_schema.py app/core/websocket_state.py app/core/socket_error_logger.py app/core/websocket_authz.py app/core/ws_rate_gate.py app/core/backup_verify.py app/core/tax_export.py app/core/trade_export.py app/core/startup_view.py app/core/prometheus_metrics.py`
+  - `pytest -q tests/test_auth.py tests/test_bootstrap.py tests/test_websocket_guard.py tests/test_api.py tests/test_exchange_factory.py` (`60 passed, 1 skipped`)
+
+## [1.6.10] – 2026-04-06
+
+### Changed — Weitere Modularisierung von `server.py` (5 neue Core-Module)
+
+- **Neues Core-Modul `app/core/socket_emit.py`**: sichere Socket.IO-Emission für Background-Threads zentralisiert (`emit_socket_event`).
+- **Neues Core-Modul `app/core/exchange_secret.py`**: Secret-Reveal/Decrypt-Logik und Single-Exchange-Mode-Helfer ausgelagert.
+- **Neues Core-Modul `app/core/admin_exchange.py`**: Admin-Exchange-DB-Helfer ausgelagert (`get_exchange_key_states`, `get_admin_primary_exchange`, `get_admin_exchange_by_name`, `pin_user_exchange`).
+- **Neues Core-Modul `app/core/market_cache.py`**: persistenter Markt-Cache (Pfadaufbau, Laden, Speichern) zentralisiert.
+- **Neues Core-Modul `app/core/exchange_runtime.py`**: Exchange-Erzeugung und Preflight/Recovery-Flow gekapselt.
+- **`server.py` weiter entschlackt**:
+  - delegiert nun Event-Emission, Secret/Modes, Admin-Exchange-Fallbacks, Markt-Cache-I/O sowie Exchange-Preflight an die neuen Core-Module.
+  - öffentliche Funktionsnamen/Verhalten bleiben kompatibel, da die bisherigen Funktionen als delegierende Wrapper bestehen.
+- **Qualitätssicherung**:
+  - `python -m py_compile server.py app/core/socket_emit.py app/core/exchange_secret.py app/core/admin_exchange.py app/core/market_cache.py app/core/exchange_runtime.py`
+  - `pytest -q tests/test_auth.py tests/test_bootstrap.py tests/test_websocket_guard.py tests/test_api.py tests/test_exchange_factory.py` (`60 passed, 1 skipped`)
+
+## [1.6.9] – 2026-04-06
+
+### Changed — Auth/Session-Sicherheitslogik aus `server.py` extrahiert
+
+- **Neues Core-Modul `app/core/auth_guards.py`** hinzugefügt:
+  - `LoginAttemptTracker` kapselt Login-Rate-Limiting inkl. Memory-Cleanup.
+  - Fabrikfunktionen für Auth-Decorator (`build_api_auth_required`, `build_dashboard_auth`, `build_admin_required`) ausgelagert.
+- **Neues Core-Modul `app/core/session_guard.py`** hinzugefügt:
+  - Kapselt Session-Timeout- und CSRF-Prüfung in `handle_session_and_csrf(...)`.
+- **`server.py` weiter entschlackt**:
+  - `_check_login_rate` und `_record_login_attempt` delegieren auf `LoginAttemptTracker`.
+  - `@app.before_request` delegiert Session-/CSRF-Prüfung an `handle_session_and_csrf(...)`.
+  - Auth-Decorator werden jetzt über Core-Builder bereitgestellt statt Inline-Monolithcode.
+  - Backward-Kompatibilität für Tests bleibt erhalten (`_login_attempts` Alias).
+- **Qualitätssicherung**:
+  - `python -m py_compile server.py app/core/auth_guards.py app/core/session_guard.py`
+  - `pytest -q tests/test_auth.py tests/test_bootstrap.py tests/test_websocket_guard.py`
+
 ## [1.6.8] – 2026-04-06
 
 ### Changed — WebSocket-Rate-Limiting aus `server.py` ausgelagert
