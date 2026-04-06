@@ -39,6 +39,9 @@ ENV/
 logs/
 *.log.*
 
+# ── Runtime-Daten & Cache ────────────────────────────────────────
+data/
+
 # ── Backups & Datenbank ──────────────────────────────────────────
 backups/
 *.sql.gz
