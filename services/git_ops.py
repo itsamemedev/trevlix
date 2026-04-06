@@ -11,7 +11,7 @@ import logging
 import os
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger("trevlix.git_ops")
@@ -53,7 +53,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[1]
 
 
-def _run_git(args: list[str], timeout: int = 10, check: bool = False) -> subprocess.CompletedProcess:
+def _run_git(
+    args: list[str], timeout: int = 10, check: bool = False
+) -> subprocess.CompletedProcess:
     cmd = ["git", *args]
     try:
         return subprocess.run(
@@ -81,7 +83,7 @@ def get_update_status() -> UpdateStatus:
     repo_url = repo_url_proc.stdout.strip() if repo_url_proc.returncode == 0 else ""
     branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else "main"
     current = (tag_proc.stdout.strip() if tag_proc.returncode == 0 else "") or _DEFAULT_VERSION
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     return UpdateStatus(
         current_version=current,
