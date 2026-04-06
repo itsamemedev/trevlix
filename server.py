@@ -80,7 +80,6 @@ from flask import (
     Response,
     g,
     jsonify,
-    redirect,
     request,
     send_file,
     session,
@@ -88,17 +87,12 @@ from flask import (
 from flask_socketio import emit
 
 from app.core.bootstrap import (
-    create_flask_app,
-    create_limiter,
-    create_socketio,
-    init_cors,
-    parse_origins_from_env,
     resolve_project_paths,
 )
 from app.core.http_routes import register_default_blueprints, register_system_routes
 from app.core.default_config import build_default_config
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
-from app.core.logging_setup import configure_logging
+from app.core.app_setup import initialize_runtime_objects
 from app.core.request_helpers import (
     normalize_exchange_name as _normalize_exchange_name,
 )
@@ -141,6 +135,7 @@ from app.core.auth_guards import (
     build_api_auth_required,
     build_dashboard_auth,
 )
+from app.core.admin_user_validation import validate_admin_user_payload
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
 )
@@ -325,40 +320,11 @@ load_dotenv()
 # APP
 # ═══════════════════════════════════════════════════════════════════════════════
 _BASE_DIR, _TEMPLATE_DIR, _STATIC_DIR = resolve_project_paths(__file__)
-app = create_flask_app(template_dir=_TEMPLATE_DIR, static_dir=_STATIC_DIR)
-
-# ── [Verbesserung #1] Session-Timeout ─────────────────────────────────────────
-try:
-    _SESSION_TIMEOUT_MIN = int(os.getenv("SESSION_TIMEOUT_MIN", "30"))
-except (ValueError, TypeError):
-    _SESSION_TIMEOUT_MIN = 30
-
-# ── CORS: Erlaubte Origins ────────────────────────────────────────────────────
-_allowed_origins, _flask_cors_origins = parse_origins_from_env()
-init_cors(app, flask_cors_origins=_flask_cors_origins)
-socketio = create_socketio(app, allowed_origins=_allowed_origins)
-
-# ── Rate Limiter ─────────────────────────────────────────────────────────────
-limiter = create_limiter(
-    app=app,
+_BASE_DIR, app, socketio, limiter, log, _SESSION_TIMEOUT_MIN = initialize_runtime_objects(
+    __file__,
     limiter_available=LIMITER_AVAILABLE,
     limiter_cls=Limiter if LIMITER_AVAILABLE else None,
     key_func=get_remote_address if LIMITER_AVAILABLE else None,
-)
-
-# ── [Verbesserung #14] Konfigurierbares Log-Level ─────────────────────────────
-_LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
-
-# ── [Verbesserung #50] Optionaler JSON-Logging-Formatter ──────────────────────
-_USE_JSON_LOGS = os.getenv("JSON_LOGS", "false").lower() in ("true", "1", "yes")
-_USE_COLOR_LOGS = os.getenv("COLOR_LOGS", "true").lower() in ("true", "1", "yes")
-
-log = configure_logging(
-    base_dir=_BASE_DIR,
-    log_level=_LOG_LEVEL,
-    use_json_logs=_USE_JSON_LOGS,
-    use_color_logs=_USE_COLOR_LOGS,
-    logger_name="TREVLIX",
 )
 
 
@@ -6154,11 +6120,15 @@ def api_admin_users():
 @admin_required
 def api_admin_create_user():
     data = request.json or {}
+    is_valid, payload, error_key, error_message = validate_admin_user_payload(data)
+    if not is_valid:
+        return jsonify({"ok": False, "error": error_message, "key": error_key}), 400
+
     ok = db.create_user(
-        data.get("username", ""),
-        data.get("password", ""),
-        data.get("role", "user"),
-        safe_float(data.get("balance", 10000), 10000.0),
+        payload["username"],
+        payload["password"],
+        payload["role"],
+        payload["balance"],
     )
     return jsonify({"ok": ok})
 
@@ -7085,67 +7055,16 @@ def on_update_dominance():
 def on_admin_create_user(data):
     if not _ws_admin_required():
         return
-    username = str(data.get("username", "")).strip()
-    password = str(data.get("password", ""))
-    role = str(data.get("role", "user")).strip()
-    if not username or len(username) < 3 or len(username) > 64:
-        emit(
-            "status",
-            {
-                "msg": "❌ Username muss 3-64 Zeichen haben",
-                "key": "err_username_length",
-                "type": "error",
-            },
-        )
+    is_valid, payload, error_key, error_message = validate_admin_user_payload(data or {})
+    if not is_valid:
+        emit("status", {"msg": error_message, "key": error_key, "type": "error"})
         return
-    if not username.replace("_", "").replace("-", "").isalnum():
-        emit(
-            "status",
-            {
-                "msg": "❌ Username: nur Buchstaben, Zahlen, -, _",
-                "key": "err_username_chars",
-                "type": "error",
-            },
-        )
-        return
-    if len(password) < 12:
-        emit(
-            "status",
-            {
-                "msg": "❌ Passwort muss mind. 12 Zeichen haben",
-                "key": "err_password_length",
-                "type": "error",
-            },
-        )
-        return
-    if not any(c.isupper() for c in password) or not any(c.islower() for c in password):
-        emit(
-            "status",
-            {
-                "msg": "❌ Passwort braucht Groß- und Kleinbuchstaben",
-                "key": "err_password_case",
-                "type": "error",
-            },
-        )
-        return
-    if not any(c.isdigit() for c in password):
-        emit(
-            "status",
-            {
-                "msg": "❌ Passwort braucht mindestens eine Zahl",
-                "key": "err_password_digit",
-                "type": "error",
-            },
-        )
-        return
-    if role not in ("admin", "user", "viewer"):
-        emit("status", {"msg": "❌ Ungültige Rolle", "key": "err_invalid_role", "type": "error"})
-        return
+
     ok = db.create_user(
-        username,
-        password,
-        role,
-        safe_float(data.get("balance", 10000), 10000.0),
+        payload["username"],
+        payload["password"],
+        payload["role"],
+        payload["balance"],
     )
     emit(
         "status",

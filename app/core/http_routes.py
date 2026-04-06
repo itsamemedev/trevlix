@@ -91,7 +91,6 @@ def register_default_blueprints(
         )
         dashboard_bp = create_dashboard_blueprint(
             template_dir=template_dir,
-            static_dir=static_dir,
             require_auth_fn=require_auth_fn,
         )
         app.register_blueprint(auth_bp, name="auth_bp")

@@ -7,6 +7,7 @@ trevlix/
 ├── app/
 │   └── core/
 │       ├── bootstrap.py       # Flask/CORS/Socket.IO/Limiter Setup
+│       ├── app_setup.py       # Entrypoint-Orchestrierung (App/Logger/Limiter/Session-Timeout)
 │       ├── logging_setup.py   # Logging-Konfiguration & Formatter
 │       ├── default_config.py  # Zentrale Erzeugung der Runtime-Default-Config
 │       ├── runtime.py         # Startsequenz/Hintergrund-Thread-Wiring
@@ -31,6 +32,7 @@ trevlix/
 │       ├── socket_error_logger.py # Einheitliches Socket-Error-Logging
 │       ├── websocket_authz.py # WS Auth/Admin-Prüfungen
 │       ├── ws_rate_gate.py    # WS Rate-Gate Delegation
+│       ├── admin_user_validation.py # Gemeinsame Admin-User-Payload-Validierung (HTTP + WS)
 │       ├── backup_verify.py   # Backup-Verifikation (latest file)
 │       ├── tax_export.py      # Steuerreport-CSV-Konvertierung
 │       ├── trade_export.py    # Trade-JSON-Export-Konvertierung
