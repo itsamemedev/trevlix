@@ -4382,6 +4382,9 @@ class BotState:
             "smart_exits": smart_exits.to_dict(),
             "adaptive_weights": adaptive_weights.to_dict(),
             "performance_attribution": perf_attribution.to_dict(),
+            "markets": list(self.markets),
+            "iteration": self.iteration,
+            "prices": {s: round(p, 4) for s, p in prices_snap.items()},
         }
 
 
@@ -5676,6 +5679,16 @@ def get_heatmap_data(ex) -> list[dict]:
             return list(_heatmap_cache)
     try:
         syms = state.markets[:60] if state.markets else []
+        # On-demand: Märkte laden falls Bot noch nicht läuft oder Liste leer
+        if not syms:
+            try:
+                fresh = fetch_markets(ex)
+                if fresh:
+                    with state._lock:
+                        state.markets = fresh
+                    syms = fresh[:60]
+            except Exception as load_err:
+                log.debug("Heatmap on-demand market load: %s", load_err)
         if not syms:
             return []
         tickers = safe_fetch_tickers(ex, syms)
@@ -6892,6 +6905,16 @@ def on_connect(auth=None):
     if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
+    # On-demand: Märkte laden falls noch leer (Bot nicht gestartet)
+    if not state.markets:
+        try:
+            ex = create_exchange()
+            fresh = fetch_markets(ex)
+            if fresh:
+                with state._lock:
+                    state.markets = fresh
+        except Exception as e:
+            log.debug("on_connect market prefetch: %s", e)
     snap = state.snapshot()
     # Attach user role so the frontend can show admin UI elements
     try:
