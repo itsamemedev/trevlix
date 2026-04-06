@@ -582,7 +582,7 @@ Gemeinsame Konstanten, Hilfsklassen und Validierungsfunktionen fuer das gesamte 
 | `validate_symbol` | `validate_symbol(symbol: str) -> bool` | Validiert ein Handelspaar-Format (z.B. `BTC/USDT`). |
 | `validate_config` | `validate_config(cfg: dict) -> list[str]` | Validiert CONFIG-Werte, gibt Liste von Fehlermeldungen zurueck (leer = OK). |
 | `BOT_NAME` | `str = "TREVLIX"` | Bot-Name. |
-| `BOT_VERSION` | `str = "1.5.3"` | Aktuelle Version. |
+| `BOT_VERSION` | `str = "1.6.3"` | Aktuelle Version. |
 | `EXCHANGE_MAP` | `dict[str, str]` | Mapping von Exchange-Namen zu CCXT-Klassennamen. |
 
 ### Verwendung
