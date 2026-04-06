@@ -5831,20 +5831,36 @@ def bot_loop():
                 else:
                     now_ts = time.time()
                     if now_ts - last_error_emit_ts > 15:
-                        emit_event(
-                            "status",
-                            {
-                                "msg": "⚠️ Keine frischen Märkte geladen – nutze letzte Marktliste",
-                                "key": "ws_no_markets_loaded",
-                                "type": "warning",
-                            },
-                        )
-                        state.add_activity(
-                            "⚠️",
-                            "Keine frischen Märkte geladen",
-                            "Fallback auf gecachte Marktliste aktiv",
-                            "warning",
-                        )
+                        if state.markets:
+                            emit_event(
+                                "status",
+                                {
+                                    "msg": "⚠️ Keine frischen Märkte geladen – nutze letzte Marktliste",
+                                    "key": "ws_no_markets_loaded",
+                                    "type": "warning",
+                                },
+                            )
+                            state.add_activity(
+                                "⚠️",
+                                "Keine frischen Märkte geladen",
+                                "Fallback auf gecachte Marktliste aktiv",
+                                "warning",
+                            )
+                        else:
+                            emit_event(
+                                "status",
+                                {
+                                    "msg": "❌ Keine Märkte verfügbar – Exchange nicht erreichbar",
+                                    "key": "ws_no_markets_available",
+                                    "type": "error",
+                                },
+                            )
+                            state.add_activity(
+                                "❌",
+                                "Keine Märkte verfügbar",
+                                "Exchange nicht erreichbar – kein Cache vorhanden",
+                                "error",
+                            )
                         last_error_emit_ts = now_ts
 
             # Arbitrage
