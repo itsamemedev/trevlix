@@ -6943,7 +6943,7 @@ def on_connect(auth=None):
 
 
 @socketio.on("disconnect")
-def on_disconnect():
+def on_disconnect(reason: str = "") -> None:
     """Cleanup bei Client-Disconnect – Session-State aufräumen."""
     username = session.get("username", "?")
     sid = getattr(request, "sid", "?")
