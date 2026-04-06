@@ -4798,7 +4798,7 @@ def _is_single_exchange_mode() -> bool:
 
 def _get_exchange_key_states() -> dict[str, bool]:
     """Returns which exchanges have API keys configured (admin user)."""
-    _exchanges = ("cryptocom", "binance", "bybit", "okx", "kucoin")
+    _exchanges = ("cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase")
     result = {ex: False for ex in _exchanges}
     try:
         if db is None or not getattr(db, "db_available", False):

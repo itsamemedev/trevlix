@@ -828,7 +828,7 @@ function startBotWithExchange() {
 
 function _initExchangeSelector(activeEx, keyStates) {
   // keyStates: {cryptocom: true, binance: false, ...}
-  const exchanges = ['cryptocom','binance','bybit','okx','kucoin'];
+  const exchanges = ['cryptocom','binance','bybit','okx','kucoin','kraken','huobi','coinbase'];
   exchanges.forEach(ex => {
     const btn = document.getElementById('ex-btn-' + ex);
     if (!btn) return;
