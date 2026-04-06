@@ -203,9 +203,9 @@ def _with_retry(fn: Any, ex_id: str, op: str) -> Any:
                     exc, (ccxt.RequestTimeout, ccxt.NetworkError)
                 )
             if not is_transient or attempt == _TICKER_RETRY_ATTEMPTS:
-                log.debug("%s fehlgeschlagen bei %s (Versuch %d): %s", op, ex_id, attempt, exc)
+                log.warning("%s fehlgeschlagen bei %s (Versuch %d): %s", op, ex_id, attempt, exc)
                 return None
-            log.debug(
+            log.warning(
                 "%s Timeout bei %s (Versuch %d/%d) – retry in %.1fs",
                 op,
                 ex_id,

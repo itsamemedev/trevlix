@@ -4134,6 +4134,7 @@ class BotState:
         self.last_scan = "—"
         self.next_scan = "—"
         self._start_time = time.time()  # für Uptime-Berechnung in /api/v1/status
+        self._exchange_reset = False  # Signal: Exchange-Instanz neu erstellen
         self._load_trades()
 
     def _load_trades(self):
@@ -5160,16 +5161,16 @@ def scan_symbol(ex, symbol) -> dict | None:
         }
     # [Verbesserung #5] Differenzierte ccxt-Exceptions in scan_symbol
     except ccxt.RateLimitExceeded:
-        log.debug(f"Rate-Limit beim Scan von {symbol} – überspringe")
+        log.warning(f"Rate-Limit beim Scan von {symbol} – überspringe")
         return None
     except ccxt.NetworkError as e:
-        log.debug(f"Netzwerk beim Scan von {symbol}: {e}")
+        log.warning(f"Netzwerk-Timeout beim Scan von {symbol}: {e}")
         return None
     except ccxt.ExchangeError as e:
-        log.debug(f"Exchange-Fehler beim Scan von {symbol}: {e}")
+        log.warning(f"Exchange-Fehler beim Scan von {symbol}: {e}")
         return None
     except Exception as e:
-        log.debug(f"Scan {symbol}: {e}")
+        log.warning(f"Scan {symbol} fehlgeschlagen: {e}")
         return None
 
 
@@ -5837,6 +5838,12 @@ def bot_loop():
             healer.heartbeat()
         except Exception:
             pass
+        # Exchange-Wechsel erkannt → alte Instanz verwerfen
+        if state._exchange_reset:
+            log.info("🔄 Exchange-Wechsel erkannt – erstelle neue Verbindung")
+            ex = None
+            state._exchange_reset = False
+
         try:
             if ex is None:
                 try:
@@ -7121,6 +7128,7 @@ def on_select_exchange(data: dict) -> None:
         return
     prev = CONFIG.get("exchange", "—")
     CONFIG["exchange"] = ex
+    state._exchange_reset = True  # Signal an bot_loop: Exchange-Instanz neu erstellen
     log.info(
         f"🔀 Exchange gewechselt: {prev} → {ex.upper()} (user={getattr(request, 'user_id', '?')})"
     )
