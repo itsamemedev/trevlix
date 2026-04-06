@@ -97,6 +97,7 @@ from app.core.bootstrap import (
     resolve_project_paths,
 )
 from app.core.http_routes import register_default_blueprints, register_system_routes
+from app.core.default_config import build_default_config
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
 from app.core.logging_setup import configure_logging
 from app.core.request_helpers import (
@@ -108,6 +109,7 @@ from app.core.request_helpers import (
     safe_int,
 )
 from app.core.runtime import run_server
+from app.core.websocket_guard import WsRateLimiter
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
 )
@@ -336,185 +338,7 @@ log = configure_logging(
 # ═══════════════════════════════════════════════════════════════════════════════
 # KONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════════
-CONFIG: dict[str, Any] = {
-    # Exchange
-    "exchange": os.getenv("EXCHANGE", "cryptocom"),
-    "api_key": _secret(os.getenv("API_KEY", "")),
-    "secret": _secret(os.getenv("API_SECRET", "")),
-    "api_passphrase": _secret(os.getenv("API_PASSPHRASE", "")),
-    "quote_currency": "USDT",
-    "min_volume_usdt": 1_000_000,
-    "blacklist": ["USDC/USDT", "BUSD/USDT", "DAI/USDT", "TUSD/USDT", "FRAX/USDT", "USDP/USDT"],
-    # Trading
-    "max_workers": 5,
-    "timeframe": "1h",
-    "candle_limit": 250,
-    "risk_per_trade": 0.015,
-    "stop_loss_pct": 0.025,
-    "take_profit_pct": 0.060,
-    "trailing_stop": True,
-    "trailing_pct": 0.015,
-    "break_even_enabled": True,  # SL → Einstiegspreis sobald +X% im Profit
-    "break_even_trigger": 0.015,  # +1.5% Gewinn → SL auf Break-Even setzen
-    "break_even_buffer": 0.001,  # Kleiner Puffer über Entry (+0.1%)
-    "cooldown_minutes": 60,  # Sperrzeit für Symbol nach Verlust-Trade (Min. 7)
-    "max_open_trades": 5,
-    "max_position_pct": 0.20,
-    "fee_rate": 0.0004,
-    "min_vote_score": 0.60,
-    "use_market_regime": True,
-    "btc_regime_tf": "4h",
-    "use_vol_filter": True,
-    "paper_trading": True,
-    "paper_balance": 10000.0,
-    "scan_interval": 60,
-    "max_daily_loss_pct": 0.05,
-    # Risk
-    "max_spread_pct": 0.5,
-    "max_corr": 0.75,
-    "circuit_breaker_losses": 3,
-    "circuit_breaker_min": 120,
-    # KI
-    "ai_enabled": True,
-    "ai_min_samples": 20,
-    "ai_min_confidence": 0.55,
-    "ai_use_kelly": True,
-    "ai_optimize_every": 15,
-    "ai_retrain_every": 5,
-    "auto_retrain_enabled": True,  # KI trainiert sich selbst nach N Trades
-    "auto_retrain_threshold": 10,  # Min. neue Samples bis Auto-Retrain
-    "auto_retrain_min_wr": 0.50,  # Kein Retrain wenn Win-Rate unter dieser Grenze
-    # Fear & Greed
-    "use_fear_greed": True,
-    "fg_buy_max": 80,
-    "fg_sell_min": 20,
-    # Multi-Timeframe
-    "mtf_enabled": True,
-    "mtf_confirm_tf": "4h",
-    # Orderbook
-    "ob_imbalance_min": 0.45,
-    # LSTM
-    "lstm_lookback": 24,
-    "lstm_min_samples": 50,
-    # Sentiment (CoinGecko)
-    "use_sentiment": True,
-    # News Sentiment (CryptoPanic API v2)
-    "use_news": True,
-    "cryptopanic_token": os.getenv("CRYPTOPANIC_TOKEN", ""),
-    "cryptopanic_plan": os.getenv("CRYPTOPANIC_API_PLAN", "free"),
-    # Telegram
-    "telegram_token": os.getenv("TELEGRAM_TOKEN", ""),
-    "telegram_chat_id": os.getenv("TELEGRAM_CHAT_ID", ""),
-    "news_block_score": -0.4,
-    "news_sentiment_min": -0.2,  # Kaufsignal blockiert wenn news_score < dieser Wert
-    "news_require_positive": False,  # True = Kauf nur bei positivem News-Score
-    "news_boost_score": 0.3,
-    # On-Chain
-    "use_onchain": True,
-    "whale_threshold": 500_000,
-    # Dominanz-Filter
-    "use_dominance": True,
-    # Funding Rate Filter
-    "funding_rate_filter": True,  # Shorts blockieren wenn Funding zu teuer
-    "funding_rate_max": 0.001,  # Max. Funding-Rate für Shorts (0.1% pro 8h)
-    "funding_rate_cache": {},
-    "btc_dom_max": 40.0,
-    "usdt_dom_max": 12.0,
-    # Anomalie
-    "use_anomaly": True,
-    "anomaly_contamination": 0.05,
-    # Partial Take-Profit
-    "use_partial_tp": True,
-    "partial_tp_levels": [
-        {"pct": 0.03, "sell_ratio": 0.25},
-        {"pct": 0.05, "sell_ratio": 0.25},
-    ],
-    # DCA
-    "use_dca": True,
-    "dca_drop_pct": 0.03,
-    "dca_max_levels": 3,
-    "dca_size_mult": 1.5,
-    # Short-Selling
-    "use_shorts": False,
-    "short_exchange": "bybit",
-    "short_api_key": _secret(os.getenv("SHORT_API_KEY", "")),
-    "short_secret": _secret(os.getenv("SHORT_SECRET", "")),
-    "short_leverage": 2,
-    # Arbitrage
-    "use_arbitrage": True,
-    "arb_min_spread_pct": 0.3,
-    "arb_exchanges": ["binance", "bybit"],
-    "arb_api_keys": {},
-    # Genetic Optimizer
-    "genetic_enabled": True,
-    "genetic_generations": 20,
-    "genetic_population": 30,
-    # RL Agent
-    "rl_enabled": True,
-    "rl_min_episodes": 100,
-    # Discord
-    "discord_webhook": os.getenv("DISCORD_WEBHOOK", ""),
-    "discord_on_buy": True,
-    "discord_on_sell": True,
-    "discord_on_error": True,
-    "discord_on_circuit": True,
-    "discord_daily_report": True,
-    "discord_on_signals": os.getenv("DISCORD_ON_SIGNALS", "true").lower()
-    in ("true", "1", "yes"),
-    "discord_signal_cooldown_sec": int(os.getenv("DISCORD_SIGNAL_COOLDOWN_SEC", "900")),
-    "discord_report_hour": 20,
-    # Alerts
-    "price_alerts": [],
-    # Portfolio-Ziel
-    "portfolio_goal": 0.0,
-    # Steuer
-    "tax_method": "fifo",
-    # Backup
-    "backup_enabled": True,
-    "backup_keep_days": 7,
-    "backup_dir": "backups",
-    "backup_encrypt": True,  # [Verbesserung #49] Backup-Verschlüsselung
-    # [Verbesserung #25] Slippage
-    "slippage_pct": 0.001,  # 0.1% Slippage-Annahme
-    # [Verbesserung #26] Drawdown Circuit Breaker
-    "max_drawdown_pct": 0.10,  # 10% Max-Drawdown → Bot pausiert
-    # [Verbesserung #28] Mindest-Ordervolumen
-    "min_order_usdt": 10.0,  # Mindest-Ordergröße in USDT
-    # [Verbesserung #30] ATR Position-Sizing
-    "use_atr_sizing": False,  # ATR-basiertes Position-Sizing
-    "atr_risk_mult": 1.5,  # ATR-Multiplikator für Sizing
-    # [Verbesserung #31] Zeitbasierter Exit
-    "max_hold_hours": 0,  # 0 = deaktiviert, >0 = max. Haltezeit in Stunden
-    # [Verbesserung #24] Data Retention
-    "audit_retention_days": 90,  # Audit-Logs nach N Tagen löschen
-    "ai_sample_retention_days": 180,  # AI-Samples nach N Tagen löschen
-    # Trade DNA Fingerprinting
-    "use_trade_dna": True,
-    "dna_min_matches": 5,  # Min. historische Matches für Konfidenz-Anpassung
-    "dna_boost_threshold": 0.65,  # WR ab der ein Boost gewährt wird
-    "dna_block_threshold": 0.35,  # WR unter der geblockt wird
-    # Smart Exits (Volatility-Adaptive SL/TP)
-    "use_smart_exits": True,
-    "smart_exit_atr_sl_mult": 1.5,  # ATR-Multiplikator für Stop-Loss
-    "smart_exit_reward_ratio": 2.0,  # Reward-Ratio für Take-Profit
-    "smart_exit_min_sl_pct": 0.01,  # Min. SL in Prozent (1%)
-    "smart_exit_max_sl_pct": 0.08,  # Max. SL in Prozent (8%)
-    "smart_exit_min_tp_pct": 0.02,  # Min. TP in Prozent (2%)
-    "smart_exit_max_tp_pct": 0.15,  # Max. TP in Prozent (15%)
-    "smart_exit_squeeze_threshold": 0.03,  # BB-Width Threshold für Squeeze
-    # Auth / Multi-User
-    "admin_password": _secret(os.getenv("ADMIN_PASSWORD", "trevlix")),
-    "jwt_secret": _secret(os.getenv("JWT_SECRET", secrets.token_hex(32))),
-    "jwt_expiry_hours": 24,
-    "multi_user": True,
-    "allow_registration": os.getenv("ALLOW_REGISTRATION", "false").lower() in ("true", "1", "yes"),
-    # MySQL
-    "mysql_host": os.getenv("MYSQL_HOST", "localhost"),
-    "mysql_port": (lambda v: int(v) if v.isdigit() else 3306)(os.getenv("MYSQL_PORT", "3306")),
-    "mysql_user": os.getenv("MYSQL_USER", "root"),
-    "mysql_pass": _secret(os.getenv("MYSQL_PASS", "")),
-    "mysql_db": os.getenv("MYSQL_DB", "trevlix"),
-}
+CONFIG: dict[str, Any] = build_default_config(_secret)
 
 
 def _enforce_paper_trading(source: str = "system") -> None:
@@ -6959,9 +6783,7 @@ def prometheus_metrics():
 # WEBSOCKET EVENTS
 # [Verbesserung #8] In-Memory Rate-Limiting für kritische Socket-Events
 # ═══════════════════════════════════════════════════════════════════════════════
-_ws_limits: dict[str, float] = {}  # key: "sid:action" -> timestamp
-_ws_limits_last_cleanup: float = 0.0
-_ws_limits_lock = threading.Lock()
+_ws_rate_limiter = WsRateLimiter()
 
 
 def _ws_auth_required() -> bool:
@@ -7000,35 +6822,9 @@ def _ws_admin_required() -> bool:
 
 
 def _ws_rate_check(action: str, min_interval: float = 2.0) -> bool:
-    """Prüft ob ein Socket-Event zu schnell wiederholt wird.
-
-    Gibt False zurück wenn der Client warten muss.
-    Bereinigt stale Einträge alle 60s statt nur bei >1000 Einträgen.
-
-    Args:
-        action: Name des Socket-Events.
-        min_interval: Minimale Sekunden zwischen gleichen Events.
-
-    Returns:
-        True wenn erlaubt, False wenn Rate-Limited.
-    """
-    global _ws_limits_last_cleanup
+    """Prüft ob ein Socket-Event zu schnell wiederholt wird."""
     sid = request.sid if hasattr(request, "sid") else "global"
-    key = f"{sid}:{action}"
-    now = time.time()
-    with _ws_limits_lock:
-        last = _ws_limits.get(key, 0)
-        if now - last < min_interval:
-            return False
-        _ws_limits[key] = now
-        # Zeitbasierte Eviction alle 60s (verhindert unbegrenztes Wachstum)
-        if now - _ws_limits_last_cleanup > 60:
-            _ws_limits_last_cleanup = now
-            cutoff = now - 300
-            stale = [k for k, v in _ws_limits.items() if v < cutoff]
-            for k in stale:
-                del _ws_limits[k]
-    return True
+    return _ws_rate_limiter.check(sid, action, min_interval_sec=min_interval)
 
 
 @socketio.on("connect")

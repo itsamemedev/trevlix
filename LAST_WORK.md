@@ -2,18 +2,18 @@
 
 ## Zuletzt erledigt (2026-04-06)
 
-1. Discord-Notifications deutlich verbessert (`services/notifications.py`):
-   - besser lesbare Buy/Sell-Embeds mit strukturierten Feldern,
-   - zusätzliche Kontextdaten (Confidence, RSI, Regime, Vote-Verteilung),
-   - neue Opportunity-Hinweise mit Cooldown (`signal_opportunity`).
-2. Bot-Loop erweitert (`server.py`): Long-/Short-Scans können jetzt bereits vor Trade-Ausführung als potenzielle Kauf-/Verkaufschancen an Discord gemeldet werden.
-3. Neue Env-/Config-Optionen ergänzt: `DISCORD_ON_SIGNALS`, `DISCORD_SIGNAL_COOLDOWN_SEC` (`.env.example`, `README.md`, `CONFIG`).
-4. Testabdeckung für Notifications erweitert (`tests/test_notifications.py`) und vollständigen Testlauf erfolgreich ausgeführt (`338 passed, 1 skipped`).
-5. Version und Dokumentation auf `1.6.6` synchronisiert (`CHANGELOG.md`, `VERSION.md`, README, technische Docs).
+1. WebSocket-Rate-Limiting modularisiert: neues Core-Modul `app/core/websocket_guard.py` mit zentraler Klasse `WsRateLimiter`.
+2. `server.py` entschlackt: lokale Rate-Limit-Globalzustände und Cleanup-Details entfernt; `_ws_rate_check(...)` delegiert nun auf das Core-Modul.
+3. `routes/websocket.py` vereinheitlicht: verwendet jetzt ebenfalls `WsRateLimiter` statt eigener paralleler Implementierung.
+4. Neue Tests ergänzt (`tests/test_websocket_guard.py`) für Intervall-Blockierung, Freigabe und Stale-Cleanup.
+5. Iterativer Validierungslauf erfolgreich:
+   - `python -m compileall -q server.py app routes tests`
+   - `pytest -q tests/test_default_config.py tests/test_websocket_guard.py tests/test_bootstrap.py tests/test_auth.py tests/test_api.py` (`38 passed, 1 skipped`)
+   - `python scripts/check_i18n_keys.py`
+6. Version und Doku auf `1.6.8` synchronisiert (`VERSION.md`, `CHANGELOG.md`, README, `pyproject.toml`, `services/utils.py`, technische Docs).
 
 ## Nächste sinnvolle Schritte
 
-1. API-Handlerblöcke (z. B. Knowledge, Risk, Admin) in eigene `routes/api_*.py`-Module überführen.
-2. Trading-Laufzeitlogik (`bot_loop`, Positionsmanagement) in `services/trading_engine.py` auslagern.
-3. WebSocket-Handler-Migration in `routes/websocket.py` abschließen und Inline-Handler in `server.py` reduzieren.
-4. Zusätzliche Integrationstests für refaktorierte Routen/Services ergänzen.
+1. DB-Manager-/Persistence-Hilfsblöcke aus `server.py` in dedizierte Module überführen (z. B. `app/core/db_runtime.py`).
+2. WebSocket-Handler schrittweise aus `server.py` in `routes/websocket.py` migrieren und dort gezielt Integrationstests ergänzen.
+3. Große API-Abschnitte (Knowledge/Admin/Risk) in route-spezifische Module aufteilen, um den Entry-Point weiter zu verkleinern.
