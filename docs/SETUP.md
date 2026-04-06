@@ -90,6 +90,8 @@ Alle Variablen werden in der Datei `.env` im Projektverzeichnis konfiguriert. Vo
 | Variable | Pflicht | Beschreibung |
 |---|---|---|
 | `DISCORD_WEBHOOK` | Nein | Discord-Webhook-URL fuer Trade-Benachrichtigungen |
+| `DISCORD_ON_SIGNALS` | Nein | Aktiviert Opportunity-Hinweise fuer Kauf/Verkaufskandidaten in Discord |
+| `DISCORD_SIGNAL_COOLDOWN_SEC` | Nein | Cooldown in Sekunden pro Symbol/Richtung fuer Opportunity-Hinweise |
 | `TELEGRAM_TOKEN` | Nein | Telegram-Bot-Token |
 | `TELEGRAM_CHAT_ID` | Nein | Telegram-Chat-ID fuer Benachrichtigungen |
 | `CRYPTOPANIC_TOKEN` | Nein | CryptoPanic API v2 Token fuer News-Sentiment |

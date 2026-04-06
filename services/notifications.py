@@ -15,7 +15,9 @@ Verwendung:
 
 import logging
 import os
-from datetime import UTC, datetime
+import threading
+import time
+from datetime import datetime, timezone
 
 import httpx
 
@@ -54,6 +56,8 @@ class DiscordNotifier:
         """
         self._config = config
         self._bot_full = bot_full
+        self._signal_lock = threading.Lock()
+        self._signal_last_sent: dict[str, float] = {}
 
     def _cfg(self, key: str, default=None):
         return self._config.get(key, default)
@@ -81,7 +85,7 @@ class DiscordNotifier:
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.now(UTC).isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "footer": {"text": f"{self._bot_full} · {exchange_str}"},
             }
             if fields:
@@ -104,21 +108,43 @@ class DiscordNotifier:
         ai_score: float,
         win_prob: float,
         news_score: float = 0,
+        confidence: float | None = None,
+        rsi: float | None = None,
+        regime: str | None = None,
+        votes: dict | None = None,
     ) -> None:
         if not self._cfg("discord_on_buy"):
             return
-        news_txt = f"📰 {news_score:+.2f}" if news_score != 0 else "—"
+        news_txt = f"{news_score:+.2f}" if news_score != 0 else "0.00"
         exchange_name = self._cfg("exchange", "?")
         exchange_str = str(exchange_name).upper() if exchange_name else "?"
+        mode_txt = "📝 Paper Trading" if self._cfg("paper_trading") else "💰 Live Trading"
+        vote_txt = "—"
+        if votes and isinstance(votes, dict):
+            buy_votes = int(votes.get("buy", 0))
+            sell_votes = int(votes.get("sell", 0))
+            hold_votes = int(votes.get("hold", 0))
+            vote_txt = f"B:{buy_votes} / S:{sell_votes} / H:{hold_votes}"
         self.send(
-            f"🟢 KAUF: {symbol}",
-            f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n"
-            f"KI-Score:   {ai_score:.0f}%\nWin-Chance: {win_prob:.0f}%\n"
-            f"News:       {news_txt}\n```",
+            f"🟢 BUY EXECUTED · {symbol}",
+            (
+                "```yaml\n"
+                f"pair: {symbol}\n"
+                f"price: {price:.4f} USDT\n"
+                f"invest: {invest:.2f} USDT\n"
+                f"ai_score: {ai_score:.1f}%\n"
+                f"win_prob: {win_prob:.1f}%\n"
+                f"news_score: {news_txt}\n"
+                "```"
+            ),
             "buy",
             fields=[
                 ("Exchange", exchange_str),
-                ("Modus", "📝 Paper" if self._cfg("paper_trading") else "💰 Live"),
+                ("Mode", mode_txt),
+                ("Signal Confidence", f"{(confidence or 0) * 100:.1f}%" if confidence else "—"),
+                ("RSI", f"{rsi:.1f}" if rsi is not None else "—"),
+                ("Regime", regime or "—"),
+                ("Votes", vote_txt, False),
             ],
         )
 
@@ -134,12 +160,71 @@ class DiscordNotifier:
         if not self._cfg("discord_on_sell"):
             return
         won = pnl >= 0
-        pref = "🔶 PARTIAL" if partial else ("✅ GEWINN" if won else "❌ VERLUST")
+        pref = "🔶 PARTIAL EXIT" if partial else ("✅ TAKE PROFIT" if won else "❌ STOP / LOSS")
+        roi_icon = "📈" if pnl_pct >= 0 else "📉"
         self.send(
-            f"{pref}: {symbol}",
-            f"```\nPreis:  {price:.4f} USDT\nPnL:    {pnl:+.2f} ({pnl_pct:+.2f}%)\n"
-            f"Grund:  {reason}\n```",
+            f"{pref} · {symbol}",
+            (
+                "```yaml\n"
+                f"pair: {symbol}\n"
+                f"exit_price: {price:.4f} USDT\n"
+                f"pnl_usdt: {pnl:+.2f}\n"
+                f"pnl_pct: {pnl_pct:+.2f}%\n"
+                f"reason: {reason}\n"
+                "```"
+            ),
             "sell_win" if won else "sell_loss",
+            fields=[
+                ("Result", "WIN ✅" if won else "LOSS ❌"),
+                ("ROI", f"{roi_icon} {pnl_pct:+.2f}%"),
+            ],
+        )
+
+    def signal_opportunity(
+        self,
+        symbol: str,
+        side: str,
+        confidence: float,
+        price: float,
+        *,
+        ai_score: float | None = None,
+        news_score: float | None = None,
+        note: str = "",
+    ) -> None:
+        """Sendet Trade-Opportunity Hinweise (throttled pro Symbol/Richtung)."""
+        if not self._cfg("discord_on_signals", True):
+            return
+        side_norm = str(side or "").lower()
+        if side_norm not in {"buy", "sell"}:
+            return
+        cooldown = int(self._cfg("discord_signal_cooldown_sec", 900) or 900)
+        key = f"{side_norm}:{symbol}"
+        now_ts = time.time()
+        with self._signal_lock:
+            last = self._signal_last_sent.get(key, 0.0)
+            if now_ts - last < cooldown:
+                return
+            self._signal_last_sent[key] = now_ts
+
+        up = side_norm == "buy"
+        icon = "🟢" if up else "🔻"
+        color = "buy" if up else "sell_loss"
+        signal_txt = "BUY setup" if up else "SELL setup"
+        ai_txt = f"{ai_score:.1f}%" if ai_score is not None else "—"
+        news_txt = f"{news_score:+.2f}" if news_score is not None else "—"
+        self.send(
+            f"{icon} Opportunity · {symbol}",
+            (
+                "```yaml\n"
+                f"signal: {signal_txt}\n"
+                f"confidence: {confidence * 100:.1f}%\n"
+                f"price: {price:.4f} USDT\n"
+                f"ai_score: {ai_txt}\n"
+                f"news_score: {news_txt}\n"
+                "```"
+            ),
+            color,
+            fields=[("Note", note[:200] if note else "Potential setup detected", False)],
         )
 
     def circuit_breaker(self, losses: int, pause_min: int) -> None:

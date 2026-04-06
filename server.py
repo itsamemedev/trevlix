@@ -68,7 +68,7 @@ import zipfile
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import contextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from typing import Any
 
@@ -77,6 +77,16 @@ import numpy as np
 import pandas as pd
 import requests
 from dotenv import load_dotenv
+from flask import (
+    Response,
+    g,
+    jsonify,
+    redirect,
+    request,
+    send_file,
+    session,
+)
+from flask_socketio import emit
 
 from app.core.bootstrap import (
     create_flask_app,
@@ -89,19 +99,21 @@ from app.core.bootstrap import (
 from app.core.http_routes import register_default_blueprints, register_system_routes
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
 from app.core.logging_setup import configure_logging
-from app.core.runtime import run_server
-from flask import (
-    Response,
-    g,
-    jsonify,
-    redirect,
-    request,
-    send_file,
-    send_from_directory,
-    session,
+from app.core.request_helpers import (
+    normalize_exchange_name as _normalize_exchange_name,
 )
-from flask_socketio import emit
-
+from app.core.request_helpers import (
+    safe_bool,
+    safe_float,
+    safe_int,
+)
+from app.core.runtime import run_server
+from app.core.security import (
+    apply_security_headers as _apply_security_headers,
+)
+from app.core.security import (
+    generate_csrf_token as _core_generate_csrf_token,
+)
 from services.adaptive_weights import AdaptiveWeights
 from services.alert_escalation import AlertEscalationManager
 from services.auto_healing import AutoHealingAgent
@@ -137,6 +149,7 @@ from services.market_data import (
 )
 from services.mcp_tools import MCPToolRegistry
 from services.notifications import DiscordNotifier, TelegramNotifier
+from services.passwords import pbkdf2_hash, pbkdf2_verify
 from services.performance_attribution import PerformanceAttribution
 from services.revenue_tracking import RevenueTracker
 from services.risk import (
@@ -269,25 +282,6 @@ try:
     BCRYPT_AVAILABLE = True
 except ImportError:
     BCRYPT_AVAILABLE = False
-
-
-def _pbkdf2_hash(password: bytes, salt: bytes | None = None) -> str:
-    """PBKDF2 password hash as safe fallback when bcrypt is unavailable."""
-    if salt is None:
-        salt = os.urandom(16)
-    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
-    return f"pbkdf2${salt.hex()}${dk.hex()}"
-
-
-def _pbkdf2_verify(password: bytes, stored: str) -> bool:
-    """Verify a PBKDF2-hashed password."""
-    parts = stored.split("$")
-    if len(parts) != 3 or parts[0] != "pbkdf2":
-        return False
-    salt = bytes.fromhex(parts[1])
-    expected = bytes.fromhex(parts[2])
-    dk = hashlib.pbkdf2_hmac("sha256", password, salt, iterations=600_000)
-    return hmac.compare_digest(dk, expected)
 
 
 load_dotenv()
@@ -465,6 +459,9 @@ CONFIG: dict[str, Any] = {
     "discord_on_error": True,
     "discord_on_circuit": True,
     "discord_daily_report": True,
+    "discord_on_signals": os.getenv("DISCORD_ON_SIGNALS", "true").lower()
+    in ("true", "1", "yes"),
+    "discord_signal_cooldown_sec": int(os.getenv("DISCORD_SIGNAL_COOLDOWN_SEC", "900")),
     "discord_report_hour": 20,
     # Alerts
     "price_alerts": [],
@@ -1245,7 +1242,7 @@ class MySQLManager:
             if BCRYPT_AVAILABLE:
                 h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
             else:
-                h = _pbkdf2_hash(pw)
+                h = pbkdf2_hash(pw)
             with self._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
@@ -1273,7 +1270,7 @@ class MySQLManager:
                 # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
                 return bcrypt.checkpw(pw, stored_hash.encode())
             if stored_hash.startswith("pbkdf2$"):
-                return _pbkdf2_verify(pw, stored_hash)
+                return pbkdf2_verify(pw, stored_hash)
             # Legacy SHA-256 hashes (migrate users to bcrypt/pbkdf2)
             log.warning("verify_password: SHA-256 Legacy-Hash – Migration empfohlen")
             return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
@@ -1569,8 +1566,8 @@ class MySQLManager:
         payload = {
             "sub": user_id,
             "label": label,
-            "exp": datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-            "iat": datetime.now(UTC),
+            "exp": datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+            "iat": datetime.now(timezone.utc),
         }
         token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
         try:
@@ -1582,7 +1579,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
                         ),
                     )
         except Exception as e:
@@ -2202,75 +2199,17 @@ def _before_request_hooks():
 @app.after_request
 def _security_headers(response):
     """[Verbesserung #6] Security Headers."""
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "SAMEORIGIN"
-    # X-XSS-Protection ist in modernen Browsern deprecated und entfernt; weglassen um
-    # potenzielle XSS-Auditor-Bypässe zu vermeiden. CSP ist der moderne Ersatz.
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    # Permissions-Policy: deaktiviert Browser-APIs die für Trading-Apps nicht benötigt werden
-    response.headers["Permissions-Policy"] = (
-        "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
-    )
-    if request.is_secure:
-        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    return response
+    return _apply_security_headers(response, is_secure=request.is_secure)
 
 
-def _safe_int(val: Any, default: int) -> int:
-    """Sicherer int()-Cast für Request-Parameter. Gibt default bei ungültigen Werten zurück."""
-    try:
-        return int(val)
-    except (ValueError, TypeError):
-        return default
-
-
-def _safe_float(val: Any, default: float) -> float:
-    """Sicherer float()-Cast für Request-Parameter. Gibt default bei ungültigen/Inf/NaN Werten zurück."""
-    try:
-        result = float(val)
-        if not math.isfinite(result):  # NaN + Inf check
-            return default
-        return result
-    except (ValueError, TypeError):
-        return default
-
-
-def _safe_bool(val: Any, default: bool = False) -> bool:
-    """Sicherer Bool-Cast für JSON-/Form-Werte mit String-Support."""
-    if isinstance(val, bool):
-        return val
-    if isinstance(val, (int, float)):
-        return bool(val)
-    if isinstance(val, str):
-        v = val.strip().lower()
-        if v in {"1", "true", "yes", "on"}:
-            return True
-        if v in {"0", "false", "no", "off", ""}:
-            return False
-    return default
-
-
-def _normalize_exchange_name(raw: Any) -> str:
+def normalize_exchange_name(raw: Any) -> str:
     """Normalisiert und validiert einen Exchange-Namen."""
-    if raw is None:
-        return ""
-    name = str(raw).strip().lower()
-    if not name:
-        return ""
-    if name in EXCHANGE_MAP:
-        return name
-    # Erlaube ccxt-Klassennamen in Requests (z.B. coinbaseadvanced -> coinbase)
-    for canonical, ccxt_name in EXCHANGE_MAP.items():
-        if name == ccxt_name:
-            return canonical
-    return ""
+    return _normalize_exchange_name(raw, EXCHANGE_MAP)
 
 
 def _generate_csrf_token() -> str:
-    """[Verbesserung #2] CSRF-Token pro Session generieren."""
-    if "_csrf_token" not in session:
-        session["_csrf_token"] = secrets.token_hex(32)
-    return session["_csrf_token"]
+    """Kompatibler Wrapper für Jinja-Global/Tests."""
+    return _core_generate_csrf_token(session)
 
 
 app.jinja_env.globals["csrf_token"] = _generate_csrf_token
@@ -3967,7 +3906,7 @@ class PriceAlertManager:
             raw_target = a.get("target_price")
             if raw_target is None:
                 continue
-            target = _safe_float(raw_target, None)
+            target = safe_float(raw_target, None)
             if target is None:
                 continue
             direction = a.get("direction", "above")
@@ -4107,7 +4046,7 @@ class BotState:
             for s, p in pos_copy.items()
             if p.get("qty", 0) > 0
         )
-        shorts = sum(_safe_float(p.get("pnl_unrealized"), 0.0) for p in short_copy.values())
+        shorts = sum(safe_float(p.get("pnl_unrealized"), 0.0) for p in short_copy.values())
         return self.balance + longs + shorts
 
     def return_pct(self):
@@ -4854,7 +4793,7 @@ def create_exchange():
     # Admin-DB-Konfiguration bevorzugt, wenn vorhanden.
     # Falls im Dashboard manuell eine Exchange gewählt wurde, versuchen wir
     # gezielt diese aktive Exchange zu verwenden (statt starr is_primary).
-    desired_name = _normalize_exchange_name(CONFIG.get("exchange", ""))
+    desired_name = normalize_exchange_name(CONFIG.get("exchange", ""))
     db_cfg = _get_admin_exchange_by_name(desired_name) if desired_name else None
     if db_cfg is None:
         db_cfg = _get_admin_primary_exchange()
@@ -4895,7 +4834,7 @@ def create_exchange():
         api_key = _reveal_and_decrypt(CONFIG.get("api_key", ""))
         api_secret = _reveal_and_decrypt(CONFIG.get("secret", ""))
         passphrase = _reveal_and_decrypt(CONFIG.get("api_passphrase", ""))
-    timeout_ms = _safe_int(CONFIG.get("exchange_timeout_ms", 0), 0)
+    timeout_ms = safe_int(CONFIG.get("exchange_timeout_ms", 0), 0)
     extra: dict[str, Any] = {}
     if timeout_ms > 0:
         extra["timeout"] = max(3000, timeout_ms)
@@ -4933,7 +4872,7 @@ def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str |
 
     # Auto-Recovery: versuche andere aktivierte Admin-Exchanges als Fallback.
     try:
-        current_ex = _normalize_exchange_name(CONFIG.get("exchange", ""))
+        current_ex = normalize_exchange_name(CONFIG.get("exchange", ""))
         if db is not None and getattr(db, "db_available", False):
             with db._get_conn() as conn:
                 with conn.cursor() as c:
@@ -4943,7 +4882,7 @@ def _preflight_exchange_markets(max_attempts: int = 4) -> tuple[list[str], str |
             if admin_id:
                 enabled = db.get_enabled_exchanges(admin_id)
                 for ex_cfg in enabled:
-                    ex_name = _normalize_exchange_name(ex_cfg.get("exchange", ""))
+                    ex_name = normalize_exchange_name(ex_cfg.get("exchange", ""))
                     if not ex_name or ex_name == current_ex:
                         continue
                     try:
@@ -5395,7 +5334,18 @@ def open_position(ex, scan: dict):
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%",
         "success",
     )
-    discord.trade_buy(symbol, price, invest, ai_score * 100, win_prob, news_score)
+    discord.trade_buy(
+        symbol,
+        price,
+        invest,
+        ai_score * 100,
+        win_prob,
+        news_score,
+        confidence=scan.get("confidence"),
+        rsi=scan.get("rsi"),
+        regime=pos_data.get("regime"),
+        votes=scan.get("votes"),
+    )
     # DNA + Smart Exit Discord-Notifications
     if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
         discord.dna_boost(
@@ -5828,9 +5778,9 @@ def get_heatmap_data(ex) -> list[dict]:
         result = []
         for sym, t in tickers.items():
             ns, _, _ = news_fetcher.get_score(sym)
-            change = _safe_float(t.get("percentage"), 0.0)
-            vol = _safe_float(t.get("quoteVolume"), 0.0)
-            last = _safe_float(t.get("last"), 0.0)
+            change = safe_float(t.get("percentage"), 0.0)
+            vol = safe_float(t.get("quoteVolume"), 0.0)
+            last = safe_float(t.get("last"), 0.0)
             if vol < 0:
                 vol = 0.0
             result.append(
@@ -6074,6 +6024,14 @@ def bot_loop():
                                     and scan.get("confidence", 0)
                                     >= CONFIG.get("min_vote_score", 0.3)
                                 ):
+                                    discord.signal_opportunity(
+                                        scan["symbol"],
+                                        "sell",
+                                        float(scan.get("confidence", 0.0)),
+                                        float(scan.get("price", 0.0)),
+                                        news_score=float(scan.get("news_score", 0.0)),
+                                        note="Short-Kandidat erkannt (Signal -1)",
+                                    )
                                     invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
                                     short_engine.open_short(scan["symbol"], invest, scan["price"])
                             except Exception as se:
@@ -6098,6 +6056,14 @@ def bot_loop():
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
                         if res and res["signal"] == 1:
+                            discord.signal_opportunity(
+                                res["symbol"],
+                                "buy",
+                                float(res.get("confidence", 0.0)),
+                                float(res.get("price", 0.0)),
+                                news_score=float(res.get("news_score", 0.0)),
+                                note=res.get("mtf_desc", "") or "Long-Kandidat erkannt (Signal +1)",
+                            )
                             # Re-check max_open_trades to prevent exceeding limit
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
@@ -6203,7 +6169,7 @@ def api_state():
 @app.route("/api/v1/trades")
 @api_auth_required
 def api_trades():
-    limit = min(_safe_int(request.args.get("limit", 100), 100), 1000)
+    limit = min(safe_int(request.args.get("limit", 100), 100), 1000)
     symbol = request.args.get("symbol")
     year = request.args.get("year")
     return jsonify(db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id))
@@ -6230,10 +6196,10 @@ def api_backtest():
             ex,
             data.get("symbol", "BTC/USDT"),
             data.get("timeframe", "1h"),
-            _safe_int(data.get("candles", 500), 500),
-            _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
-            _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
-            _safe_float(
+            safe_int(data.get("candles", 500), 500),
+            safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+            safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+            safe_float(
                 data.get("vote", CONFIG.get("min_vote_score", 0.3)),
                 CONFIG.get("min_vote_score", 0.3),
             ),
@@ -6247,7 +6213,7 @@ def api_backtest():
 @app.route("/api/v1/tax")
 @api_auth_required
 def api_tax_v1():
-    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
+    year = safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     trades = db.load_trades(limit=10000, year=year, user_id=request.user_id)
     return jsonify(tax.generate(trades, year, method))
@@ -6336,12 +6302,12 @@ def api_user_exchanges_list():
 def api_user_exchanges_upsert():
     """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
     data = request.json or {}
-    exchange = _normalize_exchange_name(data.get("exchange", ""))
+    exchange = normalize_exchange_name(data.get("exchange", ""))
     api_key = str(data.get("api_key", "")).strip()
     api_secret = str(data.get("api_secret", "")).strip()
     passphrase = str(data.get("passphrase", "")).strip()
-    enabled = _safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
-    is_primary = _safe_bool(data.get("is_primary", False), False)
+    enabled = safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
+    is_primary = safe_bool(data.get("is_primary", False), False)
     if not exchange:
         return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
     requires_keys = not bool(CONFIG.get("paper_trading", True))
@@ -6364,7 +6330,7 @@ def api_user_exchanges_upsert():
 @api_auth_required
 def api_user_exchange_toggle(exchange_id):
     """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = _safe_bool((request.json or {}).get("enabled", False), False)
+    enabled = safe_bool((request.json or {}).get("enabled", False), False)
     ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
     return jsonify({"ok": ok})
 
@@ -6382,7 +6348,7 @@ def api_user_exchange_delete(exchange_id):
 def api_user_update_keys():
     """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
     data = request.json or {}
-    exchange = _normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
+    exchange = normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
     api_key = str(data.get("api_key", "")).strip()
     api_secret = str(data.get("api_secret", "")).strip()
     if not exchange:
@@ -6417,7 +6383,7 @@ def api_knowledge_category(category):
     """Alle Einträge einer Wissens-Kategorie."""
     if category not in KnowledgeBase.CATEGORIES:
         return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
-    limit = min(_safe_int(request.args.get("limit", 50), 50), 200)
+    limit = min(safe_int(request.args.get("limit", 50), 50), 200)
     return jsonify(knowledge_base.get_category(category, limit))
 
 
@@ -6691,7 +6657,7 @@ def api_admin_create_user():
         data.get("username", ""),
         data.get("password", ""),
         data.get("role", "user"),
-        _safe_float(data.get("balance", 10000), 10000.0),
+        safe_float(data.get("balance", 10000), 10000.0),
     )
     return jsonify({"ok": ok})
 
@@ -6761,9 +6727,9 @@ def api_admin_config_update():
             elif isinstance(original, bool):
                 v = bool(v)
             elif isinstance(original, int):
-                v = _safe_int(v, original)
+                v = safe_int(v, original)
             elif isinstance(original, float):
-                v = _safe_float(v, original)
+                v = safe_float(v, original)
             CONFIG[k] = v
             updated.append(k)
     _audit(
@@ -6791,7 +6757,7 @@ def api_ohlcv(symbol):
     tf = request.args.get("tf", "1h")
     if tf not in {"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}:
         tf = "1h"
-    limit = min(_safe_int(request.args.get("limit", 200), 200), 500)
+    limit = min(safe_int(request.args.get("limit", 200), 200), 500)
     try:
         ex = create_exchange()
         ohlcv = ex.fetch_ohlcv(sym, tf, limit=limit)
@@ -6805,7 +6771,7 @@ def api_ohlcv(symbol):
 @app.route("/api/tax_report")
 @dashboard_auth
 def api_tax_report():
-    year = _safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
+    year = safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
     method = request.args.get("method", "fifo")
     fmt = request.args.get("format", "json")
     trades = db.load_trades(limit=10000, year=year)
@@ -7166,7 +7132,7 @@ def on_select_exchange(data: dict) -> None:
         )
         return
     _valid = {"cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase"}
-    ex = _normalize_exchange_name(str((data or {}).get("exchange", "")))
+    ex = normalize_exchange_name(str((data or {}).get("exchange", "")))
     if not ex or ex not in _valid:
         emit("status", {"msg": "❌ Ungültige Exchange", "key": "ws_bad_exchange", "type": "error"})
         return
@@ -7390,7 +7356,7 @@ def on_update_config(data):
             updated[k] = True
             continue
         if k == "exchange":
-            ex = _normalize_exchange_name(str(v))
+            ex = normalize_exchange_name(str(v))
             if ex and ex in _valid_exchanges:
                 CONFIG["exchange"] = ex
                 state._exchange_reset = True
@@ -7399,9 +7365,9 @@ def on_update_config(data):
                 log.info(f"🔀 Exchange manuell gewechselt → {ex.upper()}")
             continue
         if k in _numeric_keys:
-            v = _safe_float(v, CONFIG.get(k, 0.0))
+            v = safe_float(v, CONFIG.get(k, 0.0))
         elif k in _int_keys:
-            v = _safe_int(v, CONFIG.get(k, 0))
+            v = safe_int(v, CONFIG.get(k, 0))
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
@@ -7434,7 +7400,7 @@ def on_save_keys(data):
     CONFIG["api_key"] = encrypt_value(raw_key) if raw_key else ""
     CONFIG["secret"] = encrypt_value(raw_secret) if raw_secret else ""
     if data.get("exchange") and data["exchange"] in EXCHANGE_MAP:
-        ex = _normalize_exchange_name(data["exchange"])
+        ex = normalize_exchange_name(data["exchange"])
         CONFIG["exchange"] = ex
         state._exchange_reset = True
         _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
@@ -7461,7 +7427,7 @@ def on_update_discord(data):
     if "daily_report" in data:
         CONFIG["discord_daily_report"] = bool(data["daily_report"])
     if "report_hour" in data:
-        rh = _safe_int(data.get("report_hour", 20), 20)
+        rh = safe_int(data.get("report_hour", 20), 20)
         CONFIG["discord_report_hour"] = max(0, min(23, rh))
     discord.send(
         "✅ Discord verbunden", f"```\n{BOT_NAME} {BOT_VERSION} konfiguriert!\n```", "info"
@@ -7572,10 +7538,10 @@ def on_run_backtest(data):
                 ex,
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
-                _safe_int(data.get("candles", 500), 500),
-                _safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
-                _safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
-                _safe_float(
+                safe_int(data.get("candles", 500), 500),
+                safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
+                safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+                safe_float(
                     data.get("vote", CONFIG.get("min_vote_score", 0.3)),
                     CONFIG.get("min_vote_score", 0.3),
                 ),
@@ -7602,7 +7568,7 @@ def on_add_alert(data):
     uid = session.get("user_id", 1)
     db.add_alert(
         data.get("symbol", ""),
-        _safe_float(data.get("target", 0), 0.0),
+        safe_float(data.get("target", 0), 0.0),
         data.get("direction", "above"),
         uid,
     )
@@ -7621,7 +7587,7 @@ def on_add_alert(data):
 def on_delete_alert(data):
     if not _ws_auth_required():
         return
-    db.delete_alert(_safe_int(data.get("id", 0), 0))
+    db.delete_alert(safe_int(data.get("id", 0), 0))
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -7770,7 +7736,7 @@ def on_admin_create_user(data):
         username,
         password,
         role,
-        _safe_float(data.get("balance", 10000), 10000.0),
+        safe_float(data.get("balance", 10000), 10000.0),
     )
     emit(
         "status",
@@ -7823,7 +7789,7 @@ def fetch_aggregated_balance() -> dict:
             bal = ex.fetch_balance()
             totals = {}
             for k, v in bal.get("total", {}).items():
-                fv = _safe_float(v, 0.0)
+                fv = safe_float(v, 0.0)
                 if fv > 0:
                     totals[k] = fv
             result["by_exchange"][ex_id] = totals
@@ -7932,10 +7898,10 @@ def api_grid_list():
 def api_grid_create():
     d = request.json or {}
     symbol = d.get("symbol", "")
-    lower = _safe_float(d.get("lower", 0), 0.0)
-    upper = _safe_float(d.get("upper", 0), 0.0)
-    levels = _safe_int(d.get("levels", 10), 10)
-    invest = _safe_float(d.get("invest_per_level", 100.0), 100.0)
+    lower = safe_float(d.get("lower", 0), 0.0)
+    upper = safe_float(d.get("upper", 0), 0.0)
+    levels = safe_int(d.get("levels", 10), 10)
+    invest = safe_float(d.get("invest_per_level", 100.0), 100.0)
     levels = min(levels, 200)
     if not symbol or lower <= 0 or upper <= lower:
         return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
@@ -7963,9 +7929,9 @@ def ws_create_grid(data):
             "status", {"msg": "Symbol erforderlich", "key": "err_symbol_required", "type": "error"}
         )
         return
-    lower = _safe_float(data.get("lower", 0), 0.0)
-    upper = _safe_float(data.get("upper", 0), 0.0)
-    levels = min(_safe_int(data.get("levels", 10), 10), 200)
+    lower = safe_float(data.get("lower", 0), 0.0)
+    upper = safe_float(data.get("upper", 0), 0.0)
+    levels = min(safe_int(data.get("levels", 10), 10), 200)
     if lower <= 0 or upper <= lower:
         emit(
             "status", {"msg": "Ungültige Grid-Parameter", "key": "err_grid_params", "type": "error"}
@@ -7976,7 +7942,7 @@ def ws_create_grid(data):
         lower,
         upper,
         levels,
-        _safe_float(data.get("invest_per_level", 100), 100.0),
+        safe_float(data.get("invest_per_level", 100), 100.0),
     )
     if "error" in result:
         emit("status", {"msg": result["error"], "type": "error"})
@@ -8121,7 +8087,7 @@ def on_rollback_update():
 def on_start_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
         emit(
             "status",
@@ -8147,7 +8113,7 @@ def on_start_exchange(data):
 def on_stop_exchange(data):
     if not _ws_admin_required():
         return
-    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
         emit(
             "status",
@@ -8170,7 +8136,7 @@ def on_stop_exchange(data):
 def on_save_exchange_keys(data):
     if not _ws_admin_required():
         return
-    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     api_key = str((data or {}).get("api_key", "")).strip()
     secret = str((data or {}).get("secret", "")).strip()
     if not ex_name or not api_key or not secret:
@@ -8184,8 +8150,8 @@ def on_save_exchange_keys(data):
         )
         return
     passphrase = str((data or {}).get("passphrase", "")).strip()
-    is_primary = _safe_bool((data or {}).get("is_primary", False), False)
-    enabled = _safe_bool((data or {}).get("enabled", True), True)
+    is_primary = safe_bool((data or {}).get("is_primary", False), False)
+    enabled = safe_bool((data or {}).get("enabled", True), True)
     # Persistent in user_exchanges speichern
     uid = getattr(request, "user_id", session.get("user_id"))
     if uid:
@@ -8226,7 +8192,7 @@ def on_save_exchange_keys(data):
 def on_close_exchange_position(data):
     if not _ws_admin_required():
         return
-    ex_name = _normalize_exchange_name((data or {}).get("exchange", ""))
+    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     symbol = str((data or {}).get("symbol", "")).strip().upper()
     if not ex_name or not symbol:
         emit(
@@ -8693,8 +8659,8 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
 @app.route("/api/v1/risk/monte-carlo")
 @api_auth_required
 def api_monte_carlo():
-    n_sim = min(_safe_int(request.args.get("n", 10000), 10000), 50000)
-    n_days = min(_safe_int(request.args.get("days", 30), 30), 365)
+    n_sim = min(safe_int(request.args.get("n", 10000), 10000), 50000)
+    n_days = min(safe_int(request.args.get("days", 30), 30), 365)
     result = run_monte_carlo(n_sim, n_days)
     return jsonify(result)
 
@@ -8819,13 +8785,13 @@ def api_ip_whitelist_set():
 def api_news_filter():
     if request.method == "POST":
         d = request.json or {}
-        CONFIG["news_sentiment_min"] = _safe_float(
+        CONFIG["news_sentiment_min"] = safe_float(
             d.get("min_score", CONFIG["news_sentiment_min"]), CONFIG["news_sentiment_min"]
         )
         CONFIG["news_require_positive"] = bool(
             d.get("require_positive", CONFIG["news_require_positive"])
         )
-        CONFIG["news_block_score"] = _safe_float(
+        CONFIG["news_block_score"] = safe_float(
             d.get("block_score", CONFIG["news_block_score"]), CONFIG["news_block_score"]
         )
         db_audit(
@@ -8861,7 +8827,7 @@ funding_tracker = FundingRateTracker(CONFIG)
 @app.route("/api/v1/funding-rates")
 @api_auth_required
 def api_funding_rates():
-    n = _safe_int(request.args.get("n", 20), 20)
+    n = safe_int(request.args.get("n", 20), 20)
     return jsonify(
         {
             "top_rates": funding_tracker.top_rates(n),
@@ -8876,7 +8842,7 @@ def api_funding_rates():
 def api_funding_config():
     d = request.json or {}
     CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
-    CONFIG["funding_rate_max"] = _safe_float(d.get("max_rate", 0.001), 0.001)
+    CONFIG["funding_rate_max"] = safe_float(d.get("max_rate", 0.001), 0.001)
     return jsonify({"success": True, **funding_tracker.status()})
 
 
@@ -8921,7 +8887,7 @@ def api_trade_dna():
 @api_auth_required
 def api_trade_dna_patterns():
     """Top profitable und schlechteste DNA-Muster."""
-    n = _safe_int(request.args.get("n", 10), 10)
+    n = safe_int(request.args.get("n", 10), 10)
     return jsonify(
         {
             "top": trade_dna.top_patterns(n),
@@ -8948,7 +8914,7 @@ def api_performance_attribution():
 @api_auth_required
 def api_performance_contributors():
     """Top-Contributors und Worst-Performers."""
-    n = _safe_int(request.args.get("n", 5), 5)
+    n = safe_int(request.args.get("n", 5), 5)
     return jsonify(perf_attribution.top_contributors(n))
 
 
@@ -8970,14 +8936,14 @@ def api_strategy_weights():
 @app.route("/api/v1/risk/cvar")
 @api_auth_required
 def api_cvar():
-    confidence = _safe_float(request.args.get("conf", 0.95), 0.95)
+    confidence = safe_float(request.args.get("conf", 0.95), 0.95)
     return jsonify(adv_risk.compute_cvar(state.closed_trades, confidence))
 
 
 @app.route("/api/v1/risk/volatility")
 @api_auth_required
 def api_volatility():
-    return jsonify(adv_risk.volatility_forecast(_safe_int(request.args.get("h", 5), 5)))
+    return jsonify(adv_risk.volatility_forecast(safe_int(request.args.get("h", 5), 5)))
 
 
 @app.route("/api/v1/risk/regime")
@@ -9113,7 +9079,7 @@ def api_cluster_nodes_add():
     data = request.json or {}
     name = data.get("name", "").strip()
     host = data.get("host", "").strip()
-    port = _safe_int(data.get("port", 5000), 5000)
+    port = safe_int(data.get("port", 5000), 5000)
     api_token = data.get("api_token", "")
     if not name or not host:
         return jsonify({"error": "name and host are required"}), 400
@@ -9221,7 +9187,7 @@ def api_alerts_active():
 @api_auth_required
 def api_alerts_history():
     """Alert Escalation: recent alert history."""
-    limit = _safe_int(request.args.get("limit", 50), 50)
+    limit = safe_int(request.args.get("limit", 50), 50)
     return jsonify({"history": alert_escalation.get_history(limit)})
 
 
@@ -9302,7 +9268,7 @@ def api_exchanges():
             str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
         }
 
-        now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
+        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         ex_map: dict[str, dict[str, Any]] = {}
         for ex in user_exchanges:
             ex_name = str(ex.get("exchange", "")).lower()
@@ -9536,7 +9502,7 @@ def api_backtest_compare():
     data = request.json or {}
     symbols = data.get("symbols", [])
     tf = data.get("timeframe", "1h")
-    candles = _safe_int(data.get("candles", 500), 500)
+    candles = safe_int(data.get("candles", 500), 500)
     if not symbols:
         return jsonify({"error": "Keine Symbole angegeben"}), 400
     results = {}
