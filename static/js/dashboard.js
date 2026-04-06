@@ -44,8 +44,8 @@ function nav(id,el){
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const sec=document.getElementById('sec-'+id); if(sec) sec.classList.add('active');
   if(el) el.classList.add('active');
-  if(id==='stats' && lastData) updateStats(lastData);
-  if(id==='ai' && lastData?.ai) updateAI(lastData.ai);
+  if(id==='pos' && lastData) updateStats(lastData);
+  if(id==='admin' && lastData?.ai) updateAI(lastData.ai);
   _navHooks.forEach(fn=>{try{fn(id);}catch(e){}});
   closeMobileNav();
   window.scrollTo({top:0,behavior:'smooth'});
@@ -1904,12 +1904,13 @@ document.addEventListener('keydown', e => {
   if(e.ctrlKey||e.metaKey||e.altKey) return;
   switch(e.key.toLowerCase()){
     case ' ':  e.preventDefault(); if(lastData?.running) stopBot(); else startBot(); break;
-    case 'b':  { const nb=document.getElementById('nb-backtest'); if(nb) nav('backtest',nb); } break;
+    case 't':  { const nb=document.getElementById('nb-trading'); if(nb) nav('trading',nb); } break;
+    case 'p':  { const nb=document.getElementById('nb-pos'); if(nb) nav('pos',nb); } break;
     case 's':  { const nb=document.getElementById('nb-settings'); if(nb) nav('settings',nb); } break;
     case 'd':  { const nb=document.getElementById('nb-home'); if(nb) nav('home',nb); } break;
-    case 'a':  { const nb=document.getElementById('nb-ai'); if(nb) nav('ai',nb); } break;
-    case 'x':  { const nb=document.getElementById('nb-stats'); if(nb) nav('stats',nb); } break;
-    case 't':  toggleTheme(); break;
+    case 'c':  { const nb=document.getElementById('nb-chart'); if(nb) nav('chart',nb); } break;
+    case 'a':  { const nb=document.getElementById('nb-admin'); if(nb) nav('admin',nb); } break;
+    case 'l':  toggleTheme(); break;
     case '?':
       const h = document.getElementById('shortcutHelp');
       h.classList.toggle('show'); break;

@@ -133,7 +133,7 @@
 <div id="toasts" aria-live="polite" aria-atomic="false" role="status"></div>
 <main>
 
-<!-- ══ HOME ══ -->
+<!-- ══ DASHBOARD ══ -->
 <div class="sec active" id="sec-home">
   <div class="card hero">
     <div class="card-body" style="padding:18px 18px 20px">
@@ -146,10 +146,140 @@
     </div>
   </div>
 
-  <!-- ══ EXCHANGE SELECTOR ══ -->
-  <div class="card" id="exchangeSelectorCard" style="border-color:rgba(212,175,55,.18);background:linear-gradient(145deg,#0f0c02 0%,#080600 100%)">
+  <!-- Circuit Breaker Banner -->
+  <div id="cbBanner" style="display:none">
+    <div class="cb-banner">
+      <div style="font-size:24px">⚡</div>
+      <div style="flex:1"><div style="font-weight:700;color:var(--red)"><span data-i18n="circuit_breaker">Circuit Breaker aktiv!</span></div>
+        <div style="font-size:11px;color:var(--sub);margin-top:2px" id="cbSub">—</div></div>
+      <button class="btn btn-info" style="padding:7px 12px;font-size:11px" onclick="resetCB()" data-i18n="btn_reset_ai">Reset</button>
+    </div>
+  </div>
+
+  <!-- Anomaly Banner -->
+  <div id="anomalyBanner" style="display:none">
+    <div class="alert-bar warn"><span style="font-size:18px">🚨</span><div><div style="font-weight:700" data-i18n="anomaly_detected">Anomalie erkannt — Trading pausiert</div><div id="anomalyTxt" style="font-size:10px;margin-top:2px">—</div></div></div>
+  </div>
+
+  <!-- Stat Grid -->
+  <div class="card" style="padding:0">
+    <div class="sg">
+      <div class="sc"><div class="sv" id="sBal">—</div><div class="sl"><span data-i18n="stat_balance">Kapital</span></div></div>
+      <div class="sc"><div class="sv" id="sWin">—</div><div class="sl"><span data-i18n="stat_winrate">Win-Rate</span></div></div>
+      <div class="sc"><div class="sv" id="sDd">—</div><div class="sl"><span data-i18n="stat_drawdown">Drawdown</span></div></div>
+      <div class="sc"><div class="sv" id="sOpen">0/5</div><div class="sl"><span data-i18n="stat_pos">Positionen</span></div></div>
+      <div class="sc"><div class="sv" id="sTrades">0</div><div class="sl"><span data-i18n="stat_trades">Trades</span></div></div>
+      <div class="sc"><div class="sv" id="sSharpe">—</div><div class="sl"><span data-i18n="stat_sharpe">Sharpe</span></div></div>
+    </div>
+  </div>
+
+  <!-- Portfolio Chart -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title"><span data-i18n="portfolio_chart">Portfolio-Verlauf</span></span>
+      <div style="display:flex;gap:6px;align-items:center">
+        <span class="badge-pill badge-bull" id="regimeBadge">Bull</span>
+        <span class="card-badge" id="btcBadge">BTC —</span>
+      </div>
+    </div>
+    <div class="card-body" style="padding-top:10px"><div class="chart-wrap"><canvas id="portChart"></canvas></div></div>
+  </div>
+
+  <!-- Bottom Row -->
+  <div class="card" style="padding:0">
+    <div class="sg">
+      <div class="sc"><div class="sv" id="sDailyPnl">+0</div><div class="sl"><span data-i18n="daily_pnl">Tages-PnL</span></div></div>
+      <div class="sc"><div class="sv" id="sPF">—</div><div class="sl"><span data-i18n="profit_factor">Profit Faktor</span></div></div>
+      <div class="sc"><div class="sv" id="sArb">0</div><div class="sl"><span data-i18n="arb_count">Arb-Chancen</span></div></div>
+    </div>
+  </div>
+
+  <!-- Fear & Greed -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title"><span data-i18n="fear_greed">Fear & Greed Index</span></span><span class="card-badge" id="fgUpdated">—</span></div>
+    <div class="card-body" style="padding-top:10px">
+      <div class="fg-widget">
+        <div class="fg-ring" id="fgRing" style="background:conic-gradient(var(--yellow) 50%,var(--bg3) 50%)">
+          <div class="fg-inner"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--yellow)" id="fgVal">50</div></div>
+        </div>
+        <div style="flex:1">
+          <div style="font-size:15px;font-weight:700" id="fgLabel">Neutral</div>
+          <div style="font-size:11px;color:var(--sub);margin-top:3px" id="fgSub">—</div>
+          <div class="fg-bar-wrap"><div class="fg-bar" id="fgBar" style="width:50%;background:var(--yellow)"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Goal -->
+  <div id="goalSection" style="display:none">
+    <div class="card">
+      <div class="card-hd"><span class="card-title"><span data-i18n="sec_goal">Portfolio-Ziel</span></span><span class="card-badge" id="goalBadge">0%</span></div>
+      <div class="card-body">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
+          <span style="font-family:var(--mono);font-weight:700" id="goalCurrent">—</span>
+          <span style="color:var(--sub)" id="goalTarget">—</span>
+        </div>
+        <div class="goal-bar-wrap"><div class="goal-bar" id="goalBar" style="width:0%"></div></div>
+        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sub);margin-top:4px">
+          <span id="goalPct">0%</span><span id="goalETA">ETA: —</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Performance Stats -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title"><span data-i18n="perf_capital">Performance</span></span>
+      <div style="display:flex;gap:6px">
+        <button onclick="exportCSV()"  style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid rgba(212,175,55,.2);background:rgba(212,175,55,.06);color:var(--jade);cursor:pointer;font-family:var(--font);font-weight:700">CSV</button>
+        <button onclick="exportJSON()" style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--bg3);color:var(--sub);cursor:pointer;font-family:var(--font);font-weight:700">JSON</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="kv-grid">
+        <div class="kv"><span class="kv-label" data-i18n="start_capital">Startkapital</span><span class="kv-value" id="pStart">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="current_val">Aktuell</span><span class="kv-value" id="pCurrent">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="total_pnl">Gesamt-PnL</span><span class="kv-value" id="pPnl">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="returns">Rendite</span><span class="kv-value" id="pReturn">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="max_drawdown">Max Drawdown</span><span class="kv-value" id="pDd" style="color:var(--red)">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="sharpe_ratio">Sharpe Ratio</span><span class="kv-value" id="pSharpe">—</span></div>
+      </div>
+      <div class="stat-block" style="margin-top:10px"><div class="stat-block-title" data-i18n="last_30_trades">Letzte 30 Trades</div><div class="mini-chart"><canvas id="pnlChart"></canvas></div></div>
+    </div>
+  </div>
+
+  <!-- Activity Feed -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title"><span data-i18n="activity_feed">Bot-Aktivität</span></span></div>
+    <div class="card-body" style="padding-top:8px" id="actList"><div class="empty"><div class="empty-ico">⚡</div><span data-i18n="empty_start_bot">Starte TREVLIX</span></div></div>
+  </div>
+</div>
+
+<!-- ══ TRADING ══ -->
+<div class="sec" id="sec-trading">
+
+  <!-- Bot Controls -->
+  <div class="card" style="border-color:rgba(212,175,55,.18);background:linear-gradient(145deg,#0f0c02 0%,#080600 100%)">
     <div class="card-hd">
-      <span class="card-title">🌐 <span data-i18n="sec_exchange">Exchange & Bot-Start</span></span>
+      <span class="card-title"><span data-i18n="bot_control">Bot Steuerung</span></span>
+      <span class="card-badge" id="iterBadge">—</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px">
+        <button class="btn btn-start" id="btnStart" onclick="startBot()"><span data-i18n="btn_start">▶ Start</span></button>
+        <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled><span data-i18n="btn_stop">■ Stop</span></button>
+        <button class="btn btn-pause" id="btnPause" onclick="pauseBot()" disabled><span data-i18n="btn_pause">⏸ Pause</span></button>
+      </div>
+      <div style="font-size:10px;font-family:var(--mono);color:var(--muted);text-align:center;display:flex;gap:10px;justify-content:center">
+        <span id="lastScan">⏰ —</span><span>·</span><span id="nextScan">→ —</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Exchange Cards -->
+  <div class="card">
+    <div class="card-hd">
+      <span class="card-title"><span data-i18n="sec_exchange">Exchanges</span></span>
       <span class="card-badge" id="activeExBadge" style="color:var(--jade);border-color:rgba(212,175,55,.3)">—</span>
     </div>
     <div class="card-body">
@@ -188,7 +318,7 @@
         </button>
       </div>
       <div style="font-size:10px;color:var(--sub);font-family:var(--mono);margin-bottom:10px;text-align:center">
-        ✓ = API-Keys konfiguriert &nbsp;·&nbsp; Aktiv = Bot nutzt diese Exchange
+        ✓ = API-Keys konfiguriert · Aktiv = Bot nutzt diese Exchange
       </div>
       <button class="ex-start-btn" id="exStartBtn" onclick="startBotWithExchange()">
         <span style="font-size:18px">▶</span>
@@ -197,41 +327,52 @@
     </div>
   </div>
 
-  <!-- Goal -->
-  <div id="goalSection" style="display:none">
-    <div class="card">
-      <div class="card-hd"><span class="card-title"><span data-i18n="portfolio_goal"><span data-i18n="sec_goal">🎯 Portfolio-Ziel</span></span></span><span class="card-badge" id="goalBadge">0%</span></div>
-      <div class="card-body">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
-          <span style="font-family:var(--mono);font-weight:700" id="goalCurrent">—</span>
-          <span style="color:var(--sub)" id="goalTarget">—</span>
-        </div>
-        <div class="goal-bar-wrap"><div class="goal-bar" id="goalBar" style="width:0%"></div></div>
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sub);margin-top:4px">
-          <span id="goalPct">0%</span><span id="goalETA">ETA: —</span>
-        </div>
+  <!-- API-Key Verwaltung -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title">API-Keys verwalten</span></div>
+    <div class="card-body">
+      <div class="s-label" style="margin-bottom:8px">Exchange</div>
+      <select class="s-input" id="mex-key-exchange" onchange="mexOnExchangeSelect(this.value)" style="width:100%;text-align:left;margin-bottom:10px">
+        <option value="cryptocom">Crypto.com</option>
+        <option value="binance">Binance</option>
+        <option value="bybit">Bybit</option>
+        <option value="okx">OKX</option>
+        <option value="kucoin">KuCoin</option>
+        <option value="kraken">Kraken</option>
+        <option value="huobi">Huobi</option>
+        <option value="coinbase">Coinbase</option>
+      </select>
+      <div class="s-label">API Key</div>
+      <input class="s-input s-input-full" id="mex-key-apikey" type="text" placeholder="API Key" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
+      <div class="s-label">Secret</div>
+      <input class="s-input s-input-full" id="mex-key-secret" type="password" placeholder="Secret" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
+      <div id="mex-passphrase-wrap" style="display:none">
+        <div class="s-label">Passphrase (OKX / KuCoin)</div>
+        <input class="s-input s-input-full" id="mex-key-passphrase" type="password" placeholder="Passphrase" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
+      </div>
+      <button class="btn btn-jade" style="width:100%;padding:12px;font-size:13px" onclick="mexSaveKeys()">Speichern & Aktivieren</button>
+      <div style="margin-top:10px;font-size:11px;color:var(--sub);line-height:1.6">
+        Nur <strong style="color:#e8f4ff">Spot-Trading</strong> & <strong style="color:#e8f4ff">Read</strong> Berechtigung vergeben. Niemals Withdraw-Berechtigung!
       </div>
     </div>
   </div>
 
-  <!-- Circuit Breaker Banner -->
-  <div id="cbBanner" style="display:none">
-    <div class="cb-banner">
-      <div style="font-size:24px">⚡</div>
-      <div style="flex:1"><div style="font-weight:700;color:var(--red)"><span data-i18n="circuit_breaker">Circuit Breaker aktiv!</span></div>
-        <div style="font-size:11px;color:var(--sub);margin-top:2px" id="cbSub">—</div></div>
-      <button class="btn btn-info" style="padding:7px 12px;font-size:11px" onclick="resetCB()" data-i18n="btn_reset_ai">Reset</button>
+  <!-- Per-Exchange Trading Status -->
+  <div class="card">
+    <div class="card-hd">
+      <span class="card-title">Multi-Exchange Status</span>
+      <span class="card-badge" id="mex-active-count">0 aktiv</span>
     </div>
-  </div>
-
-  <!-- Anomaly Banner -->
-  <div id="anomalyBanner" style="display:none">
-    <div class="alert-bar warn"><span style="font-size:18px">🚨</span><div><div style="font-weight:700" data-i18n="anomaly_detected">Anomalie erkannt — Trading pausiert</div><div id="anomalyTxt" style="font-size:10px;margin-top:2px">—</div></div></div>
+    <div class="card-body" style="padding-top:10px">
+      <div id="mex-cards" style="display:flex;flex-direction:column;gap:8px">
+        <div class="empty"><div class="empty-ico">📡</div><span>Exchange-Status wird geladen...</span></div>
+      </div>
+    </div>
   </div>
 
   <!-- Dominanz -->
   <div class="card" id="domCard" style="display:none">
-    <div class="card-hd"><span class="card-title"><span data-i18n="dominance">🌐 Markt-Dominanz</span></span><span class="card-badge" id="domUpdated">—</span></div>
+    <div class="card-hd"><span class="card-title"><span data-i18n="dominance">Markt-Dominanz</span></span><span class="card-badge" id="domUpdated">—</span></div>
     <div class="card-body" style="padding-top:10px">
       <div class="dom-bar">
         <div class="dom-seg"><div style="font-size:18px;font-weight:900;font-family:var(--mono);color:var(--yellow)" id="domBTC">—%</div><div style="font-size:9px;color:var(--sub);margin-top:2px" data-i18n="btc_dom">BTC Dominanz</div></div>
@@ -240,90 +381,21 @@
         <div style="width:1px;height:32px;background:var(--line)"></div>
         <div class="dom-seg"><div style="font-size:22px" id="domStatus">—</div><div style="font-size:9px;color:var(--sub);margin-top:2px" data-i18n="market_status">Markt-Status</div></div>
       </div>
-      <button class="btn btn-info" style="padding:8px;font-size:11px;width:100%;margin-top:8px" onclick="refreshDom()"><span data-i18n="admin_refresh">🔄 Aktualisieren</span></button>
-    </div>
-  </div>
-
-  <!-- Stat Grid -->
-  <div class="card" style="padding:0">
-    <div class="sg">
-      <div class="sc"><div class="sv" id="sBal">—</div><div class="sl"><span data-i18n="stat_balance">💵 Kapital</span></div></div>
-      <div class="sc"><div class="sv" id="sWin">—</div><div class="sl"><span data-i18n="stat_winrate">🎯 Win-Rate</span></div></div>
-      <div class="sc"><div class="sv" id="sDd">—</div><div class="sl"><span data-i18n="stat_drawdown">📉 Drawdown</span></div></div>
-      <div class="sc"><div class="sv" id="sOpen">0/5</div><div class="sl"><span data-i18n="stat_pos">📂 Positionen</span></div></div>
-      <div class="sc"><div class="sv" id="sTrades">0</div><div class="sl"><span data-i18n="stat_trades">🔄 Trades</span></div></div>
-      <div class="sc"><div class="sv" id="sSharpe">—</div><div class="sl"><span data-i18n="stat_sharpe">📊 Sharpe</span></div></div>
-    </div>
-  </div>
-
-  <!-- Fear & Greed -->
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="fear_greed">😱 Fear & Greed Index</span></span><span class="card-badge" id="fgUpdated">—</span></div>
-    <div class="card-body" style="padding-top:10px">
-      <div class="fg-widget">
-        <div class="fg-ring" id="fgRing" style="background:conic-gradient(var(--yellow) 50%,var(--bg3) 50%)">
-          <div class="fg-inner"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--yellow)" id="fgVal">50</div></div>
-        </div>
-        <div style="flex:1">
-          <div style="font-size:15px;font-weight:700" id="fgLabel">Neutral</div>
-          <div style="font-size:11px;color:var(--sub);margin-top:3px" id="fgSub">—</div>
-          <div class="fg-bar-wrap"><div class="fg-bar" id="fgBar" style="width:50%;background:var(--yellow)"></div></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Controls -->
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="bot_control">⚡ Bot Steuerung</span></span><span class="card-badge" id="iterBadge">—</span></div>
-    <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <button class="btn btn-start" id="btnStart" onclick="startBot()"><span data-i18n="btn_start">▶ Start</span></button>
-        <button class="btn btn-stop"  id="btnStop"  onclick="stopBot()" disabled><span data-i18n="btn_stop">■ Stop</span></button>
-        <button class="btn btn-pause" id="btnPause" onclick="pauseBot()" disabled><span data-i18n="btn_pause">⏸ Pause</span></button>
-        <button class="btn btn-info"               onclick="sendReport()"><span data-i18n="btn_report">📊 Report</span></button>
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
-        <button class="btn btn-teal"   style="padding:10px;font-size:11px" onclick="scanArb()"><span data-i18n="btn_arbitrage"><span data-i18n="sec_arb">💹 Arbitrage</span></span></button>
-        <button class="btn btn-purple" style="padding:10px;font-size:11px" onclick="forceGenetic()"><span data-i18n="btn_genetic">🧬 Genetik</span></button>
-        <button class="btn btn-info"   style="padding:10px;font-size:11px" onclick="manualBackup()"><span data-i18n="sec_backup"><span data-i18n="btn_backup">💾 Backup</span></span></button>
-      </div>
-      <div style="margin-top:8px;font-size:10px;font-family:var(--mono);color:var(--muted);text-align:center;display:flex;gap:10px;justify-content:center">
-        <span id="lastScan">⏰ —</span><span>·</span><span id="nextScan">→ —</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- Portfolio Chart -->
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="portfolio_chart">📈 Portfolio-Verlauf</span></span>
-      <div style="display:flex;gap:6px;align-items:center">
-        <span class="badge-pill badge-bull" id="regimeBadge">🐂 Bull</span>
-        <span class="card-badge" id="btcBadge">BTC —</span>
-      </div>
-    </div>
-    <div class="card-body" style="padding-top:10px"><div class="chart-wrap"><canvas id="portChart"></canvas></div></div>
-  </div>
-
-  <!-- Bottom Row -->
-  <div class="card" style="padding:0">
-    <div class="sg">
-      <div class="sc"><div class="sv" id="sDailyPnl">+0</div><div class="sl"><span data-i18n="daily_pnl">Tages-PnL</span></div></div>
-      <div class="sc"><div class="sv" id="sPF">—</div><div class="sl"><span data-i18n="profit_factor">Profit Faktor</span></div></div>
-      <div class="sc"><div class="sv" id="sArb">0</div><div class="sl"><span data-i18n="arb_count">💹 Arb-Chancen</span></div></div>
     </div>
   </div>
 
   <!-- Arbitrage Log -->
   <div class="card" id="arbCard" style="display:none">
-    <div class="card-hd"><span class="card-title"><span data-i18n="arb_opps">💹 Arbitrage-Chancen</span></span><span class="card-badge" id="arbCountBadge">0</span></div>
+    <div class="card-hd"><span class="card-title"><span data-i18n="arb_opps">Arbitrage-Chancen</span></span><span class="card-badge" id="arbCountBadge">0</span></div>
     <div class="card-body" style="padding-top:8px;max-height:200px;overflow-y:auto" id="arbLogHome"></div>
   </div>
 
-  <!-- Aktivität -->
+  <!-- Signal Feed -->
   <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="activity_feed">🔔 Bot-Aktivität</span></span></div>
-    <div class="card-body" style="padding-top:8px" id="actList"><div class="empty"><div class="empty-ico">⚡</div><span data-i18n="empty_start_bot">Starte TREVLIX</span></div></div>
+    <div class="card-hd"><span class="card-title"><span data-i18n="signal_feed">Signal-Feed</span></span><span class="card-badge" id="sigCount">0</span></div>
+    <div class="card-body" style="padding-top:8px;max-height:300px;overflow-y:auto" id="sigList">
+      <div class="empty"><div class="empty-ico">📡</div><span data-i18n="waiting_signals">Warte auf Signale...</span></div>
+    </div>
   </div>
 </div>
 
@@ -337,145 +409,39 @@
     <div class="card-hd"><span class="card-title"><span data-i18n="trade_history">Trade-Verlauf</span></span><span class="card-badge" id="tradeCount">0</span></div>
     <div style="padding:10px 16px 0;display:flex;gap:5px;flex-wrap:wrap">
       <button class="filter-btn active" onclick="filterTrades('all',this)"><span data-i18n="filter_all">Alle</span></button>
-      <button class="filter-btn" onclick="filterTrades('win',this)"><span data-i18n="filter_wins">✅ Gewinne</span></button>
-      <button class="filter-btn" onclick="filterTrades('loss',this)"><span data-i18n="filter_losses">❌ Verluste</span></button>
-      <button class="filter-btn" onclick="filterTrades('long',this)"><span data-i18n="filter_long">📈 Long</span></button>
-      <button class="filter-btn" onclick="filterTrades('short',this)"><span data-i18n="filter_short">📉 Short</span></button>
-      <button class="filter-btn" onclick="filterTrades('dca',this)"><span data-i18n="filter_dca">📉 DCA</span></button>
+      <button class="filter-btn" onclick="filterTrades('win',this)"><span data-i18n="filter_wins">Gewinne</span></button>
+      <button class="filter-btn" onclick="filterTrades('loss',this)"><span data-i18n="filter_losses">Verluste</span></button>
+      <button class="filter-btn" onclick="filterTrades('long',this)"><span data-i18n="filter_long">Long</span></button>
+      <button class="filter-btn" onclick="filterTrades('short',this)"><span data-i18n="filter_short">Short</span></button>
+      <button class="filter-btn" onclick="filterTrades('dca',this)"><span data-i18n="filter_dca">DCA</span></button>
     </div>
     <div class="card-body" style="padding-top:8px;max-height:460px;overflow-y:auto" id="tradeLog">
       <div class="empty"><div class="empty-ico">📋</div><span data-i18n="no_trades">Noch keine Trades</span></div>
     </div>
   </div>
+  <!-- Trade Stats Summary -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title"><span data-i18n="trades_label">Trade-Statistik</span></span></div>
+    <div class="card-body">
+      <div class="kv-grid">
+        <div class="kv"><span class="kv-label" data-i18n="total_label">Gesamt</span><span class="kv-value" id="pTotal">0</span></div>
+        <div class="kv"><span class="kv-label">Win-Rate</span><span class="kv-value" id="pWR" style="color:var(--green)">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="avg_win">Ø Gewinn</span><span class="kv-value" id="pAvgW" style="color:var(--green)">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="avg_loss">Ø Verlust</span><span class="kv-value" id="pAvgL" style="color:var(--red)">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="profit_factor">Profit Faktor</span><span class="kv-value" id="pPF">—</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="dca_trades">DCA-Trades</span><span class="kv-value" id="pDCA">0</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="short_trades">Short-Trades</span><span class="kv-value" id="pShorts">0</span></div>
+        <div class="kv"><span class="kv-label" data-i18n="arb_count">Arb-Chancen</span><span class="kv-value" id="pArbCount" style="color:var(--yellow)">0</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="card"><div class="card-hd"><span class="card-title" data-i18n="top_coins">Top Coins (PnL)</span></div><div class="card-body" id="topCoins"></div></div>
+  <div class="card"><div class="card-hd"><span class="card-title" data-i18n="pnl_by_hour">PnL nach Uhrzeit</span></div><div class="card-body"><div class="mini-chart"><canvas id="hourChart"></canvas></div></div></div>
 </div>
 
-<!-- ══ STATS ══ -->
-<div class="sec" id="sec-stats">
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="perf_capital">Performance</span></span>
-      <div style="display:flex;gap:6px">
-        <button onclick="exportCSV()"  style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid rgba(212,175,55,.2);background:rgba(212,175,55,.06);color:var(--jade);cursor:pointer;font-family:var(--font);font-weight:700">📥 CSV</button>
-        <button onclick="exportJSON()" style="font-size:10px;padding:3px 9px;border-radius:6px;border:1px solid var(--line);background:var(--bg3);color:var(--sub);cursor:pointer;font-family:var(--font);font-weight:700">JSON</button>
-      </div>
-    </div>
-    <div class="card-body">
-      <div class="stat-block"><div class="stat-block-title" data-i18n="perf_capital">💰 Kapital & Rendite</div>
-        <div class="kv-grid">
-          <div class="kv"><span class="kv-label" data-i18n="start_capital">Startkapital</span><span class="kv-value" id="pStart">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="current_val">Aktuell</span><span class="kv-value" id="pCurrent">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="total_pnl">Gesamt-PnL</span><span class="kv-value" id="pPnl">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="returns">Rendite</span><span class="kv-value" id="pReturn">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="max_drawdown">Max Drawdown</span><span class="kv-value" id="pDd" style="color:var(--red)">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="sharpe_ratio">Sharpe Ratio</span><span class="kv-value" id="pSharpe">—</span></div>
-        </div>
-      </div>
-      <div class="stat-block"><div class="stat-block-title" data-i18n="trades_label">🎯 Trades</div>
-        <div class="kv-grid">
-          <div class="kv"><span class="kv-label" data-i18n="total_label">Gesamt</span><span class="kv-value" id="pTotal">0</span></div>
-          <div class="kv"><span class="kv-label">Win-Rate</span><span class="kv-value" id="pWR" style="color:var(--green)">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="avg_win">Ø Gewinn</span><span class="kv-value" id="pAvgW" style="color:var(--green)">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="avg_loss">Ø Verlust</span><span class="kv-value" id="pAvgL" style="color:var(--red)">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="profit_factor">Profit Faktor</span><span class="kv-value" id="pPF">—</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="dca_trades">DCA-Trades</span><span class="kv-value" id="pDCA">0</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="short_trades">Short-Trades</span><span class="kv-value" id="pShorts">0</span></div>
-          <div class="kv"><span class="kv-label" data-i18n="arb_count">Arb-Chancen</span><span class="kv-value" id="pArbCount" style="color:var(--yellow)">0</span></div>
-        </div>
-      </div>
-      <div class="stat-block"><div class="stat-block-title" data-i18n="top_coins">🏆 Top Coins (PnL)</div><div id="topCoins"></div></div>
-      <div class="stat-block"><div class="stat-block-title" data-i18n="pnl_by_hour">📊 PnL nach Uhrzeit</div><div class="mini-chart"><canvas id="hourChart"></canvas></div></div>
-      <div class="stat-block"><div class="stat-block-title" data-i18n="last_30_trades">📈 Letzte 30 Trades</div><div class="mini-chart"><canvas id="pnlChart"></canvas></div></div>
-    </div>
-  </div>
-</div>
+<!-- Stats section removed - merged into Dashboard and Trades tabs -->
 
-<!-- ══ KI ══ -->
-<div class="sec" id="sec-ai" data-loaded-fi="0">
-  <div class="card">
-    <div class="card-hd"><span class="card-title" data-i18n="ai_engine">🧠 TREVLIX AI Engine</span><span class="card-badge" id="aiVer">—</span></div>
-    <div class="card-body">
-      <div id="aiStatusMsg" style="font-size:12px;font-family:var(--mono);padding:10px 12px;background:var(--bg2);border-radius:8px;margin-bottom:12px;color:var(--sub)">⏳ <span data-i18n="loading_label">Lade...</span></div>
-      <div style="margin-bottom:12px">
-        <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sub);margin-bottom:4px"><span data-i18n="ai_training">KI-Training</span><span id="aiProgPct">0%</span></div>
-        <div class="progress-bar"><div class="progress-fill" id="aiProgBar" style="width:0%;background:var(--cyan)"></div></div>
-      </div>
-      <!-- 6 KI-Module -->
-      <div class="ai-grid" style="margin-bottom:6px">
-        <div class="ai-box ai-box-global"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--jade)" id="aiWF">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="walk_forward">Walk-Forward</div></div>
-        <div class="ai-box ai-box-bull"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--green)" id="aiBullAcc">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="bull_model">🐂 Bull-Modell</div></div>
-        <div class="ai-box ai-box-bear"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--red)" id="aiBearAcc">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="bear_model">🐻 Bear-Modell</div></div>
-      </div>
-      <div class="ai-grid" style="margin-bottom:12px">
-        <div class="ai-box ai-box-rl"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--purple)" id="rlEpisodes">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="rl_agent">🤖 RL-Agent</div></div>
-        <div class="ai-box ai-box-gen"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--orange)" id="genFitness">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="genetic">🧬 Genetik</div></div>
-        <div class="ai-box ai-box-anomaly"><div style="font-size:16px;font-weight:900;font-family:var(--mono);color:var(--yellow)" id="anomSamples">—</div><div style="font-size:9px;color:var(--sub);margin-top:3px" data-i18n="anomaly">🔍 Anomalie</div></div>
-      </div>
-      <div class="kv-grid" style="margin-bottom:12px">
-        <div class="kv"><span class="kv-label" data-i18n="samples_label">Samples (Global)</span><span class="kv-value" id="aiSamples">0</span></div>
-        <div class="kv"><span class="kv-label" data-i18n="bull_bear">Bull / Bear</span><span class="kv-value"><span id="aiBullS" style="color:var(--green)">0</span> / <span id="aiBearS" style="color:var(--red)">0</span></span></div>
-        <div class="kv"><span class="kv-label" data-i18n="allowed_label">Erlaubt</span><span class="kv-value" id="aiAllowed" style="color:var(--green)">0</span></div>
-        <div class="kv"><span class="kv-label" data-i18n="blocked_label">Blockiert</span><span class="kv-value" id="aiBlocked" style="color:var(--red)">0</span></div>
-        <div class="kv"><span class="kv-label" data-i18n="news_active">News aktiv</span><span class="kv-value" id="aiNews">✅</span></div>
-        <div class="kv"><span class="kv-label" data-i18n="onchain_label">On-Chain</span><span class="kv-value" id="aiOnchain">✅</span></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px">
-        <button class="btn btn-pause"  style="padding:10px;font-size:11px" onclick="forceTrain()"><span data-i18n="btn_train">🧠 Train</span></button>
-        <button class="btn btn-info"   style="padding:10px;font-size:11px" onclick="forceOptimize()"><span data-i18n="btn_optimize">🔬 Optim</span></button>
-        <button class="btn btn-purple" style="padding:10px;font-size:11px" onclick="forceGenetic()"><span data-i18n="btn_genetic">🧬 Genetik</span></button>
-        <button class="btn btn-red"    style="padding:10px;font-size:11px" onclick="resetAI()"><span data-i18n="btn_reset_ai">🔄 Reset</span></button>
-      </div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hd"><span class="card-title"><span data-i18n="strat_weights">🎛️ Strategie-Gewichte (9 Strats)</span></span></div><div class="card-body" style="padding-top:10px" id="weightList"><div class="empty" style="padding:10px"><span data-i18n="admin_ai_not_trained">KI noch nicht trainiert</span></div></div></div>
-  <div class="card"><div class="card-hd"><span class="card-title"><span data-i18n="ai_decisions">🤖 KI-Entscheidungen</span></span><span class="card-badge" id="aiDecCount">0</span></div><div class="card-body" style="padding-top:8px;max-height:250px;overflow-y:auto" id="aiDecLog"><div class="empty" style="padding:10px">—</div></div></div>
-  <div class="card"><div class="card-hd"><span class="card-title"><span data-i18n="gen_history">🧬 Genetik-History</span></span><span class="card-badge" id="genGenCount">Gen.0</span></div><div class="card-body" style="padding-top:8px;max-height:200px;overflow-y:auto" id="genHistory"><div class="empty" style="padding:10px">—</div></div></div>
-</div>
-
-<!-- ══ MARKT / HEATMAP ══ -->
-<div class="sec" id="sec-heat">
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="heatmap_title">🌡️ Markt-Heatmap</span></span>
-      <div style="display:flex;gap:5px;align-items:center">
-        <button onclick="loadHeatmap('change')" class="filter-btn active" id="hmBtnchange"><span data-i18n="sort_change">% Change</span></button>
-        <button onclick="loadHeatmap('volume')" class="filter-btn" id="hmBtnvolume"><span data-i18n="sort_volume">Volumen</span></button>
-        <button onclick="loadHeatmap('news')"   class="filter-btn" id="hmBtnnews"><span data-i18n="sort_news">📰 News</span></button>
-        <button onclick="loadHeatmap(currentHmSort)" class="btn btn-info" style="padding:5px 10px;font-size:11px">🔄</button>
-      </div>
-    </div>
-    <div class="card-body" style="padding-top:10px">
-      <div style="display:flex;gap:10px;font-size:10px;color:var(--sub);margin-bottom:10px;flex-wrap:wrap">
-        <span data-i18n="hm_long_pos">🔷 Long-Pos.</span><span data-i18n="hm_short_pos">🔺 Short-Pos.</span><span>🟢/🔴 News</span>
-      </div>
-      <div class="heatmap-grid" id="heatmapGrid"><div class="empty" style="grid-column:span 5;padding:16px"><span data-i18n="loading_heatmap">Lade Heatmap...</span></div></div>
-    </div>
-  </div>
-
-  <!-- Arbitrage -->
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="arb_scanner">💹 Arbitrage-Scanner</span></span><span class="card-badge" id="arbCount2">0</span></div>
-    <div class="card-body">
-      <div class="alert-bar info" style="margin-bottom:10px"><span>ℹ️</span><span data-i18n="arb_info">Net-Spread nach Fees (~0.16%). Binance ↔ Bybit.</span></div>
-      <button class="btn btn-info" style="padding:10px;font-size:12px;width:100%;margin-bottom:10px" onclick="scanArb()"><span data-i18n="btn_scan_now">🔍 Jetzt scannen</span></button>
-      <div id="arbList2"><div class="empty" style="padding:8px"><span data-i18n="no_scan">Noch kein Scan</span></div></div>
-    </div>
-  </div>
-
-  <!-- Price Alerts -->
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="price_alerts">🔔 Preis-Alerts</span></span><span class="card-badge" id="alertCount">0</span></div>
-    <div class="card-body">
-      <div style="display:grid;grid-template-columns:2fr 1.5fr 1fr auto;gap:7px;margin-bottom:10px;align-items:end">
-        <div><div style="font-size:9px;color:var(--sub);margin-bottom:3px">Symbol</div>
-          <input id="alertSym" placeholder="BTC/USDT" class="s-input" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:9px;color:var(--sub);margin-bottom:3px">Zielpreis</div>
-          <input id="alertTarget" placeholder="50000" type="number" class="s-input" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:9px;color:var(--sub);margin-bottom:3px">Richtung</div>
-          <select id="alertDir" class="s-select" style="width:100%"><option value="above">↑ Über</option><option value="below">↓ Unter</option></select></div>
-        <button class="btn btn-info" style="padding:8px 12px;font-size:16px" onclick="addAlert()">+</button>
-      </div>
-      <div id="alertList"><div class="empty" style="padding:8px"><span data-i18n="no_alerts">Keine Alerts</span></div></div>
-    </div>
-  </div>
-</div>
+<!-- KI, Markt/Heatmap sections removed - KI moved to Admin, Heatmap removed -->
 
 <!-- ══ CHART ══ -->
 <div class="sec" id="sec-chart">
@@ -520,118 +486,20 @@
   </div>
 </div>
 
-<!-- ══ BACKTEST ══ -->
-<div class="sec" id="sec-bt">
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="backtest_engine">🔬 Backtest Engine</span></span></div>
-    <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Symbol</div><input class="s-input" id="btSym" value="BTC/USDT" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px"><span data-i18n="timeframe_label">Zeitrahmen</span></div><select class="s-select" id="btTf" style="width:100%"><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1D">1D</option></select></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Kerzen</div><input class="s-input" id="btCandles" value="500" type="number" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px"><span data-i18n="sl_label">Stop-Loss %</span></div><input class="s-input" id="btSL" value="2.5" type="number" step="0.5" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px"><span data-i18n="tp_label">Take-Profit %</span></div><input class="s-input" id="btTP" value="6" type="number" step="0.5" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Vote-Threshold %</div><input class="s-input" id="btVote" value="60" type="number" style="width:100%;text-align:left"></div>
-      </div>
-      <button class="save-btn" id="btBtn" onclick="runBacktest()"><span data-i18n="btn_run_bt">🔬 Backtest starten</span></button>
-      <div id="btStatus" style="margin-top:8px;font-size:12px;font-family:var(--mono);color:var(--sub);text-align:center;min-height:16px"></div>
-    </div>
-  </div>
-  <div id="btResultSection" style="display:none">
-    <div class="card">
-      <div class="card-hd"><span class="card-title"><span data-i18n="bt_result">📊 Backtest-Ergebnis</span></span><span class="card-badge" id="btBadge">—</span></div>
-      <div class="card-body" style="padding-top:10px">
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-radius:8px;overflow:hidden;margin-bottom:12px">
-          <div class="bt-metric"><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="btWR">—</div><div style="font-size:9px;color:var(--sub);margin-top:2px">Win-Rate</div></div>
-          <div class="bt-metric"><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="btPnl">—</div><div style="font-size:9px;color:var(--sub);margin-top:2px">PnL</div></div>
-          <div class="bt-metric"><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="btPF">—</div><div style="font-size:9px;color:var(--sub);margin-top:2px">Profit Faktor</div></div>
-          <div class="bt-metric"><div style="font-size:18px;font-weight:900;font-family:var(--mono)" id="btDD">—</div><div style="font-size:9px;color:var(--sub);margin-top:2px">Max DD</div></div>
-        </div>
-        <div class="mini-chart"><canvas id="btChart"></canvas></div>
-      </div>
-    </div>
-  </div>
-  <div class="card"><div class="card-hd"><span class="card-title"><span data-i18n="bt_history_lbl">📚 Backtest-Verlauf</span></span></div><div class="card-body" style="padding-top:8px" id="btHistory"><div class="empty" style="padding:8px">—</div></div></div>
-</div>
-
-<!-- ══ STEUER ══ -->
-<div class="sec" id="sec-tax">
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="tax_report">🧾 Steuer-Report</span></span></div>
-    <div class="card-body">
-      <div class="alert-bar info" style="margin-bottom:12px"><span>ℹ️</span><span data-i18n="tax_disclaimer">Kein Ersatz für Steuerberater. Vereinfachte Berechnung.</span></div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Steuerjahr</div><input type="number" id="taxYear" class="s-input" style="width:100%;text-align:left"></div>
-        <div><div style="font-size:10px;color:var(--sub);margin-bottom:4px">Methode</div><select id="taxMethod" class="s-select" style="width:100%"><option value="fifo">FIFO</option><option value="lifo">LIFO</option></select></div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <button class="btn btn-info" style="padding:11px;font-size:12px" onclick="loadTax()"><span data-i18n="btn_calculate">🧮 Berechnen</span></button>
-        <button class="btn btn-teal" style="padding:11px;font-size:12px" onclick="exportTaxCSV()"><span data-i18n="btn_csv_export">📥 CSV Export</span></button>
-      </div>
-      <div id="taxResult" style="display:none;margin-top:14px">
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border-radius:10px;overflow:hidden;margin-bottom:12px">
-          <div style="background:var(--bg2);padding:14px;text-align:center"><div style="font-size:22px;font-weight:900;font-family:var(--mono);color:var(--green)" id="taxGains">—</div><div style="font-size:10px;color:var(--sub);margin-top:3px" data-i18n="tax_gains">Gewinne</div></div>
-          <div style="background:var(--bg2);padding:14px;text-align:center"><div style="font-size:22px;font-weight:900;font-family:var(--mono);color:var(--red)" id="taxLosses">—</div><div style="font-size:10px;color:var(--sub);margin-top:3px" data-i18n="tax_losses">Verluste</div></div>
-        </div>
-        <div class="stat-block"><div class="stat-block-title" data-i18n="tax_summary">Zusammenfassung</div>
-          <div class="kv-grid">
-            <div class="kv"><span class="kv-label" data-i18n="tax_net_pnl">Netto PnL</span><span class="kv-value" id="taxNet">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="tax_taxable">Steuerpflichtig</span><span class="kv-value" id="taxTaxable" style="color:var(--yellow)">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_fees">Gebühren</span><span class="kv-value" id="taxFees">—</span></div>
-            <div class="kv"><span class="kv-label">Trades</span><span class="kv-value" id="taxCount">—</span></div>
-          </div>
-        </div>
-        <div id="taxWarnBar" class="alert-bar warn" style="display:none;margin-bottom:12px"><span>⚠️</span><span id="taxWarnTxt">—</span></div>
-        <div class="stat-block"><div class="stat-block-title" data-i18n="tax_top_gains">Top Gewinne</div><div style="max-height:260px;overflow-y:auto" id="taxTable"></div></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- ══ LOG ══ -->
-<div class="sec" id="sec-log">
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="system_log">📋 System-Log</span></span>
-      <div style="display:flex;gap:5px">
-        <button onclick="clearLog()" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer" data-i18n="btn_clear">Leer</button>
-        <button onclick="pauseLog()" id="logPauseBtn" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--jade);cursor:pointer">⏸</button>
-      </div>
-    </div>
-    <div class="log-tabs">
-      <div class="log-tab active" onclick="switchLog('All',this)"><span data-i18n="log_all">Alle</span></div>
-      <div class="log-tab" onclick="switchLog('Trades',this)"><span data-i18n="log_trades">💰 Trades</span></div>
-      <div class="log-tab" onclick="switchLog('Signals',this)"><span data-i18n="log_signals">📡 Signale</span></div>
-      <div class="log-tab" onclick="switchLog('System',this)"><span data-i18n="log_system">⚙️ System</span></div>
-      <div class="log-tab" onclick="switchLog('Ai',this)"><span data-i18n="log_ai">🧠 KI</span></div>
-      <div class="log-tab" onclick="switchLog('Arb',this)"><span data-i18n="log_arb">💹 Arb</span></div>
-    </div>
-    <div id="logAll"     class="log-panel active"></div>
-    <div id="logTrades"  class="log-panel"></div>
-    <div id="logSignals" class="log-panel"></div>
-    <div id="logSystem"  class="log-panel"></div>
-    <div id="logAi"      class="log-panel"></div>
-    <div id="logArb"     class="log-panel"></div>
-  </div>
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="signal_feed">📡 Signal-Feed</span></span><span class="card-badge" id="sigCount">0</span></div>
-    <div class="card-body" style="padding-top:8px;max-height:400px;overflow-y:auto" id="sigList">
-      <div class="empty"><div class="empty-ico">📡</div><span data-i18n="waiting_signals">Warte auf Signale...</span></div>
-    </div>
-  </div>
-</div>
+<!-- Backtest, Steuer, Log sections removed - moved to Admin -->
 
 <!-- ══ SETTINGS ══ -->
 <div class="sec" id="sec-settings">
   <div class="card"><div class="card-body">
-    <div class="s-section"><div class="s-section-title">🎯 Portfolio-Ziel</div>
-      <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="portfolio_goal">Zielwert (USDT)</span></div><div class="s-help">ETA + Fortschrittsbalken auf Startseite</div></div><input type="number" class="s-input" id="sGoal" value="0" step="500"></div>
-    </div>
-    <div class="s-section"><div class="s-section-title"><span data-i18n="sec_exchange">🌐 Exchange & Keys</span></div>
+    <div class="s-section"><div class="s-section-title"><span data-i18n="sec_exchange">Exchange</span></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="sec_exchange">Exchange</span></div><div class="s-help" data-i18n="exchange_help">Primäre Exchange für den Bot</div></div><select class="s-select" id="sExchange"><option value="cryptocom">Crypto.com</option><option value="binance">Binance</option><option value="bybit">Bybit</option><option value="okx">OKX</option><option value="kucoin">KuCoin</option><option value="kraken">Kraken</option><option value="huobi">Huobi</option><option value="coinbase">Coinbase</option></select></div>
       <div class="s-help" style="margin-top:10px;padding:10px 12px;background:var(--bg2);border:1px solid var(--line);border-radius:8px;line-height:1.5">
-        <span style="color:var(--dim)">🔑 <span data-i18n="api_keys_moved">API-Keys werden zentral in der Exchanges-Verwaltung konfiguriert.</span></span><br>
-        <a href="#" onclick="nav('exchanges',document.getElementById('nb-ex'));return false" style="color:var(--jade);text-decoration:none;font-weight:600"><span data-i18n="api_keys_goto">→ Zu API-Key-Verwaltung</span></a>
+        <span style="color:var(--dim)"><span data-i18n="api_keys_moved">API-Keys werden im Trading-Tab konfiguriert.</span></span><br>
+        <a href="#" onclick="nav('trading',document.getElementById('nb-trading'));return false" style="color:var(--jade);text-decoration:none;font-weight:600"><span data-i18n="api_keys_goto">Zu Trading & Exchanges</span></a>
       </div>
+    </div>
+    <div class="s-section"><div class="s-section-title">Portfolio-Ziel</div>
+      <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="portfolio_goal">Zielwert (USDT)</span></div><div class="s-help">ETA + Fortschrittsbalken auf Startseite</div></div><input type="number" class="s-input" id="sGoal" value="0" step="500"></div>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_presets">🎛️ Risiko-Presets</span></div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:7px">
@@ -768,16 +636,19 @@
 </div>
 
 
-    <!-- ══ ADMIN DASHBOARD ═══════════════════════════════════════════════ -->
+    <!-- ══ ADMIN DASHBOARD (Consolidated) ══════════════════════════════ -->
     <div class="sec admin-only admin-gold" id="sec-admin" style="gap:12px">
 
       <!-- Admin Header -->
       <div class="admin-sec-hd">
         <div class="admin-sec-title">Admin Dashboard <span class="admin-badge">Admin</span></div>
-        <div class="admin-sec-sub">TREVLIX Control Center &middot; System Management &middot; v1.5.3</div>
+        <div class="admin-sec-sub">TREVLIX Control Center · System · AI · Logs · v1.5.3</div>
+        <div style="margin-top:8px;display:flex;gap:6px">
+          <button class="btn btn-gold" style="padding:6px 14px;font-size:11px" onclick="loadSystemAnalytics()">System-Info</button>
+        </div>
       </div>
 
-      <!-- KPI Stat Cards (BitCrypto-Stil) -->
+      <!-- KPI Stat Cards -->
       <div class="admin-stat-row">
         <div class="admin-stat-card">
           <div class="admin-stat-label" data-i18n="admin_total_revenue">Total Revenue</div>
@@ -897,24 +768,13 @@
       <div class="admin-card admin-full-width">
         <div class="card-hd"><div class="card-title">LLM Providers</div></div>
         <div class="card-body" id="adminLlmProviders">
-          <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">🤖</div><span>Laden…</span></div>
-        </div>
-      </div>
-    </div>
-
-    <!-- ══ SYSTEM ANALYTICS (Admin) ══ -->
-    <div class="sec admin-only admin-gold" id="sec-analytics" style="gap:14px">
-      <div class="admin-sec-hd">
-        <div class="admin-sec-title">System Analytics <span class="admin-badge">Admin</span></div>
-        <div class="admin-sec-sub">Monitoring &middot; Performance &middot; Diagnostics</div>
-        <div style="margin-top:8px">
-          <button class="btn btn-gold" style="padding:6px 14px;font-size:11px" onclick="loadSystemAnalytics()">↻ <span data-i18n="admin_refresh">Aktualisieren</span></button>
+          <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">🤖</div><span>Laden...</span></div>
         </div>
       </div>
 
-      <!-- System Info -->
+      <!-- System Info (inline from Analytics) -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_sys_info">🖥️ System-Info</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_sys_info">System-Info</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label">Python</span><span class="kv-value" id="sysPython">—</span></div>
@@ -929,7 +789,7 @@
 
       <!-- API Status -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_api_status">🔌 API-Status</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_api_status">API-Status</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label">Exchange</span><span class="kv-value" id="apiExchange">—</span></div>
@@ -944,7 +804,7 @@
 
       <!-- LLM Status -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_llm_status">🤖 LLM-Status</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_llm_status">LLM-Status</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label">Provider</span><span class="kv-value" id="llmProvider" style="font-weight:700;color:var(--jade)">—</span></div>
@@ -953,14 +813,13 @@
             <div class="kv"><span class="kv-label">Status</span><span class="kv-value" id="llmStatus">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_llm_latency">Latenz</span><span class="kv-value" id="llmLatency">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_llm_queries">Anfragen (24h)</span><span class="kv-value" id="llmQueries24h">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_llm_tokens">Tokens (24h)</span><span class="kv-value" id="llmTokens24h">—</span></div>
           </div>
         </div>
       </div>
 
       <!-- Database Status -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_db_status">🗄️ Datenbank</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_db_status">Datenbank</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label" data-i18n="admin_db_pool">Pool-Größe</span><span class="kv-value" id="dbPoolSize">—</span></div>
@@ -974,24 +833,28 @@
 
       <!-- AI Engine -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_ai_engine">🧠 KI-Engine</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_ai_engine">KI-Engine</div></div>
         <div class="card-body">
-          <div class="kv-grid">
+          <div class="kv-grid" style="margin-bottom:10px">
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_trained">Trainiert</span><span class="kv-value" id="aiTrained">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_accuracy">Accuracy</span><span class="kv-value" id="aiAccuracy">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_cv">CV-Accuracy</span><span class="kv-value" id="aiCvAccuracy">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_predictions">Vorhersagen</span><span class="kv-value" id="aiPredictions">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_correct">Korrekt</span><span class="kv-value" id="aiCorrect">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_version">Version</span><span class="kv-value" id="aiVersion">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_ai_last_trained">Letztes Training</span><span class="kv-value" id="aiLastTrained">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_ai_retrain">Trades seit Retrain</span><span class="kv-value" id="aiTradesSinceRetrain">—</span></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px">
+            <button class="btn btn-pause"  style="padding:10px;font-size:11px" onclick="forceTrain()"><span data-i18n="btn_train">Train</span></button>
+            <button class="btn btn-info"   style="padding:10px;font-size:11px" onclick="forceOptimize()"><span data-i18n="btn_optimize">Optim</span></button>
+            <button class="btn btn-purple" style="padding:10px;font-size:11px" onclick="forceGenetic()"><span data-i18n="btn_genetic">Genetik</span></button>
+            <button class="btn btn-red"    style="padding:10px;font-size:11px" onclick="resetAI()"><span data-i18n="btn_reset_ai">Reset</span></button>
           </div>
         </div>
       </div>
 
       <!-- Risk Management -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_risk_mgmt">⚠️ Risiko-Management</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_risk_mgmt">Risiko-Management</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label">Circuit Breaker</span><span class="kv-value" id="riskCircuitActive">—</span></div>
@@ -1003,7 +866,7 @@
 
       <!-- Revenue Tracking -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_revenue">💰 Revenue Tracking</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_revenue">Revenue Tracking</div></div>
         <div class="card-body">
           <div class="kv-grid">
             <div class="kv"><span class="kv-label" data-i18n="admin_gross_pnl">Brutto-PnL</span><span class="kv-value" id="revGrossPnl">—</span></div>
@@ -1011,29 +874,14 @@
             <div class="kv"><span class="kv-label" data-i18n="admin_fees">Gebühren</span><span class="kv-value" id="revFees">—</span></div>
             <div class="kv"><span class="kv-label">Trades</span><span class="kv-value" id="revTrades">—</span></div>
             <div class="kv"><span class="kv-label">ROI</span><span class="kv-value" id="revRoi">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="max_drawdown">Max Drawdown</span><span class="kv-value" id="revDrawdown" style="color:var(--red)">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="profit_factor">Profit Faktor</span><span class="kv-value" id="revPF">—</span></div>
             <div class="kv"><span class="kv-label">Win-Rate</span><span class="kv-value" id="revWinRate">—</span></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Performance Attribution -->
-      <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_perf_attr">📊 Performance Attribution</div></div>
-        <div class="card-body">
-          <div class="kv-grid">
-            <div class="kv"><span class="kv-label">Trades</span><span class="kv-value" id="attrTrades">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="profit_factor">Profit Faktor</span><span class="kv-value" id="attrPF">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_expectancy">Erwartungswert</span><span class="kv-value" id="attrExpectancy">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="sharpe_ratio">Sharpe Ratio</span><span class="kv-value" id="attrSharpe">—</span></div>
           </div>
         </div>
       </div>
 
       <!-- Strategy Weights -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_strat_weights">🎯 Strategie-Gewichte</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_strat_weights">Strategie-Gewichte</div></div>
         <div class="card-body">
           <div class="kv-grid" style="margin-bottom:10px">
             <div class="kv"><span class="kv-label" data-i18n="admin_strat_total">Strategien</span><span class="kv-value" id="stratTotal">—</span></div>
@@ -1044,219 +892,49 @@
         </div>
       </div>
 
-      <!-- Indicator Cache -->
-      <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_cache">📦 Indikator-Cache</div></div>
-        <div class="card-body">
-          <div class="kv-grid">
-            <div class="kv"><span class="kv-label" data-i18n="admin_cache_total">Einträge</span><span class="kv-value" id="cacheTotal">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_cache_fresh">Aktuell</span><span class="kv-value" id="cacheFresh" style="color:var(--green)">—</span></div>
-            <div class="kv"><span class="kv-label" data-i18n="admin_cache_stale">Veraltet</span><span class="kv-value" id="cacheStale" style="color:var(--red)">—</span></div>
-            <div class="kv"><span class="kv-label">TTL</span><span class="kv-value" id="cacheTTL">—</span></div>
+      <!-- System Log (inline from Log tab) -->
+      <div class="admin-card admin-full-width">
+        <div class="card-hd">
+          <div class="card-title" data-i18n="system_log">System-Log</div>
+          <div style="display:flex;gap:5px">
+            <button onclick="clearLog()" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer" data-i18n="btn_clear">Leer</button>
+            <button onclick="pauseLog()" id="logPauseBtn" style="font-size:10px;padding:3px 8px;border-radius:5px;background:var(--bg3);border:1px solid var(--line);color:var(--jade);cursor:pointer">⏸</button>
           </div>
         </div>
+        <div class="log-tabs">
+          <div class="log-tab active" onclick="switchLog('All',this)"><span data-i18n="log_all">Alle</span></div>
+          <div class="log-tab" onclick="switchLog('Trades',this)"><span data-i18n="log_trades">Trades</span></div>
+          <div class="log-tab" onclick="switchLog('Signals',this)"><span data-i18n="log_signals">Signale</span></div>
+          <div class="log-tab" onclick="switchLog('System',this)"><span data-i18n="log_system">System</span></div>
+          <div class="log-tab" onclick="switchLog('Ai',this)"><span data-i18n="log_ai">KI</span></div>
+        </div>
+        <div id="logAll"     class="log-panel active"></div>
+        <div id="logTrades"  class="log-panel"></div>
+        <div id="logSignals" class="log-panel"></div>
+        <div id="logSystem"  class="log-panel"></div>
+        <div id="logAi"      class="log-panel"></div>
       </div>
 
       <!-- Auto-Healing -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title" data-i18n="admin_healing">🏥 Auto-Healing</div></div>
+        <div class="card-hd"><div class="card-title" data-i18n="admin_healing">Auto-Healing</div></div>
         <div class="card-body" id="healingList">
-          <div class="empty"><div class="empty-ico">🏥</div><span data-i18n="loading_label">Laden…</span></div>
-        </div>
-      </div>
-    </div>
-
-
-    <!-- ══ MULTI-EXCHANGE PANEL ════════════════════════════════════════ -->
-    <div class="sec admin-only" id="sec-exchanges">
-
-      <!-- Gesamt-Übersicht -->
-      <div class="card hero" style="background:linear-gradient(135deg,#060c12,#091017)">
-        <div class="card-body" style="padding:18px">
-          <div style="font-family:var(--mono);font-size:9px;letter-spacing:3px;color:var(--sub);margin-bottom:6px;text-transform:uppercase">Multi-Exchange · Gesamt-Portfolio</div>
-          <div style="font-size:32px;font-weight:900;font-family:var(--fc);color:#e8f4ff" id="mex-total-pv">0,00 <span style="font-size:16px;opacity:.4">USDT</span></div>
-          <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:8px">
-            <span class="pill" id="mex-total-pnl">+0,00 USDT</span>
-            <span style="font-size:11px;color:var(--sub);font-family:var(--mono)" id="mex-active-count">0 Exchanges aktiv</span>
-          </div>
+          <div class="empty"><div class="empty-ico">🏥</div><span data-i18n="loading_label">Laden...</span></div>
         </div>
       </div>
 
-      <!-- Alle 5 Exchange-Karten -->
-      <div id="mex-cards" style="display:flex;flex-direction:column;gap:12px"></div>
-
-      <!-- API-Key Verwaltung -->
-      <div class="card">
-        <div class="card-hd"><div class="card-title">🔑 API-Keys verwalten</div></div>
-        <div class="card-body">
-          <div class="s-label" style="margin-bottom:8px">Exchange</div>
-          <select class="s-input" id="mex-key-exchange" onchange="mexOnExchangeSelect(this.value)" style="margin-bottom:10px">
-            <option value="cryptocom">Crypto.com</option>
-            <option value="binance">Binance</option>
-            <option value="bybit">Bybit</option>
-            <option value="okx">OKX</option>
-            <option value="kucoin">KuCoin</option>
-            <option value="kraken">Kraken</option>
-            <option value="huobi">Huobi</option>
-            <option value="coinbase">Coinbase</option>
-          </select>
-          <div class="s-label">API Key</div>
-          <input class="s-input" id="mex-key-apikey" type="text" placeholder="API Key" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
-          <div class="s-label">Secret</div>
-          <input class="s-input" id="mex-key-secret" type="password" placeholder="Secret" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
-          <div id="mex-passphrase-wrap" style="display:none">
-            <div class="s-label">Passphrase (OKX / KuCoin)</div>
-            <input class="s-input" id="mex-key-passphrase" type="password" placeholder="Passphrase" autocomplete="off" style="margin-bottom:8px;font-family:var(--mono);font-size:12px">
-          </div>
-          <button class="btn btn-jade" style="width:100%;padding:12px;font-size:13px" onclick="mexSaveKeys()"><span data-i18n="mex_save_keys">✅ Speichern & Aktivieren</span></button>
-          <div style="margin-top:10px;font-size:11px;color:var(--sub);line-height:1.6">
-            ⚠️ Nur <strong style="color:#e8f4ff">Spot-Trading</strong> & <strong style="color:#e8f4ff">Read</strong> Berechtigung vergeben.<br>
-            Niemals Withdraw-Berechtigung aktivieren!
-          </div>
-        </div>
-      </div>
-
-      <!-- Combined Trades -->
-      <div class="card">
-        <div class="card-hd">
-          <div class="card-title" data-i18n="mex_all_trades">📋 Alle Trades (Exchange-übergreifend)</div>
-          <button class="btn btn-info" style="padding:5px 10px;font-size:11px" onclick="mexLoadTrades()">↻</button>
-        </div>
-        <div class="card-body" id="mex-trades-list">
-          <div class="empty"><div class="empty-ico">📋</div><span data-i18n="no_trades_yet">Keine Trades</span></div>
-        </div>
-      </div>
-    </div>
-
-
-    <!-- ══ RISIKO-ANALYSE ══════════════════════════════════════════════ -->
-    <div class="sec" id="sec-risk" style="gap:14px">
-
-      <!-- Monte Carlo -->
-      <div class="card">
-        <div class="card-hd">
-          <div class="card-title" data-i18n="monte_title">🎲 Monte-Carlo-Simulation</div>
-          <button class="btn btn-jade" style="padding:5px 12px;font-size:11px" onclick="runMonteCarlo()"><span data-i18n="monte_run">▶ Starten</span></button>
-        </div>
-        <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-            <div>
-              <div class="s-label" data-i18n="mc_simulations">Simulationen</div>
-              <select class="s-input" id="mcSims" style="margin-top:4px">
-                <option value="1000">1.000</option>
-                <option value="10000" selected>10.000</option>
-                <option value="50000">50.000</option>
-              </select>
-            </div>
-            <div>
-              <div class="s-label" data-i18n="mc_horizon">Horizont (Tage)</div>
-              <input class="s-input" id="mcDays" type="number" value="30" min="1" max="365" style="margin-top:4px">
-            </div>
-          </div>
-          <div id="mcResults" style="display:none">
-            <div class="sg" style="grid-template-columns:repeat(3,1fr);margin-bottom:10px">
-              <div class="sc"><div class="sv" id="mcP50" style="color:var(--jade)">—</div><div class="sl">Median</div></div>
-              <div class="sc"><div class="sv" id="mcP5"  style="color:var(--red)">—</div><div class="sl">Worst 5%</div></div>
-              <div class="sc"><div class="sv" id="mcP95" style="color:#10b981">—</div><div class="sl">Best 5%</div></div>
-            </div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-              <div style="background:#091017;border-radius:8px;padding:10px;text-align:center">
-                <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--jade)" id="mcProbProfit">—%</div>
-                <div style="font-size:9px;color:var(--sub);text-transform:uppercase;margin-top:3px" data-i18n="mc_profit_probability">Profit-Wahrscheinlichkeit</div>
-              </div>
-              <div style="background:#091017;border-radius:8px;padding:10px;text-align:center">
-                <div style="font-family:var(--mono);font-size:15px;font-weight:700;color:var(--red)" id="mcVaR95">— USDT</div>
-                <div style="font-size:9px;color:var(--sub);text-transform:uppercase;margin-top:3px">Value at Risk (95%)</div>
-              </div>
-            </div>
-            <!-- Percentile Bar -->
-            <div style="position:relative;height:24px;border-radius:6px;overflow:hidden;background:var(--bg3);margin-bottom:6px">
-              <div id="mcBar" style="position:absolute;top:0;left:0;height:100%;background:linear-gradient(90deg,var(--red),var(--jade));width:60%;border-radius:6px"></div>
-            </div>
-            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--sub)">
-              <span id="mcBarMin">—</span><span><span data-i18n="mc_expected">Erwartet</span>: <b id="mcBarExpected" style="color:var(--txt)">—</b></span><span id="mcBarMax">—</span>
-            </div>
-          </div>
-          <div id="mcLoading" style="display:none;text-align:center;padding:16px;color:var(--sub)">⏳ <span data-i18n="mc_simulating">Simuliere…</span></div>
-          <div id="mcEmpty" style="text-align:center;padding:16px;color:var(--sub)" data-i18n="mc_min_trades">Mindestens 5 Trades erforderlich</div>
-        </div>
-      </div>
-
-      <!-- Funding Rates -->
-      <div class="card">
-        <div class="card-hd">
-          <div class="card-title" data-i18n="funding_title">💸 Funding Rates</div>
-          <button class="btn btn-info" style="padding:5px 12px;font-size:11px" onclick="loadFundingRates()">↻</button>
-        </div>
-        <div class="card-body" id="fundingList">
-          <div class="empty"><div class="empty-ico">💸</div><span data-i18n="loading_label">Laden…</span></div>
-        </div>
-        <div class="card-body admin-only" style="padding-top:0;border-top:1px solid var(--muted)">
-          <div style="display:flex;align-items:center;gap:8px">
-            <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-              <div class="s-tog"><input type="checkbox" id="fundingEnabled" checked onchange="saveFundingConfig()"><div class="s-tog-inner"></div></div>
-              <span style="font-size:12px;color:var(--sub)" data-i18n="funding_filter_active">Filter aktiv</span>
-            </label>
-            <input class="s-input" id="fundingMaxRate" type="number" value="0.1" step="0.01"
-              style="width:80px;padding:4px 8px;font-size:12px" placeholder="Max %"
-              onchange="saveFundingConfig()">
-            <span style="font-size:11px;color:var(--sub)">% max/8h</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Symbol Cooldowns -->
-      <div class="card">
-        <div class="card-hd">
-          <div class="card-title" data-i18n="cooldown_title">⏱ Symbol-Sperren</div>
-          <button class="btn btn-info" style="padding:5px 12px;font-size:11px" onclick="loadCooldowns()">↻</button>
-        </div>
-        <div class="card-body" id="cooldownList">
-          <div class="empty"><div class="empty-ico">✅</div><span data-i18n="empty_no_locks">Keine Sperren aktiv</span></div>
-        </div>
-      </div>
-
-      <!-- Break-Even Config -->
-      <div class="card admin-only">
-        <div class="card-hd"><div class="card-title" data-i18n="break_even_title">🛡 Break-Even Stop-Loss</div></div>
-        <div class="card-body">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div>
-              <div class="s-label" data-i18n="break_even_trigger">Auslöser (+%)</div>
-              <input class="s-input" id="beeTrigger" type="number" value="1.5" step="0.1" style="margin-top:4px">
-            </div>
-            <div>
-              <div class="s-label">Buffer (%)</div>
-              <input class="s-input" id="beeBuffer"  type="number" value="0.1" step="0.05" style="margin-top:4px">
-            </div>
-          </div>
-          <div style="display:flex;align-items:center;gap:8px;margin-top:10px">
-            <div class="s-tog"><input type="checkbox" id="beeEnabled" checked><div class="s-tog-inner"></div></div>
-            <span style="font-size:12px;color:var(--sub)" data-i18n="break_even_active">Break-Even aktiv</span>
-            <button class="btn btn-jade" style="margin-left:auto;padding:6px 14px;font-size:12px" onclick="saveBreakEven()" data-i18n="btn_save">Speichern</button>
-          </div>
-        </div>
-      </div>
     </div>
 
 </main>
 
-<!-- [#37] Navigation mit Keyboard-Shortcut-Badges -->
+<!-- Navigation: 6 Tabs (Dashboard, Trading, Trades, Chart, Settings + Admin) -->
 <nav class="bnav" id="mainNav" aria-label="Hauptnavigation">
-  <div class="nb active" id="nb-home"     onclick="nav('home',this)" title="Dashboard [D]"><span class="nb-icon">📊</span><span data-i18n="nav_home">Home</span><kbd class="nav-kbd">D</kbd></div>
+  <div class="nb active" id="nb-home"     onclick="nav('home',this)" title="Dashboard [D]"><span class="nb-icon">📊</span><span data-i18n="nav_home">Dashboard</span><kbd class="nav-kbd">D</kbd></div>
+  <div class="nb"        id="nb-trading"  onclick="nav('trading',this)" title="Trading [T]"><span class="nb-icon">⚡</span><span data-i18n="nav_trading">Trading</span><kbd class="nav-kbd">T</kbd></div>
   <div class="nb"        id="nb-pos"      onclick="nav('pos',this)"  title="Trades [P]"><span class="nb-icon">💼</span><span data-i18n="nav_trades">Trades</span><div class="nb-badge" id="posBadge">0</div><kbd class="nav-kbd">P</kbd></div>
-  <div class="nb"        id="nb-stats"    onclick="nav('stats',this)" title="Statistik [X]"><span class="nb-icon">📈</span><span data-i18n="nav_stats">Stats</span><kbd class="nav-kbd">X</kbd></div>
-  <div class="nb"        id="nb-ai"       onclick="nav('ai',this)"   title="KI-Modell [A]"><span class="nb-icon">🧠</span><span data-i18n="nav_ai">KI</span><kbd class="nav-kbd">A</kbd></div>
-  <div class="nb nb-secondary" id="nb-heat" onclick="nav('heat',this);loadHeatmap('change')" title="Markt [M]"><span class="nb-icon">🌡️</span><span data-i18n="nav_market">Markt</span><kbd class="nav-kbd">M</kbd></div>
   <div class="nb"        id="nb-chart"    onclick="nav('chart',this)" title="Chart [C]"><span class="nb-icon">🕯️</span><span data-i18n="nav_chart">Chart</span><kbd class="nav-kbd">C</kbd></div>
-  <div class="nb nb-secondary" id="nb-bt" onclick="nav('bt',this);loadBtHistory()" title="Backtest [B]"><span class="nb-icon">🔬</span><span data-i18n="nav_backtest">Backtest</span><kbd class="nav-kbd">B</kbd></div>
-  <div class="nb nb-secondary" id="nb-tax" onclick="nav('tax',this)" title="Steuer [T]"><span class="nb-icon">🧾</span><span data-i18n="nav_tax">Steuer</span></div>
-  <div class="nb nb-secondary" id="nb-log" onclick="nav('log',this)" title="Log [L]"><span class="nb-icon">📋</span><span data-i18n="nav_log">Log</span><kbd class="nav-kbd">L</kbd></div>
-  <div class="nb nb-secondary" id="nb-risk" onclick="nav('risk',this)" title="Risiko [R]"><span class="nb-icon">⚠️</span><span data-i18n="nav_risk">Risiko</span><kbd class="nav-kbd">R</kbd></div>
-  <div class="nb nb-secondary admin-only" id="nb-ex" onclick="nav('exchanges',this)" title="Exchanges [E]"><span class="nb-icon">🔀</span><span data-i18n="nav_exchanges">Exchanges</span><div class="nb-badge" id="exBadge" style="background:#f59e0b">0</div><kbd class="nav-kbd">E</kbd></div>
-  <div class="nb nb-secondary admin-only" id="nb-admin" onclick="nav('admin',this)" title="Admin [G]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">G</kbd></div>
-  <div class="nb nb-secondary admin-only" id="nb-analytics" onclick="nav('analytics',this);loadSystemAnalytics()" title="Analytics [Y]"><span class="nb-icon">📡</span><span data-i18n="nav_analytics">Analytics</span><kbd class="nav-kbd">Y</kbd></div>
   <div class="nb nb-secondary" id="nb-settings" onclick="nav('settings',this)" title="Einstellungen [S]"><span class="nb-icon">⚙️</span><span data-i18n="nav_settings">Settings</span><kbd class="nav-kbd">S</kbd></div>
+  <div class="nb nb-secondary admin-only" id="nb-admin" onclick="nav('admin',this);loadSystemAnalytics()" title="Admin [A]"><span class="nb-icon">🛡️</span><span data-i18n="nav_admin">Admin</span><kbd class="nav-kbd">A</kbd></div>
   <!-- Mobile "More" button – only visible < 900px -->
   <div class="nb nb-more" id="nb-more" onclick="toggleMobileNav()" title="Mehr"><span class="nb-icon">☰</span><span data-i18n="nav_more">Mehr</span></div>
 </nav>
@@ -1274,15 +952,15 @@
 </div>
 
 <div class="shortcut-help" id="shortcutHelp">
-  <div style="font-family:var(--fc);font-weight:800;color:var(--white);margin-bottom:8px">⌨️ Shortcuts</div>
+  <div style="font-family:var(--fc);font-weight:800;color:var(--white);margin-bottom:8px">Shortcuts</div>
   <ul>
     <li>Start/Stop <kbd>Space</kbd></li>
-    <li>Backtest <kbd>B</kbd></li>
+    <li>Trading <kbd>T</kbd></li>
     <li>Settings <kbd>S</kbd></li>
     <li>Dashboard <kbd>D</kbd></li>
-    <li>KI <kbd>A</kbd></li>
+    <li>Chart <kbd>C</kbd></li>
     <li>Shortcuts <kbd>?</kbd></li>
-    <li>Dark/Light <kbd>T</kbd></li>
+    <li>Dark/Light <kbd>L</kbd></li>
   </ul>
 </div>
 
