@@ -28,7 +28,7 @@ from services.exchange_factory import (
 )
 from services.strategies import STRATEGIES, compute_indicators
 from services.utils import EXCHANGE_MAP
-from app.core.request_helpers import normalize_exchange_name, safe_int
+from app.core.request_helpers import normalize_exchange_name as _normalize_exchange_name, safe_int
 from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
 from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
 from app.core.bot_heartbeat import heartbeat_sleep
@@ -88,6 +88,12 @@ _pin_user_exchange = None
 _heatmap_cache: list[dict] = []
 _heatmap_ts: float = 0.0
 _heatmap_lock = threading.Lock()
+
+
+
+def normalize_exchange_name(raw):
+    """Normalize exchange names with the shared EXCHANGE_MAP."""
+    return _normalize_exchange_name(raw, EXCHANGE_MAP)
 
 
 def init_trading_ops(
