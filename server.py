@@ -4771,6 +4771,11 @@ def open_position(ex, scan: dict):
             if invest > state.balance or invest < 5:
                 log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
                 return
+            # Recalculate fee and qty after re-clamp to keep them consistent
+            fee = invest * get_exchange_fee_rate()
+            qty = (invest - fee) / price
+            if qty <= 0:
+                return
             state.balance -= invest
     else:
         try:
