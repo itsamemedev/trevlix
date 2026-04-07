@@ -18,6 +18,12 @@ const TrevlixSocket = (function() {
   let _emitTimestamps = {};  // rate limiting for outgoing events
   const MIN_EMIT_INTERVAL = 500; // ms between same events
 
+  function _readTokenFromCookie() {
+    const raw = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+    if (!raw) return '';
+    try { return decodeURIComponent(raw); } catch(_e) { return raw; }
+  }
+
   /**
    * Initialize the socket connection.
    * Safe to call multiple times - will reuse existing connection.
@@ -28,10 +34,11 @@ const TrevlixSocket = (function() {
     if (_socket && _socket.connected) return _socket;
     if (_socket) {
       // Cleanup stale socket
+      off();
       try { _socket.disconnect(); } catch(e) {}
     }
 
-    const jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+    const jwtToken = _readTokenFromCookie();
 
     _socket = io(Object.assign({
       transports: ['websocket', 'polling'],
@@ -50,12 +57,18 @@ const TrevlixSocket = (function() {
     _socket.on('disconnect', () => { _connected = false; });
 
     // Refresh token from cookie on reconnect attempt
-    _socket.on('reconnect_attempt', () => {
-      const freshToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+    const _refreshAuthToken = () => {
+      const freshToken = _readTokenFromCookie();
       if (freshToken) {
         _socket.auth = { token: freshToken };
       }
-    });
+    };
+    // socket.io-client sendet reconnect_attempt auf der Manager-Instanz,
+    // nicht zuverlässig auf der Socket-Instanz.
+    if (_socket.io && typeof _socket.io.on === 'function') {
+      _socket.io.on('reconnect_attempt', _refreshAuthToken);
+    }
+    _socket.on('reconnect_attempt', _refreshAuthToken);
 
     return _socket;
   }
@@ -68,6 +81,7 @@ const TrevlixSocket = (function() {
   function on(event, handler) {
     if (!_socket) throw new Error('Socket not initialized. Call TrevlixSocket.init() first.');
     if (!_handlers[event]) _handlers[event] = [];
+    if (_handlers[event].includes(handler)) return;
     _handlers[event].push(handler);
     _socket.on(event, handler);
   }

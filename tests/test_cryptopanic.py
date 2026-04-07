@@ -319,6 +319,24 @@ class TestGetScore:
         assert count == 0
 
     @patch("services.cryptopanic.httpx.get")
+    def test_get_score_normalizes_symbol_without_slash(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.headers = {}
+        mock_resp.json.return_value = {
+            "results": [
+                {"title": "Bitcoin surge", "votes": {"positive": 5, "negative": 1}},
+            ]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = CryptoPanicClient(token="test-token")
+        score, headline, count = client.get_score("BTCUSDT")
+        assert count == 1
+        assert score > 0
+        assert "Bitcoin" in headline
+
+    @patch("services.cryptopanic.httpx.get")
     def test_get_score_uses_stale_cache_on_rate_limit(self, mock_get):
         import httpx as hx
 
@@ -326,7 +344,7 @@ class TestGetScore:
         mock_get.side_effect = hx.HTTPStatusError("rate limited", request=response.request, response=response)
 
         client = CryptoPanicClient(token="test-token")
-        client._cache["BTC/USDT"] = {
+        client._cache["BTC:free"] = {
             "score": 0.42,
             "headline": "Cached BTC headline",
             "count": 7,
@@ -338,3 +356,52 @@ class TestGetScore:
         assert score == 0.42
         assert headline == "Cached BTC headline"
         assert count == 7
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_get_score_uses_shared_coin_cache_for_usd_pairs(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.headers = {}
+        mock_resp.json.return_value = {
+            "results": [
+                {"title": "Bitcoin surge", "votes": {"positive": 8, "negative": 2}},
+            ]
+        }
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = CryptoPanicClient(token="test-token")
+        first = client.get_score("BTC/USDT")
+        second = client.get_score("BTC/USD")
+
+        assert mock_get.call_count == 1
+        assert second == first
+
+
+class TestRateLimitMitigation:
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_honors_min_request_interval(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.headers = {}
+        mock_resp.json.return_value = {"results": [{"title": "BTC"}]}
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = CryptoPanicClient(token="test-token", plan="developer")
+        posts1 = client.fetch_posts("BTC")
+        posts2 = client.fetch_posts("ETH")
+
+        assert posts1
+        assert posts2 == []
+        assert client._last_fetch_was_rate_limited is True
+        assert mock_get.call_count == 1
+
+    def test_get_score_ignores_broken_db_cache_payload(self):
+        db_mock = MagicMock()
+        db_mock.get_news.return_value = {"score": "x", "headline": None, "article_count": "oops"}
+
+        client = CryptoPanicClient(token="")
+        score, headline, count = client.get_score("BTC/USDT", db=db_mock)
+
+        assert score == 0.0
+        assert headline == "—"
+        assert count == 0

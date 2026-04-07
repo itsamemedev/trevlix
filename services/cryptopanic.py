@@ -74,6 +74,11 @@ _REQUEST_TIMEOUT = 10
 # Cache-Dauer in Sekunden (30 Minuten)
 CACHE_TTL = 1800
 _RATE_LIMIT_FALLBACK_SECONDS = 60
+_PLAN_MIN_REQUEST_INTERVAL = {
+    "free": 2.0,
+    "pro": 0.8,
+    "developer": 0.3,
+}
 
 
 class CryptoPanicClient:
@@ -96,17 +101,33 @@ class CryptoPanicClient:
         self._cache_max_size: int = 200
         self._rate_limited_until: float = 0.0
         self._last_fetch_was_rate_limited: bool = False
+        self._last_api_call_at: float = 0.0
+        self._min_request_interval: float = _PLAN_MIN_REQUEST_INTERVAL.get(self.plan, 1.0)
+
+    def _normalize_coin(self, symbol: str) -> str:
+        """Normalisiert Symbolnamen auf Coin-Ebene für API/Cache."""
+        raw = str(symbol or "").upper().strip()
+        if "/" in raw:
+            raw = raw.split("/", 1)[0]
+        for suffix in ("USDT", "USD", "USDC"):
+            if raw.endswith(suffix) and len(raw) > len(suffix):
+                raw = raw[: -len(suffix)]
+                break
+        return raw or "BTC"
+
+    def _cache_key_for_symbol(self, symbol: str) -> str:
+        return f"{self._normalize_coin(symbol)}:{self.plan}"
 
     @property
     def is_configured(self) -> bool:
         """Prüft ob ein gültiger Token konfiguriert ist."""
         return bool(self.token and self.token.strip())
 
-    def _is_cache_valid(self, symbol: str) -> bool:
-        """Prüft ob der Cache für ein Symbol noch gültig ist."""
-        if symbol not in self._cache:
+    def _is_cache_valid(self, cache_key: str) -> bool:
+        """Prüft ob der Cache für den Cache-Key noch gültig ist."""
+        if cache_key not in self._cache:
             return False
-        return (time.time() - self._cache[symbol]["ts"]) < CACHE_TTL
+        return (time.time() - self._cache[cache_key]["ts"]) < CACHE_TTL
 
     def fetch_posts(
         self, currency: str, filter_type: str = "hot", kind: str = "news", regions: str = "en"
@@ -133,6 +154,9 @@ class CryptoPanicClient:
             wait_s = int(self._rate_limited_until - now)
             log.debug("CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency)
             return []
+        if self._last_api_call_at > 0 and (now - self._last_api_call_at) < self._min_request_interval:
+            self._last_fetch_was_rate_limited = True
+            return []
 
         params = {
             "auth_token": self.token,
@@ -145,8 +169,24 @@ class CryptoPanicClient:
 
         try:
             resp = httpx.get(self._base_url, params=params, timeout=_REQUEST_TIMEOUT)
+            self._last_api_call_at = time.time()
             resp.raise_for_status()
-            return resp.json().get("results", [])
+            remaining = (resp.headers or {}).get("X-RateLimit-Remaining")
+            reset_raw = (resp.headers or {}).get("X-RateLimit-Reset")
+            if str(remaining).strip() == "0":
+                try:
+                    reset_after = max(int(float(reset_raw)), 1)
+                except (TypeError, ValueError):
+                    reset_after = _RATE_LIMIT_FALLBACK_SECONDS
+                self._rate_limited_until = max(self._rate_limited_until, time.time() + reset_after)
+                log.warning(
+                    "CryptoPanic API-Limit erschöpft laut Header für %s – pausiere %ss",
+                    currency,
+                    reset_after,
+                )
+            payload = resp.json()
+            results = payload.get("results", []) if isinstance(payload, dict) else []
+            return results if isinstance(results, list) else []
         except httpx.HTTPStatusError as e:
             if e.response is not None and e.response.status_code == 429:
                 retry_after_raw = (e.response.headers or {}).get("Retry-After", "").strip()
@@ -232,34 +272,47 @@ class CryptoPanicClient:
         Returns:
             Tuple von (score, headline, article_count)
         """
+        coin = self._normalize_coin(symbol)
+        cache_key = self._cache_key_for_symbol(symbol)
+        stale_db_cached = None
+
         # DB-Cache prüfen
         if db:
             cached = db.get_news(symbol)
             if cached:
-                return float(cached["score"]), cached["headline"], cached["article_count"]
+                try:
+                    stale_db_cached = (
+                        float(cached.get("score", 0.0)),
+                        str(cached.get("headline", "—") or "—"),
+                        int(cached.get("article_count", 0) or 0),
+                    )
+                except (TypeError, ValueError, AttributeError):
+                    stale_db_cached = None
+                if stale_db_cached is not None:
+                    return stale_db_cached
 
         # In-Memory-Cache prüfen
-        if self._is_cache_valid(symbol):
-            c = self._cache[symbol]
+        if self._is_cache_valid(cache_key):
+            c = self._cache[cache_key]
             return c["score"], c["headline"], c["count"]
-
-        coin = symbol.replace("/USDT", "").replace("/USD", "").upper()
 
         # Ohne Token: Feature deaktiviert, neutraler Score
         if not self.is_configured:
             score, headline, count = 0.0, "—", 0
         else:
             posts = self.fetch_posts(coin)
-            if self._last_fetch_was_rate_limited and symbol in self._cache:
-                c = self._cache[symbol]
+            if self._last_fetch_was_rate_limited and cache_key in self._cache:
+                c = self._cache[cache_key]
                 return c["score"], c["headline"], c["count"]
             score, headline, count = self.analyze_sentiment(posts)
 
             if self._last_fetch_was_rate_limited and count == 0:
+                if stale_db_cached is not None:
+                    return stale_db_cached
                 return 0.0, "—", 0
 
         # Caches aktualisieren (mit Max-Size-Eviction)
-        self._cache[symbol] = {
+        self._cache[cache_key] = {
             "score": score,
             "headline": headline,
             "count": count,
@@ -267,7 +320,7 @@ class CryptoPanicClient:
         }
         if len(self._cache) > self._cache_max_size:
             oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
-            if oldest != symbol:
+            if oldest != cache_key:
                 del self._cache[oldest]
 
         if db:
