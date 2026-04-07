@@ -19,10 +19,25 @@ from app.core.logging_setup import configure_logging
 
 def parse_session_timeout_minutes(default: int = 30) -> int:
     """Parse ``SESSION_TIMEOUT_MIN`` robust und mit Fallback."""
+    min_minutes = 1
+    max_minutes = 24 * 60
     try:
-        return int(os.getenv("SESSION_TIMEOUT_MIN", str(default)))
+        fallback = int(default)
     except (TypeError, ValueError):
-        return default
+        fallback = 30
+    fallback = min(max(fallback, min_minutes), max_minutes)
+    try:
+        parsed = int(os.getenv("SESSION_TIMEOUT_MIN", str(default)))
+    except (TypeError, ValueError):
+        return fallback
+
+    # Defensive clamp: verhindert ungültige/gefährliche Werte wie 0 oder negativ
+    # (sofortige Session-Invalidierung) und unendlich lange Session-Laufzeiten.
+    if parsed < min_minutes:
+        return min_minutes
+    if parsed > max_minutes:
+        return max_minutes
+    return parsed
 
 
 def initialize_runtime_objects(
