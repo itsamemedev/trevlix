@@ -122,3 +122,18 @@
 ### Lektion 24: Lock-Symmetrie bei Read/Write
 **Problem:** `is_correlated()` las `_price_history` ohne Lock, während `update_prices()` unter Lock schrieb. Race Condition bei gleichzeitigem Scan und Update.
 **Regel:** Wenn eine Methode unter Lock SCHREIBT, müssen alle Methoden die denselben State LESEN ebenfalls den Lock halten. Snapshot-Pattern: unter Lock kopieren, außerhalb berechnen.
+
+## Session: refactor-modularize-repo-r6fhS (2026-04-07)
+
+### Lektion 25: Module-Globals Init-Pattern für Extraction
+**Problem:** Extrahierte Klassen aus server.py referenzieren globale Variablen (CONFIG, db, state, etc.).
+**Lösung:** `init_*()` Funktionen pro Modul, die Runtime-Globals injizieren. Zwei Phasen: 1) Early init (CONFIG, log) vor Instanz-Erstellung, 2) Late init (state, discord, etc.) nach allen Instanzen.
+**Regel:** Bei jeder Klassen-Extraktion prüfen: welche Globals werden im `__init__` vs. in Methoden referenziert? `__init__`-Globals müssen VOR der Instanziierung gesetzt werden.
+
+### Lektion 26: Fehlende Imports bei Extraktion
+**Problem:** Beim Extrahieren von Klassen aus server.py fehlten Standard-Library-Imports (`os`, `deque`, `json`, etc.), weil sie im Original-File am Dateianfang standen.
+**Regel:** Nach jeder Extraktion sofort `python3 -c "import ast; ast.parse(open(file).read())"` UND Tests laufen lassen. Proaktiv alle `import`-Abhängigkeiten der Klasse prüfen (grep nach stdlib-Symbolen).
+
+### Lektion 27: Inline-Imports nicht vergessen
+**Problem:** `TaxReportGenerator` wurde inline importiert (`from services.tax_report import TaxReportGenerator`) innerhalb eines entfernten Abschnitts und war danach nicht mehr verfügbar.
+**Regel:** Vor dem Entfernen eines Abschnitts immer `grep` für `from ... import` und `import ...` innerhalb dieses Abschnitts ausführen, um inline-Imports zu identifizieren.

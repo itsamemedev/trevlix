@@ -7,6 +7,24 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.7.0] – 2026-04-07
+
+### Changed — Major Modularization of server.py
+
+- **server.py reduced from 9046 → 4014 lines** (56% reduction):
+  - `MySQLManager` (1460 lines) → `app/core/db_manager.py`
+  - `AIEngine` (1100 lines) → `app/core/ai_engine.py`
+  - `AnomalyDetector`, `GeneticOptimizer`, `RLAgent`, `NewsSentimentAnalyzer` → `app/core/ml_models.py`
+  - `BotState`, `MultiTimeframeFilter`, `OrderbookImbalance`, `PriceAlertManager`, `DailyReportScheduler`, `BackupScheduler`, `ArbitrageScanner`, `ShortEngine` → `app/core/trading_classes.py`
+  - Trading operations (`create_exchange`, `fetch_markets`, `scan_symbol`, `open_position`, `close_position`, `manage_positions`, `bot_loop`, etc.) → `app/core/trading_ops.py`
+- **Dependency injection pattern**: each extracted module uses `init_*()` functions to receive runtime globals (CONFIG, db, state, etc.)
+- **All 393 tests pass** unchanged after modularization
+- **No API/route/behavior changes** — pure structural refactoring
+- Cleaned up unused ML imports from server.py (now self-contained in extracted modules)
+- Removed dead code and unused standard library imports
+
+---
+
 ## [1.6.13] – 2026-04-06
 
 ### Changed — User/Admin-Dashboard-Aufräumrunde + Validierungsfixes
