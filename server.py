@@ -4713,6 +4713,9 @@ def open_position(ex, scan: dict):
     if not algo_buy:
         log.debug(f"[BUY-ALGO] {symbol} blockiert: {algo_reason}")
         return
+    # Algo-Kaufsignal per Discord/Telegram senden
+    discord.algo_buy_signal(symbol, price, algo_conf, algo_reason)
+    telegram.algo_buy_signal(symbol, price, algo_conf, algo_reason)
 
     # ── Trade DNA Fingerprinting ─────────────────────────────────────────
     dna_result = None
@@ -5267,6 +5270,17 @@ def manage_positions(ex):
                 scan_for_sell, pos
             )
             if algo_sell:
+                # Unrealisierten PnL berechnen für Notification
+                _entry = pos.get("entry", 0)
+                _unrealized = (
+                    (price - _entry) * pos.get("qty", 0) if _entry > 0 else None
+                )
+                discord.algo_sell_signal(
+                    symbol, price, algo_conf, algo_reason, pnl=_unrealized
+                )
+                telegram.algo_sell_signal(
+                    symbol, price, algo_conf, algo_reason, pnl=_unrealized
+                )
                 close_position(ex, symbol, f"SellAlgo:{algo_reason}")
             else:
                 # DCA prüfen

@@ -61,6 +61,9 @@ class BuyAlgorithm:
         # Performance-Tracking pro Sub-Strategie
         self._wins: dict[str, int] = {k: 0 for k in self.weights}
         self._total: dict[str, int] = {k: 0 for k in self.weights}
+        # PnL-Tracking pro Sub-Strategie (für Profit-Maximierung)
+        self._pnl_sum: dict[str, float] = {k: 0.0 for k in self.weights}
+        self._pnl_history: dict[str, list[float]] = {k: [] for k in self.weights}
         # Gelernte Schwellenwerte (werden durch Feedback optimiert)
         self.params: dict[str, float] = {
             "momentum_rsi_min": 45.0,
@@ -79,6 +82,8 @@ class BuyAlgorithm:
         self._trade_log: deque[dict[str, Any]] = deque(maxlen=500)
         self.total_signals = 0
         self.profitable_signals = 0
+        self.total_pnl = 0.0
+        self.avg_pnl = 0.0
 
     # ── Sub-Strategien ────────────────────────────────────────────────────────
 
@@ -247,6 +252,8 @@ class BuyAlgorithm:
         won = pnl > 0
         with self._lock:
             self.total_signals += 1
+            self.total_pnl += pnl
+            self.avg_pnl = self.total_pnl / self.total_signals
             if won:
                 self.profitable_signals += 1
 
@@ -270,6 +277,13 @@ class BuyAlgorithm:
                 self._total[strat] = self._total.get(strat, 0) + 1
                 if won:
                     self._wins[strat] = self._wins.get(strat, 0) + 1
+                # PnL-Tracking für Profit-Maximierung
+                self._pnl_sum[strat] = self._pnl_sum.get(strat, 0.0) + pnl
+                hist = self._pnl_history.get(strat, [])
+                hist.append(pnl)
+                if len(hist) > 100:
+                    hist = hist[-100:]
+                self._pnl_history[strat] = hist
 
             # Gewichte adaptieren (nach MIN_HISTORY Trades)
             total_trades = sum(self._total.values())
@@ -295,26 +309,61 @@ class BuyAlgorithm:
             )
 
     def _adapt_weights(self) -> None:
-        """Passt Sub-Strategie-Gewichte basierend auf Win-Rate an."""
+        """Passt Sub-Strategie-Gewichte PnL-gewichtet an.
+
+        Kombiniert Win-Rate (40%) und durchschnittlichen Profit (60%)
+        zu einem Gesamtscore. So werden Strategien bevorzugt, die nicht
+        nur häufig gewinnen, sondern auch höheren Profit erzeugen.
+        """
+        avg_pnls = {}
         for strat in self.weights:
             total = self._total.get(strat, 0)
             if total < 3:
                 continue
             wr = self._wins.get(strat, 0) / total
-            # Gewicht = 0.5 + win_rate (0.5 bis 1.5 Bereich)
-            self.weights[strat] = max(0.3, min(2.0, 0.5 + wr))
+            # Durchschnittlicher PnL pro Trade für diese Strategie
+            avg_pnl = self._pnl_sum.get(strat, 0.0) / total
+            avg_pnls[strat] = avg_pnl
+            # Normalisierter PnL-Score: sigmoid-artig auf [0, 1] abbilden
+            # Positive PnL → Score > 0.5, negative → Score < 0.5
+            pnl_score = 1.0 / (1.0 + 2.718 ** (-avg_pnl * 0.1))
+            # Kombiniertes Gewicht: 40% Win-Rate + 60% PnL-Score
+            combined = wr * 0.4 + pnl_score * 0.6
+            self.weights[strat] = max(0.3, min(2.5, 0.3 + combined * 2.0))
+        # Log-Ausgabe bei signifikanter Änderung
+        if avg_pnls:
+            best = max(avg_pnls, key=avg_pnls.get)  # type: ignore[arg-type]
+            log.debug(
+                f"[BUY-ALGO] Gewichte angepasst: beste Strategie={best} "
+                f"(avg PnL={avg_pnls[best]:+.2f})"
+            )
 
     def _optimize_params(self, scan: dict[str, Any], pnl: float) -> None:
-        """Optimiert Schwellenwerte basierend auf letzten Ergebnissen."""
+        """Optimiert Schwellenwerte basierend auf PnL der letzten Trades.
+
+        Verwendet zwei Signale:
+        1. Win-Rate: Zu viele Verluste → strengere Einstiegsbedingungen
+        2. Avg PnL: Negativer Durchschnitts-PnL → aggressivere Anpassung
+        """
         recent = list(self._trade_log)[-20:]
         if len(recent) < 10:
             return
 
         wins = [t for t in recent if t["won"]]
         win_rate = len(wins) / len(recent) if recent else 0.5
+        avg_recent_pnl = sum(t.get("pnl", 0) for t in recent) / len(recent)
 
-        # Leichte Anpassung: zu viele Verluste → strengere Schwellen
-        adjustment = 0.02 if win_rate < 0.45 else -0.01 if win_rate > 0.6 else 0.0
+        # Doppeltes Signal: Win-Rate + PnL-Richtung
+        # Negativer PnL verstärkt die Anpassung
+        if win_rate < 0.45 or avg_recent_pnl < -5:
+            # Schlecht: Schwellen verschärfen
+            pnl_factor = max(1.0, min(3.0, abs(avg_recent_pnl) / 20))
+            adjustment = 0.02 * pnl_factor
+        elif win_rate > 0.6 and avg_recent_pnl > 10:
+            # Gut: Schwellen leicht lockern (mehr Trades zulassen)
+            adjustment = -0.01
+        else:
+            adjustment = 0.0
 
         if abs(adjustment) > 0:
             self.params["momentum_rsi_min"] = max(
@@ -326,11 +375,16 @@ class BuyAlgorithm:
             self.params["breakout_vol_min"] = max(
                 1.3, min(2.5, self.params["breakout_vol_min"] + adjustment * 5)
             )
+            log.info(
+                f"[BUY-ALGO] Parameter optimiert: WR={win_rate:.0%} "
+                f"avgPnL={avg_recent_pnl:+.2f} adj={adjustment:+.3f}"
+            )
 
         self._param_history.append(
             {
                 "time": datetime.now().isoformat(),
                 "win_rate": round(win_rate, 3),
+                "avg_pnl": round(avg_recent_pnl, 2),
                 "params": dict(self.params),
             }
         )
@@ -352,11 +406,13 @@ class BuyAlgorithm:
                 total = self._total.get(name, 0)
                 wins = self._wins.get(name, 0)
                 wr = wins / total if total > 0 else 0.0
+                avg_pnl = self._pnl_sum.get(name, 0.0) / total if total > 0 else 0.0
                 sub_strats.append(
                     {
                         "name": name,
                         "weight": round(self.weights[name], 2),
                         "win_rate": round(wr * 100, 1),
+                        "avg_pnl": round(avg_pnl, 2),
                         "trades": total,
                     }
                 )
@@ -366,6 +422,8 @@ class BuyAlgorithm:
                 "total_signals": self.total_signals,
                 "profitable_signals": self.profitable_signals,
                 "win_rate": round(self.win_rate() * 100, 1),
+                "total_pnl": round(self.total_pnl, 2),
+                "avg_pnl": round(self.avg_pnl, 2),
                 "sub_strategies": sub_strats,
                 "params": {k: round(v, 3) for k, v in self.params.items()},
                 "recent_log": list(self._trade_log)[-10:],
@@ -399,6 +457,8 @@ class SellAlgorithm:
         }
         self._wins: dict[str, int] = {k: 0 for k in self.weights}
         self._total: dict[str, int] = {k: 0 for k in self.weights}
+        self._pnl_sum: dict[str, float] = {k: 0.0 for k in self.weights}
+        self._pnl_history: dict[str, list[float]] = {k: [] for k in self.weights}
         self.params: dict[str, float] = {
             "reversal_rsi_max": 72.0,
             "reversal_stoch_max": 80.0,
@@ -417,6 +477,8 @@ class SellAlgorithm:
         self._optimal_exits: deque[dict[str, Any]] = deque(maxlen=200)
         self.total_signals = 0
         self.improved_exits = 0  # Exits die besser waren als SL/TP allein
+        self.total_pnl = 0.0
+        self.saved_pnl = 0.0  # Geschätzter PnL-Vorteil durch Algo-Exits
 
     # ── Sub-Strategien ────────────────────────────────────────────────────────
 
@@ -626,8 +688,12 @@ class SellAlgorithm:
 
         with self._lock:
             self.total_signals += 1
+            self.total_pnl += pnl
             if was_algo_exit and won:
                 self.improved_exits += 1
+            # Schätze PnL-Vorteil: Algo-Exits vs SL/TP-Exits
+            if was_algo_exit and won:
+                self.saved_pnl += max(0, pnl * 0.3)  # ~30% konservative Schätzung
 
             # Bestimme welche Sub-Strategien aktiv waren
             mr_score = self._momentum_reversal_score(scan, pos)
@@ -652,6 +718,12 @@ class SellAlgorithm:
                 self._total[strat] = self._total.get(strat, 0) + 1
                 if won:
                     self._wins[strat] = self._wins.get(strat, 0) + 1
+                self._pnl_sum[strat] = self._pnl_sum.get(strat, 0.0) + pnl
+                hist = self._pnl_history.get(strat, [])
+                hist.append(pnl)
+                if len(hist) > 100:
+                    hist = hist[-100:]
+                self._pnl_history[strat] = hist
 
             total_trades = sum(self._total.values())
             if total_trades >= self.MIN_HISTORY:
@@ -672,16 +744,19 @@ class SellAlgorithm:
             )
 
     def _adapt_weights(self) -> None:
-        """Passt Sub-Strategie-Gewichte basierend auf Win-Rate an."""
+        """Passt Sub-Strategie-Gewichte PnL-gewichtet an (Profit-Maximierung)."""
         for strat in self.weights:
             total = self._total.get(strat, 0)
             if total < 3:
                 continue
             wr = self._wins.get(strat, 0) / total
-            self.weights[strat] = max(0.3, min(2.0, 0.5 + wr))
+            avg_pnl = self._pnl_sum.get(strat, 0.0) / total
+            pnl_score = 1.0 / (1.0 + 2.718 ** (-avg_pnl * 0.1))
+            combined = wr * 0.4 + pnl_score * 0.6
+            self.weights[strat] = max(0.3, min(2.5, 0.3 + combined * 2.0))
 
     def _optimize_params(self) -> None:
-        """Optimiert Schwellenwerte basierend auf letzten Ergebnissen."""
+        """Optimiert Schwellenwerte basierend auf PnL der letzten Algo-Exits."""
         recent = list(self._trade_log)[-20:]
         if len(recent) < 10:
             return
@@ -691,9 +766,16 @@ class SellAlgorithm:
             return
 
         win_rate = sum(1 for t in algo_exits if t["won"]) / len(algo_exits)
+        avg_pnl = sum(t.get("pnl", 0) for t in algo_exits) / len(algo_exits)
 
-        # Bei niedriger Win-Rate: Schwellen lockerer machen (weniger falsche Exits)
-        adjustment = 0.02 if win_rate < 0.45 else -0.01 if win_rate > 0.6 else 0.0
+        # PnL-basierte Anpassung: schlechter PnL → konservativere Exits
+        if win_rate < 0.45 or avg_pnl < -5:
+            pnl_factor = max(1.0, min(3.0, abs(avg_pnl) / 20))
+            adjustment = 0.02 * pnl_factor
+        elif win_rate > 0.6 and avg_pnl > 5:
+            adjustment = -0.01
+        else:
+            adjustment = 0.0
 
         if abs(adjustment) > 0:
             self.params["reversal_rsi_max"] = max(
@@ -705,11 +787,16 @@ class SellAlgorithm:
             self.params["profit_trail_pct"] = max(
                 0.01, min(0.05, self.params["profit_trail_pct"] + adjustment)
             )
+            log.info(
+                f"[SELL-ALGO] Parameter optimiert: WR={win_rate:.0%} "
+                f"avgPnL={avg_pnl:+.2f} adj={adjustment:+.3f}"
+            )
 
         self._param_history.append(
             {
                 "time": datetime.now().isoformat(),
                 "win_rate": round(win_rate, 3),
+                "avg_pnl": round(avg_pnl, 2),
                 "params": dict(self.params),
             }
         )
@@ -724,11 +811,13 @@ class SellAlgorithm:
                 total = self._total.get(name, 0)
                 wins = self._wins.get(name, 0)
                 wr = wins / total if total > 0 else 0.0
+                avg_pnl = self._pnl_sum.get(name, 0.0) / total if total > 0 else 0.0
                 sub_strats.append(
                     {
                         "name": name,
                         "weight": round(self.weights[name], 2),
                         "win_rate": round(wr * 100, 1),
+                        "avg_pnl": round(avg_pnl, 2),
                         "trades": total,
                     }
                 )
@@ -737,6 +826,8 @@ class SellAlgorithm:
                 "enabled": True,
                 "total_signals": self.total_signals,
                 "improved_exits": self.improved_exits,
+                "total_pnl": round(self.total_pnl, 2),
+                "saved_pnl": round(self.saved_pnl, 2),
                 "sub_strategies": sub_strats,
                 "params": {k: round(v, 3) for k, v in self.params.items()},
                 "recent_log": list(self._trade_log)[-10:],
