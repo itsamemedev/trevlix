@@ -5,7 +5,7 @@
 
 [project]
 name = "trevlix"
-version = "1.7.0"
+version = "1.7.1"
 description = "Algorithmic Cryptocurrency Trading Bot with ML-powered strategies"
 readme = "README.md"
 license = {text = "MIT"}

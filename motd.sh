@@ -234,12 +234,15 @@ _is_raspberry_pi() {
 
 _trevlix_version() {
     local ver_file="${INSTALL_DIR}/VERSION"
+    local ver_md="${INSTALL_DIR}/VERSION.md"
     if [[ -f "$ver_file" ]]; then
         tr -d '[:space:]' < "$ver_file"
+    elif [[ -f "$ver_md" ]]; then
+        grep -oE '[0-9]+\.[0-9]+\.[0-9]+' "$ver_md" 2>/dev/null | head -1 || echo "dev"
     elif [[ -d "${INSTALL_DIR}/.git" ]]; then
         git -C "$INSTALL_DIR" describe --tags --abbrev=4 2>/dev/null || echo "dev"
     else
-        echo "1.3.0"
+        echo "1.7.1"
     fi
 }
 
@@ -309,6 +312,20 @@ _open_positions() {
     echo "?"
 }
 
+_api_get() {
+    local path="$1"
+    local port resp
+    port=$(grep -i '^PORT=' "${INSTALL_DIR}/.env" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]"' || echo "5000")
+    resp=$(curl -s --max-time 2 "http://127.0.0.1:${port}${path}" 2>/dev/null) || true
+    echo "$resp"
+}
+
+_json_value() {
+    local json="$1"
+    local key="$2"
+    echo "$json" | grep -oP "\"${key}\"\\s*:\\s*\"?\\K[^\",}]+" 2>/dev/null | head -1
+}
+
 # ── Daten sammeln ──────────────────────────────────────────────────────────
 HOSTNAME_VAL=$(hostname -s 2>/dev/null || cat /etc/hostname 2>/dev/null || echo "?")
 OS_PRETTY=$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Linux")
@@ -330,6 +347,14 @@ TREVLIX_VERSION=$(_trevlix_version)
 TRADING_MODE=$(_trading_mode)
 EXCHANGE=$(_exchange)
 DASH_URL=$(_dashboard_url)
+STATUS_JSON=$(_api_get "/api/v1/status")
+SHARED_AI_JSON=$(_api_get "/api/v1/ai/shared/status")
+OPEN_POS=$(_json_value "${STATUS_JSON}" "open_positions")
+WIN_RATE=$(_json_value "${STATUS_JSON}" "win_rate")
+TOTAL_PNL=$(_json_value "${STATUS_JSON}" "total_pnl")
+LAST_SIGNAL=$(_json_value "${STATUS_JSON}" "last_signal")
+SHARED_AI_VER=$(_json_value "${SHARED_AI_JSON}" "shared_version")
+SHARED_AI_READY=$(_json_value "${SHARED_AI_JSON}" "ready")
 
 # Raspberry Pi Erkennung
 IS_PI=false
@@ -411,6 +436,20 @@ printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${STATUS_COLOR}${BOLD}${STATUS_
 printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${MODE_COLOR}${BOLD}%s %s${RESET}\n" "Modus:" "$MODE_ICON" "$TRADING_MODE"
 printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s${RESET}\n" "Exchange:" "$EXCHANGE"
 printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${CYAN}%s${RESET}\n" "Dashboard:" "$DASH_URL"
+if [[ -n "$OPEN_POS" || -n "$WIN_RATE" || -n "$TOTAL_PNL" ]]; then
+    [[ -z "$OPEN_POS" ]] && OPEN_POS="?"
+    [[ -z "$WIN_RATE" ]] && WIN_RATE="?"
+    [[ -z "$TOTAL_PNL" ]] && TOTAL_PNL="?"
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s · WR %s%% · PnL %s${RESET}\n" "Dashboard:" "Open ${OPEN_POS}" "${WIN_RATE}" "${TOTAL_PNL}"
+fi
+if [[ -n "$LAST_SIGNAL" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s${RESET}\n" "Signal:" "$LAST_SIGNAL"
+fi
+if [[ -n "$SHARED_AI_READY" || -n "$SHARED_AI_VER" ]]; then
+    [[ -z "$SHARED_AI_READY" ]] && SHARED_AI_READY="?"
+    [[ -z "$SHARED_AI_VER" ]] && SHARED_AI_VER="?"
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s (v%s)${RESET}\n" "Shared AI:" "$SHARED_AI_READY" "$SHARED_AI_VER"
+fi
 
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
 
@@ -419,6 +458,8 @@ echo -e "${JADE}║${RESET}  ${BOLD}Schnellbefehle:${RESET}"
 echo -e "${JADE}║${RESET}  ${GREEN}systemctl status  trevlix${RESET}   ${DIM}# Bot-Status${RESET}"
 echo -e "${JADE}║${RESET}  ${GREEN}systemctl restart trevlix${RESET}   ${DIM}# Neustart${RESET}"
 echo -e "${JADE}║${RESET}  ${GREEN}journalctl -u trevlix -f${RESET}    ${DIM}# Live-Logs${RESET}"
+printf "${JADE}║${RESET}  ${GREEN}%-26s${RESET} ${DIM}# Dashboard-Status JSON${RESET}\n" "curl -s ${DASH_URL}/api/v1/status"
+printf "${JADE}║${RESET}  ${GREEN}%-26s${RESET} ${DIM}# Shared-AI Status${RESET}\n" "curl -s ${DASH_URL}/api/v1/ai/shared/status"
 printf "${JADE}║${RESET}  ${GREEN}%-26s${RESET} ${DIM}# Konfiguration${RESET}\n" "nano ${INSTALL_DIR}/.env"
 
 # LIVE-Trading Warnung

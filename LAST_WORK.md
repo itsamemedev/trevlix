@@ -2,7 +2,7 @@
 
 ## Zuletzt erledigt (2026-04-07)
 
-### Major Modularisierung von server.py (v1.7.0)
+### Major Modularisierung von server.py (v1.7.1)
 
 1. **server.py von 9046 auf 4014 Zeilen reduziert** (56% weniger):
    - `MySQLManager` (1460 Zeilen) → `app/core/db_manager.py`
