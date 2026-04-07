@@ -190,6 +190,7 @@ from services.risk import (
 from services.smart_exits import SmartExitEngine
 from services.strategies import STRATEGIES, STRATEGY_NAMES, compute_indicators
 from services.trade_dna import TradeDNA
+from services.trading_algorithms import TradingAlgorithmManager
 from services.utils import (
     BOT_FULL,
     BOT_NAME,
@@ -3951,6 +3952,7 @@ class BotState:
             "smart_exits": smart_exits.to_dict(),
             "adaptive_weights": adaptive_weights.to_dict(),
             "performance_attribution": perf_attribution.to_dict(),
+            "trading_algorithms": trading_algos.to_dict(),
             "markets": list(self.markets),
             "iteration": self.iteration,
             "prices": {s: round(p, 4) for s, p in prices_snap.items()},
@@ -4706,6 +4708,15 @@ def open_position(ex, scan: dict):
     if not allowed:
         return
 
+    # ── Selbstlernender Kauf-Algorithmus ─────────────────────────────────
+    algo_buy, algo_conf, algo_reason = trading_algos.evaluate_buy(scan)
+    if not algo_buy:
+        log.debug(f"[BUY-ALGO] {symbol} blockiert: {algo_reason}")
+        return
+    # Algo-Kaufsignal per Discord/Telegram senden
+    discord.algo_buy_signal(symbol, price, algo_conf, algo_reason)
+    telegram.algo_buy_signal(symbol, price, algo_conf, algo_reason)
+
     # ── Trade DNA Fingerprinting ─────────────────────────────────────────
     dna_result = None
     dna_adjustment = None
@@ -4786,6 +4797,18 @@ def open_position(ex, scan: dict):
         "partial_sold": 0,
         "news_score": round(news_score, 3),
         "onchain_score": round(scan.get("onchain_score", 0), 3),
+        # Indikatoren für Sell-Algorithmus
+        "rsi": scan.get("rsi", 50),
+        "stoch_rsi": scan.get("stoch_rsi", 50),
+        "bb_pct": scan.get("bb_pct", 0.5),
+        "vol_ratio": scan.get("vol_ratio", 1.0),
+        "ema_alignment": scan.get("ema_alignment", 0),
+        "macd_hist_slope": scan.get("macd_hist_slope", 0),
+        "roc10": scan.get("roc10", 0),
+        "atr_pct": scan.get("atr_pct", 1.0),
+        "price_vs_ema21": scan.get("price_vs_ema21", 0),
+        "algo_buy_conf": round(algo_conf, 3),
+        "algo_buy_reason": algo_reason,
     }
     # Trade DNA: Fingerprint in Position speichern
     if dna_result:
@@ -4939,6 +4962,18 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
 
     db.save_trade(trade)
+    # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
+    try:
+        scan_at_entry = {
+            k: pos.get(k) for k in (
+                "rsi", "stoch_rsi", "bb_pct", "vol_ratio", "ema_alignment",
+                "macd_hist_slope", "roc10", "atr_pct", "price_vs_ema21",
+            ) if pos.get(k) is not None
+        }
+        trading_algos.record_buy_result(scan_at_entry, pnl)
+        trading_algos.record_sell_result(scan_at_entry, pos, pnl, reason)
+    except Exception:
+        pass  # Feedback ist optional
     # Performance Attribution: Trade aufzeichnen
     try:
         perf_attribution.record_trade(
@@ -5218,8 +5253,38 @@ def manage_positions(ex):
         elif price >= pos.get("tp", float("inf")):
             close_position(ex, symbol, "Take-Profit 🎯")
         else:
-            # DCA prüfen
-            try_dca(ex, symbol)
+            # ── Selbstlernender Verkauf-Algorithmus ──────────────────────
+            scan_for_sell = {
+                "price": price,
+                "rsi": pos.get("rsi", 50),
+                "stoch_rsi": pos.get("stoch_rsi", 50),
+                "bb_pct": pos.get("bb_pct", 0.5),
+                "vol_ratio": pos.get("vol_ratio", 1.0),
+                "ema_alignment": pos.get("ema_alignment", 0),
+                "macd_hist_slope": pos.get("macd_hist_slope", 0),
+                "roc10": pos.get("roc10", 0),
+                "atr_pct": pos.get("atr_pct", 1.0),
+                "price_vs_ema21": pos.get("price_vs_ema21", 0),
+            }
+            algo_sell, algo_conf, algo_reason = trading_algos.evaluate_sell(
+                scan_for_sell, pos
+            )
+            if algo_sell:
+                # Unrealisierten PnL berechnen für Notification
+                _entry = pos.get("entry", 0)
+                _unrealized = (
+                    (price - _entry) * pos.get("qty", 0) if _entry > 0 else None
+                )
+                discord.algo_sell_signal(
+                    symbol, price, algo_conf, algo_reason, pnl=_unrealized
+                )
+                telegram.algo_sell_signal(
+                    symbol, price, algo_conf, algo_reason, pnl=_unrealized
+                )
+                close_position(ex, symbol, f"SellAlgo:{algo_reason}")
+            else:
+                # DCA prüfen
+                try_dca(ex, symbol)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -8198,10 +8263,20 @@ adaptive_weights = AdaptiveWeights(
     min_samples=CONFIG.get("aw_min_samples", 10),
 )
 
+# ── Selbstlernende Trading-Algorithmen (Kauf + Verkauf) ─────────────────
+trading_algos = TradingAlgorithmManager()
+
 # ── Performance Attribution Engine ───────────────────────────────────────
 perf_attribution = PerformanceAttribution(
     max_trades=CONFIG.get("pa_max_trades", 5000),
 )
+
+
+@app.route("/api/v1/trading-algorithms")
+@api_auth_required
+def api_trading_algorithms():
+    """Status der selbstlernenden Kauf-/Verkaufsalgorithmen."""
+    return jsonify(trading_algos.to_dict())
 
 
 @app.route("/api/v1/trade-dna")

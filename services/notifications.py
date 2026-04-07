@@ -258,6 +258,71 @@ class DiscordNotifier:
             "anomaly",
         )
 
+    def algo_buy_signal(
+        self,
+        symbol: str,
+        price: float,
+        confidence: float,
+        reason: str,
+        sub_scores: dict | None = None,
+    ) -> None:
+        """Sendet Kauf-Signal des selbstlernenden Algorithmus."""
+        if not self._cfg("discord_on_algo_signals", True):
+            return
+        scores_txt = ""
+        if sub_scores:
+            scores_txt = " | ".join(f"{k}:{v:.0%}" for k, v in sub_scores.items())
+        self.send(
+            f"🧠 ALGO BUY SIGNAL · {symbol}",
+            (
+                "```yaml\n"
+                f"pair: {symbol}\n"
+                f"price: {price:.4f} USDT\n"
+                f"algo_confidence: {confidence:.1%}\n"
+                f"strategy: {reason}\n"
+                f"sub_scores: {scores_txt}\n"
+                "```"
+            ),
+            "buy",
+            fields=[
+                ("Typ", "Selbstlernend (KI)"),
+                (
+                    "Modus",
+                    "📝 Paper" if self._cfg("paper_trading") else "💰 Live",
+                ),
+            ],
+        )
+
+    def algo_sell_signal(
+        self,
+        symbol: str,
+        price: float,
+        confidence: float,
+        reason: str,
+        pnl: float | None = None,
+    ) -> None:
+        """Sendet Verkauf-Signal des selbstlernenden Algorithmus."""
+        if not self._cfg("discord_on_algo_signals", True):
+            return
+        pnl_txt = f"{pnl:+.2f} USDT" if pnl is not None else "—"
+        self.send(
+            f"🧠 ALGO SELL SIGNAL · {symbol}",
+            (
+                "```yaml\n"
+                f"pair: {symbol}\n"
+                f"price: {price:.4f} USDT\n"
+                f"algo_confidence: {confidence:.1%}\n"
+                f"strategy: {reason}\n"
+                f"unrealized_pnl: {pnl_txt}\n"
+                "```"
+            ),
+            "sell_win" if pnl and pnl > 0 else "sell_loss",
+            fields=[
+                ("Typ", "Selbstlernend (KI)"),
+                ("Grund", reason[:100]),
+            ],
+        )
+
     def daily_report(self, report: dict) -> None:
         if not self._cfg("discord_daily_report"):
             return
@@ -474,6 +539,42 @@ class TelegramNotifier:
     def circuit_breaker(self, losses: int, pause_min: int) -> None:
         self.send(
             f"⚡ <b>CIRCUIT BREAKER</b>\n{losses} Verluste → Pause <code>{pause_min}</code> Minuten"
+        )
+
+    def algo_buy_signal(
+        self,
+        symbol: str,
+        price: float,
+        confidence: float,
+        reason: str,
+    ) -> None:
+        """Sendet Algo-Kaufsignal per Telegram."""
+        if not self._config.get("telegram_on_algo_signals", True):
+            return
+        self.send(
+            f"🧠 <b>ALGO KAUF-SIGNAL: {symbol}</b>\n"
+            f"Preis: <code>{price:.4f}</code> USDT\n"
+            f"Konfidenz: <code>{confidence:.1%}</code>\n"
+            f"Strategie: {reason}"
+        )
+
+    def algo_sell_signal(
+        self,
+        symbol: str,
+        price: float,
+        confidence: float,
+        reason: str,
+        pnl: float | None = None,
+    ) -> None:
+        """Sendet Algo-Verkaufssignal per Telegram."""
+        if not self._config.get("telegram_on_algo_signals", True):
+            return
+        pnl_txt = f"\nPnL: <code>{pnl:+.2f}</code> USDT" if pnl is not None else ""
+        self.send(
+            f"🧠 <b>ALGO VERKAUF-SIGNAL: {symbol}</b>\n"
+            f"Preis: <code>{price:.4f}</code> USDT\n"
+            f"Konfidenz: <code>{confidence:.1%}</code>\n"
+            f"Grund: {reason}{pnl_txt}"
         )
 
     def price_alert(self, symbol: str, price: float, target: float, direction: str) -> None:
