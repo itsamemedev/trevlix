@@ -1,24 +1,41 @@
 # LAST_WORK
 
-## Zuletzt erledigt (2026-04-06)
+## Zuletzt erledigt (2026-04-07)
 
-1. User-/Admin-Dashboard-Aufräumrunde durchgeführt:
-   - `routes/dashboard.py` entdoppelt (Route-Map statt repetitiver Handler).
-   - Neue geschützte Route `/dashboard` hinzugefügt; `require_auth_fn` wird jetzt aktiv verwendet.
-   - Dashboard-Blueprint-Signatur bereinigt (kein ungenutzter `static_dir`-Parameter mehr).
-2. Admin-User-Erstellung stabilisiert:
-   - Neues Modul `app/core/admin_user_validation.py` ergänzt.
-   - Einheitliche Validierung für HTTP (`/api/v1/admin/users`) und WS (`admin_create_user`) verdrahtet.
-   - Bugfix: HTTP-Admin-Create akzeptiert keine ungültigen Rollen/schwachen Passwörter mehr.
-3. Testabdeckung erweitert:
-   - `tests/test_admin_user_validation.py` und `tests/test_dashboard_blueprint.py` hinzugefügt.
-4. Iterativer Validierungslauf erfolgreich:
-   - `python -m compileall -q server.py app services routes tests`
-   - `pytest -q tests/test_admin_user_validation.py tests/test_dashboard_blueprint.py tests/test_app_setup.py tests/test_bootstrap.py tests/test_auth.py tests/test_websocket_guard.py tests/test_api.py` (`43 passed, 1 skipped`)
-5. Version und Doku auf `1.6.13` synchronisiert (`VERSION.md`, `CHANGELOG.md`, README, `pyproject.toml`, `services/utils.py`, `docs/ARCHITECTURE.md`).
+### Major Modularisierung von server.py (v1.7.0)
+
+1. **server.py von 9046 auf 4014 Zeilen reduziert** (56% weniger):
+   - `MySQLManager` (1460 Zeilen) → `app/core/db_manager.py`
+   - `AIEngine` (1100 Zeilen) → `app/core/ai_engine.py`
+   - ML-Klassen (`AnomalyDetector`, `GeneticOptimizer`, `RLAgent`, `NewsSentimentAnalyzer`) → `app/core/ml_models.py`
+   - Trading-Klassen (`BotState`, `MultiTimeframeFilter`, `OrderbookImbalance`, `PriceAlertManager`, `DailyReportScheduler`, `BackupScheduler`, `ArbitrageScanner`, `ShortEngine`) → `app/core/trading_classes.py`
+   - Trading-Operationen (`create_exchange`, `fetch_markets`, `scan_symbol`, `open_position`, `close_position`, `manage_positions`, `bot_loop`, etc.) → `app/core/trading_ops.py`
+
+2. **Dependency-Injection-Pattern**: Jedes extrahierte Modul nutzt `init_*()` Funktionen um Runtime-Globals (CONFIG, db, state, etc.) zu erhalten.
+
+3. **Alle 393 Tests bestehen** unverändert nach der Modularisierung.
+
+4. **Keine API-/Routen-/Verhaltensänderungen** — reines strukturelles Refactoring.
+
+5. Ungenutzte ML-Imports aus server.py bereinigt (jetzt eigenständig in extrahierten Modulen).
+
+6. Toten Code und ungenutzte stdlib-Imports entfernt.
+
+## Betroffene Dateien
+
+- `server.py` (stark reduziert)
+- `app/core/db_manager.py` (NEU)
+- `app/core/ai_engine.py` (NEU)
+- `app/core/ml_models.py` (NEU)
+- `app/core/trading_classes.py` (NEU)
+- `app/core/trading_ops.py` (NEU)
+- `services/utils.py` (Version-Bump)
+- `pyproject.toml` (Version-Bump)
+- `VERSION.md`, `CHANGELOG.md`, `LAST_WORK.md`, `PROJECT_STRUCTURE.md` (Dokumentation)
 
 ## Nächste sinnvolle Schritte
 
-1. DB-Manager-/Persistence-Hilfsblöcke aus `server.py` in dedizierte Module überführen (z. B. `app/core/db_runtime.py`), inklusive klarer Schnittstellen für Audit/Trades/Config.
-2. Große API-Abschnitte (Knowledge/Admin/Risk) in route-spezifische Module aufteilen, um den Entry-Point weiter zu verkleinern.
-3. WebSocket-Event-Handler weiter nach `routes/websocket.py` migrieren und dort gezielte Integrationstests ergänzen.
+1. **API-Routen als Blueprints extrahieren**: Die ~2000 Zeilen REST-API-Routen in `server.py` könnten in `routes/api_v1.py` als Flask Blueprint ausgelagert werden.
+2. **WebSocket-Handler extrahieren**: Die ~700 Zeilen Socket.io-Events könnten in `routes/websocket.py` verschoben werden.
+3. **server.py weiter schlank halten**: Ziel wäre ~500-1000 Zeilen als reiner Einstiegspunkt (App-Setup, Instanz-Erstellung, Blueprint-Registrierung, Startup).
+4. **Weitere Test-Abdeckung** für die neuen Module ergänzen.
