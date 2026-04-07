@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import os
 import secrets
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 
 def _env_bool(key: str, default: str = "false") -> bool:
@@ -42,6 +43,7 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "api_passphrase": secret_factory(os.getenv("API_PASSPHRASE", "")),
         "quote_currency": "USDT",
         "min_volume_usdt": 1_000_000,
+        "max_markets": _env_int("MAX_MARKETS", 0),
         "blacklist": ["USDC/USDT", "BUSD/USDT", "DAI/USDT", "TUSD/USDT", "FRAX/USDT", "USDP/USDT"],
         "max_workers": 5,
         "timeframe": "1h",

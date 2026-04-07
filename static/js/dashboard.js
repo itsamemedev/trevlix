@@ -539,12 +539,17 @@ function updateSignals(sigs){
   if(!sigs.length){el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>'+QI18n.t('waiting_for_signals')+'</div>';return;}
   const sc=document.getElementById('sigCount'); if(sc) sc.textContent=sigs.length;
   el.innerHTML=sigs.slice(0,25).map(s=>{
+    const signalTxt=String(s.signal||'').toUpperCase();
+    const isSell=signalTxt.includes('VERKAUF') || signalTxt.includes('SELL');
+    const signalColor=isSell?'var(--red)':'var(--green)';
+    const signalLabel=signalTxt || 'SIGNAL';
     const nc=s.news_score>0.2?'var(--green)':s.news_score<-0.2?'var(--red)':'var(--sub)';
-    return `<div style="background:var(--bg2);border-left:3px solid var(--green);border-radius:9px;padding:9px 11px;margin-bottom:5px">
+    return `<div style="background:var(--bg2);border-left:3px solid ${signalColor};border-radius:9px;padding:9px 11px;margin-bottom:5px">
       <div style="display:flex;justify-content:space-between;align-items:center">
         <span style="font-size:13px;font-weight:700">${esc(String(s.symbol||''))}</span>
         <span style="font-size:10px;font-family:var(--mono);color:var(--sub)">${esc(String(s.time||'—'))}</span>
       </div>
+      <div style="font-size:10px;color:${signalColor};margin-top:3px;font-family:var(--mono);font-weight:700">${esc(signalLabel)}</div>
       <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">RSI:${esc(String(s.rsi||'—'))} · Conf:${s.confidence?Math.round(s.confidence*100):0}% · ${esc(String(s.mtf_desc||''))}</div>
       ${s.news_headline?`<div style="font-size:10px;color:${nc};margin-top:3px;font-style:italic">${esc(s.news_headline.slice(0,80))}</div>`:''}
     </div>`;
