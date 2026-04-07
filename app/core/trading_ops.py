@@ -28,6 +28,7 @@ from services.exchange_factory import (
 )
 from services.strategies import STRATEGIES, compute_indicators
 from services.utils import EXCHANGE_MAP
+from app.core.request_helpers import normalize_exchange_name, safe_int
 from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
 from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
 from app.core.bot_heartbeat import heartbeat_sleep
@@ -77,6 +78,11 @@ _ind_get = None
 _ind_set = None
 safe_fetch_tickers = _factory_safe_fetch_tickers
 _MARKET_CACHE_MAX_AGE = 86400
+_get_admin_exchange_by_name = None
+_get_admin_primary_exchange = None
+_is_single_exchange_mode = None
+_reveal_and_decrypt = None
+_pin_user_exchange = None
 
 # Heatmap cache (module-level)
 _heatmap_cache: list[dict] = []
@@ -126,6 +132,11 @@ def init_trading_ops(
     shutdown_event,
     ind_get_fn,
     ind_set_fn,
+    get_admin_exchange_by_name_fn,
+    get_admin_primary_exchange_fn,
+    is_single_exchange_mode_fn,
+    reveal_and_decrypt_fn,
+    pin_user_exchange_fn,
     market_cache_max_age: int = 86400,
 ) -> None:
     """Inject runtime dependencies into this module's globals."""
@@ -137,6 +148,8 @@ def init_trading_ops(
     global adaptive_weights, symbol_cooldown, healer, alert_escalation
     global cluster_ctrl, arb_scanner, short_engine, sentiment_f
     global _SHUTDOWN_EVENT, _ind_get, _ind_set, _MARKET_CACHE_MAX_AGE
+    global _get_admin_exchange_by_name, _get_admin_primary_exchange
+    global _is_single_exchange_mode, _reveal_and_decrypt, _pin_user_exchange
     CONFIG = config
     log = logger
     db = db_ref
@@ -177,6 +190,11 @@ def init_trading_ops(
     _SHUTDOWN_EVENT = shutdown_event
     _ind_get = ind_get_fn
     _ind_set = ind_set_fn
+    _get_admin_exchange_by_name = get_admin_exchange_by_name_fn
+    _get_admin_primary_exchange = get_admin_primary_exchange_fn
+    _is_single_exchange_mode = is_single_exchange_mode_fn
+    _reveal_and_decrypt = reveal_and_decrypt_fn
+    _pin_user_exchange = pin_user_exchange_fn
     _MARKET_CACHE_MAX_AGE = market_cache_max_age
 
 

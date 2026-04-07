@@ -3243,6 +3243,11 @@ init_trading_ops(
     shutdown_event=_SHUTDOWN_EVENT,
     ind_get_fn=_ind_get,
     ind_set_fn=_ind_set,
+    get_admin_exchange_by_name_fn=_get_admin_exchange_by_name,
+    get_admin_primary_exchange_fn=_get_admin_primary_exchange,
+    is_single_exchange_mode_fn=_is_single_exchange_mode,
+    reveal_and_decrypt_fn=_reveal_and_decrypt,
+    pin_user_exchange_fn=_pin_user_exchange,
 )
 
 
