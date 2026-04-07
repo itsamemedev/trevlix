@@ -21,21 +21,27 @@ from datetime import datetime, timedelta
 import ccxt
 import pandas as pd
 
+from app.core.bot_heartbeat import heartbeat_sleep
+from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
+from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
+from app.core.request_helpers import (
+    normalize_exchange_name as _normalize_exchange_name,
+)
+from app.core.request_helpers import (
+    safe_float,
+    safe_int,
+)
 from services.exchange_factory import (
     create_ccxt_exchange,
+)
+from services.exchange_factory import (
     get_fee_rate as _factory_get_fee_rate,
+)
+from services.exchange_factory import (
     safe_fetch_tickers as _factory_safe_fetch_tickers,
 )
 from services.strategies import STRATEGIES, compute_indicators
 from services.utils import EXCHANGE_MAP
-from app.core.request_helpers import (
-    normalize_exchange_name as _normalize_exchange_name,
-    safe_float,
-    safe_int,
-)
-from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
-from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
-from app.core.bot_heartbeat import heartbeat_sleep
 
 # ---------------------------------------------------------------------------
 # Module-level references – populated by init_trading_ops()
@@ -305,7 +311,22 @@ def fetch_markets(ex) -> list[str]:
             try:
                 tickers = safe_fetch_tickers(ex, syms[:150])
                 min_vol = CONFIG.get("min_volume_usdt", 1_000_000)
-                syms = [s for s in syms if (tickers.get(s, {}).get("quoteVolume") or 0) >= min_vol]
+                # Exchanges liefern teils unvollständige Ticker-Mengen (oder ohne quoteVolume).
+                # In solchen Fällen Symbole nicht pauschal verwerfen, sondern nur filtern,
+                # wenn ein verwertbarer Volumenwert vorliegt.
+                filtered_syms: list[str] = []
+                for sym in syms:
+                    ticker = tickers.get(sym) or {}
+                    vol = ticker.get("quoteVolume")
+                    if vol is None:
+                        filtered_syms.append(sym)
+                        continue
+                    try:
+                        if float(vol) >= float(min_vol):
+                            filtered_syms.append(sym)
+                    except (TypeError, ValueError):
+                        filtered_syms.append(sym)
+                syms = filtered_syms
             except (ccxt.BaseError, OSError, TimeoutError) as vol_err:
                 log.warning(
                     "Volumenfilter übersprungen (Marktdaten-Timeout/API-Fehler): %s",
@@ -314,7 +335,9 @@ def fetch_markets(ex) -> list[str]:
         trending = sentiment_f.get_trending()
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
-        result = (priority + rest)[:80]
+        all_markets = priority + rest
+        max_markets = int(CONFIG.get("max_markets", 0) or 0)
+        result = all_markets if max_markets <= 0 else all_markets[:max_markets]
         # Erfolgreiche Marktliste persistent cachen
         if result:
             _save_market_cache(result)
@@ -535,6 +558,14 @@ def open_position(ex, scan: dict):
 
     allowed, ai_score, ai_reason = ai_engine.should_buy(features, scan["confidence"])
     win_prob = ai_engine.win_probability(features) * 100
+    log.info(
+        "🧠 AI-Entscheidung %s | conf=%.3f | win_prob=%.1f%% | allowed=%s | reason=%s",
+        symbol,
+        float(scan.get("confidence", 0.0)),
+        float(win_prob),
+        bool(allowed),
+        ai_reason,
+    )
     if not allowed:
         return
 
@@ -667,6 +698,19 @@ def open_position(ex, scan: dict):
         f"@ {price:.4f} | {invest:.2f} USDT | KI:{ai_score * 100:.0f}%",
         "success",
     )
+    state.add_signal(
+        {
+            "symbol": symbol,
+            "signal": "KAUF AUSGEFÜHRT",
+            "confidence": scan.get("confidence", 0),
+            "rsi": scan.get("rsi"),
+            "price": price,
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "news_score": scan.get("news_score", 0),
+            "news_headline": scan.get("news_headline", ""),
+            "mtf_desc": scan.get("mtf_desc", ""),
+        }
+    )
     discord.trade_buy(
         symbol,
         price,
@@ -679,6 +723,7 @@ def open_position(ex, scan: dict):
         regime=pos_data.get("regime"),
         votes=scan.get("votes"),
     )
+    telegram.trade_buy(symbol, price, invest, ai_score * 100, win_prob)
     # DNA + Smart Exit Discord-Notifications
     if dna_adjustment and dna_adjustment["action"] in ("boost", "block"):
         discord.dna_boost(
@@ -793,7 +838,21 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             f"PnL:{pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}",
             "success" if pnl > 0 else "error",
         )
+        state.add_signal(
+            {
+                "symbol": symbol,
+                "signal": "VERKAUF AUSGEFÜHRT",
+                "confidence": pos.get("confidence", 0),
+                "rsi": pos.get("rsi"),
+                "price": price,
+                "time": datetime.now().strftime("%H:%M:%S"),
+                "news_score": pos.get("news_score", 0),
+                "news_headline": "",
+                "mtf_desc": reason,
+            }
+        )
         discord.trade_sell(symbol, price, pnl, pnl_pct, reason)
+        telegram.trade_sell(symbol, price, pnl, pnl_pct, reason)
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
 
     db.save_trade(trade)
