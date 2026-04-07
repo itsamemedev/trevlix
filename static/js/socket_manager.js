@@ -40,8 +40,16 @@ const TrevlixSocket = (function() {
 
     const jwtToken = _readTokenFromCookie();
 
+    const defaultTransports = (window.TREVLIX_SOCKET_TRANSPORTS &&
+      Array.isArray(window.TREVLIX_SOCKET_TRANSPORTS) &&
+      window.TREVLIX_SOCKET_TRANSPORTS.length > 0)
+      ? window.TREVLIX_SOCKET_TRANSPORTS
+      : ['polling', 'websocket'];
+
     _socket = io(Object.assign({
-      transports: ['websocket', 'polling'],
+      // Wichtig: polling zuerst verhindert Werkzeug-500s, wenn der Server
+      // im threading-Mode läuft und native WebSockets nicht bereitstellt.
+      transports: defaultTransports,
       reconnection: true,
       reconnectionAttempts: Infinity,
       reconnectionDelay: 2000,
