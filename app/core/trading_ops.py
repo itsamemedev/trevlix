@@ -202,6 +202,7 @@ def init_trading_ops(
     _reveal_and_decrypt = reveal_and_decrypt_fn
     _pin_user_exchange = pin_user_exchange_fn
     _MARKET_CACHE_MAX_AGE = market_cache_max_age
+    _seed_markets_from_cache_on_startup()
 
 
 def create_exchange():
@@ -279,16 +280,18 @@ def _load_market_cache(max_age: int = _MARKET_CACHE_MAX_AGE) -> list[str]:
     return load_market_cache(cache_file=_MARKET_CACHE_FILE, max_age=max_age, log=log)
 
 
-# Beim Start: persistenten Cache in state.markets laden, damit der Bot sofort
-# eine Marktliste hat, auch wenn die Exchange beim ersten Preflight nicht antwortet.
-_startup_cached_markets = _load_market_cache()
-if _startup_cached_markets and not state.markets:
-    with state._lock:
-        state.markets = _startup_cached_markets
-    log.info(
-        "📦 %d Märkte aus persistentem Cache geladen (Startup-Seed).",
-        len(_startup_cached_markets),
-    )
+def _seed_markets_from_cache_on_startup() -> None:
+    """Seed state.markets from disk cache once runtime dependencies are available."""
+    if state is None or not hasattr(state, "markets"):
+        return
+    startup_cached_markets = _load_market_cache()
+    if startup_cached_markets and not state.markets:
+        with state._lock:
+            state.markets = startup_cached_markets
+        log.info(
+            "📦 %d Märkte aus persistentem Cache geladen (Startup-Seed).",
+            len(startup_cached_markets),
+        )
 
 
 def fetch_markets(ex) -> list[str]:
