@@ -536,8 +536,12 @@ function updateAI(ai){
 function updateSignals(sigs){
   const el=document.getElementById('sigList');
   if(!el) return;
-  if(!sigs.length){el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>'+QI18n.t('waiting_for_signals')+'</div>';return;}
-  const sc=document.getElementById('sigCount'); if(sc) sc.textContent=sigs.length;
+  const sc=document.getElementById('sigCount'); if(sc) sc.textContent=sigs.length||0;
+  if(!sigs.length){
+    el.innerHTML='<div class="empty"><div class="empty-ico">📡</div>'+QI18n.t('waiting_for_signals')+'</div>';
+    _syncLivePanels(null);
+    return;
+  }
   el.innerHTML=sigs.slice(0,25).map(s=>{
     const signalTxt=String(s.signal||'').toUpperCase();
     const isSell=signalTxt.includes('VERKAUF') || signalTxt.includes('SELL');
@@ -554,6 +558,48 @@ function updateSignals(sigs){
       ${s.news_headline?`<div style="font-size:10px;color:${nc};margin-top:3px;font-style:italic">${esc(s.news_headline.slice(0,80))}</div>`:''}
     </div>`;
   }).join('');
+  _syncLivePanels(sigs[0]||null);
+}
+
+function _syncLivePanels(sig){
+  const _set=(id,val,color)=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.textContent=val;
+    if(color) el.style.color=color;
+  };
+  if(!sig){
+    _set('cRSI','—');
+    _set('cVol','—');
+    _set('cMTF','—');
+    const nf=document.getElementById('newsFeed');
+    if(nf){
+      nf.innerHTML='<div class="empty"><div class="empty-ico">📰</div>'+QI18n.t('waiting_for_signals')+'</div>';
+    }
+    return;
+  }
+  const rsi = sig.rsi===0 ? '0' : (sig.rsi || '—');
+  const conf = sig.confidence || sig.confidence===0 ? Math.round(sig.confidence*100)+'%' : '—';
+  _set('cRSI', String(rsi));
+  _set('cVol', conf);
+  _set('cMTF', String(sig.mtf_desc||'—'));
+
+  const newsFeed=document.getElementById('newsFeed');
+  const hasHeadline=typeof sig.news_headline==='string' && sig.news_headline.trim();
+  if(!newsFeed) return;
+  if(!hasHeadline){
+    newsFeed.innerHTML='<div class="empty"><div class="empty-ico">📰</div>'+QI18n.t('waiting_for_signals')+'</div>';
+    return;
+  }
+  const score=Number(sig.news_score||0);
+  const nc=score>=0?'var(--green)':'var(--red)';
+  newsFeed.innerHTML=`<div class="news-item">
+    <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+      <span style="font-size:11px;font-weight:700;color:${nc}">${score>=0?'+':''}${score.toFixed(2)} Score</span>
+      <span style="font-size:10px;color:var(--sub)">${esc(String(sig.symbol||''))}</span>
+    </div>
+    <div style="font-size:11px;line-height:1.6">${esc(String(sig.news_headline||''))}</div>
+  </div>`;
 }
 
 function updateActivity(acts){
@@ -1000,6 +1046,20 @@ function _setConnStatus(state){
   el.className='conn-status '+state;
   el.title=state==='connected'?QI18n.t('conn_connected'):state==='reconnecting'?QI18n.t('conn_reconnecting'):QI18n.t('conn_disconnected');
 }
+const LIVE_STATE_PULL_MS = 4000;
+let _liveStatePullTimer = null;
+function _startLiveStatePull(){
+  if(_liveStatePullTimer) return;
+  _liveStatePullTimer = setInterval(()=>{
+    if(document.hidden) return;
+    if(socket && socket.connected) socket.emit('request_state');
+  }, LIVE_STATE_PULL_MS);
+}
+function _stopLiveStatePull(){
+  if(!_liveStatePullTimer) return;
+  clearInterval(_liveStatePullTimer);
+  _liveStatePullTimer = null;
+}
 
 socket.on('connect',()=>{
   _setConnStatus('connected');
@@ -1007,6 +1067,7 @@ socket.on('connect',()=>{
   toast('📡 '+QI18n.t('msg_dashboard_conn'),'success');
   // Nach Verbindung sofort State anfragen (bei Reconnect)
   socket.emit('request_state');
+  _startLiveStatePull();
 });
 socket.on('connect_error',(err)=>{
   _setConnStatus('reconnecting');
@@ -1017,6 +1078,7 @@ socket.on('disconnect',(reason)=>{
   _setConnStatus('disconnected');
   addLog(QI18n.t('dashboard_disconnected')+' ('+reason+')','error','system');
   toast('⚠️ '+QI18n.t('dashboard_disconnected'),'warning');
+  _stopLiveStatePull();
 });
 socket.on('auth_error',(d)=>{
   addLog(QI18n.t('msg_auth_error')+': '+(d&&d.msg||QI18n.t('msg_not_authenticated')),'error','system');
@@ -1037,6 +1099,10 @@ socket.on('update', d=>{
     const statsTab=document.getElementById('sec-stats');
     if(statsTab && statsTab.classList.contains('active')) updateStats(d);
   }
+});
+document.addEventListener('visibilitychange', ()=>{
+  if(document.hidden) return;
+  if(socket && socket.connected) socket.emit('request_state');
 });
 socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
