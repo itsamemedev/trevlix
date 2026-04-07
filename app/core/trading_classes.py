@@ -15,8 +15,10 @@ from datetime import datetime, timedelta
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
-from services.exchange_factory import create_ccxt_exchange
+from app.core.request_helpers import safe_float
+from services.exchange_factory import create_ccxt_exchange, safe_fetch_tickers
 
 # ---------------------------------------------------------------------------
 # Module-level references – populated by init_trading_classes()
