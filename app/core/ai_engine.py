@@ -159,6 +159,10 @@ CONFIG: dict = {}
 log = None
 emit_event = None
 state = None
+knowledge_base = None
+regime = None
+rl_agent = None
+genetic = None
 
 
 def init_ai_engine(
@@ -167,13 +171,21 @@ def init_ai_engine(
     logger,
     emit_event_fn=None,
     state_ref=None,
+    knowledge_base_ref=None,
+    regime_ref=None,
+    rl_agent_ref=None,
+    genetic_ref=None,
 ) -> None:
     """Inject runtime dependencies into this module's globals."""
-    global CONFIG, log, emit_event, state
+    global CONFIG, log, emit_event, state, knowledge_base, regime, rl_agent, genetic
     CONFIG = config
     log = logger
     emit_event = emit_event_fn
     state = state_ref
+    knowledge_base = knowledge_base_ref
+    regime = regime_ref
+    rl_agent = rl_agent_ref
+    genetic = genetic_ref
 
 
 class AIEngine:
@@ -761,7 +773,7 @@ class AIEngine:
             self._save_models()
             emit_event("ai_update", self.to_dict())
             # Autonome LLM-Analyse: Training-Ergebnisse interpretieren
-            try:
+            if knowledge_base is not None:
                 knowledge_base.analyze_training_async(
                     training_ver=self.training_ver,
                     wf_accuracy=wf_acc,
@@ -770,8 +782,6 @@ class AIEngine:
                     feature_weights=dict(self.weights),
                     threshold=best_thresh,
                 )
-            except Exception:
-                pass  # LLM-Analyse ist optional
         except Exception as e:
             self.status_msg = f"❌ {e}"
             log.error(f"KI Training: {e}", exc_info=True)
@@ -891,7 +901,7 @@ class AIEngine:
             # optim_log is a deque(maxlen=500) – no manual trim needed
             log.info(f"🔬 Optimierung: {detail}")
             # Autonome LLM-Analyse: Optimierungsergebnis bewerten
-            try:
+            if knowledge_base is not None:
                 knowledge_base.analyze_optimization_async(
                     best_sl=best_sl,
                     best_tp=best_tp,
@@ -899,8 +909,6 @@ class AIEngine:
                     prev_tp=prev_tp,
                     trade_count=len(trades[:80]),
                 )
-            except Exception:
-                pass  # LLM-Analyse ist optional
         except Exception as e:
             log.error(f"Optimierung: {e}")
 
@@ -1211,7 +1219,8 @@ class AIEngine:
                         won
                     )
         # RL lernen
-        rl_agent.on_trade_close(p.get("scan", {}), pnl)
+        if rl_agent is not None:
+            rl_agent.on_trade_close(p.get("scan", {}), pnl)
         threading.Thread(
             target=lambda f=p["features"], w=won, r=regime_str: self.db.save_ai_sample(f, w, r),
             daemon=True,
@@ -1226,7 +1235,7 @@ class AIEngine:
         if self.trades_since_optimize >= CONFIG["ai_optimize_every"]:
             threading.Thread(target=self._optimize, daemon=True).start()
         # Genetischer Optimizer nach 30 Trades
-        if n % 30 == 0 and state:
+        if n % 30 == 0 and state and genetic is not None:
             genetic.evolve(state.closed_trades)
 
     def to_dict(self) -> dict:

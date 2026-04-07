@@ -3170,6 +3170,10 @@ init_ai_engine(
     logger=log,
     emit_event_fn=emit_event,
     state_ref=state,
+    knowledge_base_ref=knowledge_base,
+    regime_ref=regime,
+    rl_agent_ref=rl_agent,
+    genetic_ref=genetic,
 )
 init_trading_classes(
     config=CONFIG,

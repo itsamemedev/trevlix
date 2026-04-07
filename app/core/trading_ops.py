@@ -28,7 +28,11 @@ from services.exchange_factory import (
 )
 from services.strategies import STRATEGIES, compute_indicators
 from services.utils import EXCHANGE_MAP
-from app.core.request_helpers import normalize_exchange_name as _normalize_exchange_name, safe_int
+from app.core.request_helpers import (
+    normalize_exchange_name as _normalize_exchange_name,
+    safe_float,
+    safe_int,
+)
 from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
 from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
 from app.core.bot_heartbeat import heartbeat_sleep
@@ -83,13 +87,6 @@ _get_admin_primary_exchange = None
 _is_single_exchange_mode = None
 _reveal_and_decrypt = None
 _pin_user_exchange = None
-
-# Heatmap cache (module-level)
-_heatmap_cache: list[dict] = []
-_heatmap_ts: float = 0.0
-_heatmap_lock = threading.Lock()
-
-
 
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
@@ -1190,6 +1187,43 @@ def _heartbeat_sleep(seconds: float) -> None:
     heartbeat_sleep(seconds=seconds, state=state, healer=healer)
 
 
+def _maybe_healer_heartbeat() -> None:
+    if healer is None or not hasattr(healer, "heartbeat"):
+        return
+    try:
+        healer.heartbeat()
+    except Exception as exc:
+        log.warning(f"Healer heartbeat failed: {exc}")
+
+
+def _maybe_check_db_pool_health() -> None:
+    if db is None or not hasattr(db, "_check_pool_health"):
+        return
+    try:
+        db._check_pool_health()
+    except Exception as exc:
+        log.warning(f"DB pool health check failed: {exc}")
+
+
+def _maybe_generate_market_context() -> None:
+    if (
+        knowledge_base is None
+        or regime is None
+        or fg_idx is None
+        or not hasattr(knowledge_base, "generate_market_context_async")
+    ):
+        return
+    try:
+        knowledge_base.generate_market_context_async(
+            regime_is_bull=regime.is_bull,
+            fg_value=fg_idx.value,
+            open_positions=len(state.positions),
+            iteration=state.iteration,
+        )
+    except Exception as exc:
+        log.warning(f"Market context generation failed: {exc}")
+
+
 def bot_loop():
     ex = None
     last_error_emit_ts = 0.0
@@ -1198,10 +1232,7 @@ def bot_loop():
             _heartbeat_sleep(5)
             continue
         # Auto-Healing: Signal that bot loop is alive
-        try:
-            healer.heartbeat()
-        except Exception:
-            pass
+        _maybe_healer_heartbeat()
         # Exchange-Wechsel erkannt → alte Instanz verwerfen
         if state._exchange_reset:
             log.info("🔄 Exchange-Wechsel erkannt – erstelle neue Verbindung")
@@ -1245,10 +1276,7 @@ def bot_loop():
 
             # DB-Pool Health Check (alle 10 Iterationen)
             if state.iteration % 10 == 0:
-                try:
-                    db._check_pool_health()
-                except Exception:
-                    pass
+                _maybe_check_db_pool_health()
 
             # Periodische Updates
             if state.iteration % 30 == 1:
@@ -1259,15 +1287,7 @@ def bot_loop():
                     target=lambda ex=ex: funding_tracker.update(ex), daemon=True
                 ).start()
                 # Autonome LLM-Analyse: Periodische Marktanalyse
-                try:
-                    knowledge_base.generate_market_context_async(
-                        regime_is_bull=regime.is_bull,
-                        fg_value=fg_idx.value,
-                        open_positions=len(state.positions),
-                        iteration=state.iteration,
-                    )
-                except Exception:
-                    pass  # LLM-Analyse ist optional
+                _maybe_generate_market_context()
 
             # Positionen verwalten (Long + Short)
             manage_positions(ex)
