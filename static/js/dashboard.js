@@ -212,6 +212,16 @@ function renderHeaderStatus(d){
   // Paper-Trading-Badge
   const paper = d.paper_trading !== false;
   _setChip('chipPaper', paper?'chip--warn':'chip--err', paper?'Paper Trading':'LIVE Trading');
+  // Trading-Algorithmen Status
+  const tAlgo = d.trading_algorithms || {};
+  if(tAlgo.configured){
+    const aBuy = tAlgo.buy_win_rate||0;
+    const aTotal = tAlgo.total_trades||0;
+    const aLbl = aTotal>0 ? 'Aktiv ('+aBuy.toFixed(0)+'% WR)' : 'Konfiguriert';
+    _setChip('chipAlgo', aTotal>0?'chip--ok':'chip--warn', aLbl);
+  }else{
+    _setChip('chipAlgo', 'chip--muted', 'nicht konfiguriert');
+  }
 }
 // Initial beim Laden holen, dann alle 60s aktualisieren
 _refreshInstalledKeys();
