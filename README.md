@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.6.13**
+**Algorithmic Crypto Trading Bot — v1.7.1**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
 [![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.6.13-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.7.1-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 

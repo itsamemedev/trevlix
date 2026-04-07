@@ -1,6 +1,6 @@
 # PROJECT_STRUCTURE
 
-## Zielbild (Stand 2026-04-07, v1.7.0)
+## Zielbild (Stand 2026-04-07, v1.7.1)
 
 ```text
 trevlix/
@@ -40,7 +40,7 @@ trevlix/
 │       ├── prometheus_metrics.py # Prometheus-Metrikzeilen-Builder
 │       ├── security.py        # Security-Header + CSRF-Token-Handling
 │       │
-│       │   ── NEU in v1.7.0 (aus server.py extrahiert) ──
+│       │   ── NEU in v1.7.1 (aus server.py extrahiert) ──
 │       ├── db_manager.py      # MySQLManager – DB-Initialisierung, CRUD, Backups (~1500 Zeilen)
 │       ├── ai_engine.py       # AIEngine v4 – ML-Modelle, Walk-Forward, LSTM (~1280 Zeilen)
 │       ├── ml_models.py       # AnomalyDetector, GeneticOptimizer, RLAgent, NewsSentimentAnalyzer (~470 Zeilen)

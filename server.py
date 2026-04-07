@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.7.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.7.1  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -196,6 +196,7 @@ from app.core.trading_classes import (
     init_trading_classes,
 )
 from app.core.trading_ops import (
+    _preflight_exchange_markets,
     bot_loop,
     close_position,
     create_exchange,
