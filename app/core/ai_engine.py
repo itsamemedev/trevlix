@@ -14,7 +14,15 @@ from datetime import datetime
 import numpy as np
 
 from services.strategies import STRATEGY_NAMES
-from services.virginie import ActionResult, Opportunity, VirginieCore, VirginieGuardrails
+from services.virginie import (
+    ActionResult,
+    AgentTask,
+    Opportunity,
+    VirginieCore,
+    VirginieGuardrails,
+    VirginieOrchestrator,
+    build_default_project_agents,
+)
 
 # ---------------------------------------------------------------------------
 # Optional ML dependencies (mirrors server.py)
@@ -275,6 +283,9 @@ class AIEngine:
                 max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 1000.0)),
             )
         )
+        self.virginie_orchestrator = VirginieOrchestrator()
+        for _agent in build_default_project_agents():
+            self.virginie_orchestrator.register_agent(_agent)
         self._load_from_db()
 
     def _load_from_db(self):
@@ -1280,6 +1291,14 @@ class AIEngine:
         if CONFIG.get("virginie_enabled", True):
             self.virginie.learn_from_action(
                 ActionResult(opportunity_key="buy_signal", realized_profit=float(pnl))
+            )
+            self.virginie_orchestrator.execute(
+                AgentTask(
+                    task_id=f"trade-close-{symbol}-{len(self.X_raw)}",
+                    domain="quality",
+                    objective="Post-trade quality validation",
+                    payload={"pnl": float(pnl), "symbol": symbol},
+                )
             )
 
         # RL lernen

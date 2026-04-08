@@ -2,6 +2,7 @@
 
 from services.virginie import (
     ActionResult,
+    AgentTask,
     LLMPerformanceTracker,
     LLMResult,
     Opportunity,
@@ -9,6 +10,8 @@ from services.virginie import (
     VirginieCore,
     VirginieGuardrails,
     VirginieIdentity,
+    VirginieOrchestrator,
+    build_default_project_agents,
 )
 
 
@@ -158,3 +161,33 @@ def test_virginie_core_routes_llm_by_recorded_rewards():
         core.learn_from_llm(LLMResult(model="llm-deep", task_type="market_context", reward=0.9))
 
     assert core.recommend_llm("market_context") == "llm-deep"
+
+
+def test_virginie_orchestrator_routes_and_executes_default_agents():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    task = AgentTask(
+        task_id="task-1",
+        domain="planning",
+        objective="Release planning",
+        payload={"next_step": "ship MVP"},
+    )
+    result = orchestrator.execute(task)
+
+    assert result.success is True
+    assert result.agent_name == "planning-agent"
+    status = orchestrator.status()
+    assert status["registered_agents"] == 3
+    assert status["last_task_id"] == "task-1"
+
+
+def test_virginie_orchestrator_reports_unassigned_domain():
+    orchestrator = VirginieOrchestrator()
+    result = orchestrator.execute(
+        AgentTask(task_id="task-x", domain="finance", objective="Optimize treasury")
+    )
+
+    assert result.success is False
+    assert result.agent_name == "unassigned"

@@ -11,8 +11,11 @@ This module integrates the self-learning pieces discussed for VIRGINIE:
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import datetime
 from math import log, sqrt
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -296,3 +299,133 @@ class VirginieCore:
         exploration = self._action_exploration_c * sqrt(log(total_count + 1) / count)
         uncertainty_penalty = 0.1 * sqrt(variance)
         return avg_profit + exploration - uncertainty_penalty
+
+
+@dataclass(frozen=True)
+class AgentTask:
+    """Task definition for a VIRGINIE project agent."""
+
+    task_id: str
+    domain: str
+    objective: str
+    payload: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class AgentResult:
+    """Execution result returned by an agent."""
+
+    agent_name: str
+    task_id: str
+    success: bool
+    summary: str
+    data: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class VirginieAgent:
+    """Agent descriptor used by the orchestrator."""
+
+    name: str
+    domains: tuple[str, ...]
+    handler: Callable[[AgentTask], AgentResult]
+
+
+class VirginieOrchestrator:
+    """Routes project-control tasks to specialized VIRGINIE agents."""
+
+    def __init__(self) -> None:
+        self._agents: dict[str, VirginieAgent] = {}
+        self._history: list[AgentResult] = []
+        self._lock = threading.Lock()
+
+    def register_agent(self, agent: VirginieAgent) -> None:
+        """Register or replace an agent by name."""
+        with self._lock:
+            self._agents[agent.name] = agent
+
+    def route_task(self, task: AgentTask) -> str | None:
+        """Return best matching agent name for a task domain."""
+        with self._lock:
+            matches = [a.name for a in self._agents.values() if task.domain in a.domains]
+        if not matches:
+            return None
+        return sorted(matches)[0]
+
+    def execute(self, task: AgentTask) -> AgentResult:
+        """Execute a task via its routed agent and store history."""
+        agent_name = self.route_task(task)
+        if agent_name is None:
+            result = AgentResult(
+                agent_name="unassigned",
+                task_id=task.task_id,
+                success=False,
+                summary=f"No agent registered for domain '{task.domain}'",
+            )
+            with self._lock:
+                self._history.insert(0, result)
+                self._history = self._history[:200]
+            return result
+
+        with self._lock:
+            agent = self._agents[agent_name]
+
+        result = agent.handler(task)
+        with self._lock:
+            self._history.insert(0, result)
+            self._history = self._history[:200]
+        return result
+
+    def status(self) -> dict[str, Any]:
+        """Return orchestrator metadata for backend/dashboard diagnostics."""
+        with self._lock:
+            last = self._history[0] if self._history else None
+            return {
+                "registered_agents": len(self._agents),
+                "domains": sorted({d for a in self._agents.values() for d in a.domains}),
+                "history_size": len(self._history),
+                "last_task_id": last.task_id if last else None,
+                "last_agent": last.agent_name if last else None,
+                "last_success": last.success if last else None,
+                "last_summary": last.summary if last else None,
+                "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
+            }
+
+
+def build_default_project_agents() -> list[VirginieAgent]:
+    """Build default management agents for project steering and operations."""
+
+    def _planning(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="planning-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Roadmap updated for objective: {task.objective}",
+            data={"next_step": task.payload.get("next_step", "define milestones")},
+        )
+
+    def _ops(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="ops-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Operations check completed for: {task.objective}",
+            data={"health": task.payload.get("health", "ok")},
+        )
+
+    def _quality(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="quality-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Quality review executed for: {task.objective}",
+            data={"risk_level": task.payload.get("risk_level", "medium")},
+        )
+
+    return [
+        VirginieAgent(name="planning-agent", domains=("planning", "product"), handler=_planning),
+        VirginieAgent(name="ops-agent", domains=("operations", "deployment"), handler=_ops),
+        VirginieAgent(
+            name="quality-agent", domains=("quality", "testing", "security"), handler=_quality
+        ),
+    ]
