@@ -548,7 +548,7 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
             ai_engine.virginie_orchestrator.execute(
                 AgentTask(
                     task_id=f"decision-{symbol}-{'allow' if allowed else 'block'}",
-                    domain="operations",
+                    domain="trading" if allowed else "notifications",
                     objective="VIRGINIE decision routing",
                     payload={"symbol": symbol, "allowed": allowed, "reason": detail},
                 )

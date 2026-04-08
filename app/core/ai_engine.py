@@ -1292,11 +1292,13 @@ class AIEngine:
             self.virginie.learn_from_action(
                 ActionResult(opportunity_key="buy_signal", realized_profit=float(pnl))
             )
+            domain = "learning" if pnl < 0 else "quality"
+            objective = "Post-trade learning feedback" if pnl < 0 else "Post-trade quality validation"
             self.virginie_orchestrator.execute(
                 AgentTask(
                     task_id=f"trade-close-{symbol}-{len(self.X_raw)}",
-                    domain="quality",
-                    objective="Post-trade quality validation",
+                    domain=domain,
+                    objective=objective,
                     payload={"pnl": float(pnl), "symbol": symbol},
                 )
             )

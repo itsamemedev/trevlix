@@ -422,10 +422,44 @@ def build_default_project_agents() -> list[VirginieAgent]:
             data={"risk_level": task.payload.get("risk_level", "medium")},
         )
 
+    def _notifications(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="notification-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Notification dispatch prepared for: {task.objective}",
+            data={"channel": task.payload.get("channel", "discord")},
+        )
+
+    def _trading(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="trading-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Trading control workflow executed for: {task.objective}",
+            data={"action": task.payload.get("action", "monitor")},
+        )
+
+    def _learning(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="learning-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Learning loop update executed for: {task.objective}",
+            data={"feedback": task.payload.get("feedback", "captured")},
+        )
+
     return [
         VirginieAgent(name="planning-agent", domains=("planning", "product"), handler=_planning),
         VirginieAgent(name="ops-agent", domains=("operations", "deployment"), handler=_ops),
         VirginieAgent(
             name="quality-agent", domains=("quality", "testing", "security"), handler=_quality
         ),
+        VirginieAgent(
+            name="notification-agent",
+            domains=("notifications", "alerts"),
+            handler=_notifications,
+        ),
+        VirginieAgent(name="trading-agent", domains=("trading", "execution"), handler=_trading),
+        VirginieAgent(name="learning-agent", domains=("learning", "feedback"), handler=_learning),
     ]
