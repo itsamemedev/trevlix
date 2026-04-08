@@ -1357,6 +1357,9 @@ class AIEngine:
             "blocked_count": self.blocked_count,
             "allowed_count": self.allowed_count,
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
+            "assistant_name": self.virginie.identity.name,
+            "assistant_version": self.virginie.identity.version,
+            "assistant_agents": self.virginie_orchestrator.status(),
             "params": {
                 "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),
                 "tp": round(CONFIG.get("take_profit_pct", 0.06) * 100, 2),

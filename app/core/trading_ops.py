@@ -518,6 +518,45 @@ def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None 
         )
 
 
+def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_score: float) -> None:
+    """Bridge VIRGINIE decisions to notifier and orchestration subsystems."""
+    if "VIRGINIE" not in ai_reason:
+        return
+
+    status = "✅ freigegeben" if allowed else "🚫 blockiert"
+    msg = f"VIRGINIE {status}: {symbol} | Score {ai_score * 100:.1f}%"
+    detail = ai_reason[:220]
+
+    try:
+        state.add_activity("🤖", msg, detail, "info" if allowed else "warning")
+    except Exception:
+        pass
+
+    try:
+        if allowed:
+            discord.signal_opportunity(symbol, "buy", float(ai_score), 0.0, ai_score=ai_score * 100)
+        else:
+            discord.error(f"{symbol}: {detail}")
+            telegram.error(f"{symbol}: {detail}")
+    except Exception:
+        pass
+
+    try:
+        if hasattr(ai_engine, "virginie_orchestrator"):
+            from services.virginie import AgentTask
+
+            ai_engine.virginie_orchestrator.execute(
+                AgentTask(
+                    task_id=f"decision-{symbol}-{'allow' if allowed else 'block'}",
+                    domain="operations",
+                    objective="VIRGINIE decision routing",
+                    payload={"symbol": symbol, "allowed": allowed, "reason": detail},
+                )
+            )
+    except Exception:
+        pass
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRADE EXECUTION mit DCA + Partial TP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -615,6 +654,7 @@ def open_position(ex, scan: dict):
         bool(allowed),
         ai_reason,
     )
+    _notify_virginie_decision(symbol, bool(allowed), str(ai_reason), float(ai_score))
     if not allowed:
         _record_decision(symbol, "blocked", f"ai_filter:{ai_reason}", scan)
         return
