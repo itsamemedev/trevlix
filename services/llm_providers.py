@@ -46,8 +46,8 @@ _PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "name": "cerebras",
         "endpoint": "https://api.cerebras.ai/v1/chat/completions",
         "env_key": "CEREBRAS_API_KEY",
-        "model": "llama-3.3-70b",
-        "supports_tools": False,
+        "model": "gpt-oss-120b",
+        "supports_tools": True,
         "max_tokens": 800,
     },
     {
