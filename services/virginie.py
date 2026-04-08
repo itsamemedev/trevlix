@@ -27,6 +27,43 @@ class VirginieIdentity:
 
 
 @dataclass(frozen=True)
+class VirginieRules:
+    """Ruleset controlling autonomous tuning and version updates."""
+
+    min_samples_for_revision: int = 20
+    min_avg_profit_for_revision: float = 1.0
+    max_variance_for_revision: float = 2500.0
+    min_review_interval_sec: int = 60
+
+
+class VirginieVersionManager:
+    """Simple semantic patch-version manager for autonomous upgrades."""
+
+    def __init__(self, initial_version: str) -> None:
+        self._current = initial_version
+        self._history: list[dict[str, str]] = []
+
+    @property
+    def current(self) -> str:
+        return self._current
+
+    @property
+    def history(self) -> list[dict[str, str]]:
+        return list(self._history)
+
+    def bump_patch(self, reason: str) -> str:
+        parts = self._current.split(".")
+        if len(parts) != 3 or not all(p.isdigit() for p in parts):
+            parts = ["0", "0", "1"]
+        major, minor, patch = (int(parts[0]), int(parts[1]), int(parts[2]))
+        patch += 1
+        self._current = f"{major}.{minor}.{patch}"
+        self._history.insert(0, {"version": self._current, "reason": reason})
+        self._history = self._history[:30]
+        return self._current
+
+
+@dataclass(frozen=True)
 class VirginieGuardrails:
     """Risk boundaries for autonomous decisions.
 
@@ -176,16 +213,21 @@ class VirginieCore:
         self,
         *,
         guardrails: VirginieGuardrails | None = None,
+        rules: VirginieRules | None = None,
         exploration_c: float = 0.8,
         action_exploration_c: float = 0.5,
     ) -> None:
         self.identity = VirginieIdentity()
         self.guardrails = guardrails or VirginieGuardrails()
+        self.rules = rules or VirginieRules()
         self.profit_engine = ProfitDecisionEngine()
         self.llm_tracker = LLMPerformanceTracker(exploration_c=exploration_c)
         self._action_exploration_c = action_exploration_c
         self._action_stats: dict[str, dict[str, float]] = {}
         self._lock = threading.Lock()
+        self._version_manager = VirginieVersionManager(self.identity.version)
+        self._last_review_at = 0.0
+        self._last_review_summary = "No review yet"
 
     def select_opportunity(self, opportunities: list[Opportunity]) -> Opportunity | None:
         """Select the best allowed opportunity using EV + action UCB."""
@@ -274,6 +316,69 @@ class VirginieCore:
                     "variance": var,
                 }
             return snapshot
+
+    def current_version(self) -> str:
+        """Return current autonomous VIRGINIE version."""
+        return self._version_manager.current
+
+    def review_and_improve(self, now_ts: float | None = None) -> dict[str, Any]:
+        """Evaluate learning stats and autonomously tune/bump version via rules."""
+        now = now_ts if now_ts is not None else datetime.utcnow().timestamp()
+        if now - self._last_review_at < self.rules.min_review_interval_sec:
+            return {
+                "reviewed": False,
+                "version": self.current_version(),
+                "summary": "Review skipped due to min interval",
+            }
+
+        snap = self.action_snapshot()
+        total_samples = int(sum(v["count"] for v in snap.values()))
+        avg_profit = 0.0
+        variance = 0.0
+        if snap:
+            avg_profit = sum(v["avg_profit"] for v in snap.values()) / len(snap)
+            variance = sum(v["variance"] for v in snap.values()) / len(snap)
+
+        improved = (
+            total_samples >= self.rules.min_samples_for_revision
+            and avg_profit >= self.rules.min_avg_profit_for_revision
+            and variance <= self.rules.max_variance_for_revision
+        )
+
+        if improved:
+            old = self.current_version()
+            new = self._version_manager.bump_patch(
+                f"Auto-tune: samples={total_samples}, avg={avg_profit:.2f}, var={variance:.2f}"
+            )
+            self._action_exploration_c = max(0.1, self._action_exploration_c * 0.98)
+            summary = f"Version bump {old} -> {new} after successful review"
+        else:
+            self._action_exploration_c = min(1.5, self._action_exploration_c * 1.01)
+            summary = (
+                "No bump: thresholds not met "
+                f"(samples={total_samples}, avg={avg_profit:.2f}, var={variance:.2f})"
+            )
+
+        self._last_review_at = now
+        self._last_review_summary = summary
+        return {
+            "reviewed": True,
+            "version": self.current_version(),
+            "summary": summary,
+            "total_samples": total_samples,
+            "avg_profit": avg_profit,
+            "variance": variance,
+            "history": self._version_manager.history,
+        }
+
+    def review_status(self) -> dict[str, Any]:
+        """Return latest review state without triggering a new review cycle."""
+        return {
+            "version": self.current_version(),
+            "summary": self._last_review_summary,
+            "history": self._version_manager.history,
+            "last_review_at": self._last_review_at,
+        }
 
     def _passes_guardrails(self, opportunity: Opportunity) -> bool:
         score = self.profit_engine.score(opportunity)

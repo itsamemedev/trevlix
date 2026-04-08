@@ -1293,7 +1293,9 @@ class AIEngine:
                 ActionResult(opportunity_key="buy_signal", realized_profit=float(pnl))
             )
             domain = "learning" if pnl < 0 else "quality"
-            objective = "Post-trade learning feedback" if pnl < 0 else "Post-trade quality validation"
+            objective = (
+                "Post-trade learning feedback" if pnl < 0 else "Post-trade quality validation"
+            )
             self.virginie_orchestrator.execute(
                 AgentTask(
                     task_id=f"trade-close-{symbol}-{len(self.X_raw)}",
@@ -1302,6 +1304,9 @@ class AIEngine:
                     payload={"pnl": float(pnl), "symbol": symbol},
                 )
             )
+            review = self.virginie.review_and_improve()
+            if review.get("reviewed") and log is not None:
+                log.info("🤖 VIRGINIE review: %s", review.get("summary"))
 
         # RL lernen
         if rl_agent is not None:
@@ -1360,8 +1365,9 @@ class AIEngine:
             "allowed_count": self.allowed_count,
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
             "assistant_name": self.virginie.identity.name,
-            "assistant_version": self.virginie.identity.version,
+            "assistant_version": self.virginie.current_version(),
             "assistant_agents": self.virginie_orchestrator.status(),
+            "assistant_review": self.virginie.review_status(),
             "params": {
                 "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),
                 "tp": round(CONFIG.get("take_profit_pct", 0.06) * 100, 2),

@@ -98,6 +98,7 @@ market_cache = None
 trade_mode = None
 trade_execution = None
 
+
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
@@ -750,7 +751,7 @@ def open_position(ex, scan: dict):
             return
         fee = exec_result.fee
         qty = float((exec_result.meta or {}).get("qty", qty))
-        order_resp = ((exec_result.meta or {}).get("order") or {})
+        order_resp = (exec_result.meta or {}).get("order") or {}
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
     pos_data = {
@@ -926,7 +927,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             log.error("Sell %s fehlgeschlagen: %s", symbol, exec_result.reason)
             _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
             return
-        order_resp = ((exec_result.meta or {}).get("order") or {})
+        order_resp = (exec_result.meta or {}).get("order") or {}
     if CONFIG.get("paper_trading", True):
         with state._lock:
             state.balance += close_invest + pnl
@@ -1043,7 +1044,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "meta": {"partial": is_partial},
             }
         )
-    _record_decision(symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)})
+    _record_decision(
+        symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)}
+    )
     # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
     try:
         scan_at_entry = {

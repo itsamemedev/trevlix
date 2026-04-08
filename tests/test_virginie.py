@@ -11,6 +11,7 @@ from services.virginie import (
     VirginieGuardrails,
     VirginieIdentity,
     VirginieOrchestrator,
+    VirginieRules,
     build_default_project_agents,
 )
 
@@ -191,3 +192,39 @@ def test_virginie_orchestrator_reports_unassigned_domain():
 
     assert result.success is False
     assert result.agent_name == "unassigned"
+
+
+def test_virginie_review_and_version_bump_follow_rules():
+    core = VirginieCore(
+        rules=VirginieRules(
+            min_samples_for_revision=4,
+            min_avg_profit_for_revision=1.0,
+            max_variance_for_revision=5.0,
+            min_review_interval_sec=0,
+        )
+    )
+    for _ in range(4):
+        core.learn_from_action(ActionResult(opportunity_key="x", realized_profit=2.0))
+
+    review = core.review_and_improve(now_ts=100.0)
+    assert review["reviewed"] is True
+    assert review["version"] == "0.0.2"
+    assert "Version bump" in review["summary"]
+
+
+def test_virginie_review_skips_when_rules_not_met():
+    core = VirginieCore(
+        rules=VirginieRules(
+            min_samples_for_revision=10,
+            min_avg_profit_for_revision=5.0,
+            max_variance_for_revision=1.0,
+            min_review_interval_sec=0,
+        )
+    )
+    for _ in range(3):
+        core.learn_from_action(ActionResult(opportunity_key="x", realized_profit=1.0))
+
+    review = core.review_and_improve(now_ts=100.0)
+    assert review["reviewed"] is True
+    assert review["version"] == "0.0.1"
+    assert "No bump" in review["summary"]

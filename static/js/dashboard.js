@@ -1717,6 +1717,7 @@ function renderAIDiagnosePanel(diag){
   if(latencyMs > 1500) reasons.push('LLM-Latenz ist erhöht – mögliche API/Provider-Bremse.');
   if(agentCount <= 0) reasons.push('VIRGINIE-Agenten sind nicht registriert.');
   if(!collabActive) reasons.push('LLM/VIRGINIE-Kollaboration im Idle-Modus ist aktuell noch nicht aktiv.');
+  if(diag.assistant_review?.summary) reasons.push(`Review: ${diag.assistant_review.summary}`);
   if(diag.idle_learning_error) reasons.push(`Idle-Learning Fehler: ${diag.idle_learning_error}`);
   if(riskPressure >= 80) reasons.push('Circuit-Breaker steht kurz vor dem Limit.');
   if(diag.idle_learning_summary) reasons.push(`Letzter Idle-Impuls: ${diag.idle_learning_summary}`);
