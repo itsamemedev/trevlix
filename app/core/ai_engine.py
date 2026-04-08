@@ -164,6 +164,20 @@ regime = None
 rl_agent = None
 genetic = None
 
+_AI_CONFIG_DEFAULTS: dict[str, float | int | bool] = {
+    "risk_per_trade": 0.015,
+    "stop_loss_pct": 0.025,
+    "take_profit_pct": 0.060,
+    "min_vote_score": 0.3,
+    "ai_min_samples": 20,
+    "ai_min_confidence": 0.55,
+    "ai_retrain_every": 5,
+    "ai_optimize_every": 15,
+    "ai_use_kelly": True,
+    "lstm_lookback": 24,
+    "lstm_min_samples": 50,
+}
+
 
 def init_ai_engine(
     *,
@@ -178,7 +192,10 @@ def init_ai_engine(
 ) -> None:
     """Inject runtime dependencies into this module's globals."""
     global CONFIG, log, emit_event, state, knowledge_base, regime, rl_agent, genetic
-    CONFIG = config
+    merged_config = dict(_AI_CONFIG_DEFAULTS)
+    if config:
+        merged_config.update(config)
+    CONFIG = merged_config
     log = logger
     emit_event = emit_event_fn
     state = state_ref
