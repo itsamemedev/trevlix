@@ -273,6 +273,28 @@ class MySQLManager:
                     INDEX idx_dec_symbol(symbol),
                     INDEX idx_dec_mode(trade_mode)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Offene Positionen (Paper + Live)
+                c.execute("""CREATE TABLE IF NOT EXISTS trade_positions (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 1,
+                    symbol VARCHAR(20) NOT NULL,
+                    side VARCHAR(10) DEFAULT 'long',
+                    qty DOUBLE DEFAULT 0,
+                    entry_price DOUBLE DEFAULT 0,
+                    invested DOUBLE DEFAULT 0,
+                    stop_loss DOUBLE DEFAULT 0,
+                    take_profit DOUBLE DEFAULT 0,
+                    trade_mode VARCHAR(10) DEFAULT 'paper',
+                    exchange VARCHAR(20) DEFAULT '',
+                    status VARCHAR(20) DEFAULT 'open',
+                    opened_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    closed_at DATETIME NULL,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    meta_json MEDIUMTEXT,
+                    UNIQUE KEY uq_open_pos (user_id, symbol, trade_mode, status),
+                    INDEX idx_pos_user_status(user_id, status),
+                    INDEX idx_pos_exchange(exchange)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Users
                 c.execute("""CREATE TABLE IF NOT EXISTS users (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -658,6 +680,69 @@ class MySQLManager:
         except Exception as e:
             log.error(f"save_trade_decision: {e}")
 
+    def upsert_trade_position(self, position: dict, user_id: int = 1) -> None:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO trade_positions
+                        (user_id,symbol,side,qty,entry_price,invested,stop_loss,take_profit,trade_mode,exchange,status,opened_at,meta_json)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'open',%s,%s)
+                        ON DUPLICATE KEY UPDATE
+                        qty=VALUES(qty), entry_price=VALUES(entry_price), invested=VALUES(invested),
+                        stop_loss=VALUES(stop_loss), take_profit=VALUES(take_profit),
+                        exchange=VALUES(exchange), meta_json=VALUES(meta_json)""",
+                        (
+                            user_id,
+                            position.get("symbol"),
+                            position.get("side", "long"),
+                            position.get("qty", 0),
+                            position.get("entry_price", 0),
+                            position.get("invested", 0),
+                            position.get("stop_loss", 0),
+                            position.get("take_profit", 0),
+                            position.get("trade_mode", "paper"),
+                            position.get("exchange", CONFIG.get("exchange", "cryptocom")),
+                            position.get("opened_at"),
+                            json.dumps(position.get("meta", {})),
+                        ),
+                    )
+        except Exception as e:
+            log.error(f"upsert_trade_position: {e}")
+
+    def close_trade_position(self, symbol: str, trade_mode: str = "paper", user_id: int = 1) -> None:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """UPDATE trade_positions
+                        SET status='closed', closed_at=NOW()
+                        WHERE user_id=%s AND symbol=%s AND trade_mode=%s AND status='open'""",
+                        (user_id, symbol, trade_mode),
+                    )
+        except Exception as e:
+            log.error(f"close_trade_position: {e}")
+
+    def load_open_positions(self, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    q = "SELECT * FROM trade_positions WHERE status='open'"
+                    p = []
+                    if user_id:
+                        q += " AND user_id=%s"
+                        p.append(user_id)
+                    if trade_mode:
+                        q += " AND trade_mode=%s"
+                        p.append(trade_mode)
+                    q += " ORDER BY opened_at DESC"
+                    c.execute(q, p)
+                    rows = c.fetchall()
+            return [self._serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at")) for r in rows]
+        except Exception as e:
+            log.error(f"load_open_positions: {e}")
+            return []
+
     def load_orders(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
         try:
             with self._get_conn() as conn:
@@ -743,14 +828,27 @@ class MySQLManager:
                         p,
                     )
                     by_strategy = c.fetchall()
+                    c.execute(
+                        f"""SELECT
+                                COALESCE(SUM(CASE WHEN trade_mode='paper' THEN pnl END),0) AS paper_pnl,
+                                COALESCE(SUM(CASE WHEN trade_mode='live' THEN pnl END),0) AS live_pnl,
+                                COALESCE(SUM(CASE WHEN trade_mode='paper' THEN fees END),0) AS paper_fees,
+                                COALESCE(SUM(CASE WHEN trade_mode='live' THEN fees END),0) AS live_fees,
+                                COALESCE(COUNT(CASE WHEN trade_mode='paper' THEN 1 END),0) AS paper_trades,
+                                COALESCE(COUNT(CASE WHEN trade_mode='live' THEN 1 END),0) AS live_trades
+                            FROM trades {wu}""",
+                        p,
+                    )
+                    compare = dict(c.fetchone() or {})
             return {
                 "by_mode": [dict(r) for r in by_mode],
                 "by_exchange": [dict(r) for r in by_exchange],
                 "by_strategy": [dict(r) for r in by_strategy],
+                "paper_vs_live": compare,
             }
         except Exception as e:
             log.error(f"performance_breakdown: {e}")
-            return {"by_mode": [], "by_exchange": [], "by_strategy": []}
+            return {"by_mode": [], "by_exchange": [], "by_strategy": [], "paper_vs_live": {}}
 
     def load_trades(self, limit=500, symbol=None, year=None, user_id=None) -> list[dict]:
         try:

@@ -41,6 +41,7 @@ from services.exchange_factory import (
     safe_fetch_tickers as _factory_safe_fetch_tickers,
 )
 from services.strategies import STRATEGIES, compute_indicators
+from services.trade_execution import TradeExecutionService
 from services.utils import EXCHANGE_MAP
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,7 @@ _reveal_and_decrypt = None
 _pin_user_exchange = None
 market_cache = None
 trade_mode = None
+trade_execution = None
 
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
@@ -163,7 +165,7 @@ def init_trading_ops(
     global _SHUTDOWN_EVENT, _ind_get, _ind_set, _MARKET_CACHE_MAX_AGE
     global _get_admin_exchange_by_name, _get_admin_primary_exchange
     global _is_single_exchange_mode, _reveal_and_decrypt, _pin_user_exchange
-    global market_cache, trade_mode
+    global market_cache, trade_mode, trade_execution
     CONFIG = config
     log = logger
     db = db_ref
@@ -211,6 +213,12 @@ def init_trading_ops(
     _pin_user_exchange = pin_user_exchange_fn
     market_cache = market_cache_ref
     trade_mode = trade_mode_ref
+    trade_execution = TradeExecutionService(
+        config=CONFIG,
+        state=state,
+        get_fee_rate=get_exchange_fee_rate,
+        mode_manager=trade_mode,
+    )
     _MARKET_CACHE_MAX_AGE = market_cache_max_age
     _seed_markets_from_cache_on_startup()
 
@@ -661,13 +669,13 @@ def open_position(ex, scan: dict):
         _record_decision(symbol, "blocked", "qty_invalid", scan)
         return
 
-    precision = None
-    try:
-        market = ex.market(symbol)
-        precision = int((market.get("precision") or {}).get("amount", 8))
-    except Exception:
-        precision = None
     if trade_mode is not None:
+        precision = None
+        try:
+            market = ex.market(symbol)
+            precision = int((market.get("precision") or {}).get("amount", 8))
+        except Exception:
+            precision = None
         guard = trade_mode.can_place_order(
             symbol=symbol,
             invest_usdt=invest,
@@ -690,29 +698,19 @@ def open_position(ex, scan: dict):
         sl = price * (1 - CONFIG.get("stop_loss_pct", 0.025))
         tp = price * (1 + CONFIG.get("take_profit_pct", 0.06))
 
-    if CONFIG.get("paper_trading", True):
-        with state._lock:
-            # Re-clamp invest under lock to prevent stale-balance race condition
-            invest = min(invest, state.balance * CONFIG["max_position_pct"])
-            if invest > state.balance or invest < 5:
-                log.warning(f"Invest {invest:.2f} > Balance {state.balance:.2f}, skipping {symbol}")
-                return
-            # Recalculate fee and qty after re-clamp to keep them consistent
-            fee = invest * get_exchange_fee_rate()
-            qty = (invest - fee) / price
-            if qty <= 0:
-                return
-            state.balance -= invest
-    else:
-        try:
-            order_resp = ex.create_market_buy_order(symbol, qty)
-        except Exception as e:
-            log.error(f"Order {symbol}: {e}")
-            discord.error(str(e))
-            _record_decision(symbol, "error", f"live_buy_failed:{e}", scan)
+    if trade_execution is not None:
+        exec_result = trade_execution.execute_buy(
+            ex, symbol=symbol, price=price, invest_usdt=invest
+        )
+        if not exec_result.ok:
+            log.error("Order %s blockiert: %s", symbol, exec_result.reason)
+            discord.error(f"{symbol}: {exec_result.reason}")
+            telegram.error(f"{symbol}: {exec_result.reason}")
+            _record_decision(symbol, "error", exec_result.reason, scan)
             return
-    if trade_mode is not None:
-        trade_mode.mark_order(symbol)
+        fee = exec_result.fee
+        qty = float((exec_result.meta or {}).get("qty", qty))
+        order_resp = ((exec_result.meta or {}).get("order") or {})
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
     pos_data = {
@@ -754,6 +752,26 @@ def open_position(ex, scan: dict):
         pos_data["exit_regime"] = smart_exits.classify_regime_from_scan(scan)
     with state._lock:
         state.positions[symbol] = pos_data
+    if hasattr(db, "upsert_trade_position"):
+        db.upsert_trade_position(
+            {
+                "symbol": symbol,
+                "side": "long",
+                "qty": qty,
+                "entry_price": price,
+                "invested": invest - fee,
+                "stop_loss": sl,
+                "take_profit": tp,
+                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "opened_at": pos_data.get("opened"),
+                "meta": {
+                    "confidence": scan.get("confidence", 0),
+                    "algo_reason": algo_reason,
+                    "ai_reason": ai_reason,
+                },
+            }
+        )
     if hasattr(db, "save_order"):
         db.save_order(
             {
@@ -860,18 +878,18 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
+    if trade_execution is not None:
+        exec_result = trade_execution.execute_sell(
+            ex, symbol=symbol, qty=close_qty, invest_usdt=close_invest
+        )
+        if not exec_result.ok:
+            log.error("Sell %s fehlgeschlagen: %s", symbol, exec_result.reason)
+            _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
+            return
+        order_resp = ((exec_result.meta or {}).get("order") or {})
     if CONFIG.get("paper_trading", True):
         with state._lock:
             state.balance += close_invest + pnl
-    else:
-        try:
-            order_resp = ex.create_market_sell_order(symbol, close_qty)
-        except Exception as e:
-            log.error(f"Sell {symbol}: {e}")
-            _record_decision(symbol, "error", f"live_sell_failed:{e}", {"symbol": symbol})
-            return
-    if trade_mode is not None:
-        trade_mode.mark_order(symbol)
 
     if is_partial:
         # Teilverkauf → Position aktualisieren
@@ -893,6 +911,22 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             ),
             "partial_sold": 1,
         }
+        if hasattr(db, "upsert_trade_position"):
+            db.upsert_trade_position(
+                {
+                    "symbol": symbol,
+                    "side": "long",
+                    "qty": pos.get("qty", 0),
+                    "entry_price": pos.get("entry", 0),
+                    "invested": pos.get("invested", 0),
+                    "stop_loss": pos.get("sl", 0),
+                    "take_profit": pos.get("tp", 0),
+                    "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                    "exchange": CONFIG.get("exchange", "cryptocom"),
+                    "opened_at": pos.get("opened"),
+                    "meta": {"partial_sold": pos.get("partial_sold", 0)},
+                }
+            )
     else:
         regime_str = pos.get("regime", "bull")
         ai_engine.on_sell(symbol, pnl, regime_str)
@@ -944,6 +978,11 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         discord.trade_sell(symbol, price, pnl, pnl_pct, reason)
         telegram.trade_sell(symbol, price, pnl, pnl_pct, reason)
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
+        if hasattr(db, "close_trade_position"):
+            db.close_trade_position(
+                symbol=symbol,
+                trade_mode="live" if not CONFIG.get("paper_trading", True) else "paper",
+            )
 
     db.save_trade(trade)
     if hasattr(db, "save_order"):
