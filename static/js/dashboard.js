@@ -1121,16 +1121,36 @@ function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
 // ── Bot controls ─────────────────────────────────────────────────────
-function _emitSafe(event, data){
+function _emitSafe(event, data, opts){
+  const silent = Boolean(opts && opts.silent);
   if(!socket || !socket.connected){
-    toast('⚠️ '+QI18n.t('conn_disconnected')+' – '+QI18n.t('msg_socket_reconnect'),'warning');
+    if(!silent) toast('⚠️ '+QI18n.t('conn_disconnected')+' – '+QI18n.t('msg_socket_reconnect'),'warning');
     return false;
   }
   if(data!==undefined) socket.emit(event,data); else socket.emit(event);
   return true;
 }
-function startBot(){_emitSafe('start_bot');}
-function stopBot(){_emitSafe('stop_bot');}
+async function _botControlFallback(action){
+  try{
+    await _postTradingEndpoint('/api/v1/trading/control',{action});
+    if(action==='start') toast('▶ Bot gestartet (HTTP-Fallback)','success');
+    if(action==='stop') toast('■ Bot gestoppt (HTTP-Fallback)','success');
+    if(socket && socket.connected) socket.emit('request_state');
+    refreshTradingInsights(true);
+    return true;
+  }catch(e){
+    toast('❌ Bot-Control fehlgeschlagen: '+e,'error');
+    return false;
+  }
+}
+function startBot(){
+  if(_emitSafe('start_bot', undefined, {silent:true})) return;
+  _botControlFallback('start');
+}
+function stopBot(){
+  if(_emitSafe('stop_bot', undefined, {silent:true})) return;
+  _botControlFallback('stop');
+}
 function pauseBot(){_emitSafe('pause_bot');}
 
 // ── Exchange Selector ─────────────────────────────────────────────────
@@ -1179,7 +1199,11 @@ let _undoTimeout = null;
 
 function closePos(sym){
   if(!confirm(QI18n.t('confirm_close_pos').replace('{sym}',sym))) return;
-  if(!_emitSafe('close_position',{symbol:sym})) return;
+  if(!_emitSafe('close_position',{symbol:sym})){
+    _postTradingEndpoint('/api/v1/trading/close-position',{symbol:sym})
+      .then(()=>{toast(`✅ ${sym} geschlossen`,'success'); refreshTradingInsights(true);})
+      .catch((e)=>toast('❌ Position schließen fehlgeschlagen: '+e,'error'));
+  }
   _closeHistory.push(sym);
   showUndoBar(sym);
 }

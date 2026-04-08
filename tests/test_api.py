@@ -6,6 +6,7 @@ Tests für API-Endpunkte, Auth-Decorators, Health-Check.
 
 import os
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -188,6 +189,135 @@ class TestSecurityHeaders:
         assert resp.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
         # Permissions-Policy sollte gesetzt sein
         assert "Permissions-Policy" in resp.headers
+
+
+class TestTradingControl:
+    """Tests für Trading-Control API."""
+
+    def test_trading_control_start_sets_running_and_enabled(self, app_client):
+        from server import state, trade_mode
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        trade_mode.set_enabled(False)
+        with state._lock:
+            state.running = False
+            state.paused = False
+
+        resp = app_client.post("/api/v1/trading/control", json={"action": "start"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["running"] is True
+        assert trade_mode.enabled is True
+        assert state.running is True
+
+    def test_trading_control_stop_sets_running_false_and_disables(self, app_client):
+        from server import state, trade_mode
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        trade_mode.set_enabled(True)
+        with state._lock:
+            state.running = True
+            state.paused = False
+
+        resp = app_client.post("/api/v1/trading/control", json={"action": "stop"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["running"] is False
+        assert trade_mode.enabled is False
+        assert state.running is False
+
+    def test_close_position_endpoint_closes_long_position(self, app_client, monkeypatch):
+        import server
+        from server import state
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        called = {}
+
+        def _fake_create_exchange():
+            return object()
+
+        def _fake_close_position(_ex, sym, reason, partial_ratio=1.0):
+            called.update({"symbol": sym, "reason": reason, "partial_ratio": partial_ratio})
+            with state._lock:
+                state.positions.pop(sym, None)
+
+        monkeypatch.setattr(server, "create_exchange", _fake_create_exchange)
+        monkeypatch.setattr(server, "close_position", _fake_close_position)
+
+        with state._lock:
+            state.positions["BTC/USDT"] = {"entry": 100.0, "qty": 1.0}
+
+        resp = app_client.post("/api/v1/trading/close-position", json={"symbol": "BTC/USDT"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["symbol"] == "BTC/USDT"
+        assert data["side"] == "long"
+        assert called["symbol"] == "BTC/USDT"
+
+    def test_close_position_endpoint_returns_404_for_missing_symbol(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/trading/close-position", json={"symbol": "ETH/USDT"})
+        assert resp.status_code == 404
+        data = resp.get_json()
+        assert "error" in data
+
+
+class TestPaperModeBuild:
+    """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""
+
+    def test_paper_mode_start_stop_flow(self, app_client, monkeypatch):
+        import server
+        from server import CONFIG, state, trade_mode
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        # BotLoop-Thread in Tests nicht real starten
+        alive_loop = SimpleNamespace(name="BotLoop", is_alive=lambda: True)
+        monkeypatch.setattr(server.threading, "enumerate", lambda: [alive_loop])
+
+        # 1) explizit Paper-Mode setzen
+        mode_resp = app_client.post("/api/v1/trading/mode", json={"mode": "paper"})
+        assert mode_resp.status_code == 200
+        mode_data = mode_resp.get_json()
+        assert mode_data["paper_trading"] is True
+
+        # 2) Trading starten (im Paper-Mode)
+        start_resp = app_client.post("/api/v1/trading/control", json={"action": "start"})
+        assert start_resp.status_code == 200
+        start_data = start_resp.get_json()
+        assert start_data["ok"] is True
+        assert start_data["running"] is True
+        assert trade_mode.mode == "paper"
+        assert trade_mode.enabled is True
+        assert CONFIG["paper_trading"] is True
+        assert state.running is True
+
+        # 3) State sollte weiterhin Paper-Mode reflektieren
+        state_resp = app_client.get("/api/v1/state")
+        assert state_resp.status_code == 200
+        state_data = state_resp.get_json()
+        assert state_data["paper_trading"] is True
+
+        # 4) sauber stoppen
+        stop_resp = app_client.post("/api/v1/trading/control", json={"action": "stop"})
+        assert stop_resp.status_code == 200
+        stop_data = stop_resp.get_json()
+        assert stop_data["ok"] is True
+        assert stop_data["running"] is False
+        assert trade_mode.enabled is False
+        assert state.running is False
 
 
 class TestPasswordPolicy:

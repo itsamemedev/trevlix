@@ -74,6 +74,7 @@ _REQUEST_TIMEOUT = 10
 # Cache-Dauer in Sekunden (30 Minuten)
 CACHE_TTL = 1800
 _RATE_LIMIT_FALLBACK_SECONDS = 60
+_UNSUPPORTED_CURRENCY_TTL_SECONDS = 6 * 3600
 _PLAN_MIN_REQUEST_INTERVAL = {
     "free": 2.0,
     "pro": 0.8,
@@ -103,6 +104,7 @@ class CryptoPanicClient:
         self._last_fetch_was_rate_limited: bool = False
         self._last_api_call_at: float = 0.0
         self._min_request_interval: float = _PLAN_MIN_REQUEST_INTERVAL.get(self.plan, 1.0)
+        self._unsupported_currencies: dict[str, float] = {}
 
     def _normalize_coin(self, symbol: str) -> str:
         """Normalisiert Symbolnamen auf Coin-Ebene für API/Cache."""
@@ -158,14 +160,19 @@ class CryptoPanicClient:
             self._last_fetch_was_rate_limited = True
             return []
 
+        currency_norm = str(currency or "").upper().strip()
+        unsupported_until = self._unsupported_currencies.get(currency_norm, 0.0)
+        use_currency_filter = bool(currency_norm) and now >= unsupported_until
+
         params = {
             "auth_token": self.token,
-            "currencies": currency.upper(),
             "filter": filter_type,
             "kind": kind,
             "regions": regions,
             "public": "true",
         }
+        if use_currency_filter:
+            params["currencies"] = currency_norm
 
         try:
             resp = httpx.get(self._base_url, params=params, timeout=_REQUEST_TIMEOUT)
@@ -203,6 +210,29 @@ class CryptoPanicClient:
                     retry_after,
                 )
                 return []
+            if e.response is not None and e.response.status_code == 404 and use_currency_filter:
+                # Einige Coins/Ticker werden von CryptoPanic im "currencies"-Filter nicht unterstützt.
+                # Fallback: ohne currencies-Filter erneut anfragen (allgemeine News), damit kein Hard-Fail entsteht.
+                self._unsupported_currencies[currency_norm] = time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
+                fallback_params = {k: v for k, v in params.items() if k != "currencies"}
+                try:
+                    fallback_resp = httpx.get(self._base_url, params=fallback_params, timeout=_REQUEST_TIMEOUT)
+                    self._last_api_call_at = time.time()
+                    fallback_resp.raise_for_status()
+                    payload = fallback_resp.json()
+                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    log.info(
+                        "CryptoPanic: currencies=%s nicht unterstützt (404) – nutze Fallback ohne currencies",
+                        currency_norm,
+                    )
+                    return results if isinstance(results, list) else []
+                except Exception as fallback_err:
+                    log.warning(
+                        "CryptoPanic Fallback ohne currencies fehlgeschlagen für %s: %s",
+                        currency_norm,
+                        fallback_err,
+                    )
+                    return []
             log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)
             return []
         except httpx.RequestError as e:
