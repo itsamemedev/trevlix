@@ -81,6 +81,10 @@ class NewsSentimentAnalyzer:
         """Returns (score, headline, article_count)"""
         return self._client.get_score(symbol, db=db)
 
+    def prefetch_scores(self, symbols: list[str]) -> dict[str, tuple[float, str, int]]:
+        """Batch-prefetch für mehrere Symbole (CryptoPanic-Limit-schonend)."""
+        return self._client.prefetch_scores(symbols, db=db)
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ANOMALIE-ERKENNUNG (Isolation Forest)

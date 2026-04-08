@@ -22,6 +22,7 @@ let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
       if(d&&d.running!==undefined) updateUI(d);
       if(d&&d.user_role) applyStateToRole(d);
     }
+    refreshTradingInsights(true);
   } catch(e){ console.warn('Initial state fetch failed:', e); }
 })();
 
@@ -323,6 +324,7 @@ function updateUI(d){
   }
   // ARB stat
   _s('sArb', (d.arb_log||[]).length);
+  refreshTradingInsights();
   } catch(e){ console.warn('updateUI error:', e); }
 }
 
@@ -531,6 +533,99 @@ function updateAI(ai){
     `<div class="log-row ${e.allowed?'success':'error'}">
       <span class="log-time">${esc(String(e.time||''))}</span>
       <span class="log-msg">${esc(String(e.reason||'—'))} (${esc(String(e.prob||0))}%)</span></div>`).join('');
+  updateAI3DFromAI(ai);
+}
+
+const _ai3dState = {
+  ready:false, angle:0, wobble:0,
+  wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0
+};
+function updateAI3DFromAI(ai){
+  if(!ai) return;
+  _ai3dState.wf = Number(ai.wf_accuracy||0);
+  _ai3dState.bull = Number(ai.bull_accuracy||0);
+  _ai3dState.bear = Number(ai.bear_accuracy||0);
+  _ai3dState.samples = Number(ai.samples||0);
+  _ai3dState.preds = Number(ai.allowed_count||0) + Number(ai.blocked_count||0);
+  _ai3dState.allowed = Number(ai.allowed_count||0);
+  _ai3dState.blocked = Number(ai.blocked_count||0);
+  const m=document.getElementById('ai3dMeta');
+  if(m) m.textContent = `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
+  if(!_ai3dState.ready){
+    _ai3dState.ready=true;
+    requestAnimationFrame(_renderAI3D);
+  }
+}
+function _renderAI3D(){
+  const c=document.getElementById('ai3dCanvas');
+  if(!c){ _ai3dState.ready=false; return; }
+  const ctx=c.getContext('2d');
+  const w=c.width,h=c.height;
+  ctx.clearRect(0,0,w,h);
+  // Background stars
+  for(let i=0;i<26;i++){
+    const x=(i*97 + _ai3dState.angle*13)%w;
+    const y=(i*53 + _ai3dState.angle*7)%h;
+    ctx.fillStyle='rgba(255,210,130,0.08)';
+    ctx.fillRect(x,y,2,2);
+  }
+  const cx=w*0.34, cy=h*0.55;
+  _ai3dState.angle += 0.015;
+  _ai3dState.wobble = Math.sin(_ai3dState.angle*1.4)*6;
+  // Orbital ring
+  ctx.save();
+  ctx.translate(cx,cy);
+  ctx.rotate(_ai3dState.angle);
+  ctx.strokeStyle='rgba(255,190,80,0.35)';
+  ctx.lineWidth=2;
+  ctx.beginPath(); ctx.ellipse(0,0,90,28,0,0,Math.PI*2); ctx.stroke();
+  ctx.rotate(-_ai3dState.angle*1.8);
+  ctx.strokeStyle='rgba(0,255,180,0.22)';
+  ctx.beginPath(); ctx.ellipse(0,0,74,22,0,0,Math.PI*2); ctx.stroke();
+  ctx.restore();
+  // Core sphere
+  const grd=ctx.createRadialGradient(cx-10,cy-16,8,cx,cy,60);
+  grd.addColorStop(0,'rgba(255,236,180,.95)');
+  grd.addColorStop(.5,'rgba(255,180,70,.45)');
+  grd.addColorStop(1,'rgba(255,120,40,.08)');
+  ctx.fillStyle=grd;
+  ctx.beginPath(); ctx.arc(cx,cy+_ai3dState.wobble,52,0,Math.PI*2); ctx.fill();
+  // 3D bars (live metrics)
+  const bars=[
+    {k:'WF',v:_ai3dState.wf,c:'#00ffaa'},
+    {k:'Bull',v:_ai3dState.bull,c:'#6ee7ff'},
+    {k:'Bear',v:_ai3dState.bear,c:'#ff8ca1'},
+    {k:'Allow',v:Math.min(100,_ai3dState.allowed),c:'#c7ff6e'},
+    {k:'Block',v:Math.min(100,_ai3dState.blocked),c:'#ffb36e'}
+  ];
+  const bx=w*0.62, by=h*0.78, bw=28, gap=14, maxH=120;
+  bars.forEach((b,i)=>{
+    const x=bx+i*(bw+gap), bh=Math.max(4, Math.min(maxH,(b.v/100)*maxH));
+    // Front
+    ctx.globalAlpha=0.78;
+    ctx.fillStyle=b.c;
+    ctx.fillRect(x,by-bh,bw,bh);
+    ctx.globalAlpha=1;
+    // Side
+    ctx.fillStyle='rgba(255,255,255,.08)';
+    ctx.beginPath();
+    ctx.moveTo(x+bw,by-bh); ctx.lineTo(x+bw+7,by-bh-5); ctx.lineTo(x+bw+7,by-5); ctx.lineTo(x+bw,by);
+    ctx.closePath(); ctx.fill();
+    // Top
+    ctx.fillStyle='rgba(255,255,255,.16)';
+    ctx.beginPath();
+    ctx.moveTo(x,by-bh); ctx.lineTo(x+7,by-bh-5); ctx.lineTo(x+bw+7,by-bh-5); ctx.lineTo(x+bw,by-bh);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle='rgba(220,225,245,.9)';
+    ctx.font='11px Barlow, sans-serif';
+    ctx.fillText(b.k,x,by+14);
+  });
+  // Labels
+  ctx.fillStyle='rgba(235,220,180,.85)';
+  ctx.font='12px Fira Code, monospace';
+  ctx.fillText(`samples:${_ai3dState.samples}`, 18, 22);
+  ctx.fillText(`pred:${_ai3dState.preds}`, 18, 40);
+  if(_ai3dState.ready) requestAnimationFrame(_renderAI3D);
 }
 
 function updateSignals(sigs){
@@ -643,6 +738,152 @@ function renderArbLog(arb){
   </div>`).join('');
   const alh=document.getElementById('arbLogHome'); if(alh) alh.innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
   const al2=document.getElementById('arbList2'); if(al2) al2.innerHTML=html||'<div class="empty" style="padding:8px">'+QI18n.t('empty_no_scans')+'</div>';
+}
+
+let _tradingInsightTs = 0;
+let _tradingInsightBusy = false;
+let _tradingInsightWarnTs = 0;
+async function _fetchJsonWithTimeout(path, opts={}, timeoutMs=6500){
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
+  try{
+    const r = await fetch(path, {...opts, credentials:'include', signal:ctrl.signal});
+    let data = {};
+    try{ data = await r.json(); }catch(_e){}
+    if(!r.ok) throw new Error((data&&data.error)||(`${path} -> ${r.status}`));
+    return data;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+async function _fetchTradingEndpoint(path){
+  return _fetchJsonWithTimeout(path, {}, 6500);
+}
+async function _postTradingEndpoint(path, payload){
+  return _fetchJsonWithTimeout(
+    path,
+    {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload||{})},
+    8000
+  );
+}
+function _warnTradingTimeoutOnce(msg){
+  const now = Date.now();
+  if(now - _tradingInsightWarnTs < 15000) return;
+  _tradingInsightWarnTs = now;
+  toast(msg,'warning');
+}
+
+function _renderSimpleRows(elId, rows, mapFn, emptyTxt){
+  const el=document.getElementById(elId);
+  if(!el) return;
+  if(!rows || !rows.length){
+    el.innerHTML = `<div class="empty"><div class="empty-ico">📭</div><span>${esc(emptyTxt||'—')}</span></div>`;
+    return;
+  }
+  el.innerHTML = rows.map(mapFn).join('');
+}
+
+async function refreshTradingInsights(force=false){
+  if(_tradingInsightBusy) return;
+  const now = Date.now();
+  if(!force && (now - _tradingInsightTs) < 7000) return;
+  _tradingInsightBusy = true;
+  _tradingInsightTs = now;
+  try{
+    const [modeData, orderData, decisionData, perfData] = await Promise.all([
+      _fetchTradingEndpoint('/api/v1/trading/mode'),
+      _fetchTradingEndpoint('/api/v1/trading/order-history?limit=30'),
+      _fetchTradingEndpoint('/api/v1/trading/decision-history?limit=30'),
+      _fetchTradingEndpoint('/api/v1/trading/performance')
+    ]);
+    const mb=document.getElementById('tradeModeBadge');
+    if(mb){
+      const isPaper = modeData.paper_trading !== false;
+      mb.textContent = isPaper ? 'PAPER' : 'LIVE';
+      mb.style.color = isPaper ? 'var(--yellow)' : 'var(--red)';
+    }
+    const oc=document.getElementById('orderCountBadge'); if(oc) oc.textContent = (orderData.orders||[]).length;
+    const dc=document.getElementById('decisionCountBadge'); if(dc) dc.textContent = (decisionData.decisions||[]).length;
+
+    _renderSimpleRows(
+      'orderHistoryList',
+      (orderData.orders||[]).slice(0,20),
+      o => `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px">
+        <div><div style="font-weight:700">${esc(String(o.symbol||''))} · ${esc(String((o.side||'').toUpperCase()))}</div>
+        <div style="font-size:10px;color:var(--sub)">${esc(String((o.trade_mode||'').toUpperCase()))} · ${esc(String(o.reason||''))}</div></div>
+        <div style="text-align:right"><div>${fmt(o.cost||0,2)} USDT</div><div style="font-size:10px;color:var(--sub)">${esc(String((o.created_at||'').slice(0,16)))}</div></div>
+      </div>`,
+      'Noch keine Orders.'
+    );
+
+    _renderSimpleRows(
+      'decisionHistoryList',
+      (decisionData.decisions||[]).slice(0,20),
+      d => `<div style="display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-bottom:1px solid var(--line);font-size:11px">
+        <div><div style="font-weight:700">${esc(String(d.symbol||''))} · ${esc(String((d.decision||'').toUpperCase()))}</div>
+        <div style="font-size:10px;color:var(--sub)">${esc(String(d.reason||''))}</div></div>
+        <div style="text-align:right"><div>${esc(String((d.trade_mode||'').toUpperCase()))}</div><div style="font-size:10px;color:var(--sub)">${esc(String((d.created_at||'').slice(0,16)))}</div></div>
+      </div>`,
+      'Noch keine Decisions.'
+    );
+
+    const byMode = perfData.by_mode||[];
+    const byStrategy = perfData.by_strategy||[];
+    const byExchange = perfData.by_exchange||[];
+    _renderSimpleRows(
+      'modePerfList',
+      byMode,
+      m => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--muted);font-size:11px">
+        <span>${esc(String((m.trade_mode||'').toUpperCase()))} · ${esc(String(m.n||0))} Trades</span>
+        <span style="color:${(m.pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(m.pnl||0,2)} USDT</span>
+      </div>`,
+      'Keine Performance-Daten.'
+    );
+    _renderSimpleRows(
+      'strategyPerfList',
+      byStrategy.slice(0,8),
+      s => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--muted);font-size:11px">
+        <span>${esc(String(s.reason||'unknown'))}</span>
+        <span style="color:${(s.pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(s.pnl||0,2)}</span>
+      </div>`,
+      'Keine Strategie-Auswertung.'
+    );
+    _renderSimpleRows(
+      'exchangePerfList',
+      byExchange,
+      e => `<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--muted);font-size:11px">
+        <span>${esc(String((e.exchange||'').toUpperCase()))}</span>
+        <span style="color:${(e.pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(e.pnl||0,2)}</span>
+      </div>`,
+      'Keine Exchange-Auswertung.'
+    );
+  }catch(err){
+    if(String(err).toLowerCase().includes('abort')){
+      _warnTradingTimeoutOnce('⚠️ Trading-API Timeout – erneuter Versuch läuft');
+    }else{
+      console.warn('refreshTradingInsights failed:', err);
+    }
+  } finally {
+    _tradingInsightBusy = false;
+  }
+}
+
+async function switchTradingMode(mode){
+  try{
+    const data = await _postTradingEndpoint('/api/v1/trading/mode',{mode});
+    toast(`🧭 Trading Mode: ${(data.mode||mode).toUpperCase()}`,'success');
+    refreshTradingInsights(true);
+    if(socket && socket.connected) socket.emit('request_state');
+  }catch(e){ toast('❌ Mode-Wechsel fehlgeschlagen: '+e,'error'); }
+}
+
+async function apiTradingControl(action){
+  try{
+    const data = await _postTradingEndpoint('/api/v1/trading/control',{action});
+    toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
+    refreshTradingInsights(true);
+    if(socket && socket.connected) socket.emit('request_state');
+  }catch(e){ toast('❌ Trading-Control fehlgeschlagen: '+e,'error'); }
 }
 
 // ── Heatmap ──────────────────────────────────────────────────────────
@@ -1103,7 +1344,9 @@ socket.on('update', d=>{
 document.addEventListener('visibilitychange', ()=>{
   if(document.hidden) return;
   if(socket && socket.connected) socket.emit('request_state');
+  refreshTradingInsights(true);
 });
+setInterval(()=>{ if(!document.hidden) refreshTradingInsights(); }, 10000);
 socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
   if(!g) return;
@@ -1380,6 +1623,14 @@ socket.on('system_analytics', d => {
     _set('aiPredictions', a.predictions); _set('aiCorrect', a.correct);
     _set('aiVersion', 'v' + (a.version || 0)); _set('aiLastTrained', a.last_trained);
     _set('aiTradesSinceRetrain', a.trades_since_retrain);
+    updateAI3DFromAI({
+      wf_accuracy: parseFloat(String(a.accuracy||'0').replace('%','')) || 0,
+      bull_accuracy: parseFloat(String(a.cv_accuracy||'0').replace('%','')) || 0,
+      bear_accuracy: parseFloat(String(a.cv_accuracy||'0').replace('%','')) || 0,
+      samples: a.predictions || 0,
+      allowed_count: a.correct || 0,
+      blocked_count: Math.max(0,(a.predictions||0)-(a.correct||0)),
+    });
   }
   // Risk
   if (d.risk) {

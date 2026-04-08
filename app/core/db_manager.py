@@ -220,6 +220,59 @@ class MySQLManager:
                     onchain_score DOUBLE DEFAULT 0,
                     INDEX idx_closed(closed), INDEX idx_symbol(symbol), INDEX idx_user(user_id)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Ergänzende Felder für Trading-Modus + Gebühren
+                try:
+                    c.execute("ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'")
+                except Exception:
+                    pass
+                try:
+                    c.execute("ALTER TABLE trades ADD COLUMN fees DOUBLE DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    c.execute("ALTER TABLE trades ADD COLUMN order_ref VARCHAR(120) DEFAULT ''")
+                except Exception:
+                    pass
+                # Orders (paper + live)
+                c.execute("""CREATE TABLE IF NOT EXISTS trade_orders (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 1,
+                    symbol VARCHAR(20) NOT NULL,
+                    side VARCHAR(8) NOT NULL,
+                    order_type VARCHAR(20) DEFAULT 'market',
+                    status VARCHAR(20) DEFAULT 'filled',
+                    price DOUBLE DEFAULT 0,
+                    qty DOUBLE DEFAULT 0,
+                    cost DOUBLE DEFAULT 0,
+                    fees DOUBLE DEFAULT 0,
+                    trade_mode VARCHAR(10) DEFAULT 'paper',
+                    exchange VARCHAR(20) DEFAULT '',
+                    exchange_order_id VARCHAR(120) DEFAULT '',
+                    reason VARCHAR(200) DEFAULT '',
+                    meta_json MEDIUMTEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_orders_user_time(user_id, created_at),
+                    INDEX idx_orders_symbol(symbol),
+                    INDEX idx_orders_mode(trade_mode)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
+                # Entscheidungs-Historie
+                c.execute("""CREATE TABLE IF NOT EXISTS trade_decisions (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT DEFAULT 1,
+                    symbol VARCHAR(20) NOT NULL,
+                    decision VARCHAR(20) NOT NULL,
+                    reason VARCHAR(255) DEFAULT '',
+                    confidence DOUBLE DEFAULT 0,
+                    ai_score DOUBLE DEFAULT 0,
+                    win_prob DOUBLE DEFAULT 0,
+                    trade_mode VARCHAR(10) DEFAULT 'paper',
+                    exchange VARCHAR(20) DEFAULT '',
+                    payload_json MEDIUMTEXT,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_dec_user_time(user_id, created_at),
+                    INDEX idx_dec_symbol(symbol),
+                    INDEX idx_dec_mode(trade_mode)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Users
                 c.execute("""CREATE TABLE IF NOT EXISTS users (
                     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -521,8 +574,8 @@ class MySQLManager:
                         """INSERT INTO trades
                         (user_id,symbol,entry,exit_price,qty,pnl,pnl_pct,reason,
                          confidence,ai_score,win_prob,invested,opened,closed,exchange,
-                         regime,trade_type,partial_sold,dca_level,news_score,onchain_score)
-                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                         regime,trade_type,partial_sold,dca_level,news_score,onchain_score,trade_mode,fees,order_ref)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                         (
                             user_id,
                             trade.get("symbol"),
@@ -545,10 +598,159 @@ class MySQLManager:
                             trade.get("dca_level", 0),
                             trade.get("news_score", 0),
                             trade.get("onchain_score", 0),
+                            trade.get("trade_mode", "paper"),
+                            trade.get("fees", 0),
+                            trade.get("order_ref", ""),
                         ),
                     )
         except Exception as e:
             log.error(f"save_trade: {e}")
+
+    def save_order(self, order: dict, user_id: int = 1) -> None:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO trade_orders
+                        (user_id,symbol,side,order_type,status,price,qty,cost,fees,trade_mode,exchange,exchange_order_id,reason,meta_json)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            user_id,
+                            order.get("symbol"),
+                            order.get("side", "buy"),
+                            order.get("order_type", "market"),
+                            order.get("status", "filled"),
+                            order.get("price", 0),
+                            order.get("qty", 0),
+                            order.get("cost", 0),
+                            order.get("fees", 0),
+                            order.get("trade_mode", "paper"),
+                            order.get("exchange", CONFIG.get("exchange", "cryptocom")),
+                            str(order.get("exchange_order_id", "")),
+                            order.get("reason", ""),
+                            json.dumps(order.get("meta", {})),
+                        ),
+                    )
+        except Exception as e:
+            log.error(f"save_order: {e}")
+
+    def save_trade_decision(self, decision: dict, user_id: int = 1) -> None:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        """INSERT INTO trade_decisions
+                        (user_id,symbol,decision,reason,confidence,ai_score,win_prob,trade_mode,exchange,payload_json)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (
+                            user_id,
+                            decision.get("symbol", ""),
+                            decision.get("decision", "hold"),
+                            decision.get("reason", ""),
+                            decision.get("confidence", 0),
+                            decision.get("ai_score", 0),
+                            decision.get("win_prob", 0),
+                            decision.get("trade_mode", "paper"),
+                            decision.get("exchange", CONFIG.get("exchange", "cryptocom")),
+                            json.dumps(decision.get("payload", {})),
+                        ),
+                    )
+        except Exception as e:
+            log.error(f"save_trade_decision: {e}")
+
+    def load_orders(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    q = "SELECT * FROM trade_orders"
+                    w = []
+                    p = []
+                    if user_id:
+                        w.append("user_id=%s")
+                        p.append(user_id)
+                    if trade_mode:
+                        w.append("trade_mode=%s")
+                        p.append(trade_mode)
+                    if w:
+                        q += " WHERE " + " AND ".join(w)
+                    q += " ORDER BY created_at DESC LIMIT %s"
+                    p.append(limit)
+                    c.execute(q, p)
+                    rows = c.fetchall()
+            return [self._serialize_dates(dict(r), ("created_at",)) for r in rows]
+        except Exception as e:
+            log.error(f"load_orders: {e}")
+            return []
+
+    def load_trade_decisions(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    q = "SELECT * FROM trade_decisions"
+                    w = []
+                    p = []
+                    if user_id:
+                        w.append("user_id=%s")
+                        p.append(user_id)
+                    if trade_mode:
+                        w.append("trade_mode=%s")
+                        p.append(trade_mode)
+                    if w:
+                        q += " WHERE " + " AND ".join(w)
+                    q += " ORDER BY created_at DESC LIMIT %s"
+                    p.append(limit)
+                    c.execute(q, p)
+                    rows = c.fetchall()
+            return [self._serialize_dates(dict(r), ("created_at",)) for r in rows]
+        except Exception as e:
+            log.error(f"load_trade_decisions: {e}")
+            return []
+
+    @staticmethod
+    def _serialize_dates(row: dict, fields: tuple[str, ...]) -> dict:
+        for f in fields:
+            if f in row and hasattr(row[f], "isoformat"):
+                row[f] = row[f].isoformat()
+        return row
+
+    def performance_breakdown(self, user_id: int | None = None) -> dict:
+        try:
+            with self._get_conn() as conn:
+                with conn.cursor() as c:
+                    p = []
+                    wu = ""
+                    if user_id:
+                        wu = "WHERE user_id=%s"
+                        p.append(user_id)
+                    c.execute(
+                        f"""SELECT trade_mode, COUNT(*) AS n, SUM(pnl) AS pnl, SUM(fees) AS fees
+                            FROM trades {wu}
+                            GROUP BY trade_mode""",
+                        p,
+                    )
+                    by_mode = c.fetchall()
+                    c.execute(
+                        f"""SELECT exchange, COUNT(*) AS n, SUM(pnl) AS pnl
+                            FROM trades {wu}
+                            GROUP BY exchange ORDER BY pnl DESC""",
+                        p,
+                    )
+                    by_exchange = c.fetchall()
+                    c.execute(
+                        f"""SELECT reason, COUNT(*) AS n, SUM(pnl) AS pnl
+                            FROM trades {wu}
+                            GROUP BY reason ORDER BY pnl DESC LIMIT 50""",
+                        p,
+                    )
+                    by_strategy = c.fetchall()
+            return {
+                "by_mode": [dict(r) for r in by_mode],
+                "by_exchange": [dict(r) for r in by_exchange],
+                "by_strategy": [dict(r) for r in by_strategy],
+            }
+        except Exception as e:
+            log.error(f"performance_breakdown: {e}")
+            return {"by_mode": [], "by_exchange": [], "by_strategy": []}
 
     def load_trades(self, limit=500, symbol=None, year=None, user_id=None) -> list[dict]:
         try:

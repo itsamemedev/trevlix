@@ -103,6 +103,9 @@ class CryptoPanicClient:
         self._last_fetch_was_rate_limited: bool = False
         self._last_api_call_at: float = 0.0
         self._min_request_interval: float = _PLAN_MIN_REQUEST_INTERVAL.get(self.plan, 1.0)
+        self._max_currencies_per_request: int = (
+            6 if self.plan == "free" else 20 if self.plan == "pro" else 40
+        )
 
     def _normalize_coin(self, symbol: str) -> str:
         """Normalisiert Symbolnamen auf Coin-Ebene für API/Cache."""
@@ -212,6 +215,99 @@ class CryptoPanicClient:
             log.debug("CryptoPanic API v2 Parse-Fehler für %s: %s", currency, e)
             return []
 
+    def fetch_posts_multi(
+        self, currencies: list[str], filter_type: str = "hot", kind: str = "news", regions: str = "en"
+    ) -> list:
+        """Batch-Request für mehrere Coins in EINEM API-Call.
+
+        CryptoPanic akzeptiert kommagetrennte currencies. Diese Methode reduziert
+        API-Calls deutlich und hilft, Limits einzuhalten.
+        """
+        if not currencies:
+            return []
+        normalized = []
+        seen = set()
+        for c in currencies:
+            cc = self._normalize_coin(c)
+            if cc and cc not in seen:
+                normalized.append(cc)
+                seen.add(cc)
+        if not normalized:
+            return []
+        joined = ",".join(normalized[: self._max_currencies_per_request])
+        return self.fetch_posts(joined, filter_type=filter_type, kind=kind, regions=regions)
+
+    @staticmethod
+    def _extract_post_currencies(post: dict) -> set[str]:
+        out: set[str] = set()
+        raw = post.get("currencies", [])
+        if isinstance(raw, list):
+            for c in raw:
+                if isinstance(c, dict):
+                    code = str(c.get("code", "")).upper().strip()
+                    if code:
+                        out.add(code)
+                elif isinstance(c, str):
+                    code = c.upper().strip()
+                    if code:
+                        out.add(code)
+        return out
+
+    def prefetch_scores(self, symbols: list[str], db=None) -> dict[str, tuple[float, str, int]]:
+        """Prefetch für viele Symbole mit wenigen API-Calls.
+
+        Returns:
+            Mapping symbol -> (score, headline, count)
+        """
+        if not symbols:
+            return {}
+        now = time.time()
+        result: dict[str, tuple[float, str, int]] = {}
+        unresolved: list[str] = []
+        for sym in symbols:
+            key = self._cache_key_for_symbol(sym)
+            if self._is_cache_valid(key):
+                c = self._cache[key]
+                result[sym] = (c["score"], c["headline"], c["count"])
+                continue
+            unresolved.append(sym)
+        if not unresolved:
+            return result
+        # Gruppiert in batches entsprechend Plan-Limits
+        batch_size = max(1, self._max_currencies_per_request)
+        for i in range(0, len(unresolved), batch_size):
+            batch_syms = unresolved[i : i + batch_size]
+            coins = [self._normalize_coin(s) for s in batch_syms]
+            posts = self.fetch_posts_multi(coins)
+            if not posts and self._last_fetch_was_rate_limited:
+                break
+            by_coin: dict[str, list] = {c: [] for c in coins}
+            for p in posts:
+                pcs = self._extract_post_currencies(p)
+                if not pcs:
+                    # Falls API kein currency-tag liefert, als generisch für alle im Batch werten
+                    for c in by_coin:
+                        by_coin[c].append(p)
+                else:
+                    for c in pcs:
+                        if c in by_coin:
+                            by_coin[c].append(p)
+            for sym in batch_syms:
+                coin = self._normalize_coin(sym)
+                coin_posts = by_coin.get(coin, [])
+                score, headline, count = self.analyze_sentiment(coin_posts)
+                key = self._cache_key_for_symbol(sym)
+                self._cache[key] = {
+                    "score": score,
+                    "headline": headline,
+                    "count": count,
+                    "ts": now,
+                }
+                result[sym] = (score, headline, count)
+                if db:
+                    db.save_news(sym, score, headline, count)
+        return result
+
     def analyze_sentiment(self, posts: list) -> tuple[float, str, int]:
         """
         Analysiert die Sentiment-Werte einer Liste von Posts.
@@ -276,6 +372,11 @@ class CryptoPanicClient:
         cache_key = self._cache_key_for_symbol(symbol)
         stale_db_cached = None
 
+        # In-Memory-Cache zuerst prüfen (schnellster Weg)
+        if self._is_cache_valid(cache_key):
+            c = self._cache[cache_key]
+            return c["score"], c["headline"], c["count"]
+
         # DB-Cache prüfen
         if db:
             cached = db.get_news(symbol)
@@ -290,11 +391,6 @@ class CryptoPanicClient:
                     stale_db_cached = None
                 if stale_db_cached is not None:
                     return stale_db_cached
-
-        # In-Memory-Cache prüfen
-        if self._is_cache_valid(cache_key):
-            c = self._cache[cache_key]
-            return c["score"], c["headline"], c["count"]
 
         # Ohne Token: Feature deaktiviert, neutraler Score
         if not self.is_configured:

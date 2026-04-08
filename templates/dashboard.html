@@ -406,6 +406,22 @@
 <!-- ══ TRADES ══ -->
 <div class="sec" id="sec-pos">
   <div class="card">
+    <div class="card-hd">
+      <span class="card-title">Execution Mode & Runtime</span>
+      <span class="card-badge" id="tradeModeBadge">PAPER</span>
+    </div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+        <button class="btn btn-info" onclick="switchTradingMode('paper')">📝 Paper</button>
+        <button class="btn btn-stop" onclick="switchTradingMode('live')">💸 Live</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <button class="btn btn-start" onclick="apiTradingControl('start')">▶ Trading Start</button>
+        <button class="btn btn-stop" onclick="apiTradingControl('stop')">■ Trading Stop</button>
+      </div>
+    </div>
+  </div>
+  <div class="card">
     <div class="card-hd"><span class="card-title"><span data-i18n="open_positions">Offene Positionen</span></span><span class="card-badge" id="posCount">0</span></div>
     <div class="card-body" style="padding-top:10px" id="posList"><div class="empty"><div class="empty-ico">📭</div><span data-i18n="no_positions">Keine offenen Positionen</span></div></div>
   </div>
@@ -421,6 +437,28 @@
     </div>
     <div class="card-body" style="padding-top:8px;max-height:460px;overflow-y:auto" id="tradeLog">
       <div class="empty"><div class="empty-ico">📋</div><span data-i18n="no_trades">Noch keine Trades</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hd"><span class="card-title">Order History (Paper + Live)</span><span class="card-badge" id="orderCountBadge">0</span></div>
+    <div class="card-body" style="padding-top:8px;max-height:220px;overflow-y:auto" id="orderHistoryList">
+      <div class="empty"><div class="empty-ico">🧾</div><span>Warte auf Orders...</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hd"><span class="card-title">Decision Log</span><span class="card-badge" id="decisionCountBadge">0</span></div>
+    <div class="card-body" style="padding-top:8px;max-height:220px;overflow-y:auto" id="decisionHistoryList">
+      <div class="empty"><div class="empty-ico">🧠</div><span>Warte auf Entscheidungen...</span></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-hd"><span class="card-title">Paper vs Live Performance</span></div>
+    <div class="card-body">
+      <div id="modePerfList"></div>
+      <div style="height:1px;background:var(--line);margin:8px 0"></div>
+      <div id="strategyPerfList"></div>
+      <div style="height:1px;background:var(--line);margin:8px 0"></div>
+      <div id="exchangePerfList"></div>
     </div>
   </div>
   <!-- Trade Stats Summary -->
@@ -852,6 +890,13 @@
             <button class="btn btn-info"   style="padding:10px;font-size:11px" onclick="forceOptimize()"><span data-i18n="btn_optimize">Optim</span></button>
             <button class="btn btn-purple" style="padding:10px;font-size:11px" onclick="forceGenetic()"><span data-i18n="btn_genetic">Genetik</span></button>
             <button class="btn btn-red"    style="padding:10px;font-size:11px" onclick="resetAI()"><span data-i18n="btn_reset_ai">Reset</span></button>
+          </div>
+          <div style="margin-top:12px;border:1px solid rgba(255,180,0,.14);border-radius:10px;background:radial-gradient(circle at 20% 20%,rgba(255,180,0,.12),rgba(6,8,14,.8));padding:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+              <div style="font-size:12px;font-weight:700;color:#f4d18a">3D KI Live View</div>
+              <div style="font-size:10px;color:#8a7a5a;font-family:var(--mono)" id="ai3dMeta">WF: — · Pred: —</div>
+            </div>
+            <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
           </div>
         </div>
       </div>

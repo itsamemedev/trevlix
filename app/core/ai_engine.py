@@ -1227,10 +1227,14 @@ class AIEngine:
         ).start()
         n = len(self.X_raw)
         self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
-        if (
-            n >= CONFIG["ai_min_samples"]
-            and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
-        ):
+        bootstrap_min = max(5, int(CONFIG.get("ai_min_samples", 20) * 0.4))
+        should_bootstrap = (
+            not self.is_trained and n >= bootstrap_min and self.trades_since_retrain >= 2
+        )
+        should_regular_retrain = (
+            n >= CONFIG["ai_min_samples"] and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
+        )
+        if should_bootstrap or should_regular_retrain:
             threading.Thread(target=self._train, daemon=True).start()
         if self.trades_since_optimize >= CONFIG["ai_optimize_every"]:
             threading.Thread(target=self._optimize, daemon=True).start()

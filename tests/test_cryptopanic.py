@@ -257,6 +257,50 @@ class TestFetchPosts:
         assert client._last_fetch_was_rate_limited is True
         assert client._rate_limited_until > 0
 
+
+class TestBatchPrefetch:
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_multi_joins_currencies(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"results": []}
+        mock_resp.raise_for_status = MagicMock()
+        mock_get.return_value = mock_resp
+
+        client = CryptoPanicClient(token="test-token")
+        client.fetch_posts_multi(["BTC", "ETH", "BTC"])
+
+        params = mock_get.call_args[1]["params"]
+        assert params["currencies"] == "BTC,ETH"
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_prefetch_scores_populates_cache_for_symbols(self, mock_get):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.raise_for_status = MagicMock()
+        mock_resp.json.return_value = {
+            "results": [
+                {
+                    "title": "BTC rally strong momentum",
+                    "votes": {"positive": 8, "negative": 1},
+                    "currencies": [{"code": "BTC"}],
+                },
+                {
+                    "title": "ETH breakout bullish",
+                    "votes": {"positive": 7, "negative": 1},
+                    "currencies": [{"code": "ETH"}],
+                },
+            ]
+        }
+        mock_get.return_value = mock_resp
+
+        client = CryptoPanicClient(token="test-token")
+        out = client.prefetch_scores(["BTC/USDT", "ETH/USDT"])
+        assert "BTC/USDT" in out
+        assert "ETH/USDT" in out
+        assert out["BTC/USDT"][2] >= 1
+        assert out["ETH/USDT"][2] >= 1
+
     @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_skips_http_while_rate_limited(self, mock_get):
         client = CryptoPanicClient(token="test-token")
