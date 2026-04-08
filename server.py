@@ -164,6 +164,8 @@ from services.risk import (
 from services.smart_exits import SmartExitEngine
 from services.strategies import STRATEGIES, compute_indicators
 from services.trade_dna import TradeDNA
+from services.redis_market_cache import RedisMarketCache
+from services.trading_mode import TradingModeManager
 from services.trading_algorithms import TradingAlgorithmManager
 from services.utils import (
     BOT_FULL,
@@ -272,8 +274,9 @@ CONFIG: dict[str, Any] = build_default_config(_secret)
 
 
 def _enforce_paper_trading(source: str = "system") -> None:
-    """Erzwingt global Paper-Trading und deaktiviert Live-Modus."""
-    enforce_paper_trading(CONFIG, log, source)
+    """Legacy helper: nur aktiv wenn LIVE_TRADING_ENABLED nicht gesetzt ist."""
+    if not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+        enforce_paper_trading(CONFIG, log, source)
 
 
 _enforce_paper_trading("startup")
@@ -720,7 +723,8 @@ def api_create_token():
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
     settings = db.get_user_settings(request.user_id)
-    settings["paper_trading"] = True
+    settings["paper_trading"] = CONFIG.get("paper_trading", True)
+    settings["trade_mode"] = "paper" if CONFIG.get("paper_trading", True) else "live"
     return jsonify(settings)
 
 
@@ -763,13 +767,134 @@ def api_user_settings_update():
         "max_daily_loss_pct",
     }
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
-    filtered["paper_trading"] = True
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
-    current["paper_trading"] = True
+    if "paper_trading" in filtered:
+        mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
+        if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+            return jsonify({"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}), 403
+        trade_mode.set_mode(mode)
+        CONFIG["paper_trading"] = mode == "paper"
+    current["paper_trading"] = CONFIG.get("paper_trading", True)
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
+
+
+@app.route("/api/v1/trading/mode", methods=["GET", "POST"])
+@api_auth_required
+def api_trading_mode():
+    if request.method == "GET":
+        return jsonify(trade_mode.status())
+    data = request.json or {}
+    mode = str(data.get("mode", "paper")).lower()
+    if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+        return jsonify({"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}), 403
+    new_mode = trade_mode.set_mode(mode)
+    CONFIG["paper_trading"] = new_mode != "live"
+    state.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
+    discord.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
+    telegram.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
+    return jsonify(trade_mode.status())
+
+
+@app.route("/api/v1/trading/control", methods=["POST"])
+@api_auth_required
+def api_trading_control():
+    data = request.json or {}
+    action = str(data.get("action", "start")).lower()
+    if action == "start":
+        trade_mode.set_enabled(True)
+        with state._lock:
+            state.running = True
+            state.paused = False
+        if not any(t.name == "BotLoop" and t.is_alive() for t in threading.enumerate()):
+            threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
+        return jsonify({"ok": True, "running": True})
+    if action == "stop":
+        trade_mode.set_enabled(False)
+        with state._lock:
+            state.running = False
+            state.paused = False
+        return jsonify({"ok": True, "running": False})
+    return jsonify({"error": "action must be start|stop"}), 400
+
+
+@app.route("/api/v1/trading/open-positions")
+@api_auth_required
+def api_open_positions():
+    try:
+        return jsonify({"positions": state.snapshot().get("positions", [])})
+    except Exception as e:
+        log.warning("api_open_positions: %s", e)
+        return jsonify({"positions": [], "error": "temporarily_unavailable"}), 503
+
+
+@app.route("/api/v1/trading/closed-trades")
+@api_auth_required
+def api_closed_trades():
+    try:
+        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
+        mode = request.args.get("mode")
+        rows = db.load_trades(limit=limit, user_id=request.user_id)
+        if mode in {"paper", "live"}:
+            rows = [r for r in rows if str(r.get("trade_mode", "paper")) == mode]
+        return jsonify({"trades": rows})
+    except Exception as e:
+        log.warning("api_closed_trades: %s", e)
+        return jsonify({"trades": [], "error": "temporarily_unavailable"}), 503
+
+
+@app.route("/api/v1/trading/order-history")
+@api_auth_required
+def api_order_history():
+    try:
+        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
+        mode = request.args.get("mode")
+        return jsonify(
+            {"orders": db.load_orders(limit=limit, user_id=request.user_id, trade_mode=mode)}
+        )
+    except Exception as e:
+        log.warning("api_order_history: %s", e)
+        return jsonify({"orders": [], "error": "temporarily_unavailable"}), 503
+
+
+@app.route("/api/v1/trading/signal-history")
+@api_auth_required
+def api_signal_history():
+    try:
+        return jsonify({"signals": list(state.signal_log)[:200]})
+    except Exception as e:
+        log.warning("api_signal_history: %s", e)
+        return jsonify({"signals": [], "error": "temporarily_unavailable"}), 503
+
+
+@app.route("/api/v1/trading/decision-history")
+@api_auth_required
+def api_decision_history():
+    try:
+        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
+        mode = request.args.get("mode")
+        return jsonify(
+            {
+                "decisions": db.load_trade_decisions(
+                    limit=limit, user_id=request.user_id, trade_mode=mode
+                )
+            }
+        )
+    except Exception as e:
+        log.warning("api_decision_history: %s", e)
+        return jsonify({"decisions": [], "error": "temporarily_unavailable"}), 503
+
+
+@app.route("/api/v1/trading/performance")
+@api_auth_required
+def api_trading_performance():
+    try:
+        return jsonify(db.performance_breakdown(user_id=request.user_id))
+    except Exception as e:
+        log.warning("api_trading_performance: %s", e)
+        return jsonify({"by_mode": [], "by_exchange": [], "by_strategy": [], "error": "temporarily_unavailable"}), 503
 
 
 @app.route("/api/v1/user/exchanges")
@@ -1749,8 +1874,12 @@ def on_update_config(data):
         if k not in allowed:
             continue
         if k == "paper_trading":
-            CONFIG[k] = True
-            updated[k] = True
+            desired_paper = bool(v)
+            if not desired_paper and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+                continue
+            CONFIG[k] = desired_paper
+            trade_mode.set_mode("paper" if desired_paper else "live")
+            updated[k] = desired_paper
             continue
         if k == "exchange":
             ex = normalize_exchange_name(str(v))
@@ -1769,14 +1898,13 @@ def on_update_config(data):
             v = bool(v)
         CONFIG[k] = v
         updated[k] = v
-    _enforce_paper_trading("socket:update_config")
     # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
     try:
         uid = getattr(request, "user_id", session.get("user_id"))
         if uid and updated:
             current = db.get_user_settings(uid) or {}
             current.update(updated)
-            current["paper_trading"] = True
+            current["paper_trading"] = CONFIG.get("paper_trading", True)
             db.update_user_settings(uid, current)
     except Exception as e:
         log.debug(f"update_config persist: {e}")
@@ -3152,6 +3280,12 @@ trading_algos = TradingAlgorithmManager()
 perf_attribution = PerformanceAttribution(
     max_trades=CONFIG.get("pa_max_trades", 5000),
 )
+market_cache = RedisMarketCache(
+    url=os.getenv("REDIS_URL", "redis://localhost:6379/0"),
+    enabled=safe_bool(os.getenv("REDIS_CACHE_ENABLED", "true"), True),
+)
+trade_mode = TradingModeManager(CONFIG)
+trade_mode.set_mode("paper" if CONFIG.get("paper_trading", True) else "live")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # INITIALIZE EXTRACTED MODULES with runtime globals
@@ -3252,6 +3386,8 @@ init_trading_ops(
     is_single_exchange_mode_fn=_is_single_exchange_mode,
     reveal_and_decrypt_fn=_reveal_and_decrypt,
     pin_user_exchange_fn=_pin_user_exchange,
+    market_cache_ref=market_cache,
+    trade_mode_ref=trade_mode,
 )
 
 

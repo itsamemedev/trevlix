@@ -93,6 +93,8 @@ _get_admin_primary_exchange = None
 _is_single_exchange_mode = None
 _reveal_and_decrypt = None
 _pin_user_exchange = None
+market_cache = None
+trade_mode = None
 
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
@@ -146,6 +148,8 @@ def init_trading_ops(
     is_single_exchange_mode_fn,
     reveal_and_decrypt_fn,
     pin_user_exchange_fn,
+    market_cache_ref=None,
+    trade_mode_ref=None,
     market_cache_max_age: int = 86400,
 ) -> None:
     """Inject runtime dependencies into this module's globals."""
@@ -159,6 +163,7 @@ def init_trading_ops(
     global _SHUTDOWN_EVENT, _ind_get, _ind_set, _MARKET_CACHE_MAX_AGE
     global _get_admin_exchange_by_name, _get_admin_primary_exchange
     global _is_single_exchange_mode, _reveal_and_decrypt, _pin_user_exchange
+    global market_cache, trade_mode
     CONFIG = config
     log = logger
     db = db_ref
@@ -204,6 +209,8 @@ def init_trading_ops(
     _is_single_exchange_mode = is_single_exchange_mode_fn
     _reveal_and_decrypt = reveal_and_decrypt_fn
     _pin_user_exchange = pin_user_exchange_fn
+    market_cache = market_cache_ref
+    trade_mode = trade_mode_ref
     _MARKET_CACHE_MAX_AGE = market_cache_max_age
     _seed_markets_from_cache_on_startup()
 
@@ -362,9 +369,15 @@ def fetch_markets(ex) -> list[str]:
 
 def scan_symbol(ex, symbol) -> dict | None:
     try:
-        ohlcv = ex.fetch_ohlcv(
-            symbol, CONFIG.get("timeframe", "1h"), limit=CONFIG.get("candle_limit", 250)
-        )
+        tf = CONFIG.get("timeframe", "1h")
+        ex_id = CONFIG.get("exchange", "cryptocom")
+        ohlcv = None
+        if market_cache is not None:
+            ohlcv = market_cache.get_ohlcv(ex_id, symbol, tf)
+        if not ohlcv:
+            ohlcv = ex.fetch_ohlcv(symbol, tf, limit=CONFIG.get("candle_limit", 250))
+            if market_cache is not None and ohlcv:
+                market_cache.set_ohlcv(ex_id, symbol, tf, ohlcv, ttl=25)
         if not ohlcv or len(ohlcv) < 100:
             return None
         df = pd.DataFrame(ohlcv, columns=["timestamp", "open", "high", "low", "close", "volume"])
@@ -473,6 +486,30 @@ def scan_symbol(ex, symbol) -> dict | None:
         return None
 
 
+def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None = None) -> None:
+    if db is None:
+        return
+    payload = {
+        "signal": (scan or {}).get("signal"),
+        "votes": (scan or {}).get("votes", {}),
+        "risk_balance": getattr(state, "balance", 0),
+    }
+    if hasattr(db, "save_trade_decision"):
+        db.save_trade_decision(
+            {
+                "symbol": symbol,
+                "decision": decision,
+                "reason": reason,
+                "confidence": (scan or {}).get("confidence", 0),
+                "ai_score": (scan or {}).get("ai_score", 0),
+                "win_prob": (scan or {}).get("win_prob", 0),
+                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "payload": payload,
+            }
+        )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRADE EXECUTION mit DCA + Partial TP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -483,8 +520,10 @@ def open_position(ex, scan: dict):
         log.warning(f"open_position: Ungültiger Preis {price} für {symbol}")
         return
     if len(state.positions) >= CONFIG.get("max_open_trades", 5):
+        _record_decision(symbol, "blocked", "max_open_trades", scan)
         return
     if symbol in state.positions:
+        _record_decision(symbol, "blocked", "already_open", scan)
         return
     if symbol in state.short_positions:
         return
@@ -494,8 +533,10 @@ def open_position(ex, scan: dict):
     if not regime.is_bull and CONFIG["use_market_regime"]:
         return
     if risk.daily_loss_exceeded(state.balance):
+        _record_decision(symbol, "blocked", "daily_loss_limit", scan)
         return
     if risk.circuit_breaker_active():
+        _record_decision(symbol, "blocked", "circuit_breaker", scan)
         return
     # News-Sentiment-Filter (Verbesserung 9)
     news_score = scan.get("news_score", 0.0)
@@ -567,6 +608,7 @@ def open_position(ex, scan: dict):
         ai_reason,
     )
     if not allowed:
+        _record_decision(symbol, "blocked", f"ai_filter:{ai_reason}", scan)
         return
 
     # ── Selbstlernender Kauf-Algorithmus ─────────────────────────────────
@@ -606,6 +648,7 @@ def open_position(ex, scan: dict):
     invest *= dna_mult
     invest = min(invest, state.balance * CONFIG["max_position_pct"])
     if invest < 5:
+        _record_decision(symbol, "blocked", "invest_too_small", scan)
         return
 
     fee = invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
@@ -615,7 +658,29 @@ def open_position(ex, scan: dict):
     qty = (invest - fee) / price
     if qty <= 0:
         log.warning(f"open_position {symbol}: qty <= 0 (invest={invest:.2f}, fee={fee:.2f})")
+        _record_decision(symbol, "blocked", "qty_invalid", scan)
         return
+
+    precision = None
+    try:
+        market = ex.market(symbol)
+        precision = int((market.get("precision") or {}).get("amount", 8))
+    except Exception:
+        precision = None
+    if trade_mode is not None:
+        guard = trade_mode.can_place_order(
+            symbol=symbol,
+            invest_usdt=invest,
+            free_usdt=state.balance,
+            price=price,
+            qty=qty,
+            precision=precision,
+        )
+        if not guard.allowed:
+            _record_decision(symbol, "blocked", guard.reason, scan)
+            discord.error(f"{symbol}: {guard.reason}")
+            telegram.error(f"{symbol}: {guard.reason}")
+            return
 
     # ── Smart Exits: Dynamische SL/TP ────────────────────────────────────
     if smart_exits.enabled:
@@ -640,11 +705,14 @@ def open_position(ex, scan: dict):
             state.balance -= invest
     else:
         try:
-            ex.create_market_buy_order(symbol, qty)
+            order_resp = ex.create_market_buy_order(symbol, qty)
         except Exception as e:
             log.error(f"Order {symbol}: {e}")
             discord.error(str(e))
+            _record_decision(symbol, "error", f"live_buy_failed:{e}", scan)
             return
+    if trade_mode is not None:
+        trade_mode.mark_order(symbol)
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
     pos_data = {
@@ -686,6 +754,25 @@ def open_position(ex, scan: dict):
         pos_data["exit_regime"] = smart_exits.classify_regime_from_scan(scan)
     with state._lock:
         state.positions[symbol] = pos_data
+    if hasattr(db, "save_order"):
+        db.save_order(
+            {
+                "symbol": symbol,
+                "side": "buy",
+                "order_type": "market",
+                "status": "filled",
+                "price": price,
+                "qty": qty,
+                "cost": invest,
+                "fees": fee,
+                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "reason": "entry",
+                "meta": {"ai_reason": ai_reason, "algo_reason": algo_reason},
+            }
+        )
+    _record_decision(symbol, "buy", f"executed:{algo_reason}", scan)
     dna_info = f" | DNA:{dna_mult:.2f}x" if dna_result and dna_mult != 1.0 else ""
     smart_info = f" | SL:{sl:.4f} TP:{tp:.4f}" if smart_exits.enabled else ""
     log.info(
@@ -778,10 +865,13 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             state.balance += close_invest + pnl
     else:
         try:
-            ex.create_market_sell_order(symbol, close_qty)
+            order_resp = ex.create_market_sell_order(symbol, close_qty)
         except Exception as e:
             log.error(f"Sell {symbol}: {e}")
+            _record_decision(symbol, "error", f"live_sell_failed:{e}", {"symbol": symbol})
             return
+    if trade_mode is not None:
+        trade_mode.mark_order(symbol)
 
     if is_partial:
         # Teilverkauf → Position aktualisieren
@@ -856,6 +946,25 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         log.info(f"{icon} VKAUF {symbol} @ {price:.4f} | {pnl:+.2f} ({pnl_pct:+.2f}%) | {reason}")
 
     db.save_trade(trade)
+    if hasattr(db, "save_order"):
+        db.save_order(
+            {
+                "symbol": symbol,
+                "side": "sell",
+                "order_type": "market",
+                "status": "filled",
+                "price": price,
+                "qty": close_qty,
+                "cost": close_invest,
+                "fees": fee,
+                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "reason": reason,
+                "meta": {"partial": is_partial},
+            }
+        )
+    _record_decision(symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)})
     # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
     try:
         scan_at_entry = {
@@ -968,6 +1077,8 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
         "dca_level": dca_level,
         "news_score": round(pos.get("news_score", 0), 3),
         "onchain_score": round(pos.get("onchain_score", 0), 3),
+        "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+        "fees": round(invest * get_exchange_fee_rate(), 8),
     }
     # Trade DNA Fingerprint anhängen (für historische Analyse)
     if pos.get("dna_hash"):
