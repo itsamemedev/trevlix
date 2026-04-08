@@ -15,10 +15,13 @@ from .db_pool import ConnectionPool
 from .encryption import decrypt_value, encrypt_value, is_encrypted
 from .indicator_cache import cache_stats, get_cached, invalidate, set_cached
 from .virginie import (
+    ActionResult,
     LLMPerformanceTracker,
     LLMResult,
     Opportunity,
     ProfitDecisionEngine,
+    VirginieCore,
+    VirginieGuardrails,
     VirginieIdentity,
 )
 
@@ -40,8 +43,11 @@ __all__ = [
     "cache_stats",
     "CryptoPanicClient",
     "VirginieIdentity",
+    "VirginieGuardrails",
     "Opportunity",
+    "ActionResult",
     "ProfitDecisionEngine",
     "LLMResult",
     "LLMPerformanceTracker",
+    "VirginieCore",
 ]

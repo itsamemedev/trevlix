@@ -1,10 +1,11 @@
-"""Core primitives for VIRGINIE 0.0.1.
+"""Core self-learning components for VIRGINIE 0.0.1.
 
-This module is the first implementation step for the user-defined autonomous
-assistant "VIRGINIE 0.0.1". It provides two building blocks:
+This module integrates the self-learning pieces discussed for VIRGINIE:
 
-1. Profit scoring via expected-value ranking.
-2. Cross-LLM performance tracking with exploration support.
+1. Opportunity scoring with profit, costs, and risk penalties.
+2. Cross-LLM learning with per-task reward tracking.
+3. Bandit-style action selection that improves from outcome feedback.
+4. Guardrails to avoid unbounded risk while optimizing expected value.
 """
 
 from __future__ import annotations
@@ -22,22 +23,35 @@ class VirginieIdentity:
 
 
 @dataclass(frozen=True)
-class Opportunity:
-    """Represents one actionable option with upside, cost, and risk.
+class VirginieGuardrails:
+    """Risk boundaries for autonomous decisions.
 
     Attributes:
-        key: Stable identifier for the action.
-        success_probability: Probability of success in range [0.0, 1.0].
-        expected_profit: Gross profit if successful.
-        cost: Cost to execute the action.
-        risk_penalty: Additional downside penalty.
+        min_score: Minimum combined score required to execute an action.
+        max_risk_penalty: Hard upper bound on accepted risk penalty.
     """
+
+    min_score: float = 0.0
+    max_risk_penalty: float = 1_000.0
+
+
+@dataclass(frozen=True)
+class Opportunity:
+    """Represents one actionable option with upside, cost, and risk."""
 
     key: str
     success_probability: float
     expected_profit: float
     cost: float = 0.0
     risk_penalty: float = 0.0
+
+
+@dataclass(frozen=True)
+class ActionResult:
+    """Observed outcome for an executed opportunity."""
+
+    opportunity_key: str
+    realized_profit: float
 
 
 @dataclass(frozen=True)
@@ -119,3 +133,88 @@ class LLMPerformanceTracker:
         if not model_stats or model_stats["count"] <= 0:
             return None
         return model_stats["sum_reward"] / model_stats["count"]
+
+
+class VirginieCore:
+    """Integrated core for profit optimization and self-improvement.
+
+    This class combines deterministic expected-value scoring with online
+    learning from realized outcomes and optional cross-LLM feedback.
+    """
+
+    def __init__(
+        self,
+        *,
+        guardrails: VirginieGuardrails | None = None,
+        exploration_c: float = 0.8,
+        action_exploration_c: float = 0.5,
+    ) -> None:
+        self.identity = VirginieIdentity()
+        self.guardrails = guardrails or VirginieGuardrails()
+        self.profit_engine = ProfitDecisionEngine()
+        self.llm_tracker = LLMPerformanceTracker(exploration_c=exploration_c)
+        self._action_exploration_c = action_exploration_c
+        self._action_stats: dict[str, dict[str, float]] = {}
+
+    def select_opportunity(self, opportunities: list[Opportunity]) -> Opportunity | None:
+        """Select the best allowed opportunity using EV + action UCB.
+
+        Guardrails filter out unsafe opportunities before ranking.
+        """
+        candidates = [item for item in opportunities if self._passes_guardrails(item)]
+        if not candidates:
+            return None
+
+        scored: list[tuple[Opportunity, float]] = []
+        total_count = sum(stats["count"] for stats in self._action_stats.values())
+        for item in candidates:
+            base_score = self.profit_engine.score(item)
+            bandit_bonus = self._action_bonus(item.key, total_count)
+            scored.append((item, base_score + bandit_bonus))
+
+        scored.sort(key=lambda entry: entry[1], reverse=True)
+        return scored[0][0]
+
+    def learn_from_action(self, result: ActionResult) -> None:
+        """Store realized profit feedback for future action selection."""
+        stats = self._action_stats.setdefault(
+            result.opportunity_key,
+            {"count": 0.0, "sum_profit": 0.0},
+        )
+        stats["count"] += 1
+        stats["sum_profit"] += result.realized_profit
+
+    def learn_from_llm(self, result: LLMResult) -> None:
+        """Store cross-LLM reward feedback for task routing."""
+        self.llm_tracker.record(result)
+
+    def recommend_llm(self, task_type: str) -> str | None:
+        """Return recommended model for the given task type."""
+        return self.llm_tracker.recommend(task_type)
+
+    def action_average_profit(self, opportunity_key: str) -> float | None:
+        """Return average realized profit for an opportunity."""
+        stats = self._action_stats.get(opportunity_key)
+        if not stats or stats["count"] <= 0:
+            return None
+        return stats["sum_profit"] / stats["count"]
+
+    def _passes_guardrails(self, opportunity: Opportunity) -> bool:
+        score = self.profit_engine.score(opportunity)
+        return (
+            score >= self.guardrails.min_score
+            and opportunity.risk_penalty <= self.guardrails.max_risk_penalty
+        )
+
+    def _action_bonus(self, key: str, total_count: float) -> float:
+        stats = self._action_stats.get(key)
+        if not stats or stats["count"] <= 0:
+            return self._action_exploration_c
+
+        count = stats["count"]
+        avg_profit = stats["sum_profit"] / count
+        if total_count <= 0:
+            return avg_profit
+
+        exploration = self._action_exploration_c * sqrt(log(total_count + 1) / count)
+        return avg_profit + exploration

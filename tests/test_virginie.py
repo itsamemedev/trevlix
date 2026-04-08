@@ -1,10 +1,13 @@
 """Tests for VIRGINIE 0.0.1 primitives."""
 
 from services.virginie import (
+    ActionResult,
     LLMPerformanceTracker,
     LLMResult,
     Opportunity,
     ProfitDecisionEngine,
+    VirginieCore,
+    VirginieGuardrails,
     VirginieIdentity,
 )
 
@@ -62,3 +65,61 @@ def test_llm_tracker_recommend_prefers_high_reward_model():
     assert tracker.recommend("analysis") == "model_a"
     assert tracker.model_average_reward("analysis", "model_a") == 0.9
     assert tracker.model_average_reward("analysis", "model_missing") is None
+
+
+def test_virginie_core_guardrails_filter_unprofitable_or_risky_actions():
+    core = VirginieCore(guardrails=VirginieGuardrails(min_score=10.0, max_risk_penalty=25.0))
+    selected = core.select_opportunity(
+        [
+            Opportunity(
+                key="too_risky", success_probability=0.9, expected_profit=50, risk_penalty=40
+            ),
+            Opportunity(key="negative", success_probability=0.2, expected_profit=10, cost=5),
+            Opportunity(
+                key="good", success_probability=0.8, expected_profit=50, cost=5, risk_penalty=10
+            ),
+        ]
+    )
+
+    assert selected is not None
+    assert selected.key == "good"
+
+
+def test_virginie_core_learns_action_outcomes_for_future_selection():
+    core = VirginieCore()
+
+    # Baseline: both options valid, higher EV wins initially.
+    selected = core.select_opportunity(
+        [
+            Opportunity(key="a", success_probability=0.6, expected_profit=20),
+            Opportunity(key="b", success_probability=0.5, expected_profit=20),
+        ]
+    )
+    assert selected is not None
+    assert selected.key == "a"
+
+    # Learned realized outcome shifts preference toward b.
+    for _ in range(5):
+        core.learn_from_action(ActionResult(opportunity_key="b", realized_profit=30.0))
+    for _ in range(5):
+        core.learn_from_action(ActionResult(opportunity_key="a", realized_profit=5.0))
+
+    selected_after_learning = core.select_opportunity(
+        [
+            Opportunity(key="a", success_probability=0.6, expected_profit=20),
+            Opportunity(key="b", success_probability=0.5, expected_profit=20),
+        ]
+    )
+
+    assert selected_after_learning is not None
+    assert selected_after_learning.key == "b"
+    assert core.action_average_profit("b") == 30.0
+
+
+def test_virginie_core_routes_llm_by_recorded_rewards():
+    core = VirginieCore(exploration_c=0.1)
+    for _ in range(4):
+        core.learn_from_llm(LLMResult(model="llm-fast", task_type="market_context", reward=0.7))
+        core.learn_from_llm(LLMResult(model="llm-deep", task_type="market_context", reward=0.9))
+
+    assert core.recommend_llm("market_context") == "llm-deep"
