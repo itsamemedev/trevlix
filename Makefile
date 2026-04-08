@@ -4,7 +4,7 @@
 # ╚══════════════════════════════════════════════════════════════╝
 
 .PHONY: help install dev docker-up docker-down docker-logs docker-build \
-        test test-cov lint format deep-scan clean backup keys
+        test test-cov lint format deep-scan clean backup keys paper-build
 
 # Standardziel
 .DEFAULT_GOAL := help
@@ -13,6 +13,7 @@ PYTHON  ?= python3
 PIP     ?= pip3
 VENV    ?= .venv
 COMPOSE ?= docker compose
+PYTEST  ?= $(if $(wildcard $(VENV)/bin/pytest),$(VENV)/bin/pytest,pytest)
 
 # ── Hilfe ──────────────────────────────────────────────────────────────────────
 help:
@@ -26,6 +27,7 @@ help:
 	@echo "  make docker-build → Docker-Image neu bauen"
 	@echo "  make docker-logs  → Live-Logs der Container"
 	@echo "  make test         → Tests ausführen"
+	@echo "  make paper-build  → Paper-Mode Trading Build-Smoke-Test"
 	@echo "  make test-cov     → Tests mit Coverage-Report"
 	@echo "  make lint         → Code-Qualität prüfen (ruff)"
 	@echo "  make format       → Code formatieren (ruff format)"
@@ -76,10 +78,13 @@ docker-restart:
 
 # ── Tests ──────────────────────────────────────────────────────────────────────
 test:
-	$(VENV)/bin/pytest tests/ -v --tb=short
+	$(PYTEST) tests/ -v --tb=short
+
+paper-build:
+	@PAPER_TRADING=true LIVE_TRADING_ENABLED=false $(PYTEST) tests/test_api.py -k "PaperModeBuild" -v --tb=short
 
 test-cov:
-	$(VENV)/bin/pytest tests/ -v --cov=. --cov-report=term-missing --cov-report=html
+	$(PYTEST) tests/ -v --cov=. --cov-report=term-missing --cov-report=html
 	@echo "✓ Coverage-Report: htmlcov/index.html"
 
 # ── Code-Qualität ──────────────────────────────────────────────────────────────

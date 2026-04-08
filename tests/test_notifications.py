@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from services.notifications import DiscordNotifier
+from services.notifications import DiscordNotifier, TelegramNotifier
 
 
 class _Resp:
@@ -71,3 +71,31 @@ def test_trade_buy_contains_extended_fields(monkeypatch):
     names = {f["name"] for f in fields}
     assert "Signal Confidence" in names
     assert "Votes" in names
+
+
+def test_discord_info_sends_info_embed(monkeypatch):
+    sent_payloads: list[dict] = []
+
+    def _fake_post(_url, json, timeout):
+        sent_payloads.append(json)
+        return _Resp()
+
+    monkeypatch.setattr("services.notifications.httpx.post", _fake_post)
+    notifier = DiscordNotifier({"discord_webhook": "https://discord.example/hook"})
+    notifier.info("Paper mode switched")
+
+    assert len(sent_payloads) == 1
+    embed = sent_payloads[0]["embeds"][0]
+    assert "INFO" in embed["title"]
+    assert "Paper mode switched" in embed["description"]
+
+
+def test_telegram_info_uses_send(monkeypatch):
+    sent_messages: list[str] = []
+
+    notifier = TelegramNotifier({"telegram_token": "x", "telegram_chat_id": "1"})
+    monkeypatch.setattr(notifier, "send", lambda msg: sent_messages.append(msg))
+
+    notifier.info("Paper mode switched")
+    assert len(sent_messages) == 1
+    assert "INFO" in sent_messages[0]

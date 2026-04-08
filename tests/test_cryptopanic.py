@@ -267,6 +267,47 @@ class TestFetchPosts:
         assert posts == []
         mock_get.assert_not_called()
 
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_404_with_currency_falls_back_without_currency(self, mock_get):
+        import httpx as hx
+
+        req = hx.Request("GET", "https://cryptopanic.com/api/developer/v2/posts/")
+        resp_404 = hx.Response(404, request=req)
+        err_404 = hx.HTTPStatusError("not found", request=req, response=resp_404)
+
+        ok_resp = MagicMock()
+        ok_resp.headers = {}
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"results": [{"title": "Fallback news"}]}
+
+        mock_get.side_effect = [err_404, ok_resp]
+
+        client = CryptoPanicClient(token="test-token", plan="developer")
+        posts = client.fetch_posts("MORPHO")
+
+        assert posts
+        assert posts[0]["title"] == "Fallback news"
+        assert mock_get.call_count == 2
+        first_params = mock_get.call_args_list[0].kwargs["params"]
+        second_params = mock_get.call_args_list[1].kwargs["params"]
+        assert first_params["currencies"] == "MORPHO"
+        assert "currencies" not in second_params
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_skips_currency_filter_after_known_404(self, mock_get):
+        ok_resp = MagicMock()
+        ok_resp.headers = {}
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"results": []}
+        mock_get.return_value = ok_resp
+
+        client = CryptoPanicClient(token="test-token", plan="developer")
+        client._unsupported_currencies["MORPHO"] = 9999999999.0
+
+        client.fetch_posts("MORPHO")
+        params = mock_get.call_args.kwargs["params"]
+        assert "currencies" not in params
+
 
 # ── get_score Integration ─────────────────────────────────────────────────────
 

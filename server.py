@@ -840,6 +840,30 @@ def api_trading_control():
     return jsonify({"error": "action must be start|stop"}), 400
 
 
+@app.route("/api/v1/trading/close-position", methods=["POST"])
+@api_auth_required
+def api_trading_close_position():
+    data = request.json or {}
+    sym = str(data.get("symbol", "")).strip().upper()
+    if not sym:
+        return jsonify({"error": "symbol required"}), 400
+    with state._lock:
+        in_long = sym in state.positions
+        in_short = sym in state.short_positions
+    if not in_long and not in_short:
+        return jsonify({"error": f"position not open: {sym}"}), 404
+    try:
+        if in_long:
+            ex = create_exchange()
+            close_position(ex, sym, "Manuell geschlossen 🖐")
+            return jsonify({"ok": True, "symbol": sym, "side": "long"})
+        short_engine.close_short(sym, "Manuell 🖐")
+        return jsonify({"ok": True, "symbol": sym, "side": "short"})
+    except Exception as e:
+        log.warning("api_trading_close_position failed: %s", e)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/v1/trading/open-positions")
 @api_auth_required
 def api_open_positions():
@@ -1760,6 +1784,7 @@ def on_start_bot():
     with state._lock:
         if state.running:
             return
+        trade_mode.set_enabled(True)
         state.running = True
         state.paused = False
     threading.Thread(target=bot_loop, daemon=True).start()
@@ -1785,6 +1810,7 @@ def on_stop_bot():
         )
         return
     with state._lock:
+        trade_mode.set_enabled(False)
         state.running = False
         state.paused = False
     emit(
