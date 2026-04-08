@@ -96,6 +96,15 @@ class KnowledgeBase:
         self._llm_cache_max_size = 100  # Max LLM-Einträge
         self._cached_market_analysis: str = ""
         self._cached_market_analysis_ts: float = 0.0
+        self._idle_learning = {
+            "runs": 0,
+            "last_run_ts": 0.0,
+            "last_run_at": None,
+            "last_summary": "",
+            "last_error": "",
+            "providers_used": 0,
+            "responses_used": 0,
+        }
         self._mcp_registry: Any = None  # MCPToolRegistry (lazy init)
         self._multi_llm: MultiLLMProvider | None = None
         if _MULTI_LLM_AVAILABLE:
@@ -603,12 +612,126 @@ class KnowledgeBase:
     @property
     def llm_enabled(self) -> bool:
         """Prüft ob LLM-Endpunkt konfiguriert und verfügbar ist."""
-        return bool(self._llm_endpoint) and HTTPX_AVAILABLE
+        local_ready = bool(self._llm_endpoint) and HTTPX_AVAILABLE
+        multi_ready = bool(self._multi_llm and self._multi_llm.available_providers)
+        return local_ready or multi_ready
 
     @property
     def cached_market_analysis(self) -> str:
         """Letztes gecachtes Markt-Analyse-Ergebnis der LLM."""
         return self._cached_market_analysis
+
+    def idle_learning_status(self) -> dict[str, Any]:
+        """Status des Leerlauf-Lernzyklus für Diagnose/UI."""
+        with self._lock:
+            return dict(self._idle_learning)
+
+    def idle_learn_async(
+        self,
+        *,
+        regime_is_bull: bool,
+        fg_value: int,
+        open_positions: int,
+        iteration: int,
+        min_interval_sec: int = 600,
+    ) -> None:
+        """Startet einen Leerlauf-Lernzyklus mit Multi-LLM-Kollaboration."""
+        if not self.llm_enabled:
+            return
+        now = time.time()
+        with self._lock:
+            last_run = float(self._idle_learning.get("last_run_ts", 0) or 0)
+            if now - last_run < max(min_interval_sec, 30):
+                return
+            self._idle_learning["last_run_ts"] = now
+        threading.Thread(
+            target=self._idle_learn_cycle,
+            args=(regime_is_bull, fg_value, open_positions, iteration),
+            daemon=True,
+        ).start()
+
+    def _idle_learn_cycle(
+        self,
+        regime_is_bull: bool,
+        fg_value: int,
+        open_positions: int,
+        iteration: int,
+    ) -> None:
+        """Interner Leerlauf-Lernzyklus: mehrere LLMs + Synthese."""
+        try:
+            summary = self.get_market_summary()
+            top_syms = json.dumps(summary.get("top_symbols", [])[:5], ensure_ascii=False)
+            top_strats = json.dumps(summary.get("strategy_ranking", [])[:5], ensure_ascii=False)
+            context = (
+                "Du bist Teil eines Trading-AI-Kollektivs. "
+                "Bewerte Risiko, Chancen und Lernfokus für das Modelltraining. "
+                "Antworte kurz auf Deutsch."
+            )
+            prompt = (
+                f"Leerlauf-Lernzyklus:\n"
+                f"Regime: {'bull' if regime_is_bull else 'bear'}\n"
+                f"Fear&Greed: {fg_value}\n"
+                f"Offene Positionen: {open_positions}\n"
+                f"Iteration: {iteration}\n"
+                f"Top Symbole: {top_syms}\n"
+                f"Top Strategien: {top_strats}\n"
+                "Was soll das selbstlernende Modell als Nächstes priorisieren?"
+            )
+            provider_count = 0
+            responses: list[dict[str, Any]] = []
+            if self._multi_llm and hasattr(self._multi_llm, "chat_all"):
+                responses = self._multi_llm.chat_all(prompt=prompt, system=context, max_tokens=300)
+                provider_count = len(getattr(self._multi_llm, "available_providers", []))
+
+            usable = [r for r in responses if r.get("ok") and r.get("answer")]
+            if usable:
+                stitched = "\n".join(
+                    [
+                        f"{r.get('provider', 'llm')}: {str(r.get('answer', ''))[:220]}"
+                        for r in usable[:4]
+                    ]
+                )
+                synth_prompt = (
+                    "Fasse diese LLM-Meinungen zu einer kurzen, umsetzbaren Lernanweisung "
+                    "für ein selbstlernendes Trading-Modell zusammen:\n"
+                    f"{stitched}"
+                )
+                final_answer = self.query_llm(synth_prompt, context) or stitched
+            else:
+                final_answer = self.query_llm(prompt, context)
+
+            if not final_answer:
+                return
+
+            insight_key = f"idle_collab_{int(time.time())}"
+            self.store(
+                "model_config",
+                insight_key,
+                {
+                    "type": "idle_learning",
+                    "iteration": iteration,
+                    "regime": "bull" if regime_is_bull else "bear",
+                    "fg_value": fg_value,
+                    "providers_used": provider_count,
+                    "responses_used": len(usable),
+                    "summary": final_answer[:600],
+                    "timestamp": datetime.now().isoformat(),
+                },
+                confidence=0.62 if usable else 0.55,
+                source="llm",
+            )
+
+            with self._lock:
+                self._idle_learning["runs"] = int(self._idle_learning.get("runs", 0) or 0) + 1
+                self._idle_learning["last_run_at"] = datetime.now().isoformat()
+                self._idle_learning["last_summary"] = final_answer[:220]
+                self._idle_learning["last_error"] = ""
+                self._idle_learning["providers_used"] = provider_count
+                self._idle_learning["responses_used"] = len(usable)
+        except Exception as e:
+            with self._lock:
+                self._idle_learning["last_error"] = str(e)[:180]
+            log.debug("Idle-Learning-Zyklus: %s", e)
 
     def _query_llm_cached(self, cache_key: str, prompt: str, context: str = "") -> str | None:
         """LLM-Abfrage mit Cache um redundante Anfragen zu vermeiden.

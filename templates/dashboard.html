@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <meta name="theme-color" content="#020507">
+<meta name="csrf-token" content="{{ csrf_token() }}">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/static/icon-192.png">
 <title>TREVLIX v1.5.3 – Algorithmic Trading Intelligence</title>
@@ -898,6 +899,9 @@
               <div style="font-size:12px;font-weight:700;color:#f4d18a">3D KI Live View</div>
               <div style="font-size:10px;color:#8a7a5a;font-family:var(--mono)" id="ai3dMeta">WF: — · Pred: —</div>
             </div>
+            <div id="ai3dCollab" style="font-size:10px;color:#c7b083;margin-bottom:8px">
+              🤝 LLM-Kollaboration: Initialisiere…
+            </div>
             <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
           </div>
         </div>
@@ -912,6 +916,8 @@
             <div class="kv"><span class="kv-label">Entscheidungsqualität</span><span class="kv-value" id="aiDiagQuality">—</span></div>
             <div class="kv"><span class="kv-label">Drift Risiko</span><span class="kv-value" id="aiDiagDrift">—</span></div>
             <div class="kv"><span class="kv-label">Inference-Latenz</span><span class="kv-value" id="aiDiagLatency">—</span></div>
+            <div class="kv"><span class="kv-label">LLM Kollaboration</span><span class="kv-value" id="aiDiagCollab">—</span></div>
+            <div class="kv"><span class="kv-label">Idle-Learning Runs</span><span class="kv-value" id="aiDiagIdleRuns">—</span></div>
           </div>
           <div id="aiDiagReasoning" style="font-size:11px;color:var(--sub);line-height:1.4;margin-bottom:8px">
             Warte auf Diagnose-Daten…

@@ -168,6 +168,59 @@ class MultiLLMProvider:
         log.warning("Alle LLM-Provider fehlgeschlagen")
         return None
 
+    def chat_all(
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = _DEFAULT_TEMPERATURE,
+        max_tokens: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Fragt alle konfigurierten Provider ab (ohne Failover-Abbruch).
+
+        Returns:
+            Liste mit Antwort/Fehler je Provider.
+        """
+        result: list[dict[str, Any]] = []
+        for provider in self._providers:
+            try:
+                answer = self._call_provider(
+                    provider=provider,
+                    prompt=prompt,
+                    system=system,
+                    tools=None,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                )
+                if answer:
+                    result.append(
+                        {
+                            "provider": provider["name"],
+                            "model": provider.get("model", ""),
+                            "ok": True,
+                            "answer": answer,
+                        }
+                    )
+                else:
+                    result.append(
+                        {
+                            "provider": provider["name"],
+                            "model": provider.get("model", ""),
+                            "ok": False,
+                            "error": "empty_response",
+                        }
+                    )
+            except Exception as exc:
+                self._record_error(provider["name"], str(exc))
+                result.append(
+                    {
+                        "provider": provider["name"],
+                        "model": provider.get("model", ""),
+                        "ok": False,
+                        "error": str(exc),
+                    }
+                )
+        return result
+
     def status(self) -> list[dict[str, Any]]:
         """Gibt den Gesundheitsstatus aller Provider zurueck.
 
