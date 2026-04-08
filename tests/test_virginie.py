@@ -194,6 +194,94 @@ def test_virginie_orchestrator_reports_unassigned_domain():
     assert result.agent_name == "unassigned"
 
 
+def test_portfolio_goal_delegates_to_trading_agent_with_autonomous_allocation():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-goal-1",
+            domain="portfolio",
+            objective="Reach user target quickly",
+            payload={
+                "target_amount": 15_000,
+                "portfolio_value": 10_500,
+                "min_buy_notional": 10,
+                "min_sell_notional": 10,
+            },
+        )
+    )
+
+    assert result.success is True
+    assert result.agent_name == "portfolio-agent"
+    assert "trading-agent assigned" in result.summary
+    assert result.data["delegate_to"] == "trading-agent"
+    assert result.data["goal_gap_amount"] == 4500.0
+    assert result.data["goal_tradable_under_exchange_rules"] is True
+    assert result.data["delegate_task"]["domain"] == "trading"
+    assert result.data["delegate_task"]["payload"]["autonomous_allocation"] is True
+    assert result.data["delegate_task"]["payload"]["optimize_for_speed"] is True
+    assert result.data["delegate_task"]["payload"]["respect_exchange_minimums"] is True
+
+
+def test_portfolio_goal_is_not_delegated_when_exchange_minimum_blocks_trade():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-goal-2",
+            domain="portfolio",
+            objective="Reach user target quickly",
+            payload={
+                "target_amount": 10_010,
+                "portfolio_value": 10_000,
+                "min_buy_notional": 25,
+                "min_sell_notional": 25,
+            },
+        )
+    )
+
+    assert result.success is True
+    assert "blocked by exchange minimum" in result.summary
+    assert result.data["goal_gap_amount"] == 10.0
+    assert result.data["goal_tradable_under_exchange_rules"] is False
+    assert result.data["delegate_to"] is None
+    assert result.data["delegate_task"] is None
+
+
+def test_portfolio_goal_in_paper_mode_bypasses_exchange_minimum_block():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-goal-3",
+            domain="portfolio",
+            objective="Reach user target quickly",
+            payload={
+                "target_amount": 10_010,
+                "portfolio_value": 10_000,
+                "min_buy_notional": 25,
+                "min_sell_notional": 25,
+                "paper_mode": True,
+            },
+        )
+    )
+
+    assert result.success is True
+    assert "Paper mode goal received" in result.summary
+    assert result.data["goal_gap_amount"] == 10.0
+    assert result.data["paper_mode"] is True
+    assert result.data["exchange_constraints_enforced"] is False
+    assert result.data["goal_tradable_under_exchange_rules"] is True
+    assert result.data["delegate_to"] == "trading-agent"
+    assert result.data["delegate_task"]["payload"]["respect_exchange_minimums"] is False
+
+
 def test_virginie_orchestrator_coverage_report_detects_missing_domains():
     orchestrator = VirginieOrchestrator()
     orchestrator.set_required_domains(["planning", "risk"])
