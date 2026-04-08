@@ -604,11 +604,15 @@ def build_default_project_agents() -> list[VirginieAgent]:
         current_value = float(task.payload.get("portfolio_value", 0) or 0)
         gap_to_target = max(0.0, target_amount - current_value) if target_amount > 0 else 0.0
         has_goal = target_amount > 0
+        is_paper_mode = bool(task.payload.get("paper_mode", False))
         min_buy_notional = float(task.payload.get("min_buy_notional", 0) or 0)
         min_sell_notional = float(task.payload.get("min_sell_notional", 0) or 0)
         min_trade_notional = max(min_buy_notional, min_sell_notional)
         constraints_known = min_trade_notional > 0
-        tradable_gap = gap_to_target >= min_trade_notional if constraints_known else gap_to_target > 0
+        if is_paper_mode:
+            tradable_gap = gap_to_target > 0
+        else:
+            tradable_gap = gap_to_target >= min_trade_notional if constraints_known else gap_to_target > 0
         objective_text = f"{task.objective} | Ziel={target_amount:.2f} USDT" if has_goal else task.objective
 
         return AgentResult(
@@ -617,9 +621,13 @@ def build_default_project_agents() -> list[VirginieAgent]:
             success=True,
             summary=(
                 (
-                    "Portfolio goal received; trading-agent assigned for fastest target pursuit"
-                    if tradable_gap
-                    else "Portfolio goal received but blocked by exchange minimum trade conditions"
+                    "Paper mode goal received; trading-agent assigned without exchange minimum checks"
+                    if tradable_gap and is_paper_mode
+                    else (
+                        "Portfolio goal received; trading-agent assigned for fastest target pursuit"
+                        if tradable_gap
+                        else "Portfolio goal received but blocked by exchange minimum trade conditions"
+                    )
                 )
                 if has_goal
                 else f"Portfolio allocation review executed for: {task.objective}"
@@ -632,6 +640,8 @@ def build_default_project_agents() -> list[VirginieAgent]:
                 "exchange_min_buy_notional": round(min_buy_notional, 8),
                 "exchange_min_sell_notional": round(min_sell_notional, 8),
                 "exchange_constraints_known": constraints_known,
+                "paper_mode": is_paper_mode,
+                "exchange_constraints_enforced": not is_paper_mode,
                 "goal_tradable_under_exchange_rules": tradable_gap,
                 "delegate_to": "trading-agent" if has_goal and tradable_gap else None,
                 "delegate_task": {
@@ -641,7 +651,8 @@ def build_default_project_agents() -> list[VirginieAgent]:
                         "action": "reach_target_fast",
                         "autonomous_allocation": True,
                         "optimize_for_speed": True,
-                        "respect_exchange_minimums": True,
+                        "respect_exchange_minimums": not is_paper_mode,
+                        "paper_mode": is_paper_mode,
                         "target_amount": round(target_amount, 2),
                         "current_portfolio_value": round(current_value, 2),
                         "target_gap_amount": round(gap_to_target, 2),
