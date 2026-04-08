@@ -592,6 +592,9 @@
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="rl_agent_s">RL-Agent</span></div></div><label class="toggle"><input type="checkbox" id="sRL" checked><span class="tslider"></span></label></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="fear_greed_s">Fear & Greed</span></div></div><label class="toggle"><input type="checkbox" id="sFG" checked><span class="tslider"></span></label></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="kelly_sizing">Kelly-Sizing</span></div></div><label class="toggle"><input type="checkbox" id="sKelly" checked><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE aktiv</div><div class="s-help">Selbstlernende Entscheidungslogik als Haupt-Gate</div></div><label class="toggle"><input type="checkbox" id="sVirginieEnabled" checked><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE Min-Score</div><div class="s-help">Mindest-Expected-Value für Buy-Freigabe</div></div><input type="number" class="s-input" id="sVirginieMinScore" value="0.0" step="0.1" min="-50" max="100"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE Max Risiko-Penalty</div><div class="s-help">Harte Obergrenze für Risiko-Penalty</div></div><input type="number" class="s-input" id="sVirginieMaxRisk" value="1000" step="1" min="0" max="5000"></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="news_block_score">News Block-Score</span></div><div class="s-help">Kauf blockiert unter diesem Wert</div></div><input type="number" class="s-input" id="sNewsBlock" value="-0.4" step="0.1" min="-1" max="0"></div>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_discord">💬 Discord</span></div>
@@ -887,6 +890,7 @@
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_predictions">Vorhersagen</span><span class="kv-value" id="aiPredictions">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_correct">Korrekt</span><span class="kv-value" id="aiCorrect">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_version">Version</span><span class="kv-value" id="aiVersion">—</span></div>
+            <div class="kv"><span class="kv-label">Assistant</span><span class="kv-value" id="aiAssistant">—</span></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px">
             <button class="btn btn-pause"  style="padding:10px;font-size:11px" onclick="forceTrain()"><span data-i18n="btn_train">Train</span></button>

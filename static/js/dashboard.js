@@ -503,6 +503,8 @@ function updateAI(ai){
   const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   const _sc = (id, v, color) => { const el=document.getElementById(id); if(el){el.textContent=v; if(color) el.style.color=color;} };
   _s('aiVer', ai.is_trained?'v'+ai.training_ver:'Training...');
+  const assistantLabel = ai.assistant_name ? `${ai.assistant_name} ${ai.assistant_version||''}`.trim() : '—';
+  _s('aiAssistant', assistantLabel);
   _sc('aiStatusMsg', ai.status_msg||'—', ai.is_trained?'var(--green)':'var(--sub)');
   _s('aiProgPct', (ai.progress_pct||0)+'%');
   const progBar=document.getElementById('aiProgBar');
@@ -1299,6 +1301,9 @@ function saveSettings(){
     backup_enabled:document.getElementById('sBackup').checked,
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
+    virginie_enabled:document.getElementById('sVirginieEnabled').checked,
+    virginie_min_score:_pf(document.getElementById('sVirginieMinScore').value),
+    virginie_max_risk_penalty:_pf(document.getElementById('sVirginieMaxRisk').value),
     exchange:document.getElementById('sExchange')?.value||undefined,
   });
 }
@@ -1762,6 +1767,7 @@ socket.on('system_analytics', d => {
     _set('aiAccuracy', a.accuracy); _set('aiCvAccuracy', a.cv_accuracy);
     _set('aiPredictions', a.predictions); _set('aiCorrect', a.correct);
     _set('aiVersion', 'v' + (a.version || 0)); _set('aiLastTrained', a.last_trained);
+    _set('aiAssistant', (a.assistant_name || '—') + (a.assistant_version ? ' ' + a.assistant_version : ''));
     _set('aiTradesSinceRetrain', a.trades_since_retrain);
     updateAI3DFromAI({
       wf_accuracy: parseFloat(String(a.accuracy||'0').replace('%','')) || 0,
