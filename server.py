@@ -736,6 +736,7 @@ def api_user_settings_update():
     # Erlaubte Settings für User (keine Admin-/System-Settings)
     _ALLOWED_USER_SETTINGS = {
         "paper_trading",
+        "trade_mode",
         "paper_balance",
         "risk_per_trade",
         "stop_loss_pct",
@@ -770,10 +771,17 @@ def api_user_settings_update():
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
-    if "paper_trading" in filtered:
-        mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
-        trade_mode.set_mode(mode)
-        CONFIG["paper_trading"] = mode == "paper"
+    requested_mode = None
+    if "trade_mode" in filtered:
+        requested_mode = str(filtered.get("trade_mode", "paper")).strip().lower()
+        if requested_mode not in {"paper", "live"}:
+            requested_mode = "paper"
+    elif "paper_trading" in filtered:
+        requested_mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
+    if requested_mode:
+        applied_mode = trade_mode.set_mode(requested_mode)
+        CONFIG["paper_trading"] = applied_mode == "paper"
+        current["trade_mode"] = applied_mode
     current["paper_trading"] = CONFIG.get("paper_trading", True)
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
