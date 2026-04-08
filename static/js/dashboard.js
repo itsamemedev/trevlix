@@ -41,6 +41,10 @@ let wizStep=0, wizEx='cryptocom';
 const _navHooks=[];
 function onNav(fn){_navHooks.push(fn);}
 function nav(id,el){
+  if(id==='admin' && !document.body.classList.contains('is-admin')){
+    id='home';
+    el=document.getElementById('nb-home');
+  }
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const sec=document.getElementById('sec-'+id); if(sec) sec.classList.add('active');
@@ -1556,6 +1560,17 @@ function applyRoleUI(role) {
       el.style.display = 'none';
     }
   });
+
+  if (role !== 'admin') {
+    const adminSec = document.getElementById('sec-admin');
+    if (adminSec) adminSec.classList.remove('active');
+    const adminNav = document.getElementById('nb-admin');
+    if (adminNav) adminNav.classList.remove('active');
+    const homeSec = document.getElementById('sec-home');
+    const homeNav = document.getElementById('nb-home');
+    if (homeSec) homeSec.classList.add('active');
+    if (homeNav) homeNav.classList.add('active');
+  }
 }
 
 function applyStateToRole(data) {

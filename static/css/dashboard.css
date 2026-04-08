@@ -882,11 +882,11 @@ body.is-admin .card{
 
 /* Admin grid layout on desktop */
 @media(min-width:900px){
-  #sec-admin { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
+  #sec-admin.active { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
   #sec-admin .admin-sec-hd { grid-column:1/-1; }
   #sec-admin .admin-stat-row { grid-column:1/-1; }
   #sec-admin .admin-full-width { grid-column:1/-1; }
-  #sec-analytics { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
+  #sec-analytics.active { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
   #sec-analytics > .admin-sec-hd { grid-column:1/-1; }
   #sec-analytics > .admin-card.admin-full-width { grid-column:1/-1; }
   .admin-stat-row { grid-template-columns:repeat(4,1fr); }
