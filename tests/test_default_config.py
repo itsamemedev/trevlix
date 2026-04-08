@@ -11,6 +11,9 @@ def test_build_default_config_includes_expected_keys():
     assert cfg["mysql_port"] == 3306
     assert cfg["discord_on_signals"] is True
     assert "partial_tp_levels" in cfg
+    assert cfg["virginie_enabled"] is True
+    assert cfg["virginie_min_score"] == 0.0
+    assert cfg["virginie_max_risk_penalty"] == 1000.0
 
 
 def test_build_default_config_env_overrides(monkeypatch):

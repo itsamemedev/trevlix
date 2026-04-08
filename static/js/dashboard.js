@@ -503,6 +503,8 @@ function updateAI(ai){
   const _s = (id, v) => { const el=document.getElementById(id); if(el) el.textContent=v; };
   const _sc = (id, v, color) => { const el=document.getElementById(id); if(el){el.textContent=v; if(color) el.style.color=color;} };
   _s('aiVer', ai.is_trained?'v'+ai.training_ver:'Training...');
+  const assistantLabel = ai.assistant_name ? `${ai.assistant_name} ${ai.assistant_version||''}`.trim() : '—';
+  _s('aiAssistant', assistantLabel);
   _sc('aiStatusMsg', ai.status_msg||'—', ai.is_trained?'var(--green)':'var(--sub)');
   _s('aiProgPct', (ai.progress_pct||0)+'%');
   const progBar=document.getElementById('aiProgBar');
@@ -539,7 +541,8 @@ function updateAI(ai){
 
 const _ai3dState = {
   ready:false, angle:0, wobble:0,
-  wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0
+  wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
+  agentCount:0, lastAgent:'—', agentNames:[]
 };
 function updateAI3DFromAI(ai){
   if(!ai) return;
@@ -550,17 +553,31 @@ function updateAI3DFromAI(ai){
   _ai3dState.preds = Number(ai.allowed_count||0) + Number(ai.blocked_count||0);
   _ai3dState.allowed = Number(ai.allowed_count||0);
   _ai3dState.blocked = Number(ai.blocked_count||0);
+  _ai3dState.agentCount = Number((ai.assistant_agents||{}).registered_agents||0);
+  _ai3dState.lastAgent = String((ai.assistant_agents||{}).last_agent||'—');
+  _ai3dState.agentNames = Array.isArray((ai.assistant_agents||{}).agent_names) ? (ai.assistant_agents||{}).agent_names : [];
   const m=document.getElementById('ai3dMeta');
-  if(m) m.textContent = `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
+  const assistantAgents = ai.assistant_agents || {};
+  if(m) m.textContent = assistantAgents.registered_agents
+    ? `VIRGINIE Agents: ${assistantAgents.registered_agents} · Coverage: ${assistantAgents.coverage_pct||0}%`
+    : `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
   const collabEl = document.getElementById('ai3dCollab');
   if(collabEl){
     const providers = Number(ai.llm_providers_used||0);
     const answers = Number(ai.llm_responses_used||0);
     const runs = Number(ai.idle_learning_runs||0);
-    const active = providers > 0 || answers > 0;
+    const ag = ai.assistant_agents || {};
+    const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
     collabEl.textContent = active
-      ? `🤝 LLM-Kollaboration aktiv · Provider ${providers} · Antworten ${answers} · Idle-Runs ${runs}`
-      : `🤝 LLM-Kollaboration wartet · Idle-Runs ${runs}`;
+      ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
+      : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+  }
+  const agentsEl = document.getElementById('ai3dAgents');
+  if(agentsEl){
+    const names = _ai3dState.agentNames.slice(0, 9);
+    agentsEl.innerHTML = names.length
+      ? names.map(n => `<span style="font-size:10px;padding:3px 7px;border:1px solid rgba(212,175,55,.25);border-radius:999px;background:rgba(212,175,55,.08);color:#e9d3a1">${esc(n)}</span>`).join('')
+      : '<span style="font-size:10px;color:var(--sub)">Keine Agenten registriert</span>';
   }
   if(!_ai3dState.ready){
     _ai3dState.ready=true;
@@ -594,6 +611,22 @@ function _renderAI3D(){
   ctx.strokeStyle='rgba(0,255,180,0.22)';
   ctx.beginPath(); ctx.ellipse(0,0,74,22,0,0,Math.PI*2); ctx.stroke();
   ctx.restore();
+  // Agenten-Orbits (VIRGINIE)
+  const agentN = Math.max(0, Math.min(12, _ai3dState.agentCount||0));
+  for(let i=0;i<agentN;i++){
+    const a = _ai3dState.angle + (i*(Math.PI*2/Math.max(agentN,1)));
+    const rx = 70 + (i%3)*12;
+    const ry = 30 + (i%2)*10;
+    const x = cx + Math.cos(a)*rx;
+    const y = cy + Math.sin(a)*ry;
+    ctx.beginPath();
+    ctx.arc(x,y,3.2,0,Math.PI*2);
+    ctx.fillStyle = i===0 ? 'rgba(0,255,136,.9)' : 'rgba(255,196,90,.8)';
+    ctx.fill();
+  }
+  ctx.fillStyle='rgba(220,200,150,.85)';
+  ctx.font='10px Fira Code, monospace';
+  ctx.fillText(`Agents: ${_ai3dState.agentCount} | Last: ${_ai3dState.lastAgent}`, 12, h-10);
   // Core sphere
   const grd=ctx.createRadialGradient(cx-10,cy-16,8,cx,cy,60);
   grd.addColorStop(0,'rgba(255,236,180,.95)');
@@ -1299,6 +1332,9 @@ function saveSettings(){
     backup_enabled:document.getElementById('sBackup').checked,
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
+    virginie_enabled:document.getElementById('sVirginieEnabled').checked,
+    virginie_min_score:_pf(document.getElementById('sVirginieMinScore').value),
+    virginie_max_risk_penalty:_pf(document.getElementById('sVirginieMaxRisk').value),
     exchange:document.getElementById('sExchange')?.value||undefined,
   });
 }
@@ -1662,6 +1698,9 @@ function renderAIDiagnosePanel(diag){
   const corr = Number(diag.correct||0);
   const decisionQ = pred > 0 ? (corr/pred)*100 : 0;
   const trained = !!diag.trained;
+  const assistantAgents = diag.assistant_agents || {};
+  const agentCount = Number(assistantAgents.registered_agents||0);
+  const coveragePct = Number(assistantAgents.coverage_pct||0);
   const latencyMs = Number(diag.llm_latency_ms||0);
   const riskLosses = Number(diag.circuit_losses||0);
   const riskLimit = Number(diag.circuit_limit||0);
@@ -1688,8 +1727,8 @@ function renderAIDiagnosePanel(diag){
   const collabRuns = Number(diag.idle_learning_runs||0);
   const collabActive = !!diag.llm_collaboration_active || collabProviders>0 || collabResponses>0;
   const collabTxt = collabActive
-    ? `🟢 ${collabProviders} Provider / ${collabResponses} Antworten`
-    : '🟡 standby';
+    ? `🟢 Agents ${agentCount} / Coverage ${coveragePct.toFixed(1)}% / Provider ${collabProviders}`
+    : `🟡 standby (Agents ${agentCount}, Coverage ${coveragePct.toFixed(1)}%)`;
 
   _s('aiDiagHealth', healthTxt);
   _s('aiDiagQuality', qualityTxt);
@@ -1704,7 +1743,12 @@ function renderAIDiagnosePanel(diag){
   if(decisionQ < 55 && pred >= 20) reasons.push('Trefferquote der Vorhersagen ist niedrig.');
   if(agree < 70) reasons.push('Abweichung zwischen Accuracy und CV-Accuracy deutet auf Drift/Overfitting hin.');
   if(latencyMs > 1500) reasons.push('LLM-Latenz ist erhöht – mögliche API/Provider-Bremse.');
-  if(!collabActive) reasons.push('LLM-Kollaboration im Idle-Modus ist aktuell noch nicht aktiv.');
+  if(agentCount <= 0) reasons.push('VIRGINIE-Agenten sind nicht registriert.');
+  if(Array.isArray(assistantAgents.missing_domains) && assistantAgents.missing_domains.length){
+    reasons.push(`Fehlende Agent-Domains: ${assistantAgents.missing_domains.join(', ')}`);
+  }
+  if(!collabActive) reasons.push('LLM/VIRGINIE-Kollaboration im Idle-Modus ist aktuell noch nicht aktiv.');
+  if(diag.assistant_review?.summary) reasons.push(`Review: ${diag.assistant_review.summary}`);
   if(diag.idle_learning_error) reasons.push(`Idle-Learning Fehler: ${diag.idle_learning_error}`);
   if(riskPressure >= 80) reasons.push('Circuit-Breaker steht kurz vor dem Limit.');
   if(diag.idle_learning_summary) reasons.push(`Letzter Idle-Impuls: ${diag.idle_learning_summary}`);
@@ -1715,6 +1759,10 @@ function renderAIDiagnosePanel(diag){
   if(agree < 75) actions.push({txt:'🔧 Optimierung', fn:'forceOptimize()'});
   if(riskPressure >= 80) actions.push({txt:'🛑 Trading pausieren', fn:"apiTradingControl('stop')"});
   if(latencyMs > 1500) actions.push({txt:'🌐 LLM Provider prüfen', fn:'loadLlmProviderStatus()'});
+  if(agentCount <= 0) actions.push({txt:'🤖 Agenten initialisieren', fn:'loadSystemAnalytics()'});
+  if(Array.isArray(assistantAgents.missing_domains) && assistantAgents.missing_domains.length){
+    actions.push({txt:'🧩 Agent-Lücken prüfen', fn:'loadSystemAnalytics()'});
+  }
   if(!actions.length) actions.push({txt:'✅ Kein Eingriff nötig', fn:''});
 
   actionsEl.innerHTML = actions.map(a => a.fn
@@ -1762,6 +1810,7 @@ socket.on('system_analytics', d => {
     _set('aiAccuracy', a.accuracy); _set('aiCvAccuracy', a.cv_accuracy);
     _set('aiPredictions', a.predictions); _set('aiCorrect', a.correct);
     _set('aiVersion', 'v' + (a.version || 0)); _set('aiLastTrained', a.last_trained);
+    _set('aiAssistant', (a.assistant_name || '—') + (a.assistant_version ? ' ' + a.assistant_version : ''));
     _set('aiTradesSinceRetrain', a.trades_since_retrain);
     updateAI3DFromAI({
       wf_accuracy: parseFloat(String(a.accuracy||'0').replace('%','')) || 0,

@@ -592,6 +592,9 @@
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="rl_agent_s">RL-Agent</span></div></div><label class="toggle"><input type="checkbox" id="sRL" checked><span class="tslider"></span></label></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="fear_greed_s">Fear & Greed</span></div></div><label class="toggle"><input type="checkbox" id="sFG" checked><span class="tslider"></span></label></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="kelly_sizing">Kelly-Sizing</span></div></div><label class="toggle"><input type="checkbox" id="sKelly" checked><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE aktiv</div><div class="s-help">Selbstlernende Entscheidungslogik als Haupt-Gate</div></div><label class="toggle"><input type="checkbox" id="sVirginieEnabled" checked><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE Min-Score</div><div class="s-help">Mindest-Expected-Value für Buy-Freigabe</div></div><input type="number" class="s-input" id="sVirginieMinScore" value="0.0" step="0.1" min="-50" max="100"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">VIRGINIE Max Risiko-Penalty</div><div class="s-help">Harte Obergrenze für Risiko-Penalty</div></div><input type="number" class="s-input" id="sVirginieMaxRisk" value="1000" step="1" min="0" max="5000"></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="news_block_score">News Block-Score</span></div><div class="s-help">Kauf blockiert unter diesem Wert</div></div><input type="number" class="s-input" id="sNewsBlock" value="-0.4" step="0.1" min="-1" max="0"></div>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_discord">💬 Discord</span></div>
@@ -887,6 +890,7 @@
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_predictions">Vorhersagen</span><span class="kv-value" id="aiPredictions">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_correct">Korrekt</span><span class="kv-value" id="aiCorrect">—</span></div>
             <div class="kv"><span class="kv-label" data-i18n="admin_ai_version">Version</span><span class="kv-value" id="aiVersion">—</span></div>
+            <div class="kv"><span class="kv-label">Assistant</span><span class="kv-value" id="aiAssistant">—</span></div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:7px">
             <button class="btn btn-pause"  style="padding:10px;font-size:11px" onclick="forceTrain()"><span data-i18n="btn_train">Train</span></button>
@@ -896,12 +900,13 @@
           </div>
           <div style="margin-top:12px;border:1px solid rgba(255,180,0,.14);border-radius:10px;background:radial-gradient(circle at 20% 20%,rgba(255,180,0,.12),rgba(6,8,14,.8));padding:10px">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div style="font-size:12px;font-weight:700;color:#f4d18a">3D KI Live View</div>
+              <div style="font-size:12px;font-weight:700;color:#f4d18a">3D VIRGINIE Live View</div>
               <div style="font-size:10px;color:#8a7a5a;font-family:var(--mono)" id="ai3dMeta">WF: — · Pred: —</div>
             </div>
             <div id="ai3dCollab" style="font-size:10px;color:#c7b083;margin-bottom:8px">
-              🤝 LLM-Kollaboration: Initialisiere…
+              🤖 VIRGINIE-Kollaboration: Initialisiere…
             </div>
+            <div id="ai3dAgents" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
             <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
           </div>
         </div>
@@ -909,14 +914,14 @@
 
       <!-- AI Diagnose -->
       <div class="admin-card">
-        <div class="card-hd"><div class="card-title">AI Diagnose</div></div>
+        <div class="card-hd"><div class="card-title">VIRGINIE Diagnose</div></div>
         <div class="card-body">
           <div class="kv-grid" style="margin-bottom:10px">
             <div class="kv"><span class="kv-label">Gesundheit</span><span class="kv-value" id="aiDiagHealth">—</span></div>
             <div class="kv"><span class="kv-label">Entscheidungsqualität</span><span class="kv-value" id="aiDiagQuality">—</span></div>
             <div class="kv"><span class="kv-label">Drift Risiko</span><span class="kv-value" id="aiDiagDrift">—</span></div>
             <div class="kv"><span class="kv-label">Inference-Latenz</span><span class="kv-value" id="aiDiagLatency">—</span></div>
-            <div class="kv"><span class="kv-label">LLM Kollaboration</span><span class="kv-value" id="aiDiagCollab">—</span></div>
+            <div class="kv"><span class="kv-label">VIRGINIE Kollaboration</span><span class="kv-value" id="aiDiagCollab">—</span></div>
             <div class="kv"><span class="kv-label">Idle-Learning Runs</span><span class="kv-value" id="aiDiagIdleRuns">—</span></div>
           </div>
           <div id="aiDiagReasoning" style="font-size:11px;color:var(--sub);line-height:1.4;margin-bottom:8px">

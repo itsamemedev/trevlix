@@ -53,3 +53,5 @@ def test_init_ai_engine_merges_required_defaults_for_partial_configs():
     assert ai_engine.CONFIG["lstm_lookback"] == 24
     assert ai_engine.CONFIG["ai_min_samples"] == 20
     assert ai_engine.CONFIG["stop_loss_pct"] == 0.025
+    assert ai_engine.CONFIG["virginie_enabled"] is True
+    assert ai_engine.CONFIG["virginie_min_score"] == 0.0

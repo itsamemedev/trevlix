@@ -98,6 +98,7 @@ market_cache = None
 trade_mode = None
 trade_execution = None
 
+
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
@@ -518,6 +519,45 @@ def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None 
         )
 
 
+def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_score: float) -> None:
+    """Bridge VIRGINIE decisions to notifier and orchestration subsystems."""
+    if "VIRGINIE" not in ai_reason:
+        return
+
+    status = "✅ freigegeben" if allowed else "🚫 blockiert"
+    msg = f"VIRGINIE {status}: {symbol} | Score {ai_score * 100:.1f}%"
+    detail = ai_reason[:220]
+
+    try:
+        state.add_activity("🤖", msg, detail, "info" if allowed else "warning")
+    except Exception:
+        pass
+
+    try:
+        if allowed:
+            discord.signal_opportunity(symbol, "buy", float(ai_score), 0.0, ai_score=ai_score * 100)
+        else:
+            discord.error(f"{symbol}: {detail}")
+            telegram.error(f"{symbol}: {detail}")
+    except Exception:
+        pass
+
+    try:
+        if hasattr(ai_engine, "virginie_orchestrator"):
+            from services.virginie import AgentTask
+
+            ai_engine.virginie_orchestrator.execute(
+                AgentTask(
+                    task_id=f"decision-{symbol}-{'allow' if allowed else 'block'}",
+                    domain="trading" if allowed else "notifications",
+                    objective="VIRGINIE decision routing",
+                    payload={"symbol": symbol, "allowed": allowed, "reason": detail},
+                )
+            )
+    except Exception:
+        pass
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRADE EXECUTION mit DCA + Partial TP
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -615,6 +655,7 @@ def open_position(ex, scan: dict):
         bool(allowed),
         ai_reason,
     )
+    _notify_virginie_decision(symbol, bool(allowed), str(ai_reason), float(ai_score))
     if not allowed:
         _record_decision(symbol, "blocked", f"ai_filter:{ai_reason}", scan)
         return
@@ -710,7 +751,7 @@ def open_position(ex, scan: dict):
             return
         fee = exec_result.fee
         qty = float((exec_result.meta or {}).get("qty", qty))
-        order_resp = ((exec_result.meta or {}).get("order") or {})
+        order_resp = (exec_result.meta or {}).get("order") or {}
 
     ai_engine.on_buy(symbol, features, scan["votes"], scan)
     pos_data = {
@@ -886,7 +927,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
             log.error("Sell %s fehlgeschlagen: %s", symbol, exec_result.reason)
             _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
             return
-        order_resp = ((exec_result.meta or {}).get("order") or {})
+        order_resp = (exec_result.meta or {}).get("order") or {}
     if CONFIG.get("paper_trading", True):
         with state._lock:
             state.balance += close_invest + pnl
@@ -1003,7 +1044,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "meta": {"partial": is_partial},
             }
         )
-    _record_decision(symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)})
+    _record_decision(
+        symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)}
+    )
     # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
     try:
         scan_at_entry = {
