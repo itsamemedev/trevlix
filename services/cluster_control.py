@@ -33,8 +33,10 @@ import requests
 try:
     from enum import StrEnum
 except ImportError:  # Python < 3.11 compatibility
+
     class StrEnum(str, Enum):
         """Fallback for Python versions without enum.StrEnum."""
+
 
 log = logging.getLogger("trevlix.cluster")
 

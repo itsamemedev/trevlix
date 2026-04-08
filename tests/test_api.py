@@ -130,7 +130,9 @@ class TestPaperTradingExchangeUpsert:
         CONFIG["paper_trading"] = True
         called = {}
 
-        def _fake_upsert(user_id, exchange, api_key, api_secret, enabled=False, is_primary=False, passphrase=""):
+        def _fake_upsert(
+            user_id, exchange, api_key, api_secret, enabled=False, is_primary=False, passphrase=""
+        ):
             called.update(
                 {
                     "user_id": user_id,

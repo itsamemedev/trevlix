@@ -6,7 +6,9 @@ import os
 import signal
 
 
-def build_graceful_shutdown_handler(*, state, shutdown_event, healer, cluster_ctrl, db, socketio, log):
+def build_graceful_shutdown_handler(
+    *, state, shutdown_event, healer, cluster_ctrl, db, socketio, log
+):
     """Erzeugt den Graceful-Shutdown-Handler mit gebundenen Abhängigkeiten."""
 
     def _graceful_shutdown(signum, _frame):

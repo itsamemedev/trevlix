@@ -222,7 +222,9 @@ class MySQLManager:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ergänzende Felder für Trading-Modus + Gebühren
                 try:
-                    c.execute("ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'")
+                    c.execute(
+                        "ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'"
+                    )
                 except Exception:
                     pass
                 try:
@@ -658,7 +660,9 @@ class MySQLManager:
         except Exception as e:
             log.error(f"save_trade_decision: {e}")
 
-    def load_orders(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_orders(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -682,7 +686,9 @@ class MySQLManager:
             log.error(f"load_orders: {e}")
             return []
 
-    def load_trade_decisions(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_trade_decisions(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:

@@ -54,7 +54,11 @@ try:
     from sklearn.calibration import CalibratedClassifierCV as _CCV
     from sklearn.ensemble import (
         IsolationForest as _IF,
+    )
+    from sklearn.ensemble import (
         RandomForestClassifier as _RFC,
+    )
+    from sklearn.ensemble import (
         VotingClassifier as _VC,
     )
     from sklearn.metrics import accuracy_score as _acc
@@ -134,8 +138,14 @@ try:
     from tensorflow.keras.callbacks import EarlyStopping as _ES
     from tensorflow.keras.layers import (
         LSTM as _LSTM,
+    )
+    from tensorflow.keras.layers import (
         Dense as _Dense,
+    )
+    from tensorflow.keras.layers import (
         Dropout as _Drop,
+    )
+    from tensorflow.keras.layers import (
         Input as _Inp,
     )
     from tensorflow.keras.models import Sequential as _Seq
@@ -1232,7 +1242,8 @@ class AIEngine:
             not self.is_trained and n >= bootstrap_min and self.trades_since_retrain >= 2
         )
         should_regular_retrain = (
-            n >= CONFIG["ai_min_samples"] and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
+            n >= CONFIG["ai_min_samples"]
+            and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
         )
         if should_bootstrap or should_regular_retrain:
             threading.Thread(target=self._train, daemon=True).start()

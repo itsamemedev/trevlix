@@ -96,6 +96,7 @@ _pin_user_exchange = None
 market_cache = None
 trade_mode = None
 
+
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
@@ -964,7 +965,9 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "meta": {"partial": is_partial},
             }
         )
-    _record_decision(symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)})
+    _record_decision(
+        symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)}
+    )
     # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
     try:
         scan_at_entry = {
@@ -1613,7 +1616,9 @@ def bot_loop():
                 # CryptoPanic Batch-Prefetch: reduziert Requests massiv und schont Limits
                 try:
                     if hasattr(news_fetcher, "prefetch_scores"):
-                        news_fetcher.prefetch_scores([s for s in state.markets if s not in state.positions])
+                        news_fetcher.prefetch_scores(
+                            [s for s in state.markets if s not in state.positions]
+                        )
                 except Exception as cp_exc:
                     log.debug("CryptoPanic prefetch failed: %s", cp_exc)
                 with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:

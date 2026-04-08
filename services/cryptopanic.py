@@ -155,9 +155,14 @@ class CryptoPanicClient:
         if now < self._rate_limited_until:
             self._last_fetch_was_rate_limited = True
             wait_s = int(self._rate_limited_until - now)
-            log.debug("CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency)
+            log.debug(
+                "CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency
+            )
             return []
-        if self._last_api_call_at > 0 and (now - self._last_api_call_at) < self._min_request_interval:
+        if (
+            self._last_api_call_at > 0
+            and (now - self._last_api_call_at) < self._min_request_interval
+        ):
             self._last_fetch_was_rate_limited = True
             return []
 
@@ -216,7 +221,11 @@ class CryptoPanicClient:
             return []
 
     def fetch_posts_multi(
-        self, currencies: list[str], filter_type: str = "hot", kind: str = "news", regions: str = "en"
+        self,
+        currencies: list[str],
+        filter_type: str = "hot",
+        kind: str = "news",
+        regions: str = "en",
     ) -> list:
         """Batch-Request für mehrere Coins in EINEM API-Call.
 

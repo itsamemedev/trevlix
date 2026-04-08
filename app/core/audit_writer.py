@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 
-def write_audit_entry(*, db, log, request_obj, action: str, detail: str = "", user_id: int = 0) -> None:
+def write_audit_entry(
+    *, db, log, request_obj, action: str, detail: str = "", user_id: int = 0
+) -> None:
     """Persist one audit-log entry; failures are debug-only."""
     try:
         try:
