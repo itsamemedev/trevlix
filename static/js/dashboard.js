@@ -1127,29 +1127,48 @@ async function loadBtHistory(){
 
 // ── Tax ──────────────────────────────────────────────────────────────
 async function loadTax(){
-  const year=document.getElementById('taxYear').value||new Date().getFullYear();
-  const method=document.getElementById('taxMethod').value;
+  const taxYearEl=document.getElementById('taxYear');
+  const taxMethodEl=document.getElementById('taxMethod');
+  if(!taxYearEl || !taxMethodEl){
+    toast('⚠️ Tax-Ansicht ist aktuell nicht verfügbar.','warning');
+    return;
+  }
+  const year=taxYearEl.value||new Date().getFullYear();
+  const method=taxMethodEl.value;
   try{
     const data=await(await fetch(`/api/tax_report?year=${encodeURIComponent(year)}&method=${encodeURIComponent(method)}`)).json();
     if(data.error){toast(data.error,'error');return;}
     const s=data.summary;
-    document.getElementById('taxResult').style.display='block';
-    document.getElementById('taxGains').textContent=fmtS(s.total_gains)+' USDT';
-    document.getElementById('taxLosses').textContent=fmtS(s.total_losses)+' USDT';
-    const tn=document.getElementById('taxNet'); tn.textContent=fmtS(s.net_pnl)+' USDT'; tn.style.color=clr(s.net_pnl);
-    document.getElementById('taxTaxable').textContent=fmt(s.taxable_gains)+' USDT';
-    document.getElementById('taxFees').textContent=fmt(s.total_fees)+' USDT';
-    document.getElementById('taxCount').textContent=s.trade_count+'T ('+s.win_count+'G / '+s.loss_count+'V)';
-    const wb=document.getElementById('taxWarnBar');
-    if(s.taxable_gains>600){wb.style.display='flex';document.getElementById('taxWarnTxt').textContent=QI18n.t('msg_tax_warn');}
-    else wb.style.display='none';
-    document.getElementById('taxTable').innerHTML=data.gains.slice(0,30).map(g=>
+    const taxResultEl=document.getElementById('taxResult');
+    const taxGainsEl=document.getElementById('taxGains');
+    const taxLossesEl=document.getElementById('taxLosses');
+    const taxNetEl=document.getElementById('taxNet');
+    const taxTaxableEl=document.getElementById('taxTaxable');
+    const taxFeesEl=document.getElementById('taxFees');
+    const taxCountEl=document.getElementById('taxCount');
+    const taxWarnBarEl=document.getElementById('taxWarnBar');
+    const taxWarnTxtEl=document.getElementById('taxWarnTxt');
+    const taxTableEl=document.getElementById('taxTable');
+    if(!taxResultEl||!taxGainsEl||!taxLossesEl||!taxNetEl||!taxTaxableEl||!taxFeesEl||!taxCountEl||!taxWarnBarEl||!taxTableEl){
+      toast('⚠️ Tax-UI-Elemente fehlen im Dashboard.','warning');
+      return;
+    }
+    taxResultEl.style.display='block';
+    taxGainsEl.textContent=fmtS(s.total_gains)+' USDT';
+    taxLossesEl.textContent=fmtS(s.total_losses)+' USDT';
+    taxNetEl.textContent=fmtS(s.net_pnl)+' USDT'; taxNetEl.style.color=clr(s.net_pnl);
+    taxTaxableEl.textContent=fmt(s.taxable_gains)+' USDT';
+    taxFeesEl.textContent=fmt(s.total_fees)+' USDT';
+    taxCountEl.textContent=s.trade_count+'T ('+s.win_count+'G / '+s.loss_count+'V)';
+    if(s.taxable_gains>600){taxWarnBarEl.style.display='flex'; if(taxWarnTxtEl) taxWarnTxtEl.textContent=QI18n.t('msg_tax_warn');}
+    else taxWarnBarEl.style.display='none';
+    taxTableEl.innerHTML=data.gains.slice(0,30).map(g=>
       `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);font-size:10px;font-family:var(--mono)">
         <span style="color:var(--sub)">${esc(String(g.date||''))}</span><span>${esc(String(g.symbol||''))}</span>
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
-function exportTaxCSV(){const y=document.getElementById('taxYear').value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
+function exportTaxCSV(){const y=document.getElementById('taxYear')?.value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
 function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
@@ -1471,12 +1490,16 @@ socket.on('price_alert', d=>{
   addLog(`🔔 ${QI18n.t('alert_triggered')}: ${d.symbol}`,'warning','system');
 });
 socket.on('backtest_result', d=>{
-  document.getElementById('btBtn').disabled=false;
+  const btBtnEl=document.getElementById('btBtn');
+  const btStatusEl=document.getElementById('btStatus');
+  const btResultSectionEl=document.getElementById('btResultSection');
+  const btBadgeEl=document.getElementById('btBadge');
+  if(btBtnEl) btBtnEl.disabled=false;
   if(!d) return;
-  if(d.error){document.getElementById('btStatus').textContent='❌ '+d.error;toast(d.error,'error');return;}
-  document.getElementById('btStatus').textContent='';
-  document.getElementById('btResultSection').style.display='block';
-  document.getElementById('btBadge').textContent=d.symbol+' '+d.timeframe;
+  if(d.error){if(btStatusEl) btStatusEl.textContent='❌ '+d.error;toast(d.error,'error');return;}
+  if(btStatusEl) btStatusEl.textContent='';
+  if(btResultSectionEl) btResultSectionEl.style.display='block';
+  if(btBadgeEl) btBadgeEl.textContent=d.symbol+' '+d.timeframe;
   const btEl=document.getElementById('btWR'); if(btEl){btEl.textContent=d.win_rate+'%';btEl.style.color=d.win_rate>50?'var(--green)':'var(--red)';}
   const btPnl=document.getElementById('btPnl'); if(btPnl){btPnl.textContent=fmtS(d.total_pnl);btPnl.style.color=clr(d.total_pnl);}
   const btPF=document.getElementById('btPF'); if(btPF){btPF.textContent=d.profit_factor;btPF.style.color=d.profit_factor>1.2?'var(--green)':'var(--red)';}
@@ -2459,7 +2482,8 @@ async function loadFeatureImportance(){
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if(d.error){ toast(d.error,'warning'); return; }
-    document.getElementById('featureImportanceCard').style.display='';
+    const fiCard = document.getElementById('featureImportanceCard');
+    if(fiCard) fiCard.style.display='';
     const acc = document.getElementById('fi-accuracy');
     if(acc) acc.textContent = `WF: ${d.wf_accuracy}%`;
     const list = document.getElementById('fiList');
@@ -2907,7 +2931,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   initCharts();
-  document.getElementById('taxYear').value=new Date().getFullYear();
+  const taxYearEl=document.getElementById('taxYear');
+  if(taxYearEl) taxYearEl.value=new Date().getFullYear();
   QI18n.init('langSwitcher');
   loadFollowers();
   updateGasFees();
