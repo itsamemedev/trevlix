@@ -194,6 +194,30 @@ def test_virginie_orchestrator_reports_unassigned_domain():
     assert result.agent_name == "unassigned"
 
 
+def test_portfolio_goal_delegates_to_trading_agent_with_autonomous_allocation():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-goal-1",
+            domain="portfolio",
+            objective="Reach user target quickly",
+            payload={"target_amount": 15_000, "portfolio_value": 10_500},
+        )
+    )
+
+    assert result.success is True
+    assert result.agent_name == "portfolio-agent"
+    assert "trading-agent assigned" in result.summary
+    assert result.data["delegate_to"] == "trading-agent"
+    assert result.data["goal_gap_amount"] == 4500.0
+    assert result.data["delegate_task"]["domain"] == "trading"
+    assert result.data["delegate_task"]["payload"]["autonomous_allocation"] is True
+    assert result.data["delegate_task"]["payload"]["optimize_for_speed"] is True
+
+
 def test_virginie_orchestrator_coverage_report_detects_missing_domains():
     orchestrator = VirginieOrchestrator()
     orchestrator.set_required_domains(["planning", "risk"])

@@ -600,12 +600,42 @@ def build_default_project_agents() -> list[VirginieAgent]:
         )
 
     def _portfolio(task: AgentTask) -> AgentResult:
+        target_amount = float(task.payload.get("target_amount", 0) or 0)
+        current_value = float(task.payload.get("portfolio_value", 0) or 0)
+        gap_to_target = max(0.0, target_amount - current_value) if target_amount > 0 else 0.0
+        has_goal = target_amount > 0
+        objective_text = f"{task.objective} | Ziel={target_amount:.2f} USDT" if has_goal else task.objective
+
         return AgentResult(
             agent_name="portfolio-agent",
             task_id=task.task_id,
             success=True,
-            summary=f"Portfolio allocation review executed for: {task.objective}",
-            data={"allocation_delta": task.payload.get("allocation_delta", 0)},
+            summary=(
+                "Portfolio goal received; trading-agent assigned for fastest target pursuit"
+                if has_goal
+                else f"Portfolio allocation review executed for: {task.objective}"
+            ),
+            data={
+                "allocation_delta": task.payload.get("allocation_delta", 0),
+                "goal_target_amount": round(target_amount, 2),
+                "goal_current_value": round(current_value, 2),
+                "goal_gap_amount": round(gap_to_target, 2),
+                "delegate_to": "trading-agent" if has_goal else None,
+                "delegate_task": {
+                    "domain": "trading",
+                    "objective": objective_text,
+                    "payload": {
+                        "action": "reach_target_fast",
+                        "autonomous_allocation": True,
+                        "optimize_for_speed": True,
+                        "target_amount": round(target_amount, 2),
+                        "current_portfolio_value": round(current_value, 2),
+                        "target_gap_amount": round(gap_to_target, 2),
+                    },
+                }
+                if has_goal
+                else None,
+            },
         )
 
     def _compliance(task: AgentTask) -> AgentResult:
