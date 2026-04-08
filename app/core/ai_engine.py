@@ -1256,7 +1256,7 @@ class AIEngine:
             "samples": len(self.X_raw),
             "bull_samples": len(self.X_bull),
             "bear_samples": len(self.X_bear),
-            "min_samples": CONFIG["ai_min_samples"],
+            "min_samples": CONFIG.get("ai_min_samples", 20),
             "wf_accuracy": round(self.wf_accuracy * 100, 1),
             "bull_accuracy": round(self.bull_accuracy * 100, 1),
             "bear_accuracy": round(self.bear_accuracy * 100, 1),
@@ -1275,8 +1275,8 @@ class AIEngine:
             "allowed_count": self.allowed_count,
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
             "params": {
-                "sl": round(CONFIG["stop_loss_pct"] * 100, 2),
-                "tp": round(CONFIG["take_profit_pct"] * 100, 2),
+                "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),
+                "tp": round(CONFIG.get("take_profit_pct", 0.06) * 100, 2),
                 "vote": round(CONFIG.get("min_vote_score", 0.3) * 100, 1),
             },
         }
