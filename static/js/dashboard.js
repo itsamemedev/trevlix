@@ -541,7 +541,8 @@ function updateAI(ai){
 
 const _ai3dState = {
   ready:false, angle:0, wobble:0,
-  wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0
+  wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
+  agentCount:0, lastAgent:'—', agentNames:[]
 };
 function updateAI3DFromAI(ai){
   if(!ai) return;
@@ -552,6 +553,9 @@ function updateAI3DFromAI(ai){
   _ai3dState.preds = Number(ai.allowed_count||0) + Number(ai.blocked_count||0);
   _ai3dState.allowed = Number(ai.allowed_count||0);
   _ai3dState.blocked = Number(ai.blocked_count||0);
+  _ai3dState.agentCount = Number((ai.assistant_agents||{}).registered_agents||0);
+  _ai3dState.lastAgent = String((ai.assistant_agents||{}).last_agent||'—');
+  _ai3dState.agentNames = Array.isArray((ai.assistant_agents||{}).agent_names) ? (ai.assistant_agents||{}).agent_names : [];
   const m=document.getElementById('ai3dMeta');
   const assistantAgents = ai.assistant_agents || {};
   if(m) m.textContent = assistantAgents.registered_agents
@@ -567,6 +571,13 @@ function updateAI3DFromAI(ai){
     collabEl.textContent = active
       ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Last ${ag.last_agent||'—'} · Idle-Runs ${runs}`
       : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Idle-Runs ${runs}`;
+  }
+  const agentsEl = document.getElementById('ai3dAgents');
+  if(agentsEl){
+    const names = _ai3dState.agentNames.slice(0, 9);
+    agentsEl.innerHTML = names.length
+      ? names.map(n => `<span style="font-size:10px;padding:3px 7px;border:1px solid rgba(212,175,55,.25);border-radius:999px;background:rgba(212,175,55,.08);color:#e9d3a1">${esc(n)}</span>`).join('')
+      : '<span style="font-size:10px;color:var(--sub)">Keine Agenten registriert</span>';
   }
   if(!_ai3dState.ready){
     _ai3dState.ready=true;
@@ -600,6 +611,22 @@ function _renderAI3D(){
   ctx.strokeStyle='rgba(0,255,180,0.22)';
   ctx.beginPath(); ctx.ellipse(0,0,74,22,0,0,Math.PI*2); ctx.stroke();
   ctx.restore();
+  // Agenten-Orbits (VIRGINIE)
+  const agentN = Math.max(0, Math.min(12, _ai3dState.agentCount||0));
+  for(let i=0;i<agentN;i++){
+    const a = _ai3dState.angle + (i*(Math.PI*2/Math.max(agentN,1)));
+    const rx = 70 + (i%3)*12;
+    const ry = 30 + (i%2)*10;
+    const x = cx + Math.cos(a)*rx;
+    const y = cy + Math.sin(a)*ry;
+    ctx.beginPath();
+    ctx.arc(x,y,3.2,0,Math.PI*2);
+    ctx.fillStyle = i===0 ? 'rgba(0,255,136,.9)' : 'rgba(255,196,90,.8)';
+    ctx.fill();
+  }
+  ctx.fillStyle='rgba(220,200,150,.85)';
+  ctx.font='10px Fira Code, monospace';
+  ctx.fillText(`Agents: ${_ai3dState.agentCount} | Last: ${_ai3dState.lastAgent}`, 12, h-10);
   // Core sphere
   const grd=ctx.createRadialGradient(cx-10,cy-16,8,cx,cy,60);
   grd.addColorStop(0,'rgba(255,236,180,.95)');

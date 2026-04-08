@@ -180,7 +180,7 @@ def test_virginie_orchestrator_routes_and_executes_default_agents():
     assert result.success is True
     assert result.agent_name == "planning-agent"
     status = orchestrator.status()
-    assert status["registered_agents"] == 6
+    assert status["registered_agents"] == 9
     assert status["last_task_id"] == "task-1"
 
 

@@ -487,6 +487,7 @@ class VirginieOrchestrator:
             last = self._history[0] if self._history else None
             return {
                 "registered_agents": len(self._agents),
+                "agent_names": sorted(self._agents.keys()),
                 "domains": sorted({d for a in self._agents.values() for d in a.domains}),
                 "history_size": len(self._history),
                 "last_task_id": last.task_id if last else None,
@@ -554,6 +555,33 @@ def build_default_project_agents() -> list[VirginieAgent]:
             data={"feedback": task.payload.get("feedback", "captured")},
         )
 
+    def _risk(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="risk-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Risk policy check executed for: {task.objective}",
+            data={"risk_mode": task.payload.get("risk_mode", "balanced")},
+        )
+
+    def _portfolio(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="portfolio-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Portfolio allocation review executed for: {task.objective}",
+            data={"allocation_delta": task.payload.get("allocation_delta", 0)},
+        )
+
+    def _compliance(task: AgentTask) -> AgentResult:
+        return AgentResult(
+            agent_name="compliance-agent",
+            task_id=task.task_id,
+            success=True,
+            summary=f"Compliance validation executed for: {task.objective}",
+            data={"policy": task.payload.get("policy", "default")},
+        )
+
     return [
         VirginieAgent(name="planning-agent", domains=("planning", "product"), handler=_planning),
         VirginieAgent(name="ops-agent", domains=("operations", "deployment"), handler=_ops),
@@ -567,4 +595,15 @@ def build_default_project_agents() -> list[VirginieAgent]:
         ),
         VirginieAgent(name="trading-agent", domains=("trading", "execution"), handler=_trading),
         VirginieAgent(name="learning-agent", domains=("learning", "feedback"), handler=_learning),
+        VirginieAgent(name="risk-agent", domains=("risk", "limits"), handler=_risk),
+        VirginieAgent(
+            name="portfolio-agent",
+            domains=("portfolio", "allocation"),
+            handler=_portfolio,
+        ),
+        VirginieAgent(
+            name="compliance-agent",
+            domains=("compliance", "governance"),
+            handler=_compliance,
+        ),
     ]
