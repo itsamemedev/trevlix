@@ -42,3 +42,14 @@ def test_init_ai_engine_is_backward_compatible_without_knowledge_base():
     assert ai_engine.regime is None
     assert ai_engine.rl_agent is None
     assert ai_engine.genetic is None
+
+
+def test_init_ai_engine_merges_required_defaults_for_partial_configs():
+    ai_engine.init_ai_engine(
+        config={},
+        logger=_DummyLogger(),
+    )
+
+    assert ai_engine.CONFIG["lstm_lookback"] == 24
+    assert ai_engine.CONFIG["ai_min_samples"] == 20
+    assert ai_engine.CONFIG["stop_loss_pct"] == 0.025
