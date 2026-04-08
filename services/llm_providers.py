@@ -46,8 +46,8 @@ _PROVIDER_CONFIGS: list[dict[str, Any]] = [
         "name": "cerebras",
         "endpoint": "https://api.cerebras.ai/v1/chat/completions",
         "env_key": "CEREBRAS_API_KEY",
-        "model": "llama-3.3-70b",
-        "supports_tools": False,
+        "model": "gpt-oss-120b",
+        "supports_tools": True,
         "max_tokens": 800,
     },
     {
@@ -60,9 +60,9 @@ _PROVIDER_CONFIGS: list[dict[str, Any]] = [
     },
     {
         "name": "huggingface",
-        "endpoint": "https://router.huggingface.co/novita/v3/openai/chat/completions",
+        "endpoint": "https://router.huggingface.co/v1/chat/completions",
         "env_key": "HF_API_KEY",
-        "model": "deepseek-ai/DeepSeek-V3-0324",
+        "model": "deepseek-ai/DeepSeek-V3-0324:novita",
         "supports_tools": False,
         "max_tokens": 800,
     },
@@ -72,6 +72,8 @@ _REQUEST_TIMEOUT = 30  # Sekunden
 _CACHE_TTL = 300  # 5 Minuten
 _CACHE_MAX_SIZE = 200
 _DEFAULT_TEMPERATURE = 0.3
+_RATE_LIMIT_COOLDOWN_SECONDS = 120
+_CLIENT_ERROR_COOLDOWN_SECONDS = 600
 
 
 class MultiLLMProvider:
@@ -104,6 +106,7 @@ class MultiLLMProvider:
                     "available": True,
                     "last_success": 0.0,
                     "last_error": "",
+                    "cooldown_until": 0.0,
                     "requests": 0,
                     "errors": 0,
                 }
@@ -152,6 +155,8 @@ class MultiLLMProvider:
 
         # Provider der Reihe nach versuchen
         for provider in self._providers:
+            if self._is_in_cooldown(provider["name"]):
+                continue
             try:
                 result = self._call_provider(
                     provider, prompt, system, tools, temperature, max_tokens
@@ -240,6 +245,7 @@ class MultiLLMProvider:
                         "supports_tools": provider["supports_tools"],
                         "requests": health.get("requests", 0),
                         "errors": health.get("errors", 0),
+                        "cooldown_until": health.get("cooldown_until", 0.0),
                         "last_error": health.get("last_error", ""),
                     }
                 )
@@ -307,6 +313,7 @@ class MultiLLMProvider:
         if resp.status_code != 200:
             error_msg = f"HTTP {resp.status_code}: {resp.text[:200]}"
             self._record_error(provider["name"], error_msg)
+            self._apply_cooldown(provider["name"], resp.status_code)
             return None
 
         data = resp.json()
@@ -320,6 +327,7 @@ class MultiLLMProvider:
             with self._lock:
                 self._health[provider["name"]]["last_success"] = time.time()
                 self._health[provider["name"]]["available"] = True
+                self._health[provider["name"]]["cooldown_until"] = 0.0
             return answer
 
         return None
@@ -330,6 +338,37 @@ class MultiLLMProvider:
             if name in self._health:
                 self._health[name]["errors"] += 1
                 self._health[name]["last_error"] = error
+                self._health[name]["available"] = False
+
+    def _apply_cooldown(self, name: str, status_code: int) -> None:
+        """Setzt einen Cooldown fuer Provider bei erwartbaren API-Fehlern."""
+        cooldown = 0
+        if status_code == 429:
+            cooldown = _RATE_LIMIT_COOLDOWN_SECONDS
+        elif status_code in {400, 401, 403, 404, 422}:
+            cooldown = _CLIENT_ERROR_COOLDOWN_SECONDS
+
+        if not cooldown:
+            return
+
+        until = time.time() + cooldown
+        with self._lock:
+            if name in self._health:
+                self._health[name]["cooldown_until"] = until
+
+    def _is_in_cooldown(self, name: str) -> bool:
+        """Prueft, ob ein Provider temporaer uebersprungen werden soll."""
+        with self._lock:
+            health = self._health.get(name)
+            if not health:
+                return False
+            cooldown_until = health.get("cooldown_until", 0.0)
+            if cooldown_until > time.time():
+                return True
+            if cooldown_until:
+                health["cooldown_until"] = 0.0
+                health["available"] = True
+        return False
 
     @staticmethod
     def _make_cache_key(prompt: str, system: str) -> str:
