@@ -780,9 +780,13 @@ def api_user_settings_update():
         requested_mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
     if requested_mode:
         applied_mode = trade_mode.set_mode(requested_mode)
-        CONFIG["paper_trading"] = applied_mode == "paper"
         current["trade_mode"] = applied_mode
-    current["paper_trading"] = CONFIG.get("paper_trading", True)
+        current["paper_trading"] = applied_mode == "paper"
+        CONFIG["paper_trading"] = current["paper_trading"]
+    elif "paper_trading" not in current:
+        current["paper_trading"] = CONFIG.get("paper_trading", True)
+    if "trade_mode" not in current:
+        current["trade_mode"] = "paper" if safe_bool(current.get("paper_trading", True), True) else "live"
     ok = db.update_user_settings(request.user_id, current)
     return jsonify({"ok": ok, "updated": list(filtered.keys())})
 
@@ -796,6 +800,13 @@ def api_trading_mode():
     mode = str(data.get("mode", "paper")).lower()
     new_mode = trade_mode.set_mode(mode)
     CONFIG["paper_trading"] = new_mode != "live"
+    try:
+        current = db.get_user_settings(request.user_id)
+        current["trade_mode"] = new_mode
+        current["paper_trading"] = new_mode == "paper"
+        db.update_user_settings(request.user_id, current)
+    except Exception as e:
+        log.warning("api_trading_mode persist failed: %s", e)
     state.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
     discord.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
     telegram.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
