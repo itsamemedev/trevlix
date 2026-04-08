@@ -824,7 +824,16 @@ def api_trading_control():
 @api_auth_required
 def api_open_positions():
     try:
-        return jsonify({"positions": state.snapshot().get("positions", [])})
+        in_memory = state.snapshot().get("positions", [])
+        if in_memory:
+            return jsonify({"positions": in_memory})
+        mode = request.args.get("mode")
+        db_positions = (
+            db.load_open_positions(user_id=request.user_id, trade_mode=mode)
+            if hasattr(db, "load_open_positions")
+            else []
+        )
+        return jsonify({"positions": db_positions})
     except Exception as e:
         log.warning("api_open_positions: %s", e)
         return jsonify({"positions": [], "error": "temporarily_unavailable"}), 503

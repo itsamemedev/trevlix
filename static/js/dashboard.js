@@ -830,6 +830,24 @@ async function refreshTradingInsights(force=false){
     const byMode = perfData.by_mode||[];
     const byStrategy = perfData.by_strategy||[];
     const byExchange = perfData.by_exchange||[];
+    const pvsl = perfData.paper_vs_live||{};
+    _renderSimpleRows(
+      'comparePnlList',
+      [pvsl],
+      c => `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:11px;padding-bottom:4px">
+        <div style="border:1px solid var(--line);border-radius:8px;padding:8px">
+          <div style="color:var(--sub);font-size:10px">Paper (${esc(String(c.paper_trades||0))} Trades)</div>
+          <div style="font-weight:700;color:${(c.paper_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(c.paper_pnl||0,2)} USDT</div>
+          <div style="color:var(--sub);font-size:10px">Fees: ${fmt(c.paper_fees||0,2)}</div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:8px;padding:8px">
+          <div style="color:var(--sub);font-size:10px">Live (${esc(String(c.live_trades||0))} Trades)</div>
+          <div style="font-weight:700;color:${(c.live_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(c.live_pnl||0,2)} USDT</div>
+          <div style="color:var(--sub);font-size:10px">Fees: ${fmt(c.live_fees||0,2)}</div>
+        </div>
+      </div>`,
+      'Keine Vergleichsdaten.'
+    );
     _renderSimpleRows(
       'modePerfList',
       byMode,
@@ -1583,6 +1601,75 @@ async function loadSystemAnalytics() {
     }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
   }
 }
+
+function _parsePercent(v){
+  if(v===null||v===undefined) return 0;
+  const n = parseFloat(String(v).replace('%','').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
+function renderAIDiagnosePanel(diag){
+  const _s=(id,v)=>{ const el=document.getElementById(id); if(el) el.textContent=v; };
+  const reasoningEl = document.getElementById('aiDiagReasoning');
+  const actionsEl = document.getElementById('aiDiagActions');
+  if(!reasoningEl || !actionsEl) return;
+
+  const acc = _parsePercent(diag.accuracy);
+  const cv = _parsePercent(diag.cv_accuracy);
+  const agree = Math.max(0, 100 - Math.abs(acc - cv));
+  const pred = Number(diag.predictions||0);
+  const corr = Number(diag.correct||0);
+  const decisionQ = pred > 0 ? (corr/pred)*100 : 0;
+  const trained = !!diag.trained;
+  const latencyMs = Number(diag.llm_latency_ms||0);
+  const riskLosses = Number(diag.circuit_losses||0);
+  const riskLimit = Number(diag.circuit_limit||0);
+  const riskPressure = riskLimit>0 ? (riskLosses/riskLimit)*100 : 0;
+  const healthScore = Math.max(
+    0,
+    Math.min(
+      100,
+      (trained ? 20 : 0) +
+      (acc * 0.35) +
+      (decisionQ * 0.25) +
+      (agree * 0.15) +
+      (latencyMs > 0 ? Math.max(0, 20 - Math.min(20, latencyMs / 50)) : 10) -
+      (riskPressure * 0.15)
+    )
+  );
+
+  const healthTxt = healthScore >= 75 ? `🟢 ${healthScore.toFixed(1)}%` : healthScore >= 50 ? `🟡 ${healthScore.toFixed(1)}%` : `🔴 ${healthScore.toFixed(1)}%`;
+  const driftTxt = agree >= 85 ? '🟢 niedrig' : agree >= 65 ? '🟡 mittel' : '🔴 hoch';
+  const qualityTxt = decisionQ >= 70 ? `🟢 ${decisionQ.toFixed(1)}%` : decisionQ >= 55 ? `🟡 ${decisionQ.toFixed(1)}%` : `🔴 ${decisionQ.toFixed(1)}%`;
+  const latencyTxt = latencyMs > 0 ? `${latencyMs} ms` : '—';
+
+  _s('aiDiagHealth', healthTxt);
+  _s('aiDiagQuality', qualityTxt);
+  _s('aiDiagDrift', driftTxt);
+  _s('aiDiagLatency', latencyTxt);
+
+  const reasons = [];
+  if(!trained) reasons.push('Modell ist aktuell nicht trainiert.');
+  if(acc < 55) reasons.push('Model-Accuracy ist niedrig.');
+  if(decisionQ < 55 && pred >= 20) reasons.push('Trefferquote der Vorhersagen ist niedrig.');
+  if(agree < 70) reasons.push('Abweichung zwischen Accuracy und CV-Accuracy deutet auf Drift/Overfitting hin.');
+  if(latencyMs > 1500) reasons.push('LLM-Latenz ist erhöht – mögliche API/Provider-Bremse.');
+  if(riskPressure >= 80) reasons.push('Circuit-Breaker steht kurz vor dem Limit.');
+  reasoningEl.textContent = reasons.length ? reasons.join(' ') : 'AI-System arbeitet stabil. Keine kritischen Auffälligkeiten erkannt.';
+
+  const actions = [];
+  if(!trained || acc < 60) actions.push({txt:'🧠 Train starten', fn:'forceTrain()'});
+  if(agree < 75) actions.push({txt:'🔧 Optimierung', fn:'forceOptimize()'});
+  if(riskPressure >= 80) actions.push({txt:'🛑 Trading pausieren', fn:"apiTradingControl('stop')"});
+  if(latencyMs > 1500) actions.push({txt:'🌐 LLM Provider prüfen', fn:'loadLlmProviderStatus()'});
+  if(!actions.length) actions.push({txt:'✅ Kein Eingriff nötig', fn:''});
+
+  actionsEl.innerHTML = actions.map(a => a.fn
+    ? `<button class="btn btn-info" style="padding:7px 10px;font-size:11px" onclick="${a.fn}">${esc(a.txt)}</button>`
+    : `<span style="font-size:11px;color:var(--green);font-weight:700">${esc(a.txt)}</span>`
+  ).join('');
+}
+
 socket.on('system_analytics', d => {
   if (!d) return;
   const _el = id => document.getElementById(id);
@@ -1630,6 +1717,12 @@ socket.on('system_analytics', d => {
       samples: a.predictions || 0,
       allowed_count: a.correct || 0,
       blocked_count: Math.max(0,(a.predictions||0)-(a.correct||0)),
+    });
+    renderAIDiagnosePanel({
+      ...a,
+      llm_latency_ms: _parsePercent((d.llm||{}).latency),
+      circuit_losses: (d.risk||{}).circuit_losses || 0,
+      circuit_limit: (d.risk||{}).circuit_limit || 0,
     });
   }
   // Risk

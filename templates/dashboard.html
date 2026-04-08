@@ -454,6 +454,8 @@
   <div class="card">
     <div class="card-hd"><span class="card-title">Paper vs Live Performance</span></div>
     <div class="card-body">
+      <div id="comparePnlList"></div>
+      <div style="height:1px;background:var(--line);margin:8px 0"></div>
       <div id="modePerfList"></div>
       <div style="height:1px;background:var(--line);margin:8px 0"></div>
       <div id="strategyPerfList"></div>
@@ -898,6 +900,23 @@
             </div>
             <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
           </div>
+        </div>
+      </div>
+
+      <!-- AI Diagnose -->
+      <div class="admin-card">
+        <div class="card-hd"><div class="card-title">AI Diagnose</div></div>
+        <div class="card-body">
+          <div class="kv-grid" style="margin-bottom:10px">
+            <div class="kv"><span class="kv-label">Gesundheit</span><span class="kv-value" id="aiDiagHealth">—</span></div>
+            <div class="kv"><span class="kv-label">Entscheidungsqualität</span><span class="kv-value" id="aiDiagQuality">—</span></div>
+            <div class="kv"><span class="kv-label">Drift Risiko</span><span class="kv-value" id="aiDiagDrift">—</span></div>
+            <div class="kv"><span class="kv-label">Inference-Latenz</span><span class="kv-value" id="aiDiagLatency">—</span></div>
+          </div>
+          <div id="aiDiagReasoning" style="font-size:11px;color:var(--sub);line-height:1.4;margin-bottom:8px">
+            Warte auf Diagnose-Daten…
+          </div>
+          <div id="aiDiagActions" style="display:flex;flex-wrap:wrap;gap:6px"></div>
         </div>
       </div>
 
