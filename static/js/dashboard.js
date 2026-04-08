@@ -559,7 +559,7 @@ function updateAI3DFromAI(ai){
   const m=document.getElementById('ai3dMeta');
   const assistantAgents = ai.assistant_agents || {};
   if(m) m.textContent = assistantAgents.registered_agents
-    ? `VIRGINIE Agents: ${assistantAgents.registered_agents} · Tasks: ${assistantAgents.history_size||0}`
+    ? `VIRGINIE Agents: ${assistantAgents.registered_agents} · Coverage: ${assistantAgents.coverage_pct||0}%`
     : `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
   const collabEl = document.getElementById('ai3dCollab');
   if(collabEl){
@@ -569,8 +569,8 @@ function updateAI3DFromAI(ai){
     const ag = ai.assistant_agents || {};
     const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
     collabEl.textContent = active
-      ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Last ${ag.last_agent||'—'} · Idle-Runs ${runs}`
-      : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Idle-Runs ${runs}`;
+      ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
+      : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
   }
   const agentsEl = document.getElementById('ai3dAgents');
   if(agentsEl){
@@ -1700,6 +1700,7 @@ function renderAIDiagnosePanel(diag){
   const trained = !!diag.trained;
   const assistantAgents = diag.assistant_agents || {};
   const agentCount = Number(assistantAgents.registered_agents||0);
+  const coveragePct = Number(assistantAgents.coverage_pct||0);
   const latencyMs = Number(diag.llm_latency_ms||0);
   const riskLosses = Number(diag.circuit_losses||0);
   const riskLimit = Number(diag.circuit_limit||0);
@@ -1726,8 +1727,8 @@ function renderAIDiagnosePanel(diag){
   const collabRuns = Number(diag.idle_learning_runs||0);
   const collabActive = !!diag.llm_collaboration_active || collabProviders>0 || collabResponses>0;
   const collabTxt = collabActive
-    ? `🟢 Agents ${agentCount} / Provider ${collabProviders} / Antworten ${collabResponses}`
-    : `🟡 standby (Agents ${agentCount})`;
+    ? `🟢 Agents ${agentCount} / Coverage ${coveragePct.toFixed(1)}% / Provider ${collabProviders}`
+    : `🟡 standby (Agents ${agentCount}, Coverage ${coveragePct.toFixed(1)}%)`;
 
   _s('aiDiagHealth', healthTxt);
   _s('aiDiagQuality', qualityTxt);
@@ -1743,6 +1744,9 @@ function renderAIDiagnosePanel(diag){
   if(agree < 70) reasons.push('Abweichung zwischen Accuracy und CV-Accuracy deutet auf Drift/Overfitting hin.');
   if(latencyMs > 1500) reasons.push('LLM-Latenz ist erhöht – mögliche API/Provider-Bremse.');
   if(agentCount <= 0) reasons.push('VIRGINIE-Agenten sind nicht registriert.');
+  if(Array.isArray(assistantAgents.missing_domains) && assistantAgents.missing_domains.length){
+    reasons.push(`Fehlende Agent-Domains: ${assistantAgents.missing_domains.join(', ')}`);
+  }
   if(!collabActive) reasons.push('LLM/VIRGINIE-Kollaboration im Idle-Modus ist aktuell noch nicht aktiv.');
   if(diag.assistant_review?.summary) reasons.push(`Review: ${diag.assistant_review.summary}`);
   if(diag.idle_learning_error) reasons.push(`Idle-Learning Fehler: ${diag.idle_learning_error}`);
@@ -1756,6 +1760,9 @@ function renderAIDiagnosePanel(diag){
   if(riskPressure >= 80) actions.push({txt:'🛑 Trading pausieren', fn:"apiTradingControl('stop')"});
   if(latencyMs > 1500) actions.push({txt:'🌐 LLM Provider prüfen', fn:'loadLlmProviderStatus()'});
   if(agentCount <= 0) actions.push({txt:'🤖 Agenten initialisieren', fn:'loadSystemAnalytics()'});
+  if(Array.isArray(assistantAgents.missing_domains) && assistantAgents.missing_domains.length){
+    actions.push({txt:'🧩 Agent-Lücken prüfen', fn:'loadSystemAnalytics()'});
+  }
   if(!actions.length) actions.push({txt:'✅ Kein Eingriff nötig', fn:''});
 
   actionsEl.innerHTML = actions.map(a => a.fn

@@ -443,11 +443,37 @@ class VirginieOrchestrator:
         self._agents: dict[str, VirginieAgent] = {}
         self._history: list[AgentResult] = []
         self._lock = threading.Lock()
+        self._required_domains: set[str] = set()
 
     def register_agent(self, agent: VirginieAgent) -> None:
         """Register or replace an agent by name."""
         with self._lock:
             self._agents[agent.name] = agent
+
+    def set_required_domains(self, domains: list[str]) -> None:
+        """Set mandatory domains that must be covered by at least one agent."""
+        with self._lock:
+            self._required_domains = {d for d in domains if d}
+
+    def missing_domains(self) -> list[str]:
+        """Return required domains currently not covered by any registered agent."""
+        with self._lock:
+            covered = {domain for agent in self._agents.values() for domain in agent.domains}
+            missing = sorted(self._required_domains - covered)
+        return missing
+
+    def coverage_report(self) -> dict[str, Any]:
+        """Return domain coverage quality report for orchestrator governance."""
+        missing = self.missing_domains()
+        required_count = len(self._required_domains)
+        covered_count = required_count - len(missing)
+        coverage_pct = (covered_count / required_count * 100.0) if required_count > 0 else 100.0
+        return {
+            "required_domains": sorted(self._required_domains),
+            "missing_domains": missing,
+            "coverage_pct": round(coverage_pct, 1),
+            "is_complete": len(missing) == 0,
+        }
 
     def route_task(self, task: AgentTask) -> str | None:
         """Return best matching agent name for a task domain."""
@@ -485,6 +511,11 @@ class VirginieOrchestrator:
         """Return orchestrator metadata for backend/dashboard diagnostics."""
         with self._lock:
             last = self._history[0] if self._history else None
+            covered = {domain for agent in self._agents.values() for domain in agent.domains}
+            missing = sorted(self._required_domains - covered)
+            required_count = len(self._required_domains)
+            covered_count = required_count - len(missing)
+            coverage_pct = (covered_count / required_count * 100.0) if required_count > 0 else 100.0
             return {
                 "registered_agents": len(self._agents),
                 "agent_names": sorted(self._agents.keys()),
@@ -494,6 +525,10 @@ class VirginieOrchestrator:
                 "last_agent": last.agent_name if last else None,
                 "last_success": last.success if last else None,
                 "last_summary": last.summary if last else None,
+                "coverage_pct": round(coverage_pct, 1),
+                "missing_domains": missing,
+                "required_domains": sorted(self._required_domains),
+                "coverage_complete": len(missing) == 0,
                 "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
             }
 

@@ -194,6 +194,16 @@ def test_virginie_orchestrator_reports_unassigned_domain():
     assert result.agent_name == "unassigned"
 
 
+def test_virginie_orchestrator_coverage_report_detects_missing_domains():
+    orchestrator = VirginieOrchestrator()
+    orchestrator.set_required_domains(["planning", "risk"])
+    orchestrator.register_agent(build_default_project_agents()[0])  # planning-agent
+
+    report = orchestrator.coverage_report()
+    assert report["is_complete"] is False
+    assert report["missing_domains"] == ["risk"]
+
+
 def test_virginie_review_and_version_bump_follow_rules():
     core = VirginieCore(
         rules=VirginieRules(

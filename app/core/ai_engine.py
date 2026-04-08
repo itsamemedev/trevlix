@@ -286,6 +286,19 @@ class AIEngine:
         self.virginie_orchestrator = VirginieOrchestrator()
         for _agent in build_default_project_agents():
             self.virginie_orchestrator.register_agent(_agent)
+        self.virginie_orchestrator.set_required_domains(
+            [
+                "planning",
+                "operations",
+                "quality",
+                "notifications",
+                "trading",
+                "learning",
+                "risk",
+                "portfolio",
+                "compliance",
+            ]
+        )
         self._load_from_db()
 
     def _load_from_db(self):
