@@ -22,6 +22,7 @@ cryptography>=41.0.0,<44.0.0   # Fernet API-Key-Verschlüsselung
 pandas>=2.1.0,<3.0.0
 numpy>=1.26.0,<2.0.0
 requests>=2.31.0,<3.0.0
+redis>=5.0.0,<6.0.0
 httpx>=0.26.0,<1.0.0           # Moderner async HTTP-Client (Verbesserung #14)
 
 # ── Machine Learning ───────────────────────────────────────────
