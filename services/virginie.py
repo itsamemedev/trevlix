@@ -10,6 +10,7 @@ This module integrates the self-learning pieces discussed for VIRGINIE:
 
 from __future__ import annotations
 
+import threading
 from dataclasses import dataclass
 from math import log, sqrt
 
@@ -63,6 +64,17 @@ class LLMResult:
     reward: float
 
 
+@dataclass(frozen=True)
+class VirginieDecision:
+    """Decision report with explainable score components."""
+
+    selected: Opportunity | None
+    base_score: float
+    action_bonus: float
+    total_score: float
+    reason: str
+
+
 class ProfitDecisionEngine:
     """Ranks opportunities by expected net value.
 
@@ -93,46 +105,61 @@ class LLMPerformanceTracker:
     def __init__(self, exploration_c: float = 0.8) -> None:
         self._exploration_c = exploration_c
         self._stats: dict[str, dict[str, dict[str, float]]] = {}
+        self._lock = threading.Lock()
+
+    def register_models(self, task_type: str, models: list[str]) -> None:
+        """Register candidate models for a task (cold-start exploration)."""
+        with self._lock:
+            task_stats = self._stats.setdefault(task_type, {})
+            for model in models:
+                task_stats.setdefault(model, {"count": 0.0, "sum_reward": 0.0})
 
     def record(self, result: LLMResult) -> None:
         """Record one reward outcome for a model-task pair."""
-        task_stats = self._stats.setdefault(result.task_type, {})
-        model_stats = task_stats.setdefault(result.model, {"count": 0.0, "sum_reward": 0.0})
-        model_stats["count"] += 1
-        model_stats["sum_reward"] += result.reward
+        with self._lock:
+            task_stats = self._stats.setdefault(result.task_type, {})
+            model_stats = task_stats.setdefault(result.model, {"count": 0.0, "sum_reward": 0.0})
+            model_stats["count"] += 1
+            model_stats["sum_reward"] += result.reward
 
     def recommend(self, task_type: str) -> str | None:
         """Recommend the best model for a task using UCB.
 
         Returns None when no observations exist for this task.
         """
-        task_stats = self._stats.get(task_type)
-        if not task_stats:
-            return None
+        with self._lock:
+            task_stats = self._stats.get(task_type)
+            if not task_stats:
+                return None
 
-        total = sum(entry["count"] for entry in task_stats.values())
-        if total <= 0:
-            return None
+            unseen = [model for model, stats in task_stats.items() if stats["count"] <= 0]
+            if unseen:
+                return sorted(unseen)[0]
 
-        best_model: str | None = None
-        best_score = float("-inf")
-        for model, stats in task_stats.items():
-            count = stats["count"]
-            avg = (stats["sum_reward"] / count) if count > 0 else 0.0
-            bonus = self._exploration_c * sqrt(log(total + 1) / count) if count > 0 else 0.0
-            ucb_score = avg + bonus
-            if ucb_score > best_score:
-                best_score = ucb_score
-                best_model = model
-        return best_model
+            total = sum(entry["count"] for entry in task_stats.values())
+            if total <= 0:
+                return None
+
+            best_model: str | None = None
+            best_score = float("-inf")
+            for model, stats in task_stats.items():
+                count = stats["count"]
+                avg = (stats["sum_reward"] / count) if count > 0 else 0.0
+                bonus = self._exploration_c * sqrt(log(total + 1) / count) if count > 0 else 0.0
+                ucb_score = avg + bonus
+                if ucb_score > best_score:
+                    best_score = ucb_score
+                    best_model = model
+            return best_model
 
     def model_average_reward(self, task_type: str, model: str) -> float | None:
         """Return average reward for a model-task pair."""
-        task_stats = self._stats.get(task_type, {})
-        model_stats = task_stats.get(model)
-        if not model_stats or model_stats["count"] <= 0:
-            return None
-        return model_stats["sum_reward"] / model_stats["count"]
+        with self._lock:
+            task_stats = self._stats.get(task_type, {})
+            model_stats = task_stats.get(model)
+            if not model_stats or model_stats["count"] <= 0:
+                return None
+            return model_stats["sum_reward"] / model_stats["count"]
 
 
 class VirginieCore:
@@ -155,34 +182,61 @@ class VirginieCore:
         self.llm_tracker = LLMPerformanceTracker(exploration_c=exploration_c)
         self._action_exploration_c = action_exploration_c
         self._action_stats: dict[str, dict[str, float]] = {}
+        self._lock = threading.Lock()
 
     def select_opportunity(self, opportunities: list[Opportunity]) -> Opportunity | None:
-        """Select the best allowed opportunity using EV + action UCB.
+        """Select the best allowed opportunity using EV + action UCB."""
+        return self.select_opportunity_with_report(opportunities).selected
 
-        Guardrails filter out unsafe opportunities before ranking.
-        """
+    def select_opportunity_with_report(self, opportunities: list[Opportunity]) -> VirginieDecision:
+        """Select opportunity and return a score breakdown for explainability."""
         candidates = [item for item in opportunities if self._passes_guardrails(item)]
         if not candidates:
-            return None
+            return VirginieDecision(
+                selected=None,
+                base_score=0.0,
+                action_bonus=0.0,
+                total_score=0.0,
+                reason="No opportunity passed VIRGINIE guardrails",
+            )
 
-        scored: list[tuple[Opportunity, float]] = []
-        total_count = sum(stats["count"] for stats in self._action_stats.values())
-        for item in candidates:
-            base_score = self.profit_engine.score(item)
-            bandit_bonus = self._action_bonus(item.key, total_count)
-            scored.append((item, base_score + bandit_bonus))
+        with self._lock:
+            total_count = sum(stats["count"] for stats in self._action_stats.values())
 
-        scored.sort(key=lambda entry: entry[1], reverse=True)
-        return scored[0][0]
+        best_item = candidates[0]
+        best_base = self.profit_engine.score(best_item)
+        best_bonus = self._action_bonus(best_item.key, total_count)
+        best_total = best_base + best_bonus
+
+        for item in candidates[1:]:
+            base = self.profit_engine.score(item)
+            bonus = self._action_bonus(item.key, total_count)
+            total = base + bonus
+            if total > best_total:
+                best_item, best_base, best_bonus, best_total = item, base, bonus, total
+
+        reason = (
+            f"Selected {best_item.key} | EV={best_base:.3f} | "
+            f"bonus={best_bonus:.3f} | total={best_total:.3f}"
+        )
+        return VirginieDecision(
+            selected=best_item,
+            base_score=best_base,
+            action_bonus=best_bonus,
+            total_score=best_total,
+            reason=reason,
+        )
 
     def learn_from_action(self, result: ActionResult) -> None:
         """Store realized profit feedback for future action selection."""
-        stats = self._action_stats.setdefault(
-            result.opportunity_key,
-            {"count": 0.0, "sum_profit": 0.0},
-        )
-        stats["count"] += 1
-        stats["sum_profit"] += result.realized_profit
+        with self._lock:
+            stats = self._action_stats.setdefault(
+                result.opportunity_key,
+                {"count": 0.0, "sum_profit": 0.0, "sum_sq_profit": 0.0},
+            )
+            stats["count"] += 1
+            stats["sum_profit"] += result.realized_profit
+            stats["sum_sq_profit"] += result.realized_profit * result.realized_profit
 
     def learn_from_llm(self, result: LLMResult) -> None:
         """Store cross-LLM reward feedback for task routing."""
@@ -194,10 +248,29 @@ class VirginieCore:
 
     def action_average_profit(self, opportunity_key: str) -> float | None:
         """Return average realized profit for an opportunity."""
-        stats = self._action_stats.get(opportunity_key)
-        if not stats or stats["count"] <= 0:
-            return None
-        return stats["sum_profit"] / stats["count"]
+        with self._lock:
+            stats = self._action_stats.get(opportunity_key)
+            if not stats or stats["count"] <= 0:
+                return None
+            return stats["sum_profit"] / stats["count"]
+
+    def action_snapshot(self) -> dict[str, dict[str, float]]:
+        """Return a copy of action learning statistics."""
+        with self._lock:
+            snapshot: dict[str, dict[str, float]] = {}
+            for key, stats in self._action_stats.items():
+                count = stats.get("count", 0.0)
+                avg = (stats.get("sum_profit", 0.0) / count) if count > 0 else 0.0
+                var = 0.0
+                if count > 1:
+                    mean_sq = stats.get("sum_sq_profit", 0.0) / count
+                    var = max(0.0, mean_sq - avg * avg)
+                snapshot[key] = {
+                    "count": count,
+                    "avg_profit": avg,
+                    "variance": var,
+                }
+            return snapshot
 
     def _passes_guardrails(self, opportunity: Opportunity) -> bool:
         score = self.profit_engine.score(opportunity)
@@ -207,14 +280,19 @@ class VirginieCore:
         )
 
     def _action_bonus(self, key: str, total_count: float) -> float:
-        stats = self._action_stats.get(key)
-        if not stats or stats["count"] <= 0:
-            return self._action_exploration_c
+        with self._lock:
+            stats = self._action_stats.get(key)
+            if not stats or stats["count"] <= 0:
+                return self._action_exploration_c
 
-        count = stats["count"]
-        avg_profit = stats["sum_profit"] / count
+            count = stats["count"]
+            avg_profit = stats["sum_profit"] / count
+            mean_sq = stats.get("sum_sq_profit", 0.0) / count if count > 0 else 0.0
+            variance = max(0.0, mean_sq - avg_profit * avg_profit)
+
         if total_count <= 0:
             return avg_profit
 
         exploration = self._action_exploration_c * sqrt(log(total_count + 1) / count)
-        return avg_profit + exploration
+        uncertainty_penalty = 0.1 * sqrt(variance)
+        return avg_profit + exploration - uncertainty_penalty

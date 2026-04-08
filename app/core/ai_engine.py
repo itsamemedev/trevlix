@@ -1161,7 +1161,8 @@ class AIEngine:
                     cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
                     risk_penalty=float(max(0.0, (1.0 - conf) * 10.0)),
                 )
-                allowed_by_virginie = self.virginie.select_opportunity([opportunity]) is not None
+                virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
+                allowed_by_virginie = virginie_decision.selected is not None
                 allowed = allowed_by_model and allowed_by_virginie
                 reason_prefix = "VIRGINIE"
             else:
@@ -1181,6 +1182,12 @@ class AIEngine:
                 self.allowed_count += 1
             else:
                 self.blocked_count += 1
+            if CONFIG.get("virginie_enabled", True):
+                return (
+                    allowed,
+                    prob,
+                    f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}% | {virginie_decision.reason}",
+                )
             return allowed, prob, f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}%"
         except Exception as e:
             return True, conf, f"Err:{e}"

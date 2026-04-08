@@ -33,7 +33,11 @@ def test_profit_engine_ranks_highest_expected_value_first():
                 risk_penalty=30,
             ),
             Opportunity(
-                key="weak", success_probability=0.3, expected_profit=40, cost=20, risk_penalty=5
+                key="weak",
+                success_probability=0.3,
+                expected_profit=40,
+                cost=20,
+                risk_penalty=5,
             ),
         ]
     )
@@ -55,6 +59,14 @@ def test_llm_tracker_recommend_returns_none_without_data():
     assert tracker.recommend("analysis") is None
 
 
+def test_llm_tracker_cold_start_prefers_unseen_registered_model_first():
+    tracker = LLMPerformanceTracker()
+    tracker.register_models("analysis", ["model_b", "model_a"])
+
+    # Deterministic alphabetical exploration for unseen candidates.
+    assert tracker.recommend("analysis") == "model_a"
+
+
 def test_llm_tracker_recommend_prefers_high_reward_model():
     tracker = LLMPerformanceTracker(exploration_c=0.2)
     for _ in range(5):
@@ -72,11 +84,18 @@ def test_virginie_core_guardrails_filter_unprofitable_or_risky_actions():
     selected = core.select_opportunity(
         [
             Opportunity(
-                key="too_risky", success_probability=0.9, expected_profit=50, risk_penalty=40
+                key="too_risky",
+                success_probability=0.9,
+                expected_profit=50,
+                risk_penalty=40,
             ),
             Opportunity(key="negative", success_probability=0.2, expected_profit=10, cost=5),
             Opportunity(
-                key="good", success_probability=0.8, expected_profit=50, cost=5, risk_penalty=10
+                key="good",
+                success_probability=0.8,
+                expected_profit=50,
+                cost=5,
+                risk_penalty=10,
             ),
         ]
     )
@@ -85,10 +104,24 @@ def test_virginie_core_guardrails_filter_unprofitable_or_risky_actions():
     assert selected.key == "good"
 
 
+def test_virginie_core_report_contains_score_breakdown():
+    core = VirginieCore()
+    report = core.select_opportunity_with_report(
+        [
+            Opportunity(
+                key="good", success_probability=0.7, expected_profit=50, cost=5, risk_penalty=5
+            )
+        ]
+    )
+
+    assert report.selected is not None
+    assert report.selected.key == "good"
+    assert "EV=" in report.reason
+
+
 def test_virginie_core_learns_action_outcomes_for_future_selection():
     core = VirginieCore()
 
-    # Baseline: both options valid, higher EV wins initially.
     selected = core.select_opportunity(
         [
             Opportunity(key="a", success_probability=0.6, expected_profit=20),
@@ -98,7 +131,6 @@ def test_virginie_core_learns_action_outcomes_for_future_selection():
     assert selected is not None
     assert selected.key == "a"
 
-    # Learned realized outcome shifts preference toward b.
     for _ in range(5):
         core.learn_from_action(ActionResult(opportunity_key="b", realized_profit=30.0))
     for _ in range(5):
@@ -114,6 +146,9 @@ def test_virginie_core_learns_action_outcomes_for_future_selection():
     assert selected_after_learning is not None
     assert selected_after_learning.key == "b"
     assert core.action_average_profit("b") == 30.0
+    snap = core.action_snapshot()
+    assert snap["b"]["count"] == 5
+    assert snap["b"]["variance"] == 0.0
 
 
 def test_virginie_core_routes_llm_by_recorded_rewards():

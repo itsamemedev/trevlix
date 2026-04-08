@@ -21,6 +21,7 @@ from .virginie import (
     Opportunity,
     ProfitDecisionEngine,
     VirginieCore,
+    VirginieDecision,
     VirginieGuardrails,
     VirginieIdentity,
 )
@@ -50,4 +51,5 @@ __all__ = [
     "LLMResult",
     "LLMPerformanceTracker",
     "VirginieCore",
+    "VirginieDecision",
 ]
