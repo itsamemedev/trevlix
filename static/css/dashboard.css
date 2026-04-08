@@ -99,7 +99,7 @@ kbd { background:rgba(255,255,255,.06); border:1px solid var(--muted);
 
 /* Admin-only elements hidden from users */
 .admin-only { display:none; }
-body.is-admin .admin-only { display:block; }
+body.is-admin .admin-only:not(.sec):not(.nb) { display:block; }
 body.is-admin .nb.admin-only { display:flex; }
 
 /* User-friendly simplified view */

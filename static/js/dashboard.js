@@ -42,6 +42,10 @@ let wizStep=0, wizEx='cryptocom';
 const _navHooks=[];
 function onNav(fn){_navHooks.push(fn);}
 function nav(id,el){
+  if(id==='admin' && !document.body.classList.contains('is-admin')){
+    toast('⛔ Admin-Bereich nur für Admins verfügbar.','warning');
+    return;
+  }
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const sec=document.getElementById('sec-'+id); if(sec) sec.classList.add('active');
