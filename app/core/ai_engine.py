@@ -14,6 +14,7 @@ from datetime import datetime
 import numpy as np
 
 from services.strategies import STRATEGY_NAMES
+from services.virginie import ActionResult, Opportunity, VirginieCore, VirginieGuardrails
 
 # ---------------------------------------------------------------------------
 # Optional ML dependencies (mirrors server.py)
@@ -54,7 +55,11 @@ try:
     from sklearn.calibration import CalibratedClassifierCV as _CCV
     from sklearn.ensemble import (
         IsolationForest as _IF,
+    )
+    from sklearn.ensemble import (
         RandomForestClassifier as _RFC,
+    )
+    from sklearn.ensemble import (
         VotingClassifier as _VC,
     )
     from sklearn.metrics import accuracy_score as _acc
@@ -134,8 +139,14 @@ try:
     from tensorflow.keras.callbacks import EarlyStopping as _ES
     from tensorflow.keras.layers import (
         LSTM as _LSTM,
+    )
+    from tensorflow.keras.layers import (
         Dense as _Dense,
+    )
+    from tensorflow.keras.layers import (
         Dropout as _Drop,
+    )
+    from tensorflow.keras.layers import (
         Input as _Inp,
     )
     from tensorflow.keras.models import Sequential as _Seq
@@ -176,6 +187,9 @@ _AI_CONFIG_DEFAULTS: dict[str, float | int | bool] = {
     "ai_use_kelly": True,
     "lstm_lookback": 24,
     "lstm_min_samples": 50,
+    "virginie_enabled": True,
+    "virginie_min_score": 0.0,
+    "virginie_max_risk_penalty": 1000.0,
 }
 
 
@@ -255,6 +269,12 @@ class AIEngine:
         self.optim_log = deque(maxlen=500)
         self._pending: dict[str, dict] = {}
         self._scan_cache: dict[str, dict] = {}  # für RL
+        self.virginie = VirginieCore(
+            guardrails=VirginieGuardrails(
+                min_score=float(CONFIG.get("virginie_min_score", 0.0)),
+                max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 1000.0)),
+            )
+        )
         self._load_from_db()
 
     def _load_from_db(self):
@@ -1125,13 +1145,29 @@ class AIEngine:
         return 0, round(max(buy_conf, sell_conf), 3)
 
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
-        """[26] Erweitert mit Conformal Prediction Intervals."""
+        """[26] Erweitert mit VIRGINIE-Guardrails + Conformal Prediction Intervals."""
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
         try:
             X_s = self.scaler.transform(features.reshape(1, -1))
             prob = self._predict(X_s, features)
-            allowed = prob >= CONFIG["ai_min_confidence"]
+            allowed_by_model = prob >= CONFIG["ai_min_confidence"]
+
+            if CONFIG.get("virginie_enabled", True):
+                opportunity = Opportunity(
+                    key="buy_signal",
+                    success_probability=prob,
+                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
+                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
+                    risk_penalty=float(max(0.0, (1.0 - conf) * 10.0)),
+                )
+                allowed_by_virginie = self.virginie.select_opportunity([opportunity]) is not None
+                allowed = allowed_by_model and allowed_by_virginie
+                reason_prefix = "VIRGINIE"
+            else:
+                allowed = allowed_by_model
+                reason_prefix = "AI"
+
             self.ai_log.insert(
                 0,
                 {
@@ -1141,12 +1177,11 @@ class AIEngine:
                     "reason": f"{'✅' if allowed else '🚫'} {prob * 100:.1f}%",
                 },
             )
-            # ai_log is a deque(maxlen=500) – no manual trim needed
             if allowed:
                 self.allowed_count += 1
             else:
                 self.blocked_count += 1
-            return allowed, prob, f"{'✅' if allowed else '🚫'} Win-Prob:{prob * 100:.1f}%"
+            return allowed, prob, f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}%"
         except Exception as e:
             return True, conf, f"Err:{e}"
 
@@ -1235,6 +1270,11 @@ class AIEngine:
                     self.strat_wr[nm] = (1 - alpha) * self.strat_wr.get(nm, 0.5) + alpha * float(
                         won
                     )
+        if CONFIG.get("virginie_enabled", True):
+            self.virginie.learn_from_action(
+                ActionResult(opportunity_key="buy_signal", realized_profit=float(pnl))
+            )
+
         # RL lernen
         if rl_agent is not None:
             rl_agent.on_trade_close(p.get("scan", {}), pnl)
