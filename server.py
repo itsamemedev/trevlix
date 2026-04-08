@@ -549,6 +549,26 @@ mcp_registry = MCPToolRegistry(
 )
 knowledge_base.set_mcp_registry(mcp_registry)
 
+
+def _idle_learning_loop() -> None:
+    """Leerlauf-Lernen: hält KI↔LLM Kollaboration aktiv wenn Bot pausiert ist."""
+    while not _SHUTDOWN_EVENT.is_set():
+        try:
+            if not getattr(state, "running", False) and hasattr(knowledge_base, "idle_learn_async"):
+                knowledge_base.idle_learn_async(
+                    regime_is_bull=bool(getattr(regime, "is_bull", True)),
+                    fg_value=int(getattr(fg_idx, "value", 50) or 50),
+                    open_positions=len(getattr(state, "positions", {}) or {}),
+                    iteration=int(getattr(state, "iteration", 0) or 0),
+                    min_interval_sec=600,
+                )
+        except Exception as exc:
+            log.debug("Idle learning loop: %s", exc)
+        _SHUTDOWN_EVENT.wait(120)
+
+
+threading.Thread(target=_idle_learning_loop, daemon=True, name="IdleLearningLoop").start()
+
 # ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
 
 
@@ -2874,6 +2894,12 @@ def _collect_system_analytics() -> dict[str, Any]:
     # AI Engine metrics
     try:
         ai_dict = ai_engine.to_dict()
+        idle_meta = {}
+        try:
+            if hasattr(knowledge_base, "idle_learning_status"):
+                idle_meta = knowledge_base.idle_learning_status()
+        except Exception:
+            idle_meta = {}
         data["ai"] = {
             "trained": ai_dict.get("is_trained", False),
             "accuracy": f"{ai_dict.get('accuracy', 0) * 100:.1f}%",
@@ -2883,6 +2909,15 @@ def _collect_system_analytics() -> dict[str, Any]:
             "version": ai_dict.get("training_version", 0),
             "last_trained": ai_dict.get("last_trained", "—"),
             "trades_since_retrain": ai_dict.get("trades_since_retrain", 0),
+            "idle_learning_runs": idle_meta.get("runs", 0),
+            "idle_learning_last_at": idle_meta.get("last_run_at"),
+            "idle_learning_summary": idle_meta.get("last_summary", ""),
+            "idle_learning_error": idle_meta.get("last_error", ""),
+            "llm_providers_used": idle_meta.get("providers_used", 0),
+            "llm_responses_used": idle_meta.get("responses_used", 0),
+            "llm_collaboration_active": bool(
+                idle_meta.get("providers_used", 0) or idle_meta.get("responses_used", 0)
+            ),
         }
     except Exception:
         data["ai"] = {}

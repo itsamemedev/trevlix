@@ -12,6 +12,7 @@ const _storage = {
 
 // ── JWT Token (aus Cookie oder Session) ──────────────────────────────
 let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
+const _csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
 // [Socket.io Fix] Initiale State-Abfrage per HTTP, bevor WS verbunden ist
 (async function _initState(){
@@ -551,6 +552,16 @@ function updateAI3DFromAI(ai){
   _ai3dState.blocked = Number(ai.blocked_count||0);
   const m=document.getElementById('ai3dMeta');
   if(m) m.textContent = `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
+  const collabEl = document.getElementById('ai3dCollab');
+  if(collabEl){
+    const providers = Number(ai.llm_providers_used||0);
+    const answers = Number(ai.llm_responses_used||0);
+    const runs = Number(ai.idle_learning_runs||0);
+    const active = providers > 0 || answers > 0;
+    collabEl.textContent = active
+      ? `🤝 LLM-Kollaboration aktiv · Provider ${providers} · Antworten ${answers} · Idle-Runs ${runs}`
+      : `🤝 LLM-Kollaboration wartet · Idle-Runs ${runs}`;
+  }
   if(!_ai3dState.ready){
     _ai3dState.ready=true;
     requestAnimationFrame(_renderAI3D);
@@ -746,8 +757,12 @@ let _tradingInsightWarnTs = 0;
 async function _fetchJsonWithTimeout(path, opts={}, timeoutMs=6500){
   const ctrl = new AbortController();
   const timer = setTimeout(()=>ctrl.abort(), timeoutMs);
+  const requestOpts = {...opts};
+  const headers = {...(requestOpts.headers||{})};
+  if(_jwtToken && !headers.Authorization) headers.Authorization = 'Bearer '+_jwtToken;
+  requestOpts.headers = headers;
   try{
-    const r = await fetch(path, {...opts, credentials:'include', signal:ctrl.signal});
+    const r = await fetch(path, {...requestOpts, credentials:'include', signal:ctrl.signal});
     let data = {};
     try{ data = await r.json(); }catch(_e){}
     if(!r.ok) throw new Error((data&&data.error)||(`${path} -> ${r.status}`));
@@ -760,9 +775,11 @@ async function _fetchTradingEndpoint(path){
   return _fetchJsonWithTimeout(path, {}, 6500);
 }
 async function _postTradingEndpoint(path, payload){
+  const body = {...(payload||{})};
+  if(_csrfToken && !body._csrf) body._csrf = _csrfToken;
   return _fetchJsonWithTimeout(
     path,
-    {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload||{})},
+    {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)},
     8000
   );
 }
@@ -1642,11 +1659,20 @@ function renderAIDiagnosePanel(diag){
   const driftTxt = agree >= 85 ? '🟢 niedrig' : agree >= 65 ? '🟡 mittel' : '🔴 hoch';
   const qualityTxt = decisionQ >= 70 ? `🟢 ${decisionQ.toFixed(1)}%` : decisionQ >= 55 ? `🟡 ${decisionQ.toFixed(1)}%` : `🔴 ${decisionQ.toFixed(1)}%`;
   const latencyTxt = latencyMs > 0 ? `${latencyMs} ms` : '—';
+  const collabProviders = Number(diag.llm_providers_used||0);
+  const collabResponses = Number(diag.llm_responses_used||0);
+  const collabRuns = Number(diag.idle_learning_runs||0);
+  const collabActive = !!diag.llm_collaboration_active || collabProviders>0 || collabResponses>0;
+  const collabTxt = collabActive
+    ? `🟢 ${collabProviders} Provider / ${collabResponses} Antworten`
+    : '🟡 standby';
 
   _s('aiDiagHealth', healthTxt);
   _s('aiDiagQuality', qualityTxt);
   _s('aiDiagDrift', driftTxt);
   _s('aiDiagLatency', latencyTxt);
+  _s('aiDiagCollab', collabTxt);
+  _s('aiDiagIdleRuns', String(collabRuns));
 
   const reasons = [];
   if(!trained) reasons.push('Modell ist aktuell nicht trainiert.');
@@ -1654,7 +1680,10 @@ function renderAIDiagnosePanel(diag){
   if(decisionQ < 55 && pred >= 20) reasons.push('Trefferquote der Vorhersagen ist niedrig.');
   if(agree < 70) reasons.push('Abweichung zwischen Accuracy und CV-Accuracy deutet auf Drift/Overfitting hin.');
   if(latencyMs > 1500) reasons.push('LLM-Latenz ist erhöht – mögliche API/Provider-Bremse.');
+  if(!collabActive) reasons.push('LLM-Kollaboration im Idle-Modus ist aktuell noch nicht aktiv.');
+  if(diag.idle_learning_error) reasons.push(`Idle-Learning Fehler: ${diag.idle_learning_error}`);
   if(riskPressure >= 80) reasons.push('Circuit-Breaker steht kurz vor dem Limit.');
+  if(diag.idle_learning_summary) reasons.push(`Letzter Idle-Impuls: ${diag.idle_learning_summary}`);
   reasoningEl.textContent = reasons.length ? reasons.join(' ') : 'AI-System arbeitet stabil. Keine kritischen Auffälligkeiten erkannt.';
 
   const actions = [];
@@ -1717,6 +1746,9 @@ socket.on('system_analytics', d => {
       samples: a.predictions || 0,
       allowed_count: a.correct || 0,
       blocked_count: Math.max(0,(a.predictions||0)-(a.correct||0)),
+      llm_providers_used: a.llm_providers_used || 0,
+      llm_responses_used: a.llm_responses_used || 0,
+      idle_learning_runs: a.idle_learning_runs || 0,
     });
     renderAIDiagnosePanel({
       ...a,

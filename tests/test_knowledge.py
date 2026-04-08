@@ -152,3 +152,16 @@ class TestKnowledgeBase:
         assert "strategy_perf" in KnowledgeBase.CATEGORIES
         assert "symbol_info" in KnowledgeBase.CATEGORIES
         assert "risk_pattern" in KnowledgeBase.CATEGORIES
+
+    def test_llm_enabled_with_multi_provider_fallback(self, kb):
+        class _FakeMulti:
+            available_providers = ["groq"]
+
+        kb._multi_llm = _FakeMulti()
+        kb._llm_endpoint = ""
+        assert kb.llm_enabled is True
+
+    def test_idle_learning_status_defaults(self, kb):
+        status = kb.idle_learning_status()
+        assert status["runs"] == 0
+        assert "last_run_ts" in status
