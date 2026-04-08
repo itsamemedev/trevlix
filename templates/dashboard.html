@@ -901,6 +901,32 @@
         </div>
       </div>
 
+      <!-- AI Diagnose Panel -->
+      <div class="admin-card admin-full-width">
+        <div class="card-hd">
+          <div class="card-title">AI Diagnose</div>
+          <div style="font-family:var(--mono);font-size:10px;color:#8a7a5a">Decisions: <span id="aiDecCount">0</span></div>
+        </div>
+        <div class="card-body">
+          <div class="kv-grid" style="margin-bottom:10px">
+            <div class="kv"><span class="kv-label">WF Accuracy</span><span class="kv-value" id="aiWF">—</span></div>
+            <div class="kv"><span class="kv-label">Bull Accuracy</span><span class="kv-value" id="aiBullAcc">—</span></div>
+            <div class="kv"><span class="kv-label">Bear Accuracy</span><span class="kv-value" id="aiBearAcc">—</span></div>
+            <div class="kv"><span class="kv-label">Samples</span><span class="kv-value" id="aiSamples">0</span></div>
+            <div class="kv"><span class="kv-label">Allowed</span><span class="kv-value" id="aiAllowed">0</span></div>
+            <div class="kv"><span class="kv-label">Blocked</span><span class="kv-value" id="aiBlocked">0</span></div>
+          </div>
+          <div style="font-size:11px;color:#bda26d;margin:2px 0 6px;font-weight:700">Strategie-Gewichte</div>
+          <div id="weightList" style="margin-bottom:10px">
+            <div class="empty" style="padding:8px 0;color:#8a7a5a">Noch keine Gewichtsdaten.</div>
+          </div>
+          <div style="font-size:11px;color:#bda26d;margin:2px 0 6px;font-weight:700">AI Entscheidungs-Log</div>
+          <div id="aiDecLog" style="max-height:160px;overflow:auto">
+            <div class="empty" style="padding:8px 0;color:#8a7a5a">Noch keine Entscheidungen.</div>
+          </div>
+        </div>
+      </div>
+
       <!-- Risk Management -->
       <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_risk_mgmt">Risiko-Management</div></div>
