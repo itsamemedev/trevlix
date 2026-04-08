@@ -42,6 +42,10 @@ let wizStep=0, wizEx='cryptocom';
 const _navHooks=[];
 function onNav(fn){_navHooks.push(fn);}
 function nav(id,el){
+  if(id==='admin' && !document.body.classList.contains('is-admin')){
+    toast('⛔ Admin-Bereich nur für Admins verfügbar.','warning');
+    return;
+  }
   document.querySelectorAll('.sec').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
   const sec=document.getElementById('sec-'+id); if(sec) sec.classList.add('active');
@@ -1127,29 +1131,48 @@ async function loadBtHistory(){
 
 // ── Tax ──────────────────────────────────────────────────────────────
 async function loadTax(){
-  const year=document.getElementById('taxYear').value||new Date().getFullYear();
-  const method=document.getElementById('taxMethod').value;
+  const taxYearEl=document.getElementById('taxYear');
+  const taxMethodEl=document.getElementById('taxMethod');
+  if(!taxYearEl || !taxMethodEl){
+    toast('⚠️ Tax-Ansicht ist aktuell nicht verfügbar.','warning');
+    return;
+  }
+  const year=taxYearEl.value||new Date().getFullYear();
+  const method=taxMethodEl.value;
   try{
     const data=await(await fetch(`/api/tax_report?year=${encodeURIComponent(year)}&method=${encodeURIComponent(method)}`)).json();
     if(data.error){toast(data.error,'error');return;}
     const s=data.summary;
-    document.getElementById('taxResult').style.display='block';
-    document.getElementById('taxGains').textContent=fmtS(s.total_gains)+' USDT';
-    document.getElementById('taxLosses').textContent=fmtS(s.total_losses)+' USDT';
-    const tn=document.getElementById('taxNet'); tn.textContent=fmtS(s.net_pnl)+' USDT'; tn.style.color=clr(s.net_pnl);
-    document.getElementById('taxTaxable').textContent=fmt(s.taxable_gains)+' USDT';
-    document.getElementById('taxFees').textContent=fmt(s.total_fees)+' USDT';
-    document.getElementById('taxCount').textContent=s.trade_count+'T ('+s.win_count+'G / '+s.loss_count+'V)';
-    const wb=document.getElementById('taxWarnBar');
-    if(s.taxable_gains>600){wb.style.display='flex';document.getElementById('taxWarnTxt').textContent=QI18n.t('msg_tax_warn');}
-    else wb.style.display='none';
-    document.getElementById('taxTable').innerHTML=data.gains.slice(0,30).map(g=>
+    const taxResultEl=document.getElementById('taxResult');
+    const taxGainsEl=document.getElementById('taxGains');
+    const taxLossesEl=document.getElementById('taxLosses');
+    const taxNetEl=document.getElementById('taxNet');
+    const taxTaxableEl=document.getElementById('taxTaxable');
+    const taxFeesEl=document.getElementById('taxFees');
+    const taxCountEl=document.getElementById('taxCount');
+    const taxWarnBarEl=document.getElementById('taxWarnBar');
+    const taxWarnTxtEl=document.getElementById('taxWarnTxt');
+    const taxTableEl=document.getElementById('taxTable');
+    if(!taxResultEl||!taxGainsEl||!taxLossesEl||!taxNetEl||!taxTaxableEl||!taxFeesEl||!taxCountEl||!taxWarnBarEl||!taxTableEl){
+      toast('⚠️ Tax-UI-Elemente fehlen im Dashboard.','warning');
+      return;
+    }
+    taxResultEl.style.display='block';
+    taxGainsEl.textContent=fmtS(s.total_gains)+' USDT';
+    taxLossesEl.textContent=fmtS(s.total_losses)+' USDT';
+    taxNetEl.textContent=fmtS(s.net_pnl)+' USDT'; taxNetEl.style.color=clr(s.net_pnl);
+    taxTaxableEl.textContent=fmt(s.taxable_gains)+' USDT';
+    taxFeesEl.textContent=fmt(s.total_fees)+' USDT';
+    taxCountEl.textContent=s.trade_count+'T ('+s.win_count+'G / '+s.loss_count+'V)';
+    if(s.taxable_gains>600){taxWarnBarEl.style.display='flex'; if(taxWarnTxtEl) taxWarnTxtEl.textContent=QI18n.t('msg_tax_warn');}
+    else taxWarnBarEl.style.display='none';
+    taxTableEl.innerHTML=data.gains.slice(0,30).map(g=>
       `<div style="display:grid;grid-template-columns:80px 1fr 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);font-size:10px;font-family:var(--mono)">
         <span style="color:var(--sub)">${esc(String(g.date||''))}</span><span>${esc(String(g.symbol||''))}</span>
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
-function exportTaxCSV(){const y=document.getElementById('taxYear').value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
+function exportTaxCSV(){const y=document.getElementById('taxYear')?.value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
 function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
@@ -1471,12 +1494,16 @@ socket.on('price_alert', d=>{
   addLog(`🔔 ${QI18n.t('alert_triggered')}: ${d.symbol}`,'warning','system');
 });
 socket.on('backtest_result', d=>{
-  document.getElementById('btBtn').disabled=false;
+  const btBtnEl=document.getElementById('btBtn');
+  const btStatusEl=document.getElementById('btStatus');
+  const btResultSectionEl=document.getElementById('btResultSection');
+  const btBadgeEl=document.getElementById('btBadge');
+  if(btBtnEl) btBtnEl.disabled=false;
   if(!d) return;
-  if(d.error){document.getElementById('btStatus').textContent='❌ '+d.error;toast(d.error,'error');return;}
-  document.getElementById('btStatus').textContent='';
-  document.getElementById('btResultSection').style.display='block';
-  document.getElementById('btBadge').textContent=d.symbol+' '+d.timeframe;
+  if(d.error){if(btStatusEl) btStatusEl.textContent='❌ '+d.error;toast(d.error,'error');return;}
+  if(btStatusEl) btStatusEl.textContent='';
+  if(btResultSectionEl) btResultSectionEl.style.display='block';
+  if(btBadgeEl) btBadgeEl.textContent=d.symbol+' '+d.timeframe;
   const btEl=document.getElementById('btWR'); if(btEl){btEl.textContent=d.win_rate+'%';btEl.style.color=d.win_rate>50?'var(--green)':'var(--red)';}
   const btPnl=document.getElementById('btPnl'); if(btPnl){btPnl.textContent=fmtS(d.total_pnl);btPnl.style.color=clr(d.total_pnl);}
   const btPF=document.getElementById('btPF'); if(btPF){btPF.textContent=d.profit_factor;btPF.style.color=d.profit_factor>1.2?'var(--green)':'var(--red)';}
@@ -1677,12 +1704,109 @@ async function loadSystemAnalytics() {
       else { toast('⚠️ Analytics: '+r.status,'warning'); }
     }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
   }
+  loadAdminBlockerInsights();
 }
 
 function _parsePercent(v){
   if(v===null||v===undefined) return 0;
   const n = parseFloat(String(v).replace('%','').trim());
   return Number.isFinite(n) ? n : 0;
+}
+
+function _formatDecisionReason(reason){
+  const raw = String(reason||'').trim();
+  if(!raw) return {label:'unbekannt', detail:'kein Grund übermittelt'};
+  if(raw.startsWith('ai_filter:')) return {label:'AI/VIRGINIE Filter', detail:raw.slice(10).trim()||'AI/VIRGINIE blockiert'};
+  if(raw === 'circuit_breaker') return {label:'Circuit Breaker', detail:'Risikostopp aktiv'};
+  if(raw === 'daily_loss_limit') return {label:'Daily Loss Limit', detail:'Tagesverlust-Limit erreicht'};
+  if(raw === 'max_open_trades') return {label:'Max Open Trades', detail:'Positionslimit erreicht'};
+  if(raw === 'already_open') return {label:'Position bereits offen', detail:'Symbol ist bereits im Portfolio'};
+  if(raw === 'invest_too_small') return {label:'Invest zu klein', detail:'Ordergröße unter Minimum'};
+  if(raw === 'qty_invalid') return {label:'Ungültige Menge', detail:'Berechnete Menge <= 0'};
+  if(raw.includes('Cooldown')) return {label:'Cooldown aktiv', detail:raw};
+  if(raw.includes('Unzureichendes Guthaben')) return {label:'Guthaben zu niedrig', detail:raw};
+  if(raw.startsWith('live_buy_failed:')) return {label:'Live-Orderfehler', detail:raw.slice(16).trim()||raw};
+  if(raw.startsWith('live_sell_failed:')) return {label:'Live-Orderfehler', detail:raw.slice(17).trim()||raw};
+  if(raw.startsWith('executed:')) return {label:'Ausgeführt', detail:raw.slice(9).trim()||'Order ausgeführt'};
+  return {label:raw.split(':')[0] || raw, detail:raw};
+}
+
+async function loadAdminBlockerInsights(){
+  const summaryTotal=document.getElementById('adminBlockerTotal');
+  const summaryErrors=document.getElementById('adminBlockerErrors');
+  const summaryTop=document.getElementById('adminBlockerTop');
+  const summaryUpdated=document.getElementById('adminBlockerUpdated');
+  const listEl=document.getElementById('adminBlockerList');
+  const latestEl=document.getElementById('adminBlockerLatest');
+  if(!summaryTotal || !summaryErrors || !summaryTop || !summaryUpdated || !listEl || !latestEl) return;
+
+  try{
+    const data = await _fetchTradingEndpoint('/api/v1/trading/decision-history?limit=200');
+    const rows = Array.isArray(data.decisions) ? data.decisions : [];
+    const blocked = rows.filter(r => String(r.decision||'').toLowerCase()==='blocked');
+    const errors = rows.filter(r => String(r.decision||'').toLowerCase()==='error');
+    const grouped = new Map();
+    blocked.forEach(row=>{
+      const parsed = _formatDecisionReason(row.reason);
+      const key = parsed.label;
+      const prev = grouped.get(key) || {count:0, detail:parsed.detail};
+      prev.count += 1;
+      if(parsed.detail) prev.detail = parsed.detail;
+      grouped.set(key, prev);
+    });
+    const top = Array.from(grouped.entries())
+      .sort((a,b)=>b[1].count-a[1].count)
+      .slice(0,6);
+
+    summaryTotal.textContent = String(blocked.length);
+    summaryErrors.textContent = String(errors.length);
+    summaryTop.textContent = top.length ? `${top[0][0]} (${top[0][1].count}x)` : '—';
+    summaryUpdated.textContent = new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+
+    if(!top.length){
+      listEl.innerHTML = '<div class="empty"><div class="empty-ico">✅</div>Keine Blocker in den letzten 200 Decisions.</div>';
+    } else {
+      listEl.innerHTML = top.map(([label,meta]) => `
+        <div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--muted);font-size:11px">
+          <div style="min-width:0">
+            <div style="font-weight:700;color:var(--txt)">${esc(label)}</div>
+            <div style="color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(meta.detail||'')}</div>
+          </div>
+          <div style="font-family:var(--mono);color:var(--yellow);font-weight:700">${meta.count}x</div>
+        </div>
+      `).join('');
+    }
+
+    const latest = rows
+      .filter(r=>['blocked','error'].includes(String(r.decision||'').toLowerCase()))
+      .slice(0,5);
+    if(!latest.length){
+      latestEl.innerHTML = '<div class="empty"><div class="empty-ico">📭</div>Keine aktuellen Block-/Error-Events.</div>';
+      return;
+    }
+    latestEl.innerHTML = latest.map(r=>{
+      const parsed = _formatDecisionReason(r.reason);
+      const confidence = Number(r.confidence||0);
+      const aiScore = Number(r.ai_score||0);
+      const winProb = Number(r.win_prob||0);
+      return `<div style="padding:7px 0;border-bottom:1px solid var(--line);font-size:11px">
+        <div style="display:flex;justify-content:space-between;gap:6px;margin-bottom:2px">
+          <span style="font-weight:700;color:var(--txt)">${esc(String(r.symbol||''))} · ${esc(String((r.decision||'').toUpperCase()))}</span>
+          <span style="font-family:var(--mono);color:var(--sub)">${esc(String((r.created_at||'').slice(0,19)).replace('T',' '))}</span>
+        </div>
+        <div style="color:var(--yellow);font-weight:600">${esc(parsed.label)}</div>
+        <div style="color:var(--sub);margin-top:1px">${esc(parsed.detail)}</div>
+        <div style="display:flex;gap:10px;margin-top:3px;font-family:var(--mono);color:var(--sub)">
+          <span>conf: ${Number.isFinite(confidence)?confidence.toFixed(3):'—'}</span>
+          <span>ai: ${Number.isFinite(aiScore)?aiScore.toFixed(3):'—'}</span>
+          <span>win: ${Number.isFinite(winProb)?winProb.toFixed(1):'—'}%</span>
+        </div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    listEl.innerHTML = '<div class="empty"><div class="empty-ico">⚠️</div>Blocker-Analyse konnte nicht geladen werden.</div>';
+    latestEl.innerHTML = '';
+  }
 }
 
 function renderAIDiagnosePanel(diag){
@@ -2422,7 +2546,7 @@ async function loadAuditLog() {
 // Load data when switching to risk/admin tabs
 onNav(id => {
   if (id === 'risk') { loadFundingRates(); loadCooldowns(); }
-  if (id === 'admin') { loadAuditLog(); loadGrids(); loadIpWhitelist(); }
+  if (id === 'admin') { loadAuditLog(); loadGrids(); loadIpWhitelist(); loadAdminBlockerInsights(); }
   if (id === 'settings') { loadNewsFilter(); }
 });
 // Initial data load
@@ -2459,7 +2583,8 @@ async function loadFeatureImportance(){
       {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if(d.error){ toast(d.error,'warning'); return; }
-    document.getElementById('featureImportanceCard').style.display='';
+    const fiCard = document.getElementById('featureImportanceCard');
+    if(fiCard) fiCard.style.display='';
     const acc = document.getElementById('fi-accuracy');
     if(acc) acc.textContent = `WF: ${d.wf_accuracy}%`;
     const list = document.getElementById('fiList');
@@ -2907,7 +3032,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   initCharts();
-  document.getElementById('taxYear').value=new Date().getFullYear();
+  const taxYearEl=document.getElementById('taxYear');
+  if(taxYearEl) taxYearEl.value=new Date().getFullYear();
   QI18n.init('langSwitcher');
   loadFollowers();
   updateGasFees();

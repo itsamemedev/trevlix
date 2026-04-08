@@ -1168,11 +1168,36 @@ class AIEngine:
             return -1, round(sell_conf, 3)
         return 0, round(max(buy_conf, sell_conf), 3)
 
+    def _sync_virginie_guardrails_from_config(self) -> None:
+        """Synchronisiert VIRGINIE-Guardrails mit Laufzeit-Konfigurationsänderungen."""
+        if not hasattr(self, "virginie") or self.virginie is None:
+            return
+        try:
+            min_score = float(CONFIG.get("virginie_min_score", 0.0))
+        except Exception:
+            min_score = 0.0
+        try:
+            max_risk = float(CONFIG.get("virginie_max_risk_penalty", 1000.0))
+        except Exception:
+            max_risk = 1000.0
+        current = getattr(self.virginie, "guardrails", None)
+        if (
+            current is None
+            or float(getattr(current, "min_score", 0.0)) != min_score
+            or float(getattr(current, "max_risk_penalty", 1000.0)) != max_risk
+        ):
+            self.virginie.guardrails = VirginieGuardrails(
+                min_score=min_score,
+                max_risk_penalty=max_risk,
+            )
+
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
         """[26] Erweitert mit VIRGINIE-Guardrails + Conformal Prediction Intervals."""
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
         try:
+            if CONFIG.get("virginie_enabled", True):
+                self._sync_virginie_guardrails_from_config()
             X_s = self.scaler.transform(features.reshape(1, -1))
             prob = self._predict(X_s, features)
             allowed_by_model = prob >= CONFIG["ai_min_confidence"]

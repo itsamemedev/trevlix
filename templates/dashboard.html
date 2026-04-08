@@ -931,6 +931,24 @@
         </div>
       </div>
 
+      <!-- Trade Blocker Insights -->
+      <div class="admin-card">
+        <div class="card-hd">
+          <div class="card-title">Trade Blocker Insights</div>
+          <button class="btn btn-info" style="padding:5px 10px;font-size:10px" onclick="loadAdminBlockerInsights()">↻ Aktualisieren</button>
+        </div>
+        <div class="card-body">
+          <div class="kv-grid" style="margin-bottom:10px">
+            <div class="kv"><span class="kv-label">Blockierte Decisions</span><span class="kv-value" id="adminBlockerTotal">—</span></div>
+            <div class="kv"><span class="kv-label">Errors</span><span class="kv-value" id="adminBlockerErrors">—</span></div>
+            <div class="kv"><span class="kv-label">Häufigster Grund</span><span class="kv-value" id="adminBlockerTop">—</span></div>
+            <div class="kv"><span class="kv-label">Zuletzt aktualisiert</span><span class="kv-value" id="adminBlockerUpdated">—</span></div>
+          </div>
+          <div id="adminBlockerList" style="margin-bottom:8px"></div>
+          <div id="adminBlockerLatest"></div>
+        </div>
+      </div>
+
       <!-- Risk Management -->
       <div class="admin-card">
         <div class="card-hd"><div class="card-title" data-i18n="admin_risk_mgmt">Risiko-Management</div></div>
