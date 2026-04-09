@@ -1,5 +1,7 @@
 """Tests for VIRGINIE 0.0.1 primitives."""
 
+import pytest
+
 from services.virginie import (
     ActionResult,
     AgentResult,
@@ -196,6 +198,13 @@ def test_virginie_orchestrator_reports_unassigned_domain():
     assert result.agent_name == "unassigned"
 
 
+def test_virginie_orchestrator_rejects_empty_agent_name():
+    orchestrator = VirginieOrchestrator()
+
+    with pytest.raises(ValueError):
+        orchestrator.register_agent(VirginieAgent(name="   ", domains=("ops",), handler=lambda _t: None))
+
+
 def test_portfolio_goal_delegates_to_trading_agent_with_autonomous_allocation():
     orchestrator = VirginieOrchestrator()
     for agent in build_default_project_agents():
@@ -307,6 +316,18 @@ def test_virginie_orchestrator_normalizes_domains_for_routing_and_coverage():
     )
     assert result.success is True
     assert result.agent_name == "planning-agent"
+
+
+def test_virginie_orchestrator_supports_domain_aliases():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(task_id="task-alias-1", domain="ops", objective="restart service")
+    )
+    assert result.success is True
+    assert result.agent_name == "ops-agent"
 
 
 def test_virginie_orchestrator_infers_domain_from_objective_when_domain_unknown():
@@ -437,6 +458,35 @@ def test_virginie_orchestrator_unassigned_result_contains_routing_diagnostics():
     assert result.agent_name == "unassigned"
     assert "routing" in result.data
     assert result.data["routing"]["matches"] == []
+
+
+def test_virginie_orchestrator_unregister_and_reset_stats_and_history():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    orchestrator.execute(AgentTask(task_id="task-rst-1", domain="planning", objective="A"))
+    assert len(orchestrator.history()) == 1
+    orchestrator.reset_agent_stats("planning-agent")
+    status = orchestrator.status()
+    assert status["agent_task_counts"]["planning-agent"] == 0
+
+    orchestrator.clear_history()
+    assert orchestrator.history() == []
+    assert orchestrator.unregister_agent("planning-agent") is True
+    assert orchestrator.unregister_agent("planning-agent") is False
+
+
+def test_virginie_orchestrator_status_totals_are_exposed():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+    orchestrator.execute(AgentTask(task_id="task-total-1", domain="planning", objective="ok"))
+
+    status = orchestrator.status()
+    assert status["total_tasks"] >= 1
+    assert status["failure_threshold"] >= 1
+    assert status["failure_cooldown_sec"] >= 1.0
 
 
 def test_virginie_review_and_version_bump_follow_rules():
