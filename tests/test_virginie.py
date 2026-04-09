@@ -325,6 +325,7 @@ def test_virginie_orchestrator_infers_domain_from_objective_when_domain_unknown(
 
     assert result.success is True
     assert result.agent_name == "notification-agent"
+    assert result.data["routing"]["domain_inferred"] == "notifications"
 
 
 def test_virginie_orchestrator_tracks_agent_load_in_status():
@@ -423,6 +424,19 @@ def test_virginie_orchestrator_applies_failure_cooldown_after_threshold():
     routed = orchestrator.execute(AgentTask(task_id="after-cooldown", domain="ops", objective="restart"))
     assert routed.success is True
     assert routed.agent_name == "agent-ok"
+    assert "agent-fail" in routed.data["routing"]["cooldown_excluded"]
+
+
+def test_virginie_orchestrator_unassigned_result_contains_routing_diagnostics():
+    orchestrator = VirginieOrchestrator()
+    result = orchestrator.execute(
+        AgentTask(task_id="task-none", domain="mystery", objective="unmapped objective")
+    )
+
+    assert result.success is False
+    assert result.agent_name == "unassigned"
+    assert "routing" in result.data
+    assert result.data["routing"]["matches"] == []
 
 
 def test_virginie_review_and_version_bump_follow_rules():

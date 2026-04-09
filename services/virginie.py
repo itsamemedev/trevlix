@@ -513,7 +513,13 @@ class VirginieOrchestrator:
 
     def route_task(self, task: AgentTask) -> str | None:
         """Return best matching agent name for a task domain."""
+        agent_name, _details = self._route_task_with_details(task)
+        return agent_name
+
+    def _route_task_with_details(self, task: AgentTask) -> tuple[str | None, dict[str, Any]]:
+        """Return selected agent with routing diagnostics for observability."""
         task_domain = self._normalize_domain(task.domain)
+        inferred: str | None = None
         with self._lock:
             matches = [a.name for a in self._agents.values() if task_domain in a.domains]
             if not matches:
@@ -521,9 +527,15 @@ class VirginieOrchestrator:
                 if inferred:
                     matches = [a.name for a in self._agents.values() if inferred in a.domains]
         if not matches:
-            return None
+            return None, {
+                "domain_requested": task_domain,
+                "domain_inferred": inferred,
+                "matches": [],
+                "cooldown_excluded": [],
+            }
         with self._lock:
-            available = [name for name in matches if not self._is_agent_in_cooldown(name)]
+            cooldown_excluded = [name for name in matches if self._is_agent_in_cooldown(name)]
+            available = [name for name in matches if name not in cooldown_excluded]
             candidates = available or matches
             ranked = sorted(
                 candidates,
@@ -533,11 +545,18 @@ class VirginieOrchestrator:
                     name,
                 ),
             )
-        return ranked[0]
+        return ranked[0], {
+            "domain_requested": task_domain,
+            "domain_inferred": inferred,
+            "matches": matches,
+            "cooldown_excluded": cooldown_excluded,
+            "candidates": candidates,
+            "ranked": ranked,
+        }
 
     def execute(self, task: AgentTask) -> AgentResult:
         """Execute a task via its routed agent and store history."""
-        agent_name = self.route_task(task)
+        agent_name, route_details = self._route_task_with_details(task)
         if agent_name is None:
             result = AgentResult(
                 agent_name="unassigned",
@@ -548,21 +567,34 @@ class VirginieOrchestrator:
             with self._lock:
                 self._history.insert(0, result)
                 self._history = self._history[:200]
-            return result
+            return AgentResult(
+                agent_name=result.agent_name,
+                task_id=result.task_id,
+                success=result.success,
+                summary=result.summary,
+                data={**result.data, "routing": route_details},
+            )
 
         with self._lock:
             agent = self._agents[agent_name]
 
         try:
-            result = agent.handler(task)
+            raw_result = agent.handler(task)
         except Exception as exc:
-            result = AgentResult(
+            raw_result = AgentResult(
                 agent_name=agent_name,
                 task_id=task.task_id,
                 success=False,
                 summary=f"Agent execution failed: {exc}",
                 data={"error_type": type(exc).__name__},
             )
+        result = AgentResult(
+            agent_name=raw_result.agent_name,
+            task_id=raw_result.task_id,
+            success=raw_result.success,
+            summary=raw_result.summary,
+            data={**raw_result.data, "routing": route_details},
+        )
 
         with self._lock:
             self._agent_task_counts[agent_name] = self._agent_task_counts.get(agent_name, 0) + 1
