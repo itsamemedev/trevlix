@@ -11,6 +11,7 @@ This module integrates the self-learning pieces discussed for VIRGINIE:
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -439,13 +440,22 @@ class VirginieAgent:
 class VirginieOrchestrator:
     """Routes project-control tasks to specialized VIRGINIE agents."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        failure_cooldown_sec: float = 60.0,
+        failure_threshold: int = 3,
+        time_fn: Callable[[], float] | None = None,
+    ) -> None:
         self._agents: dict[str, VirginieAgent] = {}
         self._history: list[AgentResult] = []
         self._lock = threading.Lock()
         self._required_domains: set[str] = set()
         self._agent_task_counts: dict[str, int] = {}
         self._agent_stats: dict[str, dict[str, Any]] = {}
+        self._failure_cooldown_sec = max(1.0, float(failure_cooldown_sec))
+        self._failure_threshold = max(1, int(failure_threshold))
+        self._time_fn = time_fn or time.time
 
     @staticmethod
     def _normalize_domain(domain: str) -> str:
@@ -466,7 +476,14 @@ class VirginieOrchestrator:
             self._agent_task_counts.setdefault(normalized_agent.name, 0)
             self._agent_stats.setdefault(
                 normalized_agent.name,
-                {"assigned": 0, "success": 0, "failure": 0, "last_error": None},
+                {
+                    "assigned": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "consecutive_failure": 0,
+                    "last_failure_ts": 0.0,
+                    "last_error": None,
+                },
             )
 
     def set_required_domains(self, domains: list[str]) -> None:
@@ -506,8 +523,10 @@ class VirginieOrchestrator:
         if not matches:
             return None
         with self._lock:
+            available = [name for name in matches if not self._is_agent_in_cooldown(name)]
+            candidates = available or matches
             ranked = sorted(
-                matches,
+                candidates,
                 key=lambda name: (
                     self._agent_failure_rate(name),
                     self._agent_task_counts.get(name, 0),
@@ -548,14 +567,25 @@ class VirginieOrchestrator:
         with self._lock:
             self._agent_task_counts[agent_name] = self._agent_task_counts.get(agent_name, 0) + 1
             stats = self._agent_stats.setdefault(
-                agent_name, {"assigned": 0, "success": 0, "failure": 0, "last_error": None}
+                agent_name,
+                {
+                    "assigned": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "consecutive_failure": 0,
+                    "last_failure_ts": 0.0,
+                    "last_error": None,
+                },
             )
             stats["assigned"] += 1
             if result.success:
                 stats["success"] += 1
+                stats["consecutive_failure"] = 0
                 stats["last_error"] = None
             else:
                 stats["failure"] += 1
+                stats["consecutive_failure"] = int(stats.get("consecutive_failure", 0)) + 1
+                stats["last_failure_ts"] = float(self._time_fn())
                 stats["last_error"] = result.summary
             self._history.insert(0, result)
             self._history = self._history[:200]
@@ -580,7 +610,9 @@ class VirginieOrchestrator:
                         "assigned": int(stats.get("assigned", 0)),
                         "success": int(stats.get("success", 0)),
                         "failure": int(stats.get("failure", 0)),
+                        "consecutive_failure": int(stats.get("consecutive_failure", 0)),
                         "failure_rate": round(self._agent_failure_rate(name), 3),
+                        "cooldown_active": self._is_agent_in_cooldown(name),
                         "last_error": stats.get("last_error"),
                     }
                     for name, stats in self._agent_stats.items()
@@ -630,6 +662,14 @@ class VirginieOrchestrator:
             return 0.0
         failure = int(stats.get("failure", 0))
         return failure / assigned
+
+    def _is_agent_in_cooldown(self, agent_name: str) -> bool:
+        stats = self._agent_stats.get(agent_name, {})
+        consecutive = int(stats.get("consecutive_failure", 0))
+        if consecutive < self._failure_threshold:
+            return False
+        last_failure_ts = float(stats.get("last_failure_ts", 0.0) or 0.0)
+        return (self._time_fn() - last_failure_ts) < self._failure_cooldown_sec
 
 
 def build_default_project_agents() -> list[VirginieAgent]:

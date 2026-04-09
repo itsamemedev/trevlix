@@ -394,6 +394,37 @@ def test_virginie_orchestrator_prefers_healthier_agent_on_same_domain():
     assert result.agent_name == "agent-ok"
 
 
+def test_virginie_orchestrator_applies_failure_cooldown_after_threshold():
+    now = {"t": 1000.0}
+
+    def _time():
+        return now["t"]
+
+    def _always_fail(_task):
+        raise RuntimeError("down")
+
+    def _ok_handler(task):
+        return AgentResult(agent_name="agent-ok", task_id=task.task_id, success=True, summary="ok")
+
+    orchestrator = VirginieOrchestrator(failure_cooldown_sec=60.0, failure_threshold=3, time_fn=_time)
+    orchestrator.register_agent(VirginieAgent(name="agent-fail", domains=("ops",), handler=_always_fail))
+
+    # trigger consecutive failures for agent-fail
+    for idx in range(3):
+        now["t"] += 1.0
+        orchestrator.execute(AgentTask(task_id=f"fail-{idx}", domain="ops", objective="restart"))
+
+    status = orchestrator.status()
+    assert status["agent_health"]["agent-fail"]["consecutive_failure"] >= 3
+    assert status["agent_health"]["agent-fail"]["cooldown_active"] is True
+
+    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("ops",), handler=_ok_handler))
+    now["t"] += 1.0
+    routed = orchestrator.execute(AgentTask(task_id="after-cooldown", domain="ops", objective="restart"))
+    assert routed.success is True
+    assert routed.agent_name == "agent-ok"
+
+
 def test_virginie_review_and_version_bump_follow_rules():
     core = VirginieCore(
         rules=VirginieRules(
