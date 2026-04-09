@@ -55,6 +55,8 @@ import json
 import os
 import threading
 import time
+import uuid
+from collections import deque
 from datetime import datetime, timezone
 from typing import Any
 
@@ -538,6 +540,9 @@ state = BotState(db)
 # Globales Shutdown-Event: alle kooperativen Hintergrund-Threads prüfen dieses Event.
 _SHUTDOWN_EVENT = threading.Event()
 ai_engine = AIEngine(db)
+_VIRGINIE_CHAT_MAX_MESSAGES = 80
+_virginie_chat_lock = threading.Lock()
+_virginie_chat_by_user: dict[int, deque[dict[str, Any]]] = {}
 
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
@@ -570,6 +575,64 @@ def _idle_learning_loop() -> None:
 threading.Thread(target=_idle_learning_loop, daemon=True, name="IdleLearningLoop").start()
 
 # ── Autonomous Agents (v1.5) ────────────────────────────────────────────────
+
+
+def _virginie_chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
+    with _virginie_chat_lock:
+        history = _virginie_chat_by_user.setdefault(
+            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
+        )
+        return [dict(item) for item in history]
+
+
+def _virginie_chat_append(user_id: int, role: str, content: str) -> dict[str, Any]:
+    entry = {
+        "id": uuid.uuid4().hex,
+        "role": role,
+        "content": str(content).strip(),
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+    with _virginie_chat_lock:
+        history = _virginie_chat_by_user.setdefault(
+            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
+        )
+        history.append(entry)
+    return entry
+
+
+def _build_virginie_chat_context() -> str:
+    ai = ai_engine.to_dict() if ai_engine else {}
+    snap = state.snapshot() if state else {}
+    ass = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
+    return (
+        "Du bist VIRGINIE, die Trading-Assistentin im TREVLIX Admin-Dashboard.\n"
+        "Antwortstil: kurz, konkret, handlungsorientiert, sicherheitsbewusst.\n"
+        "Keine Garantien, stattdessen klare nächste Schritte vorschlagen.\n"
+        f"Aktuelle Bot-Lage: running={bool(snap.get('running', False))}, "
+        f"paper_trading={bool(snap.get('paper_trading', True))}, "
+        f"exchange={snap.get('exchange', 'unbekannt')}, "
+        f"portfolio={snap.get('portfolio_value', 0)}.\n"
+        f"VIRGINIE-Agenten: count={ass.get('registered_agents', 0)}, "
+        f"coverage={ass.get('coverage_pct', 0)}%, "
+        f"last_agent={ass.get('last_agent', '—')}."
+    )
+
+
+def _generate_virginie_chat_reply(user_prompt: str) -> str:
+    prompt = str(user_prompt or "").strip()
+    if not prompt:
+        return "Bitte sende eine konkrete Frage, damit ich dir gezielt helfen kann."
+    context = _build_virginie_chat_context()
+    try:
+        reply = knowledge_base.query_llm_with_tools(prompt, context)
+        if reply:
+            return str(reply).strip()[:4000]
+    except Exception as exc:
+        log.debug("VIRGINIE chat LLM fallback: %s", exc)
+    return (
+        "Ich konnte die LLM-Antwort gerade nicht abrufen. "
+        "Bitte prüfe die LLM-Konfiguration unter Wissen/LLM-Status und versuche es erneut."
+    )
 
 
 def _agent_notifier(msg: str) -> None:
@@ -1022,6 +1085,42 @@ def api_user_update_keys():
     ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
     _audit("api_keys_update", f"Exchange: {exchange}", request.user_id)
     return jsonify({"ok": ok})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VIRGINIE CHAT API (3D Live View)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
+@app.route("/api/v1/virginie/chat")
+@api_auth_required
+def api_virginie_chat_history():
+    """Liefert den Chat-Verlauf des angemeldeten Users."""
+    user_id = int(getattr(request, "user_id", 0) or 0)
+    return jsonify(
+        {
+            "messages": _virginie_chat_history_for_user(user_id),
+            "max_messages": _VIRGINIE_CHAT_MAX_MESSAGES,
+        }
+    )
+
+
+@app.route("/api/v1/virginie/chat", methods=["POST"])
+@api_auth_required
+def api_virginie_chat_post():
+    """Nimmt eine User-Nachricht an und erzeugt eine VIRGINIE-Antwort."""
+    user_id = int(getattr(request, "user_id", 0) or 0)
+    payload = request.json or {}
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        return jsonify({"error": "message ist Pflichtfeld"}), 400
+    if len(message) > 2000:
+        return jsonify({"error": "message ist zu lang (max. 2000 Zeichen)"}), 400
+
+    user_entry = _virginie_chat_append(user_id, "user", message)
+    assistant_reply = _generate_virginie_chat_reply(message)
+    assistant_entry = _virginie_chat_append(user_id, "assistant", assistant_reply)
+    return jsonify({"ok": True, "user": user_entry, "assistant": assistant_entry})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1696,6 +1795,33 @@ def on_request_state():
         return
     snap = build_ws_state_snapshot(uid=uid, state=state, db=db)
     emit("update", snap)
+
+
+@socketio.on("virginie_chat")
+def on_virginie_chat(data: dict | None = None) -> None:
+    """Realtime chat endpoint for VIRGINIE in the 3D live view."""
+    if not _ws_auth_required():
+        return
+    if not _ws_rate_check("virginie_chat", min_interval=0.6):
+        emit(
+            "virginie_chat_error",
+            {"error": "Zu schnell gesendet. Bitte kurz warten und erneut senden."},
+        )
+        return
+    payload = data or {}
+    message = str(payload.get("message", "")).strip()
+    if not message:
+        emit("virginie_chat_error", {"error": "Leere Nachricht ist nicht erlaubt."})
+        return
+    if len(message) > 2000:
+        emit("virginie_chat_error", {"error": "Nachricht zu lang (max. 2000 Zeichen)."})
+        return
+    user_id = int(getattr(request, "user_id", session.get("user_id", 0)) or 0)
+    user_entry = _virginie_chat_append(user_id, "user", message)
+    emit("virginie_chat_message", user_entry)
+    assistant_reply = _generate_virginie_chat_reply(message)
+    assistant_entry = _virginie_chat_append(user_id, "assistant", assistant_reply)
+    emit("virginie_chat_message", assistant_entry)
 
 
 @socketio.on("select_exchange")

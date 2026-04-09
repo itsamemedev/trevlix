@@ -908,6 +908,15 @@
             </div>
             <div id="ai3dAgents" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
             <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
+            <div id="ai3dChatWrap" style="margin-top:10px;border:1px solid rgba(212,175,55,.22);border-radius:8px;background:rgba(2,6,12,.6);padding:8px">
+              <div style="font-size:11px;color:#e8d3a5;font-weight:700;margin-bottom:6px">💬 Chat mit VIRGINIE</div>
+              <div id="ai3dChatLog" style="max-height:170px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;margin-bottom:8px"></div>
+              <div style="display:flex;gap:6px">
+                <input id="ai3dChatInput" type="text" maxlength="2000" placeholder="Frage zu Strategie, Risiko oder Setup…"
+                  style="flex:1;background:rgba(6,12,22,.9);border:1px solid rgba(212,175,55,.2);color:#f5efe1;border-radius:7px;padding:8px 10px;font-size:11px">
+                <button id="ai3dChatSendBtn" class="btn btn-info" style="padding:8px 12px;font-size:10px">Senden</button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
