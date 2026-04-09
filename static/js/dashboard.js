@@ -1465,6 +1465,8 @@ function saveSettings(){
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
     virginie_enabled:document.getElementById('sVirginieEnabled').checked,
+    virginie_primary_control:document.getElementById('sVirginiePrimary').checked,
+    virginie_autonomy_weight:_pf(document.getElementById('sVirginieAutonomy').value),
     virginie_min_score:_pf(document.getElementById('sVirginieMinScore').value),
     virginie_max_risk_penalty:_pf(document.getElementById('sVirginieMaxRisk').value),
     exchange:document.getElementById('sExchange')?.value||undefined,
