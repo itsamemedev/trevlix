@@ -16,11 +16,13 @@ import logging
 import os
 import secrets
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import jwt as pyjwt
 from flask import Blueprint, make_response, redirect, request, send_file, session
+
+from app.core.time_compat import UTC
 
 log = logging.getLogger("trevlix.auth")
 
@@ -576,7 +578,7 @@ def create_auth_blueprint(
                         {
                             "user_id": user["id"],
                             "username": user["username"],
-                            "exp": datetime.now(timezone.utc) + timedelta(hours=8),
+                            "exp": datetime.now(UTC) + timedelta(hours=8),
                         },
                         jwt_secret,
                         algorithm="HS256",

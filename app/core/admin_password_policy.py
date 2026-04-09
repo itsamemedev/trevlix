@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-
 _WEAK_DEFAULTS = {"trevlix", "admin", "password", "test"}
 
 

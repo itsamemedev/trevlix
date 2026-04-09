@@ -1,14 +1,14 @@
 # Trevlix Deep Scan Report
 
-Generated: 2026-04-02 12:35 UTC
+Generated: 2026-04-09 16:11 UTC
 Scope: Whole-project static scan + lightweight runtime checks
 
 ## Executive Summary
 
-- Scanned **93 files** with **42,534 total lines** (selected source/docs/config extensions).
-- Largest hotspot remains `server.py` with **9,453 lines**.
-- Server surface area: **33** Socket.IO handlers and **117** app routes in `server.py`.
-- Security quick-check: no obvious `eval/exec/shell=True/yaml.load/pickle.loads` patterns found in core scan; `subprocess.run` is present for update/rollback flows.
+- Scanned **164 files** with **52,996 total lines** (selected source/docs/config extensions).
+- Largest hotspot remains `server.py` with **4,373 lines**.
+- Server surface area: **35** Socket.IO handlers and **124** app routes in `server.py`.
+- Security quick-check now includes project-wide pattern scanning for `eval`, `exec`, `pickle.loads`, `yaml.load`, and `subprocess.run(..., shell=True)`.
 
 ## Command Results
 
@@ -18,7 +18,7 @@ Scope: Whole-project static scan + lightweight runtime checks
 | `ruff check .` | PASS | 0 |
 | `python -m compileall -q services routes ai_engine.py server.py trevlix_i18n.py validate_env.py` | PASS | 0 |
 | `python -m pip check` | PASS | 0 |
-| `pytest -q` | FAIL | 4 |
+| `pytest -q` | PASS | 0 |
 
 ### Command Output (abridged)
 
@@ -26,7 +26,7 @@ Scope: Whole-project static scan + lightweight runtime checks
 ```text
 Python 3.10.19
 pip 25.3 from /root/.pyenv/versions/3.10.19/lib/python3.10/site-packages/pip (python 3.10)
-pytest 9.0.2
+pytest 8.4.2
 ```
 
 #### `ruff check .`
@@ -46,36 +46,66 @@ No broken requirements found.
 
 #### `pytest -q`
 ```text
-ImportError while loading conftest '/workspace/trevlix/tests/conftest.py'.
-tests/conftest.py:13: in <module>
-    import numpy as np
-E   ModuleNotFoundError: No module named 'numpy'
+============================= test session starts ==============================
+platform linux -- Python 3.10.19, pytest-8.4.2, pluggy-1.6.0
+rootdir: /workspace/trevlix
+configfile: pyproject.toml
+testpaths: tests
+plugins: anyio-4.13.0, cov-5.0.0
+collected 458 items
+
+tests/test_adaptive_weights.py .................                         [  3%]
+tests/test_admin_user_validation.py ...                                  [  4%]
+tests/test_ai_engine_init.py .....                                       [  5%]
+tests/test_alert_escalation.py .............                             [  8%]
+tests/test_api.py .....................s                                 [ 13%]
+tests/test_app_setup.py ......                                           [ 14%]
+tests/test_auth.py .................                                     [ 18%]
+tests/test_auto_healing.py ..........                                    [ 20%]
+tests/test_bootstrap.py ..                                               [ 20%]
+tests/test_cache.py .........                                            [ 22%]
+tests/test_cluster_control.py ................                           [ 26%]
+tests/test_cryptopanic.py ........................................       [ 34%]
+tests/test_dashboard_blueprint.py ..                                     [ 35%]
+tests/test_default_config.py ...                                         [ 36%]
+tests/test_encryption.py ...........                                     [ 38%]
+tests/test_exchange_factory.py .........................                 [ 43%]
+tests/test_fetch_markets.py ..                                           [ 44%]
+tests/test_improvements.py .....................                         [ 48%]
+tests/test_indicators.py ..................                              [ 52%]
+tests/test_knowledge.py ............                                     [ 55%]
+tests/test_module_wiring.py .....                                        [ 56%]
+tests/test_notifications.py ....                    
 ```
 
 ## Size Hotspots (Top 10)
 
 | Lines | File |
 |---:|---|
-| 9,453 | `server.py` |
-| 2,272 | `static/js/dashboard.js` |
+| 4,373 | `server.py` |
+| 3,166 | `static/js/dashboard.js` |
 | 2,018 | `templates/index.html` |
-| 1,217 | `static/js/trevlix_translations.js` |
-| 1,209 | `templates/dashboard.html` |
-| 1,004 | `services/knowledge.py` |
-| 959 | `routes/auth.py` |
-| 943 | `templates/INSTALLATION.html` |
-| 881 | `static/css/dashboard.css` |
-| 799 | `ai_engine.py` |
+| 1,862 | `app/core/trading_ops.py` |
+| 1,833 | `app/core/db_manager.py` |
+| 1,448 | `app/core/ai_engine.py` |
+| 1,229 | `static/js/trevlix_translations.js` |
+| 1,127 | `services/knowledge.py` |
+| 1,076 | `templates/dashboard.html` |
+| 1,000 | `CHANGELOG.md` |
 
 ## Security Notes
 
+High-risk primitive scan (project-wide):
+
+- `eval(...)`: **0** hit(s)
+- `exec(...)`: **0** hit(s)
+- `pickle.loads(...)`: **0** hit(s)
+- `yaml.load(...)`: **0** hit(s)
+- `subprocess.run(..., shell=True)`: **0** hit(s)
+
 `subprocess.run` locations in `server.py`:
 
-- `server.py:7693`
-- `server.py:7697`
-- `server.py:7701`
-- `server.py:7736`
-- `server.py:7764`
+- (none)
 
 ## Production-Readiness Next Steps
 

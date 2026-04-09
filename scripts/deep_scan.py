@@ -15,6 +15,13 @@ REPORT_PATH = ROOT / "tasks" / "deepscan_report.md"
 
 COUNT_SUFFIXES = {".py", ".js", ".html", ".css", ".md", ".toml", ".yml", ".yaml"}
 TOP_N = 10
+SECURITY_PATTERNS = {
+    "eval(...)": re.compile(r"\beval\s*\("),
+    "exec(...)": re.compile(r"\bexec\s*\("),
+    "pickle.loads(...)": re.compile(r"\bpickle\.loads\s*\("),
+    "yaml.load(...)": re.compile(r"\byaml\.load\s*\("),
+    "subprocess.run(..., shell=True)": re.compile(r"\bsubprocess\.run\s*\([^)]*shell\s*=\s*True"),
+}
 
 
 @dataclass
@@ -63,6 +70,33 @@ def find_subprocess_locations() -> list[str]:
     return out
 
 
+def iter_python_files() -> list[Path]:
+    files: list[Path] = []
+    for path in ROOT.rglob("*.py"):
+        if not path.is_file():
+            continue
+        if ".git" in path.parts or ".venv" in path.parts or "venv" in path.parts:
+            continue
+        files.append(path)
+    return files
+
+
+def find_security_hits() -> dict[str, list[str]]:
+    hits: dict[str, list[str]] = {name: [] for name in SECURITY_PATTERNS}
+    for path in iter_python_files():
+        rel = path.relative_to(ROOT).as_posix()
+        if rel == "scripts/deep_scan.py":
+            continue
+        lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
+        for i, line in enumerate(lines, start=1):
+            if line.lstrip().startswith("#"):
+                continue
+            for name, pattern in SECURITY_PATTERNS.items():
+                if pattern.search(line):
+                    hits[name].append(f"{rel}:{i}")
+    return hits
+
+
 def route_metrics() -> tuple[int, int]:
     content = (ROOT / "server.py").read_text(encoding="utf-8", errors="ignore")
     socket_count = len(re.findall(r"@socketio\.on\(", content))
@@ -92,6 +126,7 @@ def main() -> int:
 
     socket_count, route_count = route_metrics()
     subprocess_locations = find_subprocess_locations()
+    security_hits = find_security_hits()
 
     def status(code: int) -> str:
         return "PASS" if code == 0 else "FAIL"
@@ -107,7 +142,7 @@ def main() -> int:
         f"- Scanned **{total_files} files** with **{total_lines:,} total lines** (selected source/docs/config extensions).",
         f"- Largest hotspot remains `server.py` with **{next((n for n, p in sized if p == 'server.py'), 0):,} lines**.",
         f"- Server surface area: **{socket_count}** Socket.IO handlers and **{route_count}** app routes in `server.py`.",
-        "- Security quick-check: no obvious `eval/exec/shell=True/yaml.load/pickle.loads` patterns found in core scan; `subprocess.run` is present for update/rollback flows.",
+        "- Security quick-check now includes project-wide pattern scanning for `eval`, `exec`, `pickle.loads`, `yaml.load`, and `subprocess.run(..., shell=True)`.",
         "",
         "## Command Results",
         "",
@@ -154,6 +189,21 @@ def main() -> int:
         [
             "",
             "## Security Notes",
+            "",
+            "High-risk primitive scan (project-wide):",
+            "",
+        ]
+    )
+
+    for name, locations in security_hits.items():
+        report.append(f"- `{name}`: **{len(locations)}** hit(s)")
+        for loc in locations[:10]:
+            report.append(f"  - `{loc}`")
+        if len(locations) > 10:
+            report.append(f"  - `... (+{len(locations) - 10} more)`")
+
+    report.extend(
+        [
             "",
             "`subprocess.run` locations in `server.py`:",
             "",

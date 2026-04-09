@@ -10,12 +10,12 @@ from services.virginie import (
     LLMResult,
     Opportunity,
     ProfitDecisionEngine,
+    VirginieAgent,
     VirginieCore,
     VirginieGuardrails,
     VirginieIdentity,
     VirginieOrchestrator,
     VirginieRules,
-    VirginieAgent,
     build_default_project_agents,
 )
 

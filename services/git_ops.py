@@ -12,9 +12,10 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
+from app.core.time_compat import UTC
 from services.utils import BOT_VERSION
 
 log = logging.getLogger("trevlix.git_ops")
@@ -158,7 +159,7 @@ def get_update_status() -> UpdateStatus:
     current = _pick_latest_version([_git_latest_local_tag(), _read_version_md(), BOT_VERSION, _DEFAULT_VERSION])
     latest = _pick_latest_version([_git_latest_remote_tag(), current, BOT_VERSION, _DEFAULT_VERSION]) or current
     update_available = latest != current
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 
     return UpdateStatus(
         current_version=current,

@@ -26,10 +26,11 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from app.core.time_compat import UTC
 from trevlix_i18n import t
 
 log = logging.getLogger("trevlix.healing")
@@ -385,7 +386,7 @@ class AutoHealingAgent:
     ) -> None:
         """Log a failure, update tracker, and escalate if needed."""
         now_mono = time.monotonic()
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
         incident = Incident(
             timestamp=now_utc,
