@@ -444,6 +444,7 @@ class VirginieOrchestrator:
         self._history: list[AgentResult] = []
         self._lock = threading.Lock()
         self._required_domains: set[str] = set()
+        self._agent_task_counts: dict[str, int] = {}
 
     @staticmethod
     def _normalize_domain(domain: str) -> str:
@@ -461,6 +462,7 @@ class VirginieOrchestrator:
         )
         with self._lock:
             self._agents[normalized_agent.name] = normalized_agent
+            self._agent_task_counts.setdefault(normalized_agent.name, 0)
 
     def set_required_domains(self, domains: list[str]) -> None:
         """Set mandatory domains that must be covered by at least one agent."""
@@ -492,9 +494,15 @@ class VirginieOrchestrator:
         task_domain = self._normalize_domain(task.domain)
         with self._lock:
             matches = [a.name for a in self._agents.values() if task_domain in a.domains]
+            if not matches:
+                inferred = self._infer_domain(task)
+                if inferred:
+                    matches = [a.name for a in self._agents.values() if inferred in a.domains]
         if not matches:
             return None
-        return sorted(matches)[0]
+        with self._lock:
+            ranked = sorted(matches, key=lambda name: (self._agent_task_counts.get(name, 0), name))
+        return ranked[0]
 
     def execute(self, task: AgentTask) -> AgentResult:
         """Execute a task via its routed agent and store history."""
@@ -516,6 +524,7 @@ class VirginieOrchestrator:
 
         result = agent.handler(task)
         with self._lock:
+            self._agent_task_counts[agent_name] = self._agent_task_counts.get(agent_name, 0) + 1
             self._history.insert(0, result)
             self._history = self._history[:200]
         return result
@@ -533,6 +542,7 @@ class VirginieOrchestrator:
                 "registered_agents": len(self._agents),
                 "agent_names": sorted(self._agents.keys()),
                 "domains": sorted({d for a in self._agents.values() for d in a.domains}),
+                "agent_task_counts": dict(self._agent_task_counts),
                 "history_size": len(self._history),
                 "last_task_id": last.task_id if last else None,
                 "last_agent": last.agent_name if last else None,
@@ -544,6 +554,32 @@ class VirginieOrchestrator:
                 "coverage_complete": len(missing) == 0,
                 "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
             }
+
+    def _infer_domain(self, task: AgentTask) -> str | None:
+        """Infer a likely domain from objective/payload keywords."""
+        text = " ".join(
+            [
+                str(task.objective or ""),
+                str(task.payload.get("reason", "")),
+                str(task.payload.get("action", "")),
+                str(task.payload.get("symbol", "")),
+            ]
+        ).lower()
+        rules: list[tuple[str, tuple[str, ...]]] = [
+            ("risk", ("risk", "limit", "drawdown", "volatility")),
+            ("learning", ("learn", "feedback", "post-trade", "retrain")),
+            ("trading", ("trade", "buy", "sell", "execution", "position")),
+            ("notifications", ("notify", "alert", "chat", "message", "discord", "telegram")),
+            ("quality", ("quality", "test", "qa", "validation")),
+            ("operations", ("deploy", "ops", "restart", "health", "uptime")),
+            ("portfolio", ("portfolio", "allocation", "rebalance", "target")),
+            ("compliance", ("compliance", "policy", "audit", "governance")),
+            ("planning", ("plan", "roadmap", "milestone", "product")),
+        ]
+        for domain, keywords in rules:
+            if any(keyword in text for keyword in keywords):
+                return domain
+        return None
 
 
 def build_default_project_agents() -> list[VirginieAgent]:

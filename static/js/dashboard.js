@@ -573,11 +573,14 @@ function _renderVirginieChat(){
 
 function _appendVirginieChatMessage(msg){
   if(!msg || !msg.content) return;
-  _virginieChat.messages.push({
+  const nextMsg = {
     role:String(msg.role||'assistant'),
     content:String(msg.content||''),
     time:String(msg.time||new Date().toISOString())
-  });
+  };
+  const last = _virginieChat.messages[_virginieChat.messages.length - 1];
+  if(last && last.role===nextMsg.role && last.content===nextMsg.content) return;
+  _virginieChat.messages.push(nextMsg);
   _renderVirginieChat();
 }
 
@@ -600,6 +603,7 @@ function sendVirginieChat(){
   if(!message) return;
   _virginieChat.sending=true;
   _virginieChat.pendingMessage=message;
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   input.value='';
   if(socket && socket.connected){
     socket.emit('virginie_chat',{message});

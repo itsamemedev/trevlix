@@ -307,6 +307,39 @@ def test_virginie_orchestrator_normalizes_domains_for_routing_and_coverage():
     assert result.agent_name == "planning-agent"
 
 
+def test_virginie_orchestrator_infers_domain_from_objective_when_domain_unknown():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-infer-1",
+            domain="unknown",
+            objective="Bitte sende eine Alert Message an Telegram",
+            payload={"reason": "critical delivery alert"},
+        )
+    )
+
+    assert result.success is True
+    assert result.agent_name == "notification-agent"
+
+
+def test_virginie_orchestrator_tracks_agent_load_in_status():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    orchestrator.execute(AgentTask(task_id="task-load-1", domain="planning", objective="A"))
+    orchestrator.execute(AgentTask(task_id="task-load-2", domain="planning", objective="B"))
+    orchestrator.execute(AgentTask(task_id="task-load-3", domain="risk", objective="C"))
+
+    status = orchestrator.status()
+    counts = status["agent_task_counts"]
+    assert counts["planning-agent"] == 2
+    assert counts["risk-agent"] == 1
+
+
 def test_virginie_review_and_version_bump_follow_rules():
     core = VirginieCore(
         rules=VirginieRules(
