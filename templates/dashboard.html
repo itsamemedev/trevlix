@@ -412,13 +412,13 @@
       <span class="card-badge" id="tradeModeBadge">PAPER</span>
     </div>
     <div class="card-body">
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-        <button class="btn btn-info" onclick="switchTradingMode('paper')">📝 Paper</button>
-        <button class="btn btn-stop" onclick="switchTradingMode('live')">💸 Live</button>
+      <div style="font-size:12px;color:var(--sub);line-height:1.6;margin-bottom:10px">
+        Trading-Modus und Bot-Steuerung wurden zentralisiert, um doppelte Aktionen zu vermeiden.
+        Verwende bitte die Haupt-Controls im Header (Start/Stop/Pause) sowie die Paper/Live-Einstellung im Settings-Bereich.
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <button class="btn btn-start" onclick="apiTradingControl('start')">▶ Trading Start</button>
-        <button class="btn btn-stop" onclick="apiTradingControl('stop')">■ Trading Stop</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-info" onclick="document.getElementById('btnStart')?.scrollIntoView({behavior:'smooth',block:'center'})">🎛️ Zu Haupt-Controls</button>
+        <button class="btn btn-info" onclick="document.getElementById('sPaper')?.scrollIntoView({behavior:'smooth',block:'center'})">⚙️ Zu Paper/Live Setting</button>
       </div>
     </div>
   </div>

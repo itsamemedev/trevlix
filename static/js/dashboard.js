@@ -1050,13 +1050,23 @@ async function switchTradingMode(mode){
   }catch(e){ toast('❌ Mode-Wechsel fehlgeschlagen: '+e,'error'); }
 }
 
+async function executeTradingControl(action, opts={}){
+  const preferSocket = Boolean(opts.preferSocket);
+  if(preferSocket){
+    const event = action==='start' ? 'start_bot' : action==='stop' ? 'stop_bot' : null;
+    if(event && _emitSafe(event, undefined, {silent:true})){
+      if(socket && socket.connected) socket.emit('request_state');
+      refreshTradingInsights(true);
+      return true;
+    }
+  }
+  return _botControlFallback(action);
+}
+
 async function apiTradingControl(action){
-  try{
-    const data = await _postTradingEndpoint('/api/v1/trading/control',{action});
-    toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
-    refreshTradingInsights(true);
-    if(socket && socket.connected) socket.emit('request_state');
-  }catch(e){ toast('❌ Trading-Control fehlgeschlagen: '+e,'error'); }
+  const ok = await executeTradingControl(action, {preferSocket:false});
+  if(!ok) return;
+  toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
 }
 
 // ── Heatmap ──────────────────────────────────────────────────────────
@@ -1301,12 +1311,10 @@ async function _botControlFallback(action){
   }
 }
 function startBot(){
-  if(_emitSafe('start_bot', undefined, {silent:true})) return;
-  _botControlFallback('start');
+  executeTradingControl('start', {preferSocket:true});
 }
 function stopBot(){
-  if(_emitSafe('stop_bot', undefined, {silent:true})) return;
-  _botControlFallback('stop');
+  executeTradingControl('stop', {preferSocket:true});
 }
 function pauseBot(){_emitSafe('pause_bot');}
 
