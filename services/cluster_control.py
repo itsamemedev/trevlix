@@ -24,7 +24,7 @@ import socket
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -270,7 +270,7 @@ class ClusterController:
         previous = node.status
         with self._lock:
             node.status = status
-            node.last_check = datetime.now(timezone.utc)
+            node.last_check = datetime.now(UTC)
         if status != previous:
             self._notify(f"Node '{name}' status changed: {previous.value} -> {status.value}")
         return status
@@ -419,7 +419,7 @@ class ClusterController:
                 "degraded": degraded,
                 "offline": offline,
             },
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
     # ------------------------------------------------------------------

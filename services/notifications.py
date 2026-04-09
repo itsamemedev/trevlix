@@ -17,7 +17,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -85,7 +85,7 @@ class DiscordNotifier:
                 "title": title,
                 "description": desc,
                 "color": self.COLORS.get(color_key, 3447003),
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "footer": {"text": f"{self._bot_full} · {exchange_str}"},
             }
             if fields:

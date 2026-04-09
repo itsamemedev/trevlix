@@ -57,7 +57,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -73,13 +73,45 @@ from flask import (
 )
 from flask_socketio import emit
 
+from app.core.admin_exchange import (
+    get_admin_exchange_by_name,
+    get_admin_primary_exchange,
+    get_exchange_key_states,
+    pin_user_exchange,
+)
+from app.core.admin_password_policy import is_admin_password_weak
+from app.core.admin_user_validation import validate_admin_user_payload
+from app.core.ai_engine import AIEngine, init_ai_engine
+from app.core.api_docs_schema import build_api_docs_payload
+from app.core.app_setup import initialize_runtime_objects
+from app.core.audit_writer import write_audit_entry
+from app.core.auth_guards import (
+    LoginAttemptTracker,
+    build_admin_required,
+    build_api_auth_required,
+    build_dashboard_auth,
+)
+from app.core.backup_verify import verify_latest_backup
 from app.core.bootstrap import (
     resolve_project_paths,
 )
-from app.core.http_routes import register_default_blueprints, register_system_routes
+
+# ── Extracted modules ────────────────────────────────────────────────────────
+from app.core.db_manager import MySQLManager, init_db_manager
+from app.core.db_request_context import close_request_db_conn, get_request_db_conn
 from app.core.default_config import build_default_config
+from app.core.exchange_secret import is_single_exchange_mode, reveal_and_decrypt
+from app.core.http_routes import register_default_blueprints, register_system_routes
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
-from app.core.app_setup import initialize_runtime_objects
+from app.core.ml_models import (
+    AnomalyDetector,
+    GeneticOptimizer,
+    NewsSentimentAnalyzer,
+    RLAgent,
+    init_ml_models,
+)
+from app.core.paper_mode import enforce_paper_trading
+from app.core.prometheus_metrics import build_prometheus_lines
 from app.core.request_helpers import (
     normalize_exchange_name as _normalize_exchange_name,
 )
@@ -89,43 +121,47 @@ from app.core.request_helpers import (
     safe_int,
 )
 from app.core.runtime import run_server
-from app.core.session_guard import handle_session_and_csrf
-from app.core.websocket_guard import WsRateLimiter
-from app.core.socket_emit import emit_socket_event
-from app.core.exchange_secret import is_single_exchange_mode, reveal_and_decrypt
-from app.core.paper_mode import enforce_paper_trading
-from app.core.admin_password_policy import is_admin_password_weak
-from app.core.db_request_context import close_request_db_conn, get_request_db_conn
-from app.core.audit_writer import write_audit_entry
-from app.core.api_docs_schema import build_api_docs_payload
-from app.core.websocket_state import build_ws_state_snapshot
-from app.core.socket_error_logger import log_socket_error
-from app.core.websocket_authz import ws_admin_required, ws_auth_required
-from app.core.ws_rate_gate import ws_rate_check
-from app.core.backup_verify import verify_latest_backup
-from app.core.tax_export import tax_rows_to_csv
-from app.core.trade_export import trades_to_json
-from app.core.startup_view import render_startup_banner
-from app.core.prometheus_metrics import build_prometheus_lines
-from app.core.admin_exchange import (
-    get_admin_exchange_by_name,
-    get_admin_primary_exchange,
-    get_exchange_key_states,
-    pin_user_exchange,
-)
-from app.core.auth_guards import (
-    LoginAttemptTracker,
-    build_admin_required,
-    build_api_auth_required,
-    build_dashboard_auth,
-)
-from app.core.admin_user_validation import validate_admin_user_payload
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
 )
 from app.core.security import (
     generate_csrf_token as _core_generate_csrf_token,
 )
+from app.core.session_guard import handle_session_and_csrf
+from app.core.socket_emit import emit_socket_event
+from app.core.socket_error_logger import log_socket_error
+from app.core.startup_view import render_startup_banner
+from app.core.tax_export import tax_rows_to_csv
+from app.core.trade_export import trades_to_json
+from app.core.trading_classes import (
+    ArbitrageScanner,
+    BackupScheduler,
+    BotState,
+    DailyReportScheduler,
+    MultiTimeframeFilter,
+    OrderbookImbalance,
+    PriceAlertManager,
+    ShortEngine,
+    init_trading_classes,
+)
+from app.core.trading_ops import (
+    _preflight_exchange_markets,
+    bot_loop,
+    close_position,
+    create_exchange,
+    fetch_aggregated_balance,
+    fetch_markets,
+    get_exchange_fee_rate,
+    get_heatmap_data,
+    init_trading_ops,
+    open_position,
+    safety_scan,
+    scan_symbol,
+)
+from app.core.websocket_authz import ws_admin_required, ws_auth_required
+from app.core.websocket_guard import WsRateLimiter
+from app.core.websocket_state import build_ws_state_snapshot
+from app.core.ws_rate_gate import ws_rate_check
 from services.adaptive_weights import AdaptiveWeights
 from services.alert_escalation import AlertEscalationManager
 from services.auto_healing import AutoHealingAgent
@@ -155,6 +191,7 @@ from services.market_data import (
 from services.mcp_tools import MCPToolRegistry
 from services.notifications import DiscordNotifier, TelegramNotifier
 from services.performance_attribution import PerformanceAttribution
+from services.redis_market_cache import RedisMarketCache
 from services.revenue_tracking import RevenueTracker
 from services.risk import (
     AdvancedRiskMetrics,
@@ -166,9 +203,8 @@ from services.risk import (
 from services.smart_exits import SmartExitEngine
 from services.strategies import STRATEGIES, compute_indicators
 from services.trade_dna import TradeDNA
-from services.redis_market_cache import RedisMarketCache
-from services.trading_mode import TradingModeManager
 from services.trading_algorithms import TradingAlgorithmManager
+from services.trading_mode import TradingModeManager
 from services.utils import (
     BOT_FULL,
     BOT_NAME,
@@ -177,42 +213,6 @@ from services.utils import (
     validate_config,
 )
 from services.utils import make_secret as _secret
-
-# ── Extracted modules ────────────────────────────────────────────────────────
-from app.core.db_manager import MySQLManager, init_db_manager
-from app.core.ml_models import (
-    AnomalyDetector,
-    GeneticOptimizer,
-    NewsSentimentAnalyzer,
-    RLAgent,
-    init_ml_models,
-)
-from app.core.ai_engine import AIEngine, init_ai_engine
-from app.core.trading_classes import (
-    ArbitrageScanner,
-    BackupScheduler,
-    BotState,
-    DailyReportScheduler,
-    MultiTimeframeFilter,
-    OrderbookImbalance,
-    PriceAlertManager,
-    ShortEngine,
-    init_trading_classes,
-)
-from app.core.trading_ops import (
-    _preflight_exchange_markets,
-    bot_loop,
-    close_position,
-    create_exchange,
-    fetch_aggregated_balance,
-    fetch_markets,
-    get_exchange_fee_rate,
-    get_heatmap_data,
-    open_position,
-    safety_scan,
-    scan_symbol,
-    init_trading_ops,
-)
 
 try:
     from flask_limiter import Limiter
@@ -440,7 +440,6 @@ def admin_required(f):
 from services.backtest import BacktestEngine as _BacktestEngineBase  # noqa: E402
 from services.tax_report import TaxReportGenerator  # noqa: E402
 
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # TRADING CLASSES → extracted to app/core/trading_classes.py
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -590,7 +589,7 @@ def _virginie_chat_append(user_id: int, role: str, content: str) -> dict[str, An
         "id": uuid.uuid4().hex,
         "role": role,
         "content": str(content).strip(),
-        "time": datetime.now(timezone.utc).isoformat(),
+        "time": datetime.now(UTC).isoformat(),
     }
     with _virginie_chat_lock:
         history = _virginie_chat_by_user.setdefault(
@@ -4003,7 +4002,7 @@ def api_exchanges():
             str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
         }
 
-        now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
         ex_map: dict[str, dict[str, Any]] = {}
         for ex in user_exchanges:
             ex_name = str(ex.get("exchange", "")).lower()

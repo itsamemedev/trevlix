@@ -26,7 +26,7 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
@@ -385,7 +385,7 @@ class AutoHealingAgent:
     ) -> None:
         """Log a failure, update tracker, and escalate if needed."""
         now_mono = time.monotonic()
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
 
         incident = Incident(
             timestamp=now_utc,

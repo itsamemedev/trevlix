@@ -19,7 +19,7 @@ Usage:
 import logging
 import threading
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 log = logging.getLogger("trevlix.revenue")
@@ -167,7 +167,7 @@ class RevenueTracker:
             ``slippage``, ``funding``, ``net_pnl``, ``trade_count``,
             ``win_rate``.
         """
-        target = (date or datetime.now(timezone.utc)).date()
+        target = (date or datetime.now(UTC)).date()
         return self._aggregate_period(target, target)
 
     def get_weekly_summary(self, week_start: datetime | None = None) -> dict:
@@ -180,7 +180,7 @@ class RevenueTracker:
         Returns:
             Aggregated summary dict (same schema as daily).
         """
-        end = (week_start or datetime.now(timezone.utc)).date()
+        end = (week_start or datetime.now(UTC)).date()
         start = end - timedelta(days=6)
         return self._aggregate_period(start, end)
 
@@ -194,7 +194,7 @@ class RevenueTracker:
         Returns:
             Aggregated summary dict (same schema as daily).
         """
-        end = (month_start or datetime.now(timezone.utc)).date()
+        end = (month_start or datetime.now(UTC)).date()
         start = end - timedelta(days=29)
         return self._aggregate_period(start, end)
 
@@ -236,7 +236,7 @@ class RevenueTracker:
             List of dicts, each with ``strategy``, ``net_pnl``,
             ``reason``.
         """
-        cutoff = datetime.now(timezone.utc) - timedelta(days=self._losing_window_days)
+        cutoff = datetime.now(UTC) - timedelta(days=self._losing_window_days)
 
         with self._lock:
             recent = []
@@ -244,7 +244,7 @@ class RevenueTracker:
                 ts = t["timestamp"]
                 # Handle both naive and aware datetimes
                 if ts.tzinfo is None:
-                    ts = ts.replace(tzinfo=timezone.utc)
+                    ts = ts.replace(tzinfo=UTC)
                 if ts >= cutoff:
                     recent.append(t)
 
@@ -323,7 +323,7 @@ class RevenueTracker:
             loss_amounts = [t["net_pnl"] for t in self._trades if t["net_pnl"] < 0]
 
             snapshot_data: dict = {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
                 "total_trades": total_trades,
                 "gross_pnl": round(self._total_pnl, 8),
                 "total_fees": round(self._total_fees, 8),

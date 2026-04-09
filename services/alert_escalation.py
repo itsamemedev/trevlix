@@ -21,7 +21,7 @@ import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Any
 
@@ -49,7 +49,7 @@ class Alert:
     escalated_at: datetime | None = None
     acknowledged: bool = False
     occurrence_count: int = 1
-    last_occurrence: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    last_occurrence: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         """Serialise the alert to a plain dict."""
@@ -142,7 +142,7 @@ class AlertEscalationManager:
         Returns:
             The current :class:`Alert` state.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         with self._lock:
             existing = self._active.get(alert_id)
 
@@ -239,7 +239,7 @@ class AlertEscalationManager:
         Returns:
             List of resolved alert IDs.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         threshold_seconds = self._auto_resolve_minutes * 60
         resolved: list[str] = []
 
@@ -433,7 +433,7 @@ class AlertEscalationManager:
                         SET resolved_at = %s
                         WHERE alert_id = %s
                         """,
-                        (datetime.now(timezone.utc), alert.alert_id),
+                        (datetime.now(UTC), alert.alert_id),
                     )
                 conn.commit()
         except Exception:

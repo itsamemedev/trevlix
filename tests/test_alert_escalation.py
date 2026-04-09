@@ -10,7 +10,7 @@ Run with:  pytest tests/test_alert_escalation.py -v
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import Mock
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -157,7 +157,7 @@ class TestAutoResolve:
         alert = mgr.raise_alert("stale_alert", "old issue")
 
         # Manually backdate the last_occurrence
-        alert.last_occurrence = datetime.now(timezone.utc) - timedelta(
+        alert.last_occurrence = datetime.now(UTC) - timedelta(
             minutes=120,
         )
 
