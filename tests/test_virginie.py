@@ -2,6 +2,7 @@
 
 from services.virginie import (
     ActionResult,
+    AgentResult,
     AgentTask,
     LLMPerformanceTracker,
     LLMResult,
@@ -12,6 +13,7 @@ from services.virginie import (
     VirginieIdentity,
     VirginieOrchestrator,
     VirginieRules,
+    VirginieAgent,
     build_default_project_agents,
 )
 
@@ -338,6 +340,58 @@ def test_virginie_orchestrator_tracks_agent_load_in_status():
     counts = status["agent_task_counts"]
     assert counts["planning-agent"] == 2
     assert counts["risk-agent"] == 1
+
+
+def test_virginie_orchestrator_catches_agent_handler_exceptions():
+    def _boom(_task):
+        raise RuntimeError("handler crashed")
+
+    orchestrator = VirginieOrchestrator()
+    orchestrator.register_agent(
+        VirginieAgent(name="unstable-agent", domains=("ops",), handler=_boom)
+    )
+
+    result = orchestrator.execute(
+        AgentTask(task_id="task-fail-1", domain="ops", objective="restart")
+    )
+
+    assert result.success is False
+    assert result.agent_name == "unstable-agent"
+    assert "Agent execution failed" in result.summary
+    status = orchestrator.status()
+    assert status["agent_health"]["unstable-agent"]["failure"] == 1
+    assert status["agent_health"]["unstable-agent"]["failure_rate"] == 1.0
+
+
+def test_virginie_orchestrator_prefers_healthier_agent_on_same_domain():
+    def _ok_handler(task):
+        return AgentResult(agent_name="agent-ok", task_id=task.task_id, success=True, summary="ok")
+
+    def _flaky_handler(task):
+        if task.task_id == "prime-failure":
+            raise RuntimeError("intentional")
+
+        return AgentResult(
+            agent_name="agent-flaky",
+            task_id=task.task_id,
+            success=True,
+            summary="unexpectedly ok",
+        )
+
+    orchestrator = VirginieOrchestrator()
+    orchestrator.register_agent(
+        VirginieAgent(name="agent-flaky", domains=("quality",), handler=_flaky_handler)
+    )
+    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("quality",), handler=_ok_handler))
+
+    # Prime one failure on flaky agent.
+    orchestrator.execute(AgentTask(task_id="prime-failure", domain="quality", objective="prime"))
+
+    result = orchestrator.execute(
+        AgentTask(task_id="healthy-route", domain="quality", objective="run checks")
+    )
+    assert result.success is True
+    assert result.agent_name == "agent-ok"
 
 
 def test_virginie_review_and_version_bump_follow_rules():

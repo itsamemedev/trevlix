@@ -445,6 +445,7 @@ class VirginieOrchestrator:
         self._lock = threading.Lock()
         self._required_domains: set[str] = set()
         self._agent_task_counts: dict[str, int] = {}
+        self._agent_stats: dict[str, dict[str, Any]] = {}
 
     @staticmethod
     def _normalize_domain(domain: str) -> str:
@@ -463,6 +464,10 @@ class VirginieOrchestrator:
         with self._lock:
             self._agents[normalized_agent.name] = normalized_agent
             self._agent_task_counts.setdefault(normalized_agent.name, 0)
+            self._agent_stats.setdefault(
+                normalized_agent.name,
+                {"assigned": 0, "success": 0, "failure": 0, "last_error": None},
+            )
 
     def set_required_domains(self, domains: list[str]) -> None:
         """Set mandatory domains that must be covered by at least one agent."""
@@ -501,7 +506,14 @@ class VirginieOrchestrator:
         if not matches:
             return None
         with self._lock:
-            ranked = sorted(matches, key=lambda name: (self._agent_task_counts.get(name, 0), name))
+            ranked = sorted(
+                matches,
+                key=lambda name: (
+                    self._agent_failure_rate(name),
+                    self._agent_task_counts.get(name, 0),
+                    name,
+                ),
+            )
         return ranked[0]
 
     def execute(self, task: AgentTask) -> AgentResult:
@@ -522,9 +534,29 @@ class VirginieOrchestrator:
         with self._lock:
             agent = self._agents[agent_name]
 
-        result = agent.handler(task)
+        try:
+            result = agent.handler(task)
+        except Exception as exc:
+            result = AgentResult(
+                agent_name=agent_name,
+                task_id=task.task_id,
+                success=False,
+                summary=f"Agent execution failed: {exc}",
+                data={"error_type": type(exc).__name__},
+            )
+
         with self._lock:
             self._agent_task_counts[agent_name] = self._agent_task_counts.get(agent_name, 0) + 1
+            stats = self._agent_stats.setdefault(
+                agent_name, {"assigned": 0, "success": 0, "failure": 0, "last_error": None}
+            )
+            stats["assigned"] += 1
+            if result.success:
+                stats["success"] += 1
+                stats["last_error"] = None
+            else:
+                stats["failure"] += 1
+                stats["last_error"] = result.summary
             self._history.insert(0, result)
             self._history = self._history[:200]
         return result
@@ -543,6 +575,16 @@ class VirginieOrchestrator:
                 "agent_names": sorted(self._agents.keys()),
                 "domains": sorted({d for a in self._agents.values() for d in a.domains}),
                 "agent_task_counts": dict(self._agent_task_counts),
+                "agent_health": {
+                    name: {
+                        "assigned": int(stats.get("assigned", 0)),
+                        "success": int(stats.get("success", 0)),
+                        "failure": int(stats.get("failure", 0)),
+                        "failure_rate": round(self._agent_failure_rate(name), 3),
+                        "last_error": stats.get("last_error"),
+                    }
+                    for name, stats in self._agent_stats.items()
+                },
                 "history_size": len(self._history),
                 "last_task_id": last.task_id if last else None,
                 "last_agent": last.agent_name if last else None,
@@ -580,6 +622,14 @@ class VirginieOrchestrator:
             if any(keyword in text for keyword in keywords):
                 return domain
         return None
+
+    def _agent_failure_rate(self, agent_name: str) -> float:
+        stats = self._agent_stats.get(agent_name, {})
+        assigned = int(stats.get("assigned", 0))
+        if assigned <= 0:
+            return 0.0
+        failure = int(stats.get("failure", 0))
+        return failure / assigned
 
 
 def build_default_project_agents() -> list[VirginieAgent]:
