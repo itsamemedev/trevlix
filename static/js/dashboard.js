@@ -548,6 +548,81 @@ const _ai3dState = {
   wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
   agentCount:0, lastAgent:'—', agentNames:[]
 };
+const _virginieChat = {loaded:false,messages:[],sending:false};
+
+function _renderVirginieChat(){
+  const log=document.getElementById('ai3dChatLog');
+  if(!log) return;
+  if(!_virginieChat.messages.length){
+    log.innerHTML='<div style="font-size:10px;color:var(--sub)">Noch kein Chatverlauf. Schreibe VIRGINIE eine erste Nachricht.</div>';
+    return;
+  }
+  const rows=_virginieChat.messages.slice(-40).map(m=>{
+    const isUser=String(m.role||'')==='user';
+    const bg=isUser?'rgba(110,231,255,.12)':'rgba(212,175,55,.12)';
+    const border=isUser?'rgba(110,231,255,.28)':'rgba(212,175,55,.28)';
+    const who=isUser?'Du':'VIRGINIE';
+    return `<div style="border:1px solid ${border};background:${bg};border-radius:7px;padding:7px 8px">
+      <div style="font-size:9px;color:var(--sub);font-family:var(--mono);margin-bottom:3px">${who}</div>
+      <div style="font-size:11px;line-height:1.45;color:#f5efe1;white-space:pre-wrap">${esc(String(m.content||''))}</div>
+    </div>`;
+  });
+  log.innerHTML=rows.join('');
+  log.scrollTop=log.scrollHeight;
+}
+
+function _appendVirginieChatMessage(msg){
+  if(!msg || !msg.content) return;
+  _virginieChat.messages.push({
+    role:String(msg.role||'assistant'),
+    content:String(msg.content||''),
+    time:String(msg.time||new Date().toISOString())
+  });
+  _renderVirginieChat();
+}
+
+async function loadVirginieChatHistory(){
+  if(_virginieChat.loaded) return;
+  try{
+    const r = await fetch('/api/v1/virginie/chat', {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    _virginieChat.messages = Array.isArray(d.messages) ? d.messages : [];
+    _virginieChat.loaded = true;
+    _renderVirginieChat();
+  }catch(_e){}
+}
+
+function sendVirginieChat(){
+  const input=document.getElementById('ai3dChatInput');
+  if(!input || _virginieChat.sending) return;
+  const message=String(input.value||'').trim();
+  if(!message) return;
+  _virginieChat.sending=true;
+  input.value='';
+  if(socket && socket.connected){
+    socket.emit('virginie_chat',{message});
+    return;
+  }
+  fetch('/api/v1/virginie/chat',{
+    method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({message})
+  }).then(r=>r.json()).then(d=>{
+    if(d && d.user) _appendVirginieChatMessage(d.user);
+    if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
+    if(d && d.error) toast('⚠️ '+d.error,'warning');
+  }).catch(()=>toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning'))
+    .finally(()=>{_virginieChat.sending=false;});
+}
+
+function initVirginieChat(){
+  const btn=document.getElementById('ai3dChatSendBtn');
+  const input=document.getElementById('ai3dChatInput');
+  if(btn) btn.addEventListener('click', sendVirginieChat);
+  if(input) input.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); sendVirginieChat(); }});
+  loadVirginieChatHistory();
+}
+
 function updateAI3DFromAI(ai){
   if(!ai) return;
   _ai3dState.wf = Number(ai.wf_accuracy||0);
@@ -1396,7 +1471,7 @@ function wizFinish(){document.getElementById('wizardOverlay').style.display='non
 const _socketEvents = ['connect','connect_error','disconnect','auth_error',
   'update','ai_update','genetic_update','status','trade','price_alert','backtest_result',
   'update_status','update_result','system_analytics','healing_update','revenue_update',
-  'cluster_update','ai_model_updated','exchange_update'];
+  'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error'];
 _socketEvents.forEach(ev => socket.off(ev));
 
 function _setConnStatus(state){
@@ -1519,6 +1594,14 @@ socket.on('backtest_result', d=>{
   }
   toast(`✅ Backtest: ${QI18n.t('stat_winrate')} ${d.win_rate}% | PnL ${fmtS(d.total_pnl)} USDT`,'success');
   addLog(`Backtest ${d.symbol}: ${QI18n.t('stat_winrate')} ${d.win_rate}% PnL ${fmtS(d.total_pnl)}`,'success','system');
+});
+socket.on('virginie_chat_message', d=>{
+  _appendVirginieChatMessage(d);
+  _virginieChat.sending=false;
+});
+socket.on('virginie_chat_error', d=>{
+  _virginieChat.sending=false;
+  toast('⚠️ '+(d&&d.error?d.error:'Chat-Fehler'),'warning');
 });
 
 
@@ -3032,6 +3115,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
 
   initCharts();
+  initVirginieChat();
   const taxYearEl=document.getElementById('taxYear');
   if(taxYearEl) taxYearEl.value=new Date().getFullYear();
   QI18n.init('langSwitcher');

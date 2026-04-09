@@ -273,6 +273,50 @@ class TestTradingControl:
         assert "error" in data
 
 
+class TestVirginieChatAPI:
+    """Tests für den VIRGINIE-Chat-Endpunkt in der 3D Live View."""
+
+    def test_chat_history_returns_messages_list(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/chat")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert isinstance(data.get("messages"), list)
+        assert data.get("max_messages", 0) > 0
+
+    def test_chat_post_generates_user_and_assistant_messages(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.knowledge_base,
+            "query_llm_with_tools",
+            lambda prompt, context: f"Echo: {prompt} ({'VIRGINIE' in context})",
+        )
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Wie ist das Risiko heute?"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert data["user"]["role"] == "user"
+        assert "Risiko" in data["user"]["content"]
+        assert data["assistant"]["role"] == "assistant"
+        assert "Echo:" in data["assistant"]["content"]
+
+    def test_chat_post_rejects_empty_message(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "   "})
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "error" in data
+
+
 class TestPaperModeBuild:
     """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""
 
