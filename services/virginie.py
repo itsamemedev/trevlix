@@ -11,6 +11,7 @@ This module integrates the self-learning pieces discussed for VIRGINIE:
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -439,21 +440,139 @@ class VirginieAgent:
 class VirginieOrchestrator:
     """Routes project-control tasks to specialized VIRGINIE agents."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        failure_cooldown_sec: float = 60.0,
+        failure_threshold: int = 3,
+        time_fn: Callable[[], float] | None = None,
+    ) -> None:
         self._agents: dict[str, VirginieAgent] = {}
         self._history: list[AgentResult] = []
         self._lock = threading.Lock()
         self._required_domains: set[str] = set()
+        self._agent_task_counts: dict[str, int] = {}
+        self._agent_stats: dict[str, dict[str, Any]] = {}
+        self._failure_cooldown_sec = max(1.0, float(failure_cooldown_sec))
+        self._failure_threshold = max(1, int(failure_threshold))
+        self._time_fn = time_fn or time.time
+        self._domain_aliases: dict[str, str] = {
+            "ops": "operations",
+            "deploy": "operations",
+            "alerts": "notifications",
+            "notify": "notifications",
+            "msg": "notifications",
+            "exec": "execution",
+            "qa": "quality",
+            "sec": "security",
+            "gov": "governance",
+            "alloc": "allocation",
+        }
+
+    @staticmethod
+    def _normalize_domain(domain: str) -> str:
+        normalized = str(domain or "").strip().lower().replace("_", " ").replace("-", " ")
+        return " ".join(normalized.split())
+
+    @staticmethod
+    def _safe_text(value: Any, *, max_len: int = 300) -> str:
+        text = str(value or "").strip()
+        return text[:max_len]
 
     def register_agent(self, agent: VirginieAgent) -> None:
         """Register or replace an agent by name."""
+        normalized_name = self._safe_text(agent.name, max_len=120)
+        if not normalized_name:
+            raise ValueError("Agent name must not be empty")
+        normalized_domains = tuple(
+            d
+            for d in (
+                self._domain_aliases.get(self._normalize_domain(domain), self._normalize_domain(domain))
+                for domain in agent.domains
+            )
+            if d
+        )
+        normalized_agent = VirginieAgent(
+            name=normalized_name,
+            domains=normalized_domains,
+            handler=agent.handler,
+        )
         with self._lock:
-            self._agents[agent.name] = agent
+            self._agents[normalized_agent.name] = normalized_agent
+            self._agent_task_counts.setdefault(normalized_agent.name, 0)
+            self._agent_stats.setdefault(
+                normalized_agent.name,
+                {
+                    "assigned": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "consecutive_failure": 0,
+                    "last_failure_ts": 0.0,
+                    "last_error": None,
+                },
+            )
+
+    def unregister_agent(self, agent_name: str) -> bool:
+        """Remove an agent and related stats. Returns True when removed."""
+        key = self._safe_text(agent_name, max_len=120)
+        with self._lock:
+            existed = key in self._agents
+            self._agents.pop(key, None)
+            self._agent_task_counts.pop(key, None)
+            self._agent_stats.pop(key, None)
+            return existed
 
     def set_required_domains(self, domains: list[str]) -> None:
         """Set mandatory domains that must be covered by at least one agent."""
         with self._lock:
-            self._required_domains = {d for d in domains if d}
+            normalized = []
+            for x in domains:
+                d = self._normalize_domain(x)
+                if not d:
+                    continue
+                normalized.append(self._domain_aliases.get(d, d))
+            self._required_domains = set(normalized)
+
+    def history(self, limit: int | None = None) -> list[AgentResult]:
+        """Return newest-first execution history."""
+        with self._lock:
+            if limit is None or limit <= 0:
+                return list(self._history)
+            return list(self._history[: int(limit)])
+
+    def clear_history(self) -> None:
+        """Clear routing/execution history."""
+        with self._lock:
+            self._history.clear()
+
+    def reset_agent_stats(self, agent_name: str | None = None) -> None:
+        """Reset stats for one agent or all agents."""
+        with self._lock:
+            if agent_name:
+                key = self._safe_text(agent_name, max_len=120)
+                if key in self._agent_task_counts:
+                    self._agent_task_counts[key] = 0
+                if key in self._agent_stats:
+                    self._agent_stats[key] = {
+                        "assigned": 0,
+                        "success": 0,
+                        "failure": 0,
+                        "consecutive_failure": 0,
+                        "last_failure_ts": 0.0,
+                        "last_error": None,
+                    }
+                return
+            for name in list(self._agent_task_counts.keys()):
+                self._agent_task_counts[name] = 0
+            for name in list(self._agent_stats.keys()):
+                self._agent_stats[name] = {
+                    "assigned": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "consecutive_failure": 0,
+                    "last_failure_ts": 0.0,
+                    "last_error": None,
+                }
 
     def missing_domains(self) -> list[str]:
         """Return required domains currently not covered by any registered agent."""
@@ -477,15 +596,51 @@ class VirginieOrchestrator:
 
     def route_task(self, task: AgentTask) -> str | None:
         """Return best matching agent name for a task domain."""
+        agent_name, _details = self._route_task_with_details(task)
+        return agent_name
+
+    def _route_task_with_details(self, task: AgentTask) -> tuple[str | None, dict[str, Any]]:
+        """Return selected agent with routing diagnostics for observability."""
+        task_domain = self._normalize_domain(task.domain)
+        task_domain = self._domain_aliases.get(task_domain, task_domain)
+        inferred: str | None = None
         with self._lock:
-            matches = [a.name for a in self._agents.values() if task.domain in a.domains]
+            matches = [a.name for a in self._agents.values() if task_domain in a.domains]
+            if not matches:
+                inferred = self._infer_domain(task)
+                if inferred:
+                    matches = [a.name for a in self._agents.values() if inferred in a.domains]
         if not matches:
-            return None
-        return sorted(matches)[0]
+            return None, {
+                "domain_requested": task_domain,
+                "domain_inferred": inferred,
+                "matches": [],
+                "cooldown_excluded": [],
+            }
+        with self._lock:
+            cooldown_excluded = [name for name in matches if self._is_agent_in_cooldown(name)]
+            available = [name for name in matches if name not in cooldown_excluded]
+            candidates = available or matches
+            ranked = sorted(
+                candidates,
+                key=lambda name: (
+                    self._agent_failure_rate(name),
+                    self._agent_task_counts.get(name, 0),
+                    name,
+                ),
+            )
+        return ranked[0], {
+            "domain_requested": task_domain,
+            "domain_inferred": inferred,
+            "matches": matches,
+            "cooldown_excluded": cooldown_excluded,
+            "candidates": candidates,
+            "ranked": ranked,
+        }
 
     def execute(self, task: AgentTask) -> AgentResult:
         """Execute a task via its routed agent and store history."""
-        agent_name = self.route_task(task)
+        agent_name, route_details = self._route_task_with_details(task)
         if agent_name is None:
             result = AgentResult(
                 agent_name="unassigned",
@@ -496,13 +651,65 @@ class VirginieOrchestrator:
             with self._lock:
                 self._history.insert(0, result)
                 self._history = self._history[:200]
-            return result
+            return AgentResult(
+                agent_name=result.agent_name,
+                task_id=result.task_id,
+                success=result.success,
+                summary=result.summary,
+                data={**result.data, "routing": route_details},
+            )
 
         with self._lock:
             agent = self._agents[agent_name]
 
-        result = agent.handler(task)
+        try:
+            raw_result = agent.handler(task)
+        except Exception as exc:
+            raw_result = AgentResult(
+                agent_name=agent_name,
+                task_id=task.task_id,
+                success=False,
+                summary=f"Agent execution failed: {exc}",
+                data={"error_type": type(exc).__name__},
+            )
+            raw_result = AgentResult(
+                agent_name=raw_result.agent_name,
+                task_id=raw_result.task_id,
+                success=raw_result.success,
+                summary=self._safe_text(raw_result.summary, max_len=240),
+                data=raw_result.data,
+            )
+        result = AgentResult(
+            agent_name=raw_result.agent_name,
+            task_id=raw_result.task_id,
+            success=raw_result.success,
+            summary=raw_result.summary,
+            data={**raw_result.data, "routing": route_details},
+        )
+
         with self._lock:
+            self._agent_task_counts[agent_name] = self._agent_task_counts.get(agent_name, 0) + 1
+            stats = self._agent_stats.setdefault(
+                agent_name,
+                {
+                    "assigned": 0,
+                    "success": 0,
+                    "failure": 0,
+                    "consecutive_failure": 0,
+                    "last_failure_ts": 0.0,
+                    "last_error": None,
+                },
+            )
+            stats["assigned"] += 1
+            if result.success:
+                stats["success"] += 1
+                stats["consecutive_failure"] = 0
+                stats["last_error"] = None
+            else:
+                stats["failure"] += 1
+                stats["consecutive_failure"] = int(stats.get("consecutive_failure", 0)) + 1
+                stats["last_failure_ts"] = float(self._time_fn())
+                stats["last_error"] = result.summary
             self._history.insert(0, result)
             self._history = self._history[:200]
         return result
@@ -520,6 +727,19 @@ class VirginieOrchestrator:
                 "registered_agents": len(self._agents),
                 "agent_names": sorted(self._agents.keys()),
                 "domains": sorted({d for a in self._agents.values() for d in a.domains}),
+                "agent_task_counts": dict(self._agent_task_counts),
+                "agent_health": {
+                    name: {
+                        "assigned": int(stats.get("assigned", 0)),
+                        "success": int(stats.get("success", 0)),
+                        "failure": int(stats.get("failure", 0)),
+                        "consecutive_failure": int(stats.get("consecutive_failure", 0)),
+                        "failure_rate": round(self._agent_failure_rate(name), 3),
+                        "cooldown_active": self._is_agent_in_cooldown(name),
+                        "last_error": stats.get("last_error"),
+                    }
+                    for name, stats in self._agent_stats.items()
+                },
                 "history_size": len(self._history),
                 "last_task_id": last.task_id if last else None,
                 "last_agent": last.agent_name if last else None,
@@ -529,8 +749,55 @@ class VirginieOrchestrator:
                 "missing_domains": missing,
                 "required_domains": sorted(self._required_domains),
                 "coverage_complete": len(missing) == 0,
+                "total_tasks": int(sum(self._agent_task_counts.values())),
+                "total_success": int(sum(int(s.get("success", 0)) for s in self._agent_stats.values())),
+                "total_failures": int(sum(int(s.get("failure", 0)) for s in self._agent_stats.values())),
+                "failure_threshold": self._failure_threshold,
+                "failure_cooldown_sec": self._failure_cooldown_sec,
                 "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
             }
+
+    def _infer_domain(self, task: AgentTask) -> str | None:
+        """Infer a likely domain from objective/payload keywords."""
+        text = " ".join(
+            [
+                str(task.objective or ""),
+                str(task.payload.get("reason", "")),
+                str(task.payload.get("action", "")),
+                str(task.payload.get("symbol", "")),
+            ]
+        ).lower()
+        rules: list[tuple[str, tuple[str, ...]]] = [
+            ("risk", ("risk", "limit", "drawdown", "volatility")),
+            ("learning", ("learn", "feedback", "post-trade", "retrain")),
+            ("trading", ("trade", "buy", "sell", "execution", "position")),
+            ("notifications", ("notify", "alert", "chat", "message", "discord", "telegram")),
+            ("quality", ("quality", "test", "qa", "validation")),
+            ("operations", ("deploy", "ops", "restart", "health", "uptime")),
+            ("portfolio", ("portfolio", "allocation", "rebalance", "target")),
+            ("compliance", ("compliance", "policy", "audit", "governance")),
+            ("planning", ("plan", "roadmap", "milestone", "product")),
+        ]
+        for domain, keywords in rules:
+            if any(keyword in text for keyword in keywords):
+                return domain
+        return None
+
+    def _agent_failure_rate(self, agent_name: str) -> float:
+        stats = self._agent_stats.get(agent_name, {})
+        assigned = int(stats.get("assigned", 0))
+        if assigned <= 0:
+            return 0.0
+        failure = int(stats.get("failure", 0))
+        return failure / assigned
+
+    def _is_agent_in_cooldown(self, agent_name: str) -> bool:
+        stats = self._agent_stats.get(agent_name, {})
+        consecutive = int(stats.get("consecutive_failure", 0))
+        if consecutive < self._failure_threshold:
+            return False
+        last_failure_ts = float(stats.get("last_failure_ts", 0.0) or 0.0)
+        return (self._time_fn() - last_failure_ts) < self._failure_cooldown_sec
 
 
 def build_default_project_agents() -> list[VirginieAgent]:

@@ -76,6 +76,8 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "ai_min_samples": 20,
         "ai_min_confidence": 0.55,
         "virginie_enabled": True,
+        "virginie_primary_control": True,
+        "virginie_autonomy_weight": 0.7,
         "virginie_min_score": 0.0,
         "virginie_max_risk_penalty": 1000.0,
         "ai_use_kelly": True,

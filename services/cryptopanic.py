@@ -1,10 +1,12 @@
 """
-TREVLIX – CryptoPanic News Sentiment Service (API v2)
-=====================================================
+TREVLIX – CryptoPanic News Sentiment Service (API v2 + v1 Fallback)
+====================================================================
 Analysiert Crypto-Nachrichten von CryptoPanic für Sentiment-Signale.
 
-API v2 Basis-URL:
+API Basis-URL:
     https://cryptopanic.com/api/{plan}/v2/posts/
+Fallback (legacy):
+    https://cryptopanic.com/api/v1/posts/
 
 Unterstützte Plans: free, pro, developer
 """
@@ -65,8 +67,9 @@ BEARISH_WORDS: list[str] = [
     "drop",
 ]
 
-# CryptoPanic API v2 Basis-URL
+# CryptoPanic API v2 Basis-URL + v1 Fallback
 _API_V2_URL = "https://cryptopanic.com/api/{plan}/v2/posts/"
+_API_V1_FALLBACK_URL = "https://cryptopanic.com/api/v1/posts/"
 
 # Standard-Timeout für API-Requests
 _REQUEST_TIMEOUT = 10
@@ -84,7 +87,7 @@ _PLAN_MIN_REQUEST_INTERVAL = {
 
 class CryptoPanicClient:
     """
-    CryptoPanic API v2 Client für News-Sentiment-Analyse.
+    CryptoPanic API Client für News-Sentiment-Analyse.
 
     Nutzt die v2 API mit plan-basierter URL-Struktur:
         https://cryptopanic.com/api/{plan}/v2/posts/
@@ -98,6 +101,8 @@ class CryptoPanicClient:
         self.token = token
         self.plan = plan if plan else "free"
         self._base_url = _API_V2_URL.format(plan=self.plan)
+        self._fallback_url = _API_V1_FALLBACK_URL
+        self._active_url = self._base_url
         self._cache: dict = {}
         self._cache_max_size: int = 200
         self._rate_limited_until: float = 0.0
@@ -175,7 +180,7 @@ class CryptoPanicClient:
             params["currencies"] = currency_norm
 
         try:
-            resp = httpx.get(self._base_url, params=params, timeout=_REQUEST_TIMEOUT)
+            resp = httpx.get(self._active_url, params=params, timeout=_REQUEST_TIMEOUT)
             self._last_api_call_at = time.time()
             resp.raise_for_status()
             remaining = (resp.headers or {}).get("X-RateLimit-Remaining")
@@ -216,7 +221,9 @@ class CryptoPanicClient:
                 self._unsupported_currencies[currency_norm] = time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
                 fallback_params = {k: v for k, v in params.items() if k != "currencies"}
                 try:
-                    fallback_resp = httpx.get(self._base_url, params=fallback_params, timeout=_REQUEST_TIMEOUT)
+                    fallback_resp = httpx.get(
+                        self._active_url, params=fallback_params, timeout=_REQUEST_TIMEOUT
+                    )
                     self._last_api_call_at = time.time()
                     fallback_resp.raise_for_status()
                     payload = fallback_resp.json()
@@ -232,6 +239,26 @@ class CryptoPanicClient:
                         currency_norm,
                         fallback_err,
                     )
+                    return []
+            if (
+                e.response is not None
+                and e.response.status_code in (404, 410)
+                and self._active_url == self._base_url
+            ):
+                # Einige Accounts/Keys liefern nur Legacy-v1 Antworten.
+                # Einmalig auf v1 wechseln und erneut versuchen.
+                try:
+                    self._active_url = self._fallback_url
+                    legacy_resp = httpx.get(self._active_url, params=params, timeout=_REQUEST_TIMEOUT)
+                    self._last_api_call_at = time.time()
+                    legacy_resp.raise_for_status()
+                    payload = legacy_resp.json()
+                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    log.info("CryptoPanic: v2 Endpoint nicht verfügbar – fallback auf v1 aktiviert")
+                    return results if isinstance(results, list) else []
+                except Exception as legacy_err:
+                    log.warning("CryptoPanic v1 Fallback fehlgeschlagen für %s: %s", currency, legacy_err)
+                    self._active_url = self._base_url
                     return []
             log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)
             return []

@@ -1,7 +1,10 @@
 """Tests for VIRGINIE 0.0.1 primitives."""
 
+import pytest
+
 from services.virginie import (
     ActionResult,
+    AgentResult,
     AgentTask,
     LLMPerformanceTracker,
     LLMResult,
@@ -12,6 +15,7 @@ from services.virginie import (
     VirginieIdentity,
     VirginieOrchestrator,
     VirginieRules,
+    VirginieAgent,
     build_default_project_agents,
 )
 
@@ -194,6 +198,13 @@ def test_virginie_orchestrator_reports_unassigned_domain():
     assert result.agent_name == "unassigned"
 
 
+def test_virginie_orchestrator_rejects_empty_agent_name():
+    orchestrator = VirginieOrchestrator()
+
+    with pytest.raises(ValueError):
+        orchestrator.register_agent(VirginieAgent(name="   ", domains=("ops",), handler=lambda _t: None))
+
+
 def test_portfolio_goal_delegates_to_trading_agent_with_autonomous_allocation():
     orchestrator = VirginieOrchestrator()
     for agent in build_default_project_agents():
@@ -290,6 +301,192 @@ def test_virginie_orchestrator_coverage_report_detects_missing_domains():
     report = orchestrator.coverage_report()
     assert report["is_complete"] is False
     assert report["missing_domains"] == ["risk"]
+
+
+def test_virginie_orchestrator_normalizes_domains_for_routing_and_coverage():
+    orchestrator = VirginieOrchestrator()
+    orchestrator.set_required_domains([" Planning ", "RISK"])
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    report = orchestrator.coverage_report()
+    assert report["is_complete"] is True
+    result = orchestrator.execute(
+        AgentTask(task_id="task-case", domain="  PlAnNiNg  ", objective="Case-insensitive route")
+    )
+    assert result.success is True
+    assert result.agent_name == "planning-agent"
+
+
+def test_virginie_orchestrator_supports_domain_aliases():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(task_id="task-alias-1", domain="ops", objective="restart service")
+    )
+    assert result.success is True
+    assert result.agent_name == "ops-agent"
+
+
+def test_virginie_orchestrator_infers_domain_from_objective_when_domain_unknown():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    result = orchestrator.execute(
+        AgentTask(
+            task_id="task-infer-1",
+            domain="unknown",
+            objective="Bitte sende eine Alert Message an Telegram",
+            payload={"reason": "critical delivery alert"},
+        )
+    )
+
+    assert result.success is True
+    assert result.agent_name == "notification-agent"
+    assert result.data["routing"]["domain_inferred"] == "notifications"
+
+
+def test_virginie_orchestrator_tracks_agent_load_in_status():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    orchestrator.execute(AgentTask(task_id="task-load-1", domain="planning", objective="A"))
+    orchestrator.execute(AgentTask(task_id="task-load-2", domain="planning", objective="B"))
+    orchestrator.execute(AgentTask(task_id="task-load-3", domain="risk", objective="C"))
+
+    status = orchestrator.status()
+    counts = status["agent_task_counts"]
+    assert counts["planning-agent"] == 2
+    assert counts["risk-agent"] == 1
+
+
+def test_virginie_orchestrator_catches_agent_handler_exceptions():
+    def _boom(_task):
+        raise RuntimeError("handler crashed")
+
+    orchestrator = VirginieOrchestrator()
+    orchestrator.register_agent(
+        VirginieAgent(name="unstable-agent", domains=("ops",), handler=_boom)
+    )
+
+    result = orchestrator.execute(
+        AgentTask(task_id="task-fail-1", domain="ops", objective="restart")
+    )
+
+    assert result.success is False
+    assert result.agent_name == "unstable-agent"
+    assert "Agent execution failed" in result.summary
+    status = orchestrator.status()
+    assert status["agent_health"]["unstable-agent"]["failure"] == 1
+    assert status["agent_health"]["unstable-agent"]["failure_rate"] == 1.0
+
+
+def test_virginie_orchestrator_prefers_healthier_agent_on_same_domain():
+    def _ok_handler(task):
+        return AgentResult(agent_name="agent-ok", task_id=task.task_id, success=True, summary="ok")
+
+    def _flaky_handler(task):
+        if task.task_id == "prime-failure":
+            raise RuntimeError("intentional")
+
+        return AgentResult(
+            agent_name="agent-flaky",
+            task_id=task.task_id,
+            success=True,
+            summary="unexpectedly ok",
+        )
+
+    orchestrator = VirginieOrchestrator()
+    orchestrator.register_agent(
+        VirginieAgent(name="agent-flaky", domains=("quality",), handler=_flaky_handler)
+    )
+    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("quality",), handler=_ok_handler))
+
+    # Prime one failure on flaky agent.
+    orchestrator.execute(AgentTask(task_id="prime-failure", domain="quality", objective="prime"))
+
+    result = orchestrator.execute(
+        AgentTask(task_id="healthy-route", domain="quality", objective="run checks")
+    )
+    assert result.success is True
+    assert result.agent_name == "agent-ok"
+
+
+def test_virginie_orchestrator_applies_failure_cooldown_after_threshold():
+    now = {"t": 1000.0}
+
+    def _time():
+        return now["t"]
+
+    def _always_fail(_task):
+        raise RuntimeError("down")
+
+    def _ok_handler(task):
+        return AgentResult(agent_name="agent-ok", task_id=task.task_id, success=True, summary="ok")
+
+    orchestrator = VirginieOrchestrator(failure_cooldown_sec=60.0, failure_threshold=3, time_fn=_time)
+    orchestrator.register_agent(VirginieAgent(name="agent-fail", domains=("ops",), handler=_always_fail))
+
+    # trigger consecutive failures for agent-fail
+    for idx in range(3):
+        now["t"] += 1.0
+        orchestrator.execute(AgentTask(task_id=f"fail-{idx}", domain="ops", objective="restart"))
+
+    status = orchestrator.status()
+    assert status["agent_health"]["agent-fail"]["consecutive_failure"] >= 3
+    assert status["agent_health"]["agent-fail"]["cooldown_active"] is True
+
+    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("ops",), handler=_ok_handler))
+    now["t"] += 1.0
+    routed = orchestrator.execute(AgentTask(task_id="after-cooldown", domain="ops", objective="restart"))
+    assert routed.success is True
+    assert routed.agent_name == "agent-ok"
+    assert "agent-fail" in routed.data["routing"]["cooldown_excluded"]
+
+
+def test_virginie_orchestrator_unassigned_result_contains_routing_diagnostics():
+    orchestrator = VirginieOrchestrator()
+    result = orchestrator.execute(
+        AgentTask(task_id="task-none", domain="mystery", objective="unmapped objective")
+    )
+
+    assert result.success is False
+    assert result.agent_name == "unassigned"
+    assert "routing" in result.data
+    assert result.data["routing"]["matches"] == []
+
+
+def test_virginie_orchestrator_unregister_and_reset_stats_and_history():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    orchestrator.execute(AgentTask(task_id="task-rst-1", domain="planning", objective="A"))
+    assert len(orchestrator.history()) == 1
+    orchestrator.reset_agent_stats("planning-agent")
+    status = orchestrator.status()
+    assert status["agent_task_counts"]["planning-agent"] == 0
+
+    orchestrator.clear_history()
+    assert orchestrator.history() == []
+    assert orchestrator.unregister_agent("planning-agent") is True
+    assert orchestrator.unregister_agent("planning-agent") is False
+
+
+def test_virginie_orchestrator_status_totals_are_exposed():
+    orchestrator = VirginieOrchestrator()
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+    orchestrator.execute(AgentTask(task_id="task-total-1", domain="planning", objective="ok"))
+
+    status = orchestrator.status()
+    assert status["total_tasks"] >= 1
+    assert status["failure_threshold"] >= 1
+    assert status["failure_cooldown_sec"] >= 1.0
 
 
 def test_virginie_review_and_version_bump_follow_rules():

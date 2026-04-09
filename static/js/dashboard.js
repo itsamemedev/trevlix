@@ -548,7 +548,7 @@ const _ai3dState = {
   wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
   agentCount:0, lastAgent:'—', agentNames:[]
 };
-const _virginieChat = {loaded:false,messages:[],sending:false};
+const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
 
 function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
@@ -573,11 +573,14 @@ function _renderVirginieChat(){
 
 function _appendVirginieChatMessage(msg){
   if(!msg || !msg.content) return;
-  _virginieChat.messages.push({
+  const nextMsg = {
     role:String(msg.role||'assistant'),
     content:String(msg.content||''),
     time:String(msg.time||new Date().toISOString())
-  });
+  };
+  const last = _virginieChat.messages[_virginieChat.messages.length - 1];
+  if(last && last.role===nextMsg.role && last.content===nextMsg.content) return;
+  _virginieChat.messages.push(nextMsg);
   _renderVirginieChat();
 }
 
@@ -599,9 +602,27 @@ function sendVirginieChat(){
   const message=String(input.value||'').trim();
   if(!message) return;
   _virginieChat.sending=true;
+  _virginieChat.pendingMessage=message;
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   input.value='';
   if(socket && socket.connected){
     socket.emit('virginie_chat',{message});
+    _virginieChat.socketTimer = setTimeout(()=>{
+      if(!_virginieChat.sending) return;
+      fetch('/api/v1/virginie/chat',{
+        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:_virginieChat.pendingMessage})
+      }).then(r=>r.json()).then(d=>{
+        if(d && d.user) _appendVirginieChatMessage(d.user);
+        if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
+        if(d && d.error) toast('⚠️ '+d.error,'warning');
+      }).catch(()=>toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning'))
+        .finally(()=>{
+          _virginieChat.sending=false;
+          _virginieChat.pendingMessage='';
+          if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
+        });
+    }, 8000);
     return;
   }
   fetch('/api/v1/virginie/chat',{
@@ -612,7 +633,10 @@ function sendVirginieChat(){
     if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
     if(d && d.error) toast('⚠️ '+d.error,'warning');
   }).catch(()=>toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning'))
-    .finally(()=>{_virginieChat.sending=false;});
+    .finally(()=>{
+      _virginieChat.sending=false;
+      _virginieChat.pendingMessage='';
+    });
 }
 
 function initVirginieChat(){
@@ -646,10 +670,12 @@ function updateAI3DFromAI(ai){
     const answers = Number(ai.llm_responses_used||0);
     const runs = Number(ai.idle_learning_runs||0);
     const ag = ai.assistant_agents || {};
+    const primary = Boolean(ai.assistant_primary_control);
+    const autonomyW = Number(ai.assistant_autonomy_weight||0);
     const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
     collabEl.textContent = active
-      ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
-      : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+      ? `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
+      : `🤖 VIRGINIE wartet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
   }
   const agentsEl = document.getElementById('ai3dAgents');
   if(agentsEl){
@@ -1024,13 +1050,23 @@ async function switchTradingMode(mode){
   }catch(e){ toast('❌ Mode-Wechsel fehlgeschlagen: '+e,'error'); }
 }
 
+async function executeTradingControl(action, opts={}){
+  const preferSocket = Boolean(opts.preferSocket);
+  if(preferSocket){
+    const event = action==='start' ? 'start_bot' : action==='stop' ? 'stop_bot' : null;
+    if(event && _emitSafe(event, undefined, {silent:true})){
+      if(socket && socket.connected) socket.emit('request_state');
+      refreshTradingInsights(true);
+      return true;
+    }
+  }
+  return _botControlFallback(action);
+}
+
 async function apiTradingControl(action){
-  try{
-    const data = await _postTradingEndpoint('/api/v1/trading/control',{action});
-    toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
-    refreshTradingInsights(true);
-    if(socket && socket.connected) socket.emit('request_state');
-  }catch(e){ toast('❌ Trading-Control fehlgeschlagen: '+e,'error'); }
+  const ok = await executeTradingControl(action, {preferSocket:false});
+  if(!ok) return;
+  toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
 }
 
 // ── Heatmap ──────────────────────────────────────────────────────────
@@ -1275,12 +1311,10 @@ async function _botControlFallback(action){
   }
 }
 function startBot(){
-  if(_emitSafe('start_bot', undefined, {silent:true})) return;
-  _botControlFallback('start');
+  executeTradingControl('start', {preferSocket:true});
 }
 function stopBot(){
-  if(_emitSafe('stop_bot', undefined, {silent:true})) return;
-  _botControlFallback('stop');
+  executeTradingControl('stop', {preferSocket:true});
 }
 function pauseBot(){_emitSafe('pause_bot');}
 
@@ -1431,6 +1465,8 @@ function saveSettings(){
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
     virginie_enabled:document.getElementById('sVirginieEnabled').checked,
+    virginie_primary_control:document.getElementById('sVirginiePrimary').checked,
+    virginie_autonomy_weight:_pf(document.getElementById('sVirginieAutonomy').value),
     virginie_min_score:_pf(document.getElementById('sVirginieMinScore').value),
     virginie_max_risk_penalty:_pf(document.getElementById('sVirginieMaxRisk').value),
     exchange:document.getElementById('sExchange')?.value||undefined,
@@ -1598,9 +1634,13 @@ socket.on('backtest_result', d=>{
 socket.on('virginie_chat_message', d=>{
   _appendVirginieChatMessage(d);
   _virginieChat.sending=false;
+  _virginieChat.pendingMessage='';
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
 });
 socket.on('virginie_chat_error', d=>{
   _virginieChat.sending=false;
+  _virginieChat.pendingMessage='';
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   toast('⚠️ '+(d&&d.error?d.error:'Chat-Fehler'),'warning');
 });
 

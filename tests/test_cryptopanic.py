@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from services.cryptopanic import (
+    _API_V1_FALLBACK_URL,
     _API_V2_URL,
     BEARISH_WORDS,
     BULLISH_WORDS,
@@ -70,6 +71,9 @@ class TestApiV2Url:
     def test_url_construction_pro(self):
         url = _API_V2_URL.format(plan="pro")
         assert url == "https://cryptopanic.com/api/pro/v2/posts/"
+
+    def test_v1_fallback_url(self):
+        assert _API_V1_FALLBACK_URL == "https://cryptopanic.com/api/v1/posts/"
 
 
 # ── Sentiment-Analyse ────────────────────────────────────────────────────────
@@ -188,7 +192,7 @@ class TestFetchPosts:
         mock_get.return_value = mock_resp
 
         client = CryptoPanicClient(token="test-token", plan="free")
-        posts = client.fetch_posts("BTC")
+        posts = client.fetch_posts("")
 
         assert len(posts) == 1
         assert posts[0]["title"] == "BTC Rally"
@@ -209,6 +213,29 @@ class TestFetchPosts:
 
         call_args = mock_get.call_args
         assert "pro/v2/posts" in call_args[0][0]
+
+    @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_falls_back_to_v1_when_v2_returns_404(self, mock_get):
+        import httpx as hx
+
+        req_v2 = hx.Request("GET", "https://cryptopanic.com/api/free/v2/posts/")
+        resp_404 = MagicMock()
+        resp_404.raise_for_status.side_effect = hx.HTTPStatusError(
+            "not found", request=req_v2, response=hx.Response(404, request=req_v2)
+        )
+
+        resp_v1 = MagicMock()
+        resp_v1.raise_for_status = MagicMock()
+        resp_v1.json.return_value = {"results": [{"title": "Legacy endpoint works"}]}
+
+        mock_get.side_effect = [resp_404, resp_v1]
+
+        client = CryptoPanicClient(token="test-token", plan="free")
+        posts = client.fetch_posts("")
+
+        assert posts and posts[0]["title"] == "Legacy endpoint works"
+        assert "free/v2/posts" in mock_get.call_args_list[0][0][0]
+        assert "/api/v1/posts/" in mock_get.call_args_list[1][0][0]
 
     @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_passes_parameters(self, mock_get):

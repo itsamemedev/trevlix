@@ -196,6 +196,8 @@ _AI_CONFIG_DEFAULTS: dict[str, float | int | bool] = {
     "lstm_lookback": 24,
     "lstm_min_samples": 50,
     "virginie_enabled": True,
+    "virginie_primary_control": True,
+    "virginie_autonomy_weight": 0.7,
     "virginie_min_score": 0.0,
     "virginie_max_risk_penalty": 1000.0,
 }
@@ -1193,27 +1195,47 @@ class AIEngine:
 
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
         """[26] Erweitert mit VIRGINIE-Guardrails + Conformal Prediction Intervals."""
+        virginie_enabled = bool(CONFIG.get("virginie_enabled", True))
+        primary_control = bool(CONFIG.get("virginie_primary_control", False))
+        autonomy_w = float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7)
+        autonomy_w = min(1.0, max(0.0, autonomy_w))
         if not self.is_trained or not CONFIG.get("ai_enabled"):
-            return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
-        try:
-            if CONFIG.get("virginie_enabled", True):
-                self._sync_virginie_guardrails_from_config()
-            X_s = self.scaler.transform(features.reshape(1, -1))
-            prob = self._predict(X_s, features)
-            allowed_by_model = prob >= CONFIG["ai_min_confidence"]
-
-            if CONFIG.get("virginie_enabled", True):
+            if virginie_enabled and primary_control:
                 opportunity = Opportunity(
                     key="buy_signal",
-                    success_probability=prob,
+                    success_probability=float(conf),
                     expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
                     cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
                     risk_penalty=float(max(0.0, (1.0 - conf) * 10.0)),
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
+                allowed = virginie_decision.selected is not None
+                return (
+                    allowed,
+                    conf,
+                    f"{'✅' if allowed else '🚫'} VIRGINIE-Primary:{conf * 100:.1f}% | {virginie_decision.reason}",
+                )
+            return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
+        try:
+            if virginie_enabled:
+                self._sync_virginie_guardrails_from_config()
+            X_s = self.scaler.transform(features.reshape(1, -1))
+            prob = self._predict(X_s, features)
+            allowed_by_model = prob >= CONFIG["ai_min_confidence"]
+
+            if virginie_enabled:
+                blended_prob = autonomy_w * prob + (1.0 - autonomy_w) * float(conf)
+                opportunity = Opportunity(
+                    key="buy_signal",
+                    success_probability=blended_prob,
+                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
+                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
+                    risk_penalty=float(max(0.0, (1.0 - blended_prob) * 10.0)),
+                )
+                virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed_by_virginie = virginie_decision.selected is not None
-                allowed = allowed_by_model and allowed_by_virginie
-                reason_prefix = "VIRGINIE"
+                allowed = allowed_by_virginie if primary_control else (allowed_by_model and allowed_by_virginie)
+                reason_prefix = "VIRGINIE-Primary" if primary_control else "VIRGINIE"
             else:
                 allowed = allowed_by_model
                 reason_prefix = "AI"
@@ -1231,7 +1253,7 @@ class AIEngine:
                 self.allowed_count += 1
             else:
                 self.blocked_count += 1
-            if CONFIG.get("virginie_enabled", True):
+            if virginie_enabled:
                 return (
                     allowed,
                     prob,
@@ -1406,6 +1428,8 @@ class AIEngine:
             "assistant_version": self.virginie.current_version(),
             "assistant_agents": self.virginie_orchestrator.status(),
             "assistant_review": self.virginie.review_status(),
+            "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", False)),
+            "assistant_autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
             "params": {
                 "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),
                 "tp": round(CONFIG.get("take_profit_pct", 0.06) * 100, 2),

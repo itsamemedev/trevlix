@@ -56,6 +56,8 @@ def test_init_ai_engine_merges_required_defaults_for_partial_configs():
     assert ai_engine.CONFIG["ai_min_samples"] == 20
     assert ai_engine.CONFIG["stop_loss_pct"] == 0.025
     assert ai_engine.CONFIG["virginie_enabled"] is True
+    assert ai_engine.CONFIG["virginie_primary_control"] is True
+    assert ai_engine.CONFIG["virginie_autonomy_weight"] == 0.7
     assert ai_engine.CONFIG["virginie_min_score"] == 0.0
 
 
@@ -90,6 +92,32 @@ def test_should_buy_syncs_virginie_guardrails_after_runtime_config_change(monkey
         allowed, _, _ = engine.should_buy(features=np.array([0.0]), conf=0.9)
         assert allowed is True
         assert engine.virginie.guardrails.min_score == 0.0
+    finally:
+        ai_engine.CONFIG.clear()
+        ai_engine.CONFIG.update(old_cfg)
+
+
+def test_should_buy_uses_virginie_primary_control_when_model_not_trained(monkeypatch):
+    class _DummyDB:
+        def load_ai_samples(self):
+            return [], [], []
+
+    monkeypatch.setattr(ai_engine.AIEngine, "_load_from_db", lambda self: None)
+    engine = ai_engine.AIEngine(db_ref=_DummyDB())
+    engine.is_trained = False
+
+    old_cfg = dict(ai_engine.CONFIG)
+    try:
+        ai_engine.CONFIG["ai_enabled"] = True
+        ai_engine.CONFIG["virginie_enabled"] = True
+        ai_engine.CONFIG["virginie_primary_control"] = True
+        ai_engine.CONFIG["virginie_min_score"] = 20.0
+        ai_engine.CONFIG["take_profit_pct"] = 0.01
+        ai_engine.CONFIG["stop_loss_pct"] = 0.05
+
+        allowed, _, reason = engine.should_buy(features=np.array([0.0]), conf=0.5)
+        assert allowed is False
+        assert "VIRGINIE-Primary" in reason
     finally:
         ai_engine.CONFIG.clear()
         ai_engine.CONFIG.update(old_cfg)
