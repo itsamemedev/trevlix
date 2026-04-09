@@ -548,7 +548,7 @@ const _ai3dState = {
   wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
   agentCount:0, lastAgent:'—', agentNames:[]
 };
-const _virginieChat = {loaded:false,messages:[],sending:false};
+const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
 
 function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
@@ -599,9 +599,26 @@ function sendVirginieChat(){
   const message=String(input.value||'').trim();
   if(!message) return;
   _virginieChat.sending=true;
+  _virginieChat.pendingMessage=message;
   input.value='';
   if(socket && socket.connected){
     socket.emit('virginie_chat',{message});
+    _virginieChat.socketTimer = setTimeout(()=>{
+      if(!_virginieChat.sending) return;
+      fetch('/api/v1/virginie/chat',{
+        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({message:_virginieChat.pendingMessage})
+      }).then(r=>r.json()).then(d=>{
+        if(d && d.user) _appendVirginieChatMessage(d.user);
+        if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
+        if(d && d.error) toast('⚠️ '+d.error,'warning');
+      }).catch(()=>toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning'))
+        .finally(()=>{
+          _virginieChat.sending=false;
+          _virginieChat.pendingMessage='';
+          if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
+        });
+    }, 8000);
     return;
   }
   fetch('/api/v1/virginie/chat',{
@@ -612,7 +629,10 @@ function sendVirginieChat(){
     if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
     if(d && d.error) toast('⚠️ '+d.error,'warning');
   }).catch(()=>toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning'))
-    .finally(()=>{_virginieChat.sending=false;});
+    .finally(()=>{
+      _virginieChat.sending=false;
+      _virginieChat.pendingMessage='';
+    });
 }
 
 function initVirginieChat(){
@@ -1598,9 +1618,13 @@ socket.on('backtest_result', d=>{
 socket.on('virginie_chat_message', d=>{
   _appendVirginieChatMessage(d);
   _virginieChat.sending=false;
+  _virginieChat.pendingMessage='';
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
 });
 socket.on('virginie_chat_error', d=>{
   _virginieChat.sending=false;
+  _virginieChat.pendingMessage='';
+  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   toast('⚠️ '+(d&&d.error?d.error:'Chat-Fehler'),'warning');
 });
 

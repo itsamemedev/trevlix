@@ -445,15 +445,27 @@ class VirginieOrchestrator:
         self._lock = threading.Lock()
         self._required_domains: set[str] = set()
 
+    @staticmethod
+    def _normalize_domain(domain: str) -> str:
+        return str(domain or "").strip().lower()
+
     def register_agent(self, agent: VirginieAgent) -> None:
         """Register or replace an agent by name."""
+        normalized_domains = tuple(
+            d for d in (self._normalize_domain(domain) for domain in agent.domains) if d
+        )
+        normalized_agent = VirginieAgent(
+            name=agent.name,
+            domains=normalized_domains,
+            handler=agent.handler,
+        )
         with self._lock:
-            self._agents[agent.name] = agent
+            self._agents[normalized_agent.name] = normalized_agent
 
     def set_required_domains(self, domains: list[str]) -> None:
         """Set mandatory domains that must be covered by at least one agent."""
         with self._lock:
-            self._required_domains = {d for d in domains if d}
+            self._required_domains = {d for d in (self._normalize_domain(x) for x in domains) if d}
 
     def missing_domains(self) -> list[str]:
         """Return required domains currently not covered by any registered agent."""
@@ -477,8 +489,9 @@ class VirginieOrchestrator:
 
     def route_task(self, task: AgentTask) -> str | None:
         """Return best matching agent name for a task domain."""
+        task_domain = self._normalize_domain(task.domain)
         with self._lock:
-            matches = [a.name for a in self._agents.values() if task.domain in a.domains]
+            matches = [a.name for a in self._agents.values() if task_domain in a.domains]
         if not matches:
             return None
         return sorted(matches)[0]

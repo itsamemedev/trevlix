@@ -292,6 +292,21 @@ def test_virginie_orchestrator_coverage_report_detects_missing_domains():
     assert report["missing_domains"] == ["risk"]
 
 
+def test_virginie_orchestrator_normalizes_domains_for_routing_and_coverage():
+    orchestrator = VirginieOrchestrator()
+    orchestrator.set_required_domains([" Planning ", "RISK"])
+    for agent in build_default_project_agents():
+        orchestrator.register_agent(agent)
+
+    report = orchestrator.coverage_report()
+    assert report["is_complete"] is True
+    result = orchestrator.execute(
+        AgentTask(task_id="task-case", domain="  PlAnNiNg  ", objective="Case-insensitive route")
+    )
+    assert result.success is True
+    assert result.agent_name == "planning-agent"
+
+
 def test_virginie_review_and_version_bump_follow_rules():
     core = VirginieCore(
         rules=VirginieRules(
