@@ -17,9 +17,11 @@ import logging
 import os
 import threading
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 import httpx
+
+UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 log = logging.getLogger("trevlix.notifications")
 

@@ -57,7 +57,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import numpy as np
@@ -213,6 +213,8 @@ from services.utils import (
     validate_config,
 )
 from services.utils import make_secret as _secret
+
+UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 try:
     from flask_limiter import Limiter

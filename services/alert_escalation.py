@@ -21,11 +21,12 @@ import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Any
 
 log = logging.getLogger("trevlix.escalation")
+UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 
 class AlertLevel(IntEnum):
