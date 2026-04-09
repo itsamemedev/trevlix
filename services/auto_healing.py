@@ -26,13 +26,12 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
+from app.core.time_compat import UTC
 from trevlix_i18n import t
-
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 log = logging.getLogger("trevlix.healing")
 

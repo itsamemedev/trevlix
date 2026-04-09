@@ -10,8 +10,10 @@ Run with:  pytest tests/test_alert_escalation.py -v
 
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from unittest.mock import Mock
+
+from app.core.time_compat import UTC
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -20,8 +22,6 @@ from services.alert_escalation import (
     AlertEscalationManager,
     AlertLevel,
 )
-
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 
 def _make_manager(

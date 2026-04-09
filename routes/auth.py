@@ -16,13 +16,13 @@ import logging
 import os
 import secrets
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import jwt as pyjwt
 from flask import Blueprint, make_response, redirect, request, send_file, session
 
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
+from app.core.time_compat import UTC
 
 log = logging.getLogger("trevlix.auth")
 

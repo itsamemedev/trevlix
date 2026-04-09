@@ -57,7 +57,7 @@ import threading
 import time
 import uuid
 from collections import deque
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -132,6 +132,7 @@ from app.core.socket_emit import emit_socket_event
 from app.core.socket_error_logger import log_socket_error
 from app.core.startup_view import render_startup_banner
 from app.core.tax_export import tax_rows_to_csv
+from app.core.time_compat import UTC
 from app.core.trade_export import trades_to_json
 from app.core.trading_classes import (
     ArbitrageScanner,
@@ -213,8 +214,6 @@ from services.utils import (
     validate_config,
 )
 from services.utils import make_secret as _secret
-
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 try:
     from flask_limiter import Limiter

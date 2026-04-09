@@ -19,10 +19,10 @@ Usage:
 import logging
 import threading
 from collections import defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
+from app.core.time_compat import UTC
 
 log = logging.getLogger("trevlix.revenue")
 

@@ -12,12 +12,11 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
+from app.core.time_compat import UTC
 from services.utils import BOT_VERSION
-
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 log = logging.getLogger("trevlix.git_ops")
 _DEFAULT_VERSION = os.getenv("TREVLIX_VERSION", BOT_VERSION)

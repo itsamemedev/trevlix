@@ -16,15 +16,14 @@ import threading
 import time
 import zipfile
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Any
 
 import numpy as np
 
+from app.core.time_compat import UTC
 from services.encryption import decrypt_value, encrypt_value
 from services.passwords import pbkdf2_hash, pbkdf2_verify
-
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 # ---------------------------------------------------------------------------
 # Module-level references – populated by init_db_manager()

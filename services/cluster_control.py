@@ -24,11 +24,13 @@ import socket
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
 import requests
+
+from app.core.time_compat import UTC
 
 try:
     from enum import StrEnum
@@ -36,7 +38,6 @@ except ImportError:  # Python < 3.11 compatibility
     class StrEnum(str, Enum):
         """Fallback for Python versions without enum.StrEnum."""
 
-UTC = getattr(datetime, "UTC", timezone.utc)  # noqa: UP017
 
 log = logging.getLogger("trevlix.cluster")
 
