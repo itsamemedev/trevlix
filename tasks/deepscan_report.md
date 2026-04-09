@@ -1,21 +1,21 @@
 # Trevlix Deep Scan Report
 
-Generated: 2026-04-09 15:51 UTC
+Generated: 2026-04-09 16:11 UTC
 Scope: Whole-project static scan + lightweight runtime checks
 
 ## Executive Summary
 
-- Scanned **163 files** with **52,883 total lines** (selected source/docs/config extensions).
+- Scanned **164 files** with **52,996 total lines** (selected source/docs/config extensions).
 - Largest hotspot remains `server.py` with **4,373 lines**.
 - Server surface area: **35** Socket.IO handlers and **124** app routes in `server.py`.
-- Security quick-check: no obvious `eval/exec/shell=True/yaml.load/pickle.loads` patterns found in core scan; `subprocess.run` is present for update/rollback flows.
+- Security quick-check now includes project-wide pattern scanning for `eval`, `exec`, `pickle.loads`, `yaml.load`, and `subprocess.run(..., shell=True)`.
 
 ## Command Results
 
 | Command | Status | Exit |
 |---|---|---|
 | `python --version && pip --version && pytest --version` | PASS | 0 |
-| `ruff check .` | FAIL | 1 |
+| `ruff check .` | PASS | 0 |
 | `python -m compileall -q services routes ai_engine.py server.py trevlix_i18n.py validate_env.py` | PASS | 0 |
 | `python -m pip check` | PASS | 0 |
 | `pytest -q` | PASS | 0 |
@@ -31,61 +31,7 @@ pytest 8.4.2
 
 #### `ruff check .`
 ```text
-I001 [*] Import block is un-sorted or un-formatted
- --> app/core/admin_password_policy.py:3:1
-  |
-1 | """Helpers for weak admin password detection."""
-2 |
-3 | from __future__ import annotations
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  |
-help: Organize imports
-
-UP017 [*] Use `datetime.UTC` alias
-    --> app/core/db_manager.py:1334:33
-     |
-1332 |             "sub": user_id,
-1333 |             "label": label,
-1334 |             "exp": datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-     |                                 ^^^^^^^^^^^^
-1335 |             "iat": datetime.now(timezone.utc),
-1336 |         }
-     |
-help: Convert to `datetime.UTC` alias
-
-UP017 [*] Use `datetime.UTC` alias
-    --> app/core/db_manager.py:1335:33
-     |
-1333 |             "label": label,
-1334 |             "exp": datetime.now(timezone.utc) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-1335 |             "iat": datetime.now(timezone.utc),
-     |                                 ^^^^^^^^^^^^
-1336 |         }
-1337 |         token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
-     |
-help: Convert to `datetime.UTC` alias
-
-UP017 [*] Use `datetime.UTC` alias
-    --> app/core/db_manager.py:1347:42
-     |
-1345 |                             token[:500],
-1346 |                             label,
-1347 |                             datetime.now(timezone.utc)
-     |                                          ^^^^^^^^^^^^
-1348 |                             + timedelta(hours=CONFIG["jwt_expiry_hours"]),
-1349 |                         ),
-     |
-help: Convert to `datetime.UTC` alias
-
-UP017 [*] Use `datetime.UTC` alias
-   --> routes/auth.py:579:49
-    |
-577 |                             "user_id": user["id"],
-578 |                             "username": user["username"],
-579 |                             "exp": datetime.now(timezone.utc) + timedelta(hours=8),
-    |                                                 ^^^^^^^^^^^^
-580 |                         },
-581 |      
+All checks passed!
 ```
 
 #### `python -m compileall -q services routes ai_engine.py server.py trevlix_i18n.py validate_env.py`
@@ -140,7 +86,7 @@ tests/test_notifications.py ....
 | 3,166 | `static/js/dashboard.js` |
 | 2,018 | `templates/index.html` |
 | 1,862 | `app/core/trading_ops.py` |
-| 1,832 | `app/core/db_manager.py` |
+| 1,833 | `app/core/db_manager.py` |
 | 1,448 | `app/core/ai_engine.py` |
 | 1,229 | `static/js/trevlix_translations.js` |
 | 1,127 | `services/knowledge.py` |
@@ -148,6 +94,14 @@ tests/test_notifications.py ....
 | 1,000 | `CHANGELOG.md` |
 
 ## Security Notes
+
+High-risk primitive scan (project-wide):
+
+- `eval(...)`: **0** hit(s)
+- `exec(...)`: **0** hit(s)
+- `pickle.loads(...)`: **0** hit(s)
+- `yaml.load(...)`: **0** hit(s)
+- `subprocess.run(..., shell=True)`: **0** hit(s)
 
 `subprocess.run` locations in `server.py`:
 
@@ -159,12 +113,3 @@ tests/test_notifications.py ....
 2. Ensure dependencies are installed before `pytest` to avoid false-negative CI/local conclusions.
 3. Continue decomposing `server.py` into bounded modules (routes, websocket handlers, updater/admin ops).
 4. Add stricter audit logs and policy checks around admin-triggered git updater flows.
-
-## Priorisierte Fehler- und Problemliste (nummeriert)
-
-1. **Ruff-Linting schlägt fehl (Import-Reihenfolge)** in `app/core/admin_password_policy.py` (`I001`).
-2. **Veraltete Datetime-API-Nutzung (`timezone.utc`)** in mehreren Stellen (u. a. `app/core/db_manager.py`, `routes/auth.py`) führt zu `UP017`-Verstößen.
-3. **Python-Version im Laufzeitscan ist 3.10.19**, während laut Projektausrichtung 3.11 als Ziel empfohlen wird (potenziell versteckte Inkompatibilitäten).
-4. **`server.py` bleibt ein Monolith (4.373 Zeilen)** mit hoher Routen-/Handler-Dichte (124 HTTP-Routen, 35 Socket-Handler) und entsprechendem Refactoring-Risiko.
-5. **Sehr große Frontend- und Core-Dateien** (`static/js/dashboard.js`, `app/core/trading_ops.py`, `app/core/db_manager.py`) erhöhen Wartungsaufwand und Fehlerwahrscheinlichkeit.
-6. **Sicherheits-Quickcheck ist nur heuristisch** (Pattern-Scan), es fehlt eine tiefergehende Security-Analyse (z. B. SAST-Regelsatz, Threat-Review).
