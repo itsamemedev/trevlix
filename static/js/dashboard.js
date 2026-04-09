@@ -670,10 +670,12 @@ function updateAI3DFromAI(ai){
     const answers = Number(ai.llm_responses_used||0);
     const runs = Number(ai.idle_learning_runs||0);
     const ag = ai.assistant_agents || {};
+    const primary = Boolean(ai.assistant_primary_control);
+    const autonomyW = Number(ai.assistant_autonomy_weight||0);
     const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
     collabEl.textContent = active
-      ? `🤖 VIRGINIE aktiv · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
-      : `🤖 VIRGINIE wartet · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+      ? `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
+      : `🤖 VIRGINIE wartet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
   }
   const agentsEl = document.getElementById('ai3dAgents');
   if(agentsEl){
