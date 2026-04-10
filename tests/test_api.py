@@ -645,6 +645,37 @@ class TestExchangeControlSocketRuntime:
             server.CONFIG["exchange"] = old_exchange
             server.CONFIG["paper_trading"] = old_paper
 
+    def test_start_exchange_invalid_modes_fallback_to_paper(self, app_client, monkeypatch):
+        import server
+
+        monkeypatch.setattr(server, "_ws_admin_required", lambda: True)
+        monkeypatch.setattr(server, "emit", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(server, "_pin_user_exchange", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(server, "_save_user_exchange_mode", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(server, "_get_user_exchange_modes", lambda _uid: {"binance": "INVALID"})
+
+        old_map = server.CONFIG.get("exchange_modes_runtime")
+        old_running_cfg = server.CONFIG.get("exchange_running_runtime")
+        old_running = set(server._exchange_runtime_running)
+        old_modes = dict(server._exchange_runtime_modes)
+
+        server.CONFIG["exchange_modes_runtime"] = {}
+        server.CONFIG["exchange_running_runtime"] = []
+        server._exchange_runtime_running = set()
+        server._exchange_runtime_modes = {}
+        server.state.running = True
+
+        try:
+            with app_client.application.test_request_context("/socket", method="POST"):
+                server.on_start_exchange({"exchange": "binance", "mode": "not-valid"})
+            assert server._exchange_runtime_modes["binance"] == "paper"
+            assert server.CONFIG["exchange_modes_runtime"]["binance"] == "paper"
+        finally:
+            server.CONFIG["exchange_modes_runtime"] = old_map
+            server.CONFIG["exchange_running_runtime"] = old_running_cfg
+            server._exchange_runtime_running = old_running
+            server._exchange_runtime_modes = old_modes
+
 
 class TestPasswordPolicy:
     """Tests für Password-Policy (Verbesserung #4)."""

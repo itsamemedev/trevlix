@@ -550,6 +550,15 @@ _exchange_runtime_lock = threading.Lock()
 _exchange_runtime_modes: dict[str, str] = {}
 _exchange_runtime_running: set[str] = set()
 
+
+def _normalize_trade_mode(value: Any, default: str = "paper") -> str:
+    mode = str(value or default).lower().strip()
+    return mode if mode in {"paper", "live"} else default
+
+
+def _set_runtime_running_config() -> None:
+    CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
+
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
     db_manager=db,
@@ -2965,7 +2974,7 @@ def on_start_exchange(data):
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
-    requested_mode = str((data or {}).get("mode", "")).lower().strip()
+    requested_mode = _normalize_trade_mode((data or {}).get("mode", ""), "")
     if not ex_name:
         emit(
             "status",
@@ -2974,7 +2983,7 @@ def on_start_exchange(data):
         return
     uid = int(getattr(request, "user_id", session.get("user_id", 0)) or 0)
     persisted_modes = _get_user_exchange_modes(uid) if uid else {}
-    mode = requested_mode if requested_mode in {"paper", "live"} else persisted_modes.get(ex_name, "paper")
+    mode = _normalize_trade_mode(requested_mode or persisted_modes.get(ex_name, "paper"), "paper")
     if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
         emit(
             "status",
@@ -2988,7 +2997,7 @@ def on_start_exchange(data):
     with _exchange_runtime_lock:
         _exchange_runtime_running.add(ex_name)
         _exchange_runtime_modes[ex_name] = mode
-        CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
+        _set_runtime_running_config()
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if not isinstance(runtime_modes, dict):
             runtime_modes = {}
@@ -3031,13 +3040,13 @@ def on_stop_exchange(data):
     with _exchange_runtime_lock:
         _exchange_runtime_running.discard(ex_name)
         _exchange_runtime_modes.pop(ex_name, None)
-        CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
+        _set_runtime_running_config()
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if isinstance(runtime_modes, dict):
             runtime_modes.pop(ex_name, None)
         if _exchange_runtime_running:
             next_exchange = sorted(_exchange_runtime_running)[0]
-            next_mode = str(_exchange_runtime_modes.get(next_exchange, "paper")).lower()
+            next_mode = _normalize_trade_mode(_exchange_runtime_modes.get(next_exchange, "paper"), "paper")
     current_exchange = normalize_exchange_name(CONFIG.get("exchange", ""))
     if current_exchange == ex_name and next_exchange:
         CONFIG["exchange"] = next_exchange
