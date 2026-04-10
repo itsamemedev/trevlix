@@ -1045,7 +1045,10 @@ def api_create_token():
 @api_auth_required
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
-    settings = db.get_user_settings(request.user_id)
+    settings = db.get_user_settings(request.user_id) or {}
+    settings["exchange_switch_interval_sec"] = safe_int(
+        settings.get("exchange_switch_interval_sec", CONFIG.get("exchange_switch_interval_sec", 20)), 20
+    )
     settings["paper_trading"] = CONFIG.get("paper_trading", True)
     settings["trade_mode"] = "paper" if CONFIG.get("paper_trading", True) else "live"
     return jsonify(settings)

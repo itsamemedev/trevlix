@@ -189,3 +189,9 @@ def test_invalidate_admin_user_id_cache_resets_state():
         trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
         trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
         trading_ops._ADMIN_USER_ID_CACHE_VALID = old_cache_valid
+
+
+def test_sanitize_exchange_switch_interval_sec_bounds():
+    assert trading_ops._sanitize_exchange_switch_interval_sec(1, 20.0) == 5.0
+    assert trading_ops._sanitize_exchange_switch_interval_sec(99999, 20.0) == 3600.0
+    assert trading_ops._sanitize_exchange_switch_interval_sec("45", 20.0) == 45.0

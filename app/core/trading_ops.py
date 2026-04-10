@@ -104,6 +104,10 @@ _ADMIN_USER_ID_CACHE_TS = 0.0
 _ADMIN_USER_ID_CACHE_VALID = False
 
 
+def _sanitize_exchange_switch_interval_sec(value: Any, default: float = 20.0) -> float:
+    return min(3600.0, max(5.0, safe_float(value, default)))
+
+
 def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
     """Return latest VIRGINIE forecast events (newest first)."""
     lim = max(1, min(int(limit or 50), 200))
@@ -1611,7 +1615,7 @@ def bot_loop():
     ex_name = str(CONFIG.get("exchange", "cryptocom")).lower()
     ex_cache: dict[str, Any] = {}
     rr_idx = 0
-    switch_interval_sec = min(3600.0, max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", 20), 20.0)))
+    switch_interval_sec = _sanitize_exchange_switch_interval_sec(CONFIG.get("exchange_switch_interval_sec", 20), 20.0)
     next_exchange_switch_ts = 0.0
     enabled_exchanges: list[str] = []
     next_exchange_refresh_ts = 0.0
@@ -1627,9 +1631,8 @@ def bot_loop():
         now_ts = time.time()
         try:
             if now_ts >= next_exchange_refresh_ts:
-                switch_interval_sec = min(
-                    3600.0,
-                    max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", switch_interval_sec), switch_interval_sec)),
+                switch_interval_sec = _sanitize_exchange_switch_interval_sec(
+                    CONFIG.get("exchange_switch_interval_sec", switch_interval_sec), switch_interval_sec
                 )
                 next_exchange_refresh_ts = now_ts + 5.0
                 runtime_running_cfg = CONFIG.get("exchange_running_runtime")

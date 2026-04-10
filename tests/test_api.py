@@ -705,6 +705,34 @@ class TestPasswordPolicy:
 
 
 class TestUserSettingsScope:
+    def test_user_settings_get_includes_switch_interval_default(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        monkeypatch.setitem(server.CONFIG, "exchange_switch_interval_sec", 20)
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {"risk_per_trade": 0.02})
+
+        resp = app_client.get("/api/v1/user/settings")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["exchange_switch_interval_sec"] == 20
+
+    def test_user_settings_get_handles_empty_store(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        monkeypatch.setitem(server.CONFIG, "exchange_switch_interval_sec", 30)
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: None)
+
+        resp = app_client.get("/api/v1/user/settings")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["exchange_switch_interval_sec"] == 30
+
     def test_non_admin_settings_do_not_override_runtime_mode(self, app_client, monkeypatch):
         import server
 
