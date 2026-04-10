@@ -128,10 +128,12 @@ def test_resolve_admin_user_id_uses_db_and_cache():
     old_db = trading_ops.db
     old_cache_id = trading_ops._ADMIN_USER_ID_CACHE
     old_cache_ts = trading_ops._ADMIN_USER_ID_CACHE_TS
+    old_cache_valid = trading_ops._ADMIN_USER_ID_CACHE_VALID
     fake_db = _DB()
     trading_ops.db = fake_db
     trading_ops._ADMIN_USER_ID_CACHE = None
     trading_ops._ADMIN_USER_ID_CACHE_TS = 0.0
+    trading_ops._ADMIN_USER_ID_CACHE_VALID = False
 
     try:
         first = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
@@ -140,6 +142,7 @@ def test_resolve_admin_user_id_uses_db_and_cache():
         trading_ops.db = old_db
         trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
         trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
+        trading_ops._ADMIN_USER_ID_CACHE_VALID = old_cache_valid
 
     assert first == 42
     assert second == 42
@@ -150,15 +153,20 @@ def test_resolve_admin_user_id_returns_none_without_db():
     old_db = trading_ops.db
     old_cache_id = trading_ops._ADMIN_USER_ID_CACHE
     old_cache_ts = trading_ops._ADMIN_USER_ID_CACHE_TS
+    old_cache_valid = trading_ops._ADMIN_USER_ID_CACHE_VALID
     trading_ops.db = None
     trading_ops._ADMIN_USER_ID_CACHE = None
     trading_ops._ADMIN_USER_ID_CACHE_TS = time.time()
+    trading_ops._ADMIN_USER_ID_CACHE_VALID = False
 
     try:
-        resolved = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
+        resolved_first = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
+        resolved_second = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
     finally:
         trading_ops.db = old_db
         trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
         trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
+        trading_ops._ADMIN_USER_ID_CACHE_VALID = old_cache_valid
 
-    assert resolved is None
+    assert resolved_first is None
+    assert resolved_second is None

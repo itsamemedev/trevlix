@@ -101,6 +101,7 @@ trade_execution = None
 _VIRGINIE_FORECAST_FEED: deque = deque(maxlen=200)
 _ADMIN_USER_ID_CACHE: int | None = None
 _ADMIN_USER_ID_CACHE_TS = 0.0
+_ADMIN_USER_ID_CACHE_VALID = False
 
 
 def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
@@ -173,11 +174,14 @@ def normalize_exchange_name(raw):
 
 def _resolve_admin_user_id(cache_ttl_sec: float = 60.0) -> int | None:
     """Resolve and cache the first admin user id for runtime exchange queries."""
-    global _ADMIN_USER_ID_CACHE, _ADMIN_USER_ID_CACHE_TS
+    global _ADMIN_USER_ID_CACHE, _ADMIN_USER_ID_CACHE_TS, _ADMIN_USER_ID_CACHE_VALID
     now_ts = time.time()
-    if _ADMIN_USER_ID_CACHE and (now_ts - _ADMIN_USER_ID_CACHE_TS) < cache_ttl_sec:
+    if _ADMIN_USER_ID_CACHE_VALID and (now_ts - _ADMIN_USER_ID_CACHE_TS) < cache_ttl_sec:
         return _ADMIN_USER_ID_CACHE
     if not db or not getattr(db, "db_available", False):
+        _ADMIN_USER_ID_CACHE = None
+        _ADMIN_USER_ID_CACHE_TS = now_ts
+        _ADMIN_USER_ID_CACHE_VALID = True
         return None
     try:
         with db._get_conn() as conn:
@@ -186,8 +190,11 @@ def _resolve_admin_user_id(cache_ttl_sec: float = 60.0) -> int | None:
                 row = c.fetchone()
         _ADMIN_USER_ID_CACHE = int(row["id"]) if row and row.get("id") else None
         _ADMIN_USER_ID_CACHE_TS = now_ts
+        _ADMIN_USER_ID_CACHE_VALID = True
     except Exception:
         _ADMIN_USER_ID_CACHE = None
+        _ADMIN_USER_ID_CACHE_TS = now_ts
+        _ADMIN_USER_ID_CACHE_VALID = True
     return _ADMIN_USER_ID_CACHE
 
 
@@ -1606,8 +1613,8 @@ def bot_loop():
         # Auto-Healing: Signal that bot loop is alive
         _maybe_healer_heartbeat()
         # Multi-Exchange Round-Robin: rotiert über alle aktivierten Exchanges
+        now_ts = time.time()
         try:
-            now_ts = time.time()
             if now_ts >= next_exchange_refresh_ts:
                 admin_uid = _resolve_admin_user_id()
                 enabled_rows = (
@@ -1615,11 +1622,11 @@ def bot_loop():
                     if admin_uid and db and hasattr(db, "get_enabled_exchanges")
                     else []
                 )
-                enabled_exchanges = [
-                    normalize_exchange_name(str(r.get("exchange", "")))
-                    for r in enabled_rows
-                    if normalize_exchange_name(str(r.get("exchange", "")))
-                ]
+                enabled_exchanges = []
+                for row in enabled_rows:
+                    normalized = normalize_exchange_name(str(row.get("exchange", "")))
+                    if normalized:
+                        enabled_exchanges.append(normalized)
                 enabled_exchanges = sorted(set(enabled_exchanges))
                 next_exchange_refresh_ts = now_ts + 5.0
                 if enabled_exchanges:
