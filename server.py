@@ -1096,10 +1096,10 @@ def api_user_settings_update():
         "language",
         "max_daily_loss_pct",
     }
-    current = db.get_user_settings(request.user_id)
+    current = db.get_user_settings(request.user_id) or {}
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
     if "exchange_switch_interval_sec" in filtered:
-        default_interval = safe_int((current or {}).get("exchange_switch_interval_sec", 20), 20)
+        default_interval = safe_int(current.get("exchange_switch_interval_sec", 20), 20)
         filtered["exchange_switch_interval_sec"] = _sanitize_exchange_switch_interval(
             filtered.get("exchange_switch_interval_sec"), default_interval
         )

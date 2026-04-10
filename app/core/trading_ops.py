@@ -1627,6 +1627,10 @@ def bot_loop():
         now_ts = time.time()
         try:
             if now_ts >= next_exchange_refresh_ts:
+                switch_interval_sec = min(
+                    3600.0,
+                    max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", switch_interval_sec), switch_interval_sec)),
+                )
                 next_exchange_refresh_ts = now_ts + 5.0
                 runtime_running_cfg = CONFIG.get("exchange_running_runtime")
                 refreshed_exchanges: list[str] = []

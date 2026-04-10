@@ -760,3 +760,20 @@ class TestUserSettingsScope:
         resp_high = app_client.post("/api/v1/user/settings", json={"exchange_switch_interval_sec": 99999})
         assert resp_high.status_code == 200
         assert store["exchange_switch_interval_sec"] == 3600
+
+    def test_user_settings_handles_empty_store_gracefully(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        store: dict = {}
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 2, "role": "user"})
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: None)
+        monkeypatch.setattr(server.db, "update_user_settings", lambda _uid, data: store.update(data) or True)
+
+        resp = app_client.post("/api/v1/user/settings", json={"exchange_switch_interval_sec": 30})
+        assert resp.status_code == 200
+        payload = resp.get_json()
+        assert payload["ok"] is True
+        assert store["exchange_switch_interval_sec"] == 30
