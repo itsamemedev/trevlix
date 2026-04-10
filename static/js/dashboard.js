@@ -328,7 +328,7 @@ function updateUI(d){
       `<button onclick="openChart('${escJS(p.symbol)}')" class="filter-btn">${esc(p.symbol.replace('/USDT',''))} ${p.trade_type==='short'?'📉':'📈'} ${fmtPct(p.pnl_pct||0)}</button>`).join('');
   }
   // ARB stat
-  _s('sArb', (d.arb_log||[]).length);
+  _s('sArbCount', (d.arb_log||[]).length);
   refreshTradingInsights();
   } catch(e){ console.warn('updateUI error:', e); }
 }

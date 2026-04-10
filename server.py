@@ -571,6 +571,14 @@ def _set_runtime_running_config() -> None:
     CONFIG["exchange_running_runtime"] = _sanitize_exchange_name_list(_exchange_runtime_running)
 
 
+def _runtime_next_exchange() -> tuple[str, str]:
+    if not _exchange_runtime_running:
+        return "", "paper"
+    next_exchange = sorted(_exchange_runtime_running)[0]
+    next_mode = _normalize_trade_mode(_exchange_runtime_modes.get(next_exchange, "paper"), "paper")
+    return next_exchange, next_mode
+
+
 def _sanitize_exchange_switch_interval(value: Any, default: int = 20) -> int:
     iv = safe_int(value, default)
     return max(5, min(3600, iv))
@@ -3074,9 +3082,7 @@ def on_stop_exchange(data):
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if isinstance(runtime_modes, dict):
             runtime_modes.pop(ex_name, None)
-        if _exchange_runtime_running:
-            next_exchange = sorted(_exchange_runtime_running)[0]
-            next_mode = _normalize_trade_mode(_exchange_runtime_modes.get(next_exchange, "paper"), "paper")
+        next_exchange, next_mode = _runtime_next_exchange()
     current_exchange = normalize_exchange_name(CONFIG.get("exchange", ""))
     if current_exchange == ex_name and next_exchange:
         CONFIG["exchange"] = next_exchange
