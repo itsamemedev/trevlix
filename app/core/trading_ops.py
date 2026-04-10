@@ -1611,7 +1611,7 @@ def bot_loop():
     ex_name = str(CONFIG.get("exchange", "cryptocom")).lower()
     ex_cache: dict[str, Any] = {}
     rr_idx = 0
-    switch_interval_sec = max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", 20), 20.0))
+    switch_interval_sec = min(3600.0, max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", 20), 20.0)))
     next_exchange_switch_ts = 0.0
     enabled_exchanges: list[str] = []
     next_exchange_refresh_ts = 0.0

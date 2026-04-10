@@ -741,3 +741,22 @@ class TestUserSettingsScope:
         assert payload["ok"] is True
         assert "exchange_switch_interval_sec" in payload["updated"]
         assert store["exchange_switch_interval_sec"] == 45
+
+    def test_user_settings_clamps_exchange_switch_interval_bounds(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        store = {"exchange_switch_interval_sec": 20}
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 2, "role": "user"})
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: dict(store))
+        monkeypatch.setattr(server.db, "update_user_settings", lambda _uid, data: store.update(data) or True)
+
+        resp_low = app_client.post("/api/v1/user/settings", json={"exchange_switch_interval_sec": 1})
+        assert resp_low.status_code == 200
+        assert store["exchange_switch_interval_sec"] == 5
+
+        resp_high = app_client.post("/api/v1/user/settings", json={"exchange_switch_interval_sec": 99999})
+        assert resp_high.status_code == 200
+        assert store["exchange_switch_interval_sec"] == 3600

@@ -559,6 +559,11 @@ def _normalize_trade_mode(value: Any, default: str = "paper") -> str:
 def _set_runtime_running_config() -> None:
     CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
 
+
+def _sanitize_exchange_switch_interval(value: Any, default: int = 20) -> int:
+    iv = safe_int(value, default)
+    return max(5, min(3600, iv))
+
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
     db_manager=db,
@@ -1091,11 +1096,16 @@ def api_user_settings_update():
         "language",
         "max_daily_loss_pct",
     }
+    current = db.get_user_settings(request.user_id)
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    if "exchange_switch_interval_sec" in filtered:
+        default_interval = safe_int((current or {}).get("exchange_switch_interval_sec", 20), 20)
+        filtered["exchange_switch_interval_sec"] = _sanitize_exchange_switch_interval(
+            filtered.get("exchange_switch_interval_sec"), default_interval
+        )
     user = db.get_user_by_id(request.user_id) or {}
     is_admin = str(user.get("role", "user")) == "admin"
     # Bestehende Settings laden und mergen
-    current = db.get_user_settings(request.user_id)
     current.update(filtered)
     if is_admin and "paper_trading" in filtered:
         mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
@@ -2380,6 +2390,8 @@ def on_update_config(data):
             v = safe_float(v, CONFIG.get(k, 0.0))
         elif k in _int_keys:
             v = safe_int(v, CONFIG.get(k, 0))
+            if k == "exchange_switch_interval_sec":
+                v = _sanitize_exchange_switch_interval(v, safe_int(CONFIG.get(k, 20), 20))
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
         CONFIG[k] = v
