@@ -8,6 +8,7 @@ def test_build_default_config_includes_expected_keys():
 
     assert cfg["exchange"] == "cryptocom"
     assert cfg["paper_trading"] is True
+    assert cfg["exchange_switch_interval_sec"] == 20
     assert cfg["mysql_port"] == 3306
     assert cfg["discord_on_signals"] is True
     assert "partial_tp_levels" in cfg

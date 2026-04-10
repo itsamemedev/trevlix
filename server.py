@@ -1060,6 +1060,7 @@ def api_user_settings_update():
         "take_profit_pct",
         "max_open_trades",
         "scan_interval",
+        "exchange_switch_interval_sec",
         "timeframe",
         "use_dca",
         "dca_drop_pct",
@@ -2266,6 +2267,7 @@ def on_update_config(data):
         "take_profit_pct",
         "max_open_trades",
         "scan_interval",
+        "exchange_switch_interval_sec",
         "paper_trading",
         "trailing_stop",
         "ai_min_confidence",
@@ -2336,6 +2338,7 @@ def on_update_config(data):
     _int_keys = {
         "max_open_trades",
         "scan_interval",
+        "exchange_switch_interval_sec",
         "circuit_breaker_losses",
         "circuit_breaker_min",
         "dca_max_levels",

@@ -723,3 +723,21 @@ class TestUserSettingsScope:
         payload = resp.get_json()
         assert payload["scope"] == "user"
         assert server.CONFIG.get("paper_trading", True) == old_runtime_mode
+
+    def test_user_settings_accept_exchange_switch_interval(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        store = {"exchange_switch_interval_sec": 20}
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 2, "role": "user"})
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: dict(store))
+        monkeypatch.setattr(server.db, "update_user_settings", lambda _uid, data: store.update(data) or True)
+
+        resp = app_client.post("/api/v1/user/settings", json={"exchange_switch_interval_sec": 45})
+        assert resp.status_code == 200
+        payload = resp.get_json()
+        assert payload["ok"] is True
+        assert "exchange_switch_interval_sec" in payload["updated"]
+        assert store["exchange_switch_interval_sec"] == 45

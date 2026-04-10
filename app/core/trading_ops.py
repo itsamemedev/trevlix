@@ -1611,6 +1611,8 @@ def bot_loop():
     ex_name = str(CONFIG.get("exchange", "cryptocom")).lower()
     ex_cache: dict[str, Any] = {}
     rr_idx = 0
+    switch_interval_sec = max(5.0, safe_float(CONFIG.get("exchange_switch_interval_sec", 20), 20.0))
+    next_exchange_switch_ts = 0.0
     enabled_exchanges: list[str] = []
     next_exchange_refresh_ts = 0.0
     last_exchange_refresh_error_ts = 0.0
@@ -1649,17 +1651,20 @@ def bot_loop():
                     ex_cache.clear()
                     rr_idx = 0
             if enabled_exchanges:
-                target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
-                rr_idx = (rr_idx + 1) % len(enabled_exchanges)
-                if target and target != ex_name:
-                    ex_name = target
-                    CONFIG["exchange"] = ex_name
-                    mode_map = CONFIG.get("exchange_modes_runtime", {}) or {}
-                    if isinstance(mode_map, dict):
-                        mode = str(mode_map.get(ex_name, "paper")).lower()
-                        CONFIG["paper_trading"] = mode != "live"
-                    state._exchange_reset = True
-                    ex = ex_cache.get(ex_name)
+                force_switch = ex_name not in enabled_exchanges
+                if force_switch or now_ts >= next_exchange_switch_ts:
+                    target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
+                    rr_idx = (rr_idx + 1) % len(enabled_exchanges)
+                    next_exchange_switch_ts = now_ts + switch_interval_sec
+                    if target and target != ex_name:
+                        ex_name = target
+                        CONFIG["exchange"] = ex_name
+                        mode_map = CONFIG.get("exchange_modes_runtime", {}) or {}
+                        if isinstance(mode_map, dict):
+                            mode = str(mode_map.get(ex_name, "paper")).lower()
+                            CONFIG["paper_trading"] = mode != "live"
+                        state._exchange_reset = True
+                        ex = ex_cache.get(ex_name)
         except Exception as ex_rr:
             if now_ts - last_exchange_refresh_error_ts > 30:
                 log.debug("Multi-Exchange Round-Robin skipped: %s", ex_rr)

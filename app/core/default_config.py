@@ -67,6 +67,7 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "paper_trading": True,
         "paper_balance": 10000.0,
         "scan_interval": 60,
+        "exchange_switch_interval_sec": 20,
         "max_daily_loss_pct": 0.05,
         "max_spread_pct": 0.5,
         "max_corr": 0.75,
