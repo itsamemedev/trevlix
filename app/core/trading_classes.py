@@ -316,12 +316,28 @@ class DailyReportScheduler:
 # BACKUP SCHEDULER
 # ═══════════════════════════════════════════════════════════════════════════════
 class BackupScheduler:
+    _guard_lock = threading.Lock()
+    _last_backup_day: str | None = None
+
+    @classmethod
+    def _should_run_now(cls, now: datetime) -> bool:
+        if not CONFIG.get("backup_enabled"):
+            return False
+        if not (now.hour == 3 and now.minute < 5):
+            return False
+        day_key = now.strftime("%Y-%m-%d")
+        with cls._guard_lock:
+            if cls._last_backup_day == day_key:
+                return False
+            cls._last_backup_day = day_key
+            return True
+
     def run(self):
         while not _SHUTDOWN_EVENT.is_set():
             if _SHUTDOWN_EVENT.wait(60):
                 return
             now = datetime.now()
-            if now.hour == 3 and now.minute < 5 and CONFIG.get("backup_enabled"):
+            if self._should_run_now(now):
                 path = db.backup()
                 if path:
                     discord.backup_done(path)

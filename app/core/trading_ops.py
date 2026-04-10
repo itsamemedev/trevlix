@@ -15,6 +15,7 @@ import os
 import threading
 import time
 import traceback
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
@@ -97,6 +98,70 @@ _pin_user_exchange = None
 market_cache = None
 trade_mode = None
 trade_execution = None
+_VIRGINIE_FORECAST_FEED: deque = deque(maxlen=200)
+
+
+def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
+    """Return latest VIRGINIE forecast events (newest first)."""
+    lim = max(1, min(int(limit or 50), 200))
+    items = list(_VIRGINIE_FORECAST_FEED)[-lim:]
+    items.reverse()
+    return items
+
+
+def get_virginie_forecast_stats() -> dict:
+    """Aggregate quick KPIs for VIRGINIE forecast feed."""
+    items = list(_VIRGINIE_FORECAST_FEED)
+    total = len(items)
+    allowed = sum(1 for i in items if i.get("allowed"))
+    by_tier: dict[str, dict[str, float | int]] = {}
+    for t in ("S", "A", "B", "C"):
+        tier_items = [i for i in items if str(i.get("tier", "")).upper() == t]
+        tier_total = len(tier_items)
+        tier_allowed = sum(1 for i in tier_items if i.get("allowed"))
+        by_tier[t] = {
+            "count": tier_total,
+            "allow_rate": round((tier_allowed / tier_total) * 100, 1) if tier_total else 0.0,
+        }
+    return {
+        "total": total,
+        "allowed": allowed,
+        "allow_rate": round((allowed / total) * 100, 1) if total else 0.0,
+        "by_tier": by_tier,
+    }
+
+
+def get_virginie_forecast_quality() -> dict:
+    """Estimate forecast quality by matching feed entries against closed trades."""
+    feed = list(_VIRGINIE_FORECAST_FEED)
+    closed = list(getattr(state, "closed_trades", []) or [])
+    by_tier: dict[str, dict[str, float | int]] = {}
+    matched_total = 0
+    matched_wins = 0
+    for tier in ("S", "A", "B", "C"):
+        tier_feed = [f for f in feed if str(f.get("tier", "")).upper() == tier and f.get("allowed")]
+        matched = 0
+        wins = 0
+        for f in tier_feed[-50:]:
+            sym = str(f.get("symbol", ""))
+            trade = next((t for t in reversed(closed) if str(t.get("symbol", "")) == sym), None)
+            if not trade:
+                continue
+            matched += 1
+            pnl = float(trade.get("pnl", 0) or 0)
+            if pnl > 0:
+                wins += 1
+        matched_total += matched
+        matched_wins += wins
+        by_tier[tier] = {
+            "matched": matched,
+            "win_rate": round((wins / matched) * 100, 1) if matched else 0.0,
+        }
+    return {
+        "matched_total": matched_total,
+        "win_rate": round((matched_wins / matched_total) * 100, 1) if matched_total else 0.0,
+        "by_tier": by_tier,
+    }
 
 
 def normalize_exchange_name(raw):
@@ -525,7 +590,14 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         return
 
     status = "✅ freigegeben" if allowed else "🚫 blockiert"
-    msg = f"VIRGINIE {status}: {symbol} | Score {ai_score * 100:.1f}%"
+    score_pct = ai_score * 100.0
+    bias = "bullish" if score_pct >= 60 else ("bearish" if score_pct <= 40 else "neutral")
+    rec_action = "BUY" if allowed and bias != "bearish" else ("WAIT" if allowed else "BLOCK")
+    tier = "S" if score_pct >= 85 else ("A" if score_pct >= 70 else ("B" if score_pct >= 55 else "C"))
+    msg = (
+        f"VIRGINIE {status}: {symbol} | Score {score_pct:.1f}% | Tier {tier} | "
+        f"Bias {bias} | Action {rec_action}"
+    )
     detail = ai_reason[:220]
 
     try:
@@ -534,8 +606,28 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         pass
 
     try:
+        forecast_payload = {
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "symbol": symbol,
+            "allowed": bool(allowed),
+            "score_pct": round(score_pct, 2),
+            "tier": tier,
+            "bias": bias,
+            "recommended_action": rec_action,
+            "reason": detail,
+        }
+        _VIRGINIE_FORECAST_FEED.append(forecast_payload)
+        if emit_event:
+            emit_event("virginie_forecast", forecast_payload)
+    except Exception:
+        pass
+
+    try:
         if allowed:
             discord.signal_opportunity(symbol, "buy", float(ai_score), 0.0, ai_score=ai_score * 100)
+            telegram.send(
+                f"<b>VIRGINIE Forecast</b>\n{symbol} · {rec_action}\nScore: {score_pct:.1f}% · Tier {tier} · Bias: {bias}"
+            )
         else:
             discord.error(f"{symbol}: {detail}")
             telegram.error(f"{symbol}: {detail}")

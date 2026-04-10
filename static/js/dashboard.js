@@ -549,6 +549,8 @@ const _ai3dState = {
   agentCount:0, lastAgent:'—', agentNames:[]
 };
 const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
+let _virginieEdgeTimer = null;
+const _virginieForecastFeed = [];
 
 function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
@@ -596,6 +598,24 @@ async function loadVirginieChatHistory(){
   }catch(_e){}
 }
 
+async function refreshVirginieChatHistory(force=false){
+  if(force){ _virginieChat.loaded=false; }
+  await loadVirginieChatHistory();
+}
+
+async function clearVirginieChatHistory(){
+  try{
+    const r=await fetch('/api/v1/virginie/chat/clear',{method:'POST',credentials:'include'});
+    const d=await r.json();
+    if(!r.ok || d.error){ toast('⚠️ '+(d.error||'Chat konnte nicht gelöscht werden'),'warning'); return; }
+    _virginieChat.messages=[];
+    _renderVirginieChat();
+    toast('🧹 VIRGINIE Chat gelöscht','success');
+  }catch(_e){
+    toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning');
+  }
+}
+
 function sendVirginieChat(){
   const input=document.getElementById('ai3dChatInput');
   if(!input || _virginieChat.sending) return;
@@ -639,12 +659,110 @@ function sendVirginieChat(){
     });
 }
 
+function sendVirginiePlanRequest(){
+  const input=document.getElementById('ai3dChatInput');
+  if(!input || _virginieChat.sending) return;
+  input.value='/plan';
+  sendVirginieChat();
+}
+
 function initVirginieChat(){
   const btn=document.getElementById('ai3dChatSendBtn');
   const input=document.getElementById('ai3dChatInput');
+  const planBtn=document.getElementById('ai3dChatPlanBtn');
+  const refreshBtn=document.getElementById('ai3dChatRefreshBtn');
+  const clearBtn=document.getElementById('ai3dChatClearBtn');
   if(btn) btn.addEventListener('click', sendVirginieChat);
   if(input) input.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); sendVirginieChat(); }});
+  if(planBtn) planBtn.addEventListener('click', sendVirginiePlanRequest);
+  if(refreshBtn) refreshBtn.addEventListener('click', ()=>refreshVirginieChatHistory(true));
+  if(clearBtn) clearBtn.addEventListener('click', clearVirginieChatHistory);
   loadVirginieChatHistory();
+  loadVirginieEdgeProfile();
+  if(!_virginieEdgeTimer){
+    _virginieEdgeTimer = setInterval(loadVirginieEdgeProfile, 30000);
+  }
+}
+
+async function loadVirginieEdgeProfile(){
+  try{
+    const r = await fetch('/api/v1/virginie/edge-profile', {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    _s('vEdgeScore', `${Number(d.edge_score||0).toFixed(1)} / 100`);
+    _s('vEdgeTier', String(d.tier||'—'));
+    _s('vEdgeUrgency', String(d.urgency||'—'));
+    _s('vEdgeSignature', String(d.signature||'—'));
+    const tierEl=document.getElementById('vEdgeTier');
+    if(tierEl){
+      const tier=String(d.tier||'');
+      tierEl.style.color = tier==='S' ? 'var(--green)' : tier==='A' ? 'var(--jade)' : tier==='B' ? 'var(--yellow)' : 'var(--red)';
+    }
+  }catch(_e){}
+  loadVirginieForecastFeed();
+}
+
+function _renderVirginieForecastFeed(){
+  const el = document.getElementById('vEdgeFeed');
+  if(!el) return;
+  if(!_virginieForecastFeed.length){
+    el.innerHTML = '<div class="row" style="color:var(--sub)">Noch keine Forecast-Events.</div>';
+    return;
+  }
+  el.innerHTML = _virginieForecastFeed.slice(0,8).map(item=>{
+    const clr = item.allowed ? 'var(--green)' : 'var(--red)';
+    return `<div class="row">
+      <div style="display:flex;justify-content:space-between;gap:6px">
+        <span style="color:${clr};font-weight:700">${esc(item.symbol||'—')} · ${esc(item.recommended_action||'—')}</span>
+        <span style="font-family:var(--mono);color:var(--sub)">${esc(item.time||'')}</span>
+      </div>
+      <div style="margin-top:2px;color:var(--sub)">Tier ${esc(item.tier||'—')} · ${esc(item.bias||'—')} · ${esc(String(item.score_pct||0))}%</div>
+    </div>`;
+  }).join('');
+}
+
+function _renderVirginieForecastStats(stats){
+  const kpiEl = document.getElementById('vEdgeKpi');
+  const tiersEl = document.getElementById('vEdgeTierStats');
+  if(kpiEl){
+    const total = Number(stats?.total||0);
+    const allowRate = Number(stats?.allow_rate||0).toFixed(1);
+    kpiEl.textContent = `Forecast KPI: ${total} Events · Allow-Rate ${allowRate}%`;
+  }
+  if(tiersEl){
+    const by = stats?.by_tier || {};
+    const items = ['S','A','B','C'].map(t=>{
+      const d = by[t] || {};
+      return `<span class="pill">${t}: ${Number(d.allow_rate||0).toFixed(1)}% (${Number(d.count||0)})</span>`;
+    });
+    tiersEl.innerHTML = items.join('');
+  }
+}
+
+function _renderVirginieForecastQuality(q){
+  const el = document.getElementById('vEdgeQuality');
+  if(!el) return;
+  const matched = Number(q?.matched_total||0);
+  const wr = Number(q?.win_rate||0).toFixed(1);
+  el.textContent = `Forecast Quality: ${wr}% Win-Rate · ${matched} matched`;
+}
+
+async function loadVirginieForecastFeed(){
+  try{
+    const r = await fetch('/api/v1/virginie/forecast-feed?limit=12', {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    const items = Array.isArray(d.items) ? d.items : [];
+    _virginieForecastFeed.splice(0, _virginieForecastFeed.length, ...items);
+    _renderVirginieForecastFeed();
+    _renderVirginieForecastStats(d.stats || {});
+  }catch(_e){}
+  try{
+    const rQ = await fetch('/api/v1/virginie/forecast-quality', {credentials:'include'});
+    if(!rQ.ok) return;
+    const q = await rQ.json();
+    _renderVirginieForecastQuality(q);
+  }catch(_e){}
 }
 
 function updateAI3DFromAI(ai){
@@ -1507,7 +1625,7 @@ function wizFinish(){document.getElementById('wizardOverlay').style.display='non
 const _socketEvents = ['connect','connect_error','disconnect','auth_error',
   'update','ai_update','genetic_update','status','trade','price_alert','backtest_result',
   'update_status','update_result','system_analytics','healing_update','revenue_update',
-  'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error'];
+  'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error','virginie_forecast'];
 _socketEvents.forEach(ev => socket.off(ev));
 
 function _setConnStatus(state){
@@ -1643,6 +1761,12 @@ socket.on('virginie_chat_error', d=>{
   if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   toast('⚠️ '+(d&&d.error?d.error:'Chat-Fehler'),'warning');
 });
+socket.on('virginie_forecast', d=>{
+  if(!d) return;
+  _virginieForecastFeed.unshift(d);
+  if(_virginieForecastFeed.length > 25) _virginieForecastFeed.length = 25;
+  _renderVirginieForecastFeed();
+});
 
 
 // ── GitHub Updater ───────────────────────────────────────────────────
@@ -1771,6 +1895,7 @@ let _gasInterval = setInterval(updateGasFees, 120000);
 window.addEventListener('beforeunload', () => {
   clearInterval(_gasInterval);
   _gasInterval = null;
+  if(_virginieEdgeTimer){ clearInterval(_virginieEdgeTimer); _virginieEdgeTimer = null; }
 });
 
 
@@ -2985,6 +3110,8 @@ function mexUpdate(data) {
     const wr = ex.win_rate || 0;
     const pnl = ex.total_pnl || 0;
     const err = ex.error || '';
+    const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
+    const statusDetail = String(ex.status_detail || '');
     const positions = ex.positions || [];
 
     const statusDot = running
@@ -3008,7 +3135,7 @@ function mexUpdate(data) {
           <span style="font-size:20px">${MEX_LOGOS[id]}</span>
           <div>
             <div style="font-weight:800;font-size:14px;color:#e8f4ff">${label}</div>
-            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${ex.markets_count||0} Märkte · ${ex.last_scan||'—'}</div>
+            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${marketCount} Märkte · ${ex.last_scan||'—'}${statusDetail ? ` · ${esc(statusDetail)}` : ''}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">

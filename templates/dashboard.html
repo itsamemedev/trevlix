@@ -900,24 +900,48 @@
             <button class="btn btn-purple" style="padding:10px;font-size:11px" onclick="forceGenetic()"><span data-i18n="btn_genetic">Genetik</span></button>
             <button class="btn btn-red"    style="padding:10px;font-size:11px" onclick="resetAI()"><span data-i18n="btn_reset_ai">Reset</span></button>
           </div>
-          <div style="margin-top:12px;border:1px solid rgba(255,180,0,.14);border-radius:10px;background:radial-gradient(circle at 20% 20%,rgba(255,180,0,.12),rgba(6,8,14,.8));padding:10px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-              <div style="font-size:12px;font-weight:700;color:#f4d18a">3D VIRGINIE Live View</div>
-              <div style="font-size:10px;color:#8a7a5a;font-family:var(--mono)" id="ai3dMeta">WF: — · Pred: —</div>
+          <div class="ai-live-nexus">
+            <div class="ai-live-grid"></div>
+            <div class="ai-live-header">
+              <div>
+                <div class="ai-live-title">3D VIRGINIE Live View</div>
+                <div class="ai-live-subtitle">Neural Synapse Stream · Quantum Overlay</div>
+              </div>
+              <div class="ai-live-meta" id="ai3dMeta">WF: — · Pred: —</div>
             </div>
-            <div id="ai3dCollab" style="font-size:10px;color:#c7b083;margin-bottom:8px">
+            <div id="ai3dCollab" class="ai-live-collab">
               🤖 VIRGINIE-Kollaboration: Initialisiere…
             </div>
             <div id="ai3dAgents" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
-            <canvas id="ai3dCanvas" width="560" height="240" style="width:100%;height:240px;border-radius:8px;background:linear-gradient(180deg,rgba(7,10,18,.85),rgba(3,5,9,.95));display:block"></canvas>
-            <div id="ai3dChatWrap" style="margin-top:10px;border:1px solid rgba(212,175,55,.22);border-radius:8px;background:rgba(2,6,12,.6);padding:8px">
-              <div style="font-size:11px;color:#e8d3a5;font-weight:700;margin-bottom:6px">💬 Chat mit VIRGINIE</div>
+            <canvas id="ai3dCanvas" width="560" height="240" class="ai-live-canvas"></canvas>
+            <div id="ai3dChatWrap" class="ai-live-chat-wrap">
+              <div class="ai-live-chat-head">
+                <div class="ai-live-chat-title">💬 Chat mit VIRGINIE</div>
+                <div style="display:flex;gap:6px">
+                  <button id="ai3dChatPlanBtn" class="btn btn-purple" style="padding:5px 8px;font-size:9px">Plan</button>
+                  <button id="ai3dChatRefreshBtn" class="btn btn-info" style="padding:5px 8px;font-size:9px">Sync</button>
+                  <button id="ai3dChatClearBtn" class="btn btn-red" style="padding:5px 8px;font-size:9px">Clear</button>
+                </div>
+              </div>
               <div id="ai3dChatLog" style="max-height:170px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;margin-bottom:8px"></div>
               <div style="display:flex;gap:6px">
                 <input id="ai3dChatInput" type="text" maxlength="2000" placeholder="Frage zu Strategie, Risiko oder Setup…"
-                  style="flex:1;background:rgba(6,12,22,.9);border:1px solid rgba(212,175,55,.2);color:#f5efe1;border-radius:7px;padding:8px 10px;font-size:11px">
+                  class="ai-live-chat-input">
                 <button id="ai3dChatSendBtn" class="btn btn-info" style="padding:8px 12px;font-size:10px">Senden</button>
               </div>
+            </div>
+            <div class="ai-live-edge">
+              <div class="ai-live-edge-title">⚡ VIRGINIE Edge Profile</div>
+              <div class="ai-live-edge-grid">
+                <div class="kv"><span class="kv-label">Edge Score</span><span class="kv-value" id="vEdgeScore">—</span></div>
+                <div class="kv"><span class="kv-label">Tier</span><span class="kv-value" id="vEdgeTier">—</span></div>
+                <div class="kv"><span class="kv-label">Urgency</span><span class="kv-value" id="vEdgeUrgency">—</span></div>
+                <div class="kv"><span class="kv-label">Signature</span><span class="kv-value" id="vEdgeSignature">—</span></div>
+              </div>
+              <div class="ai-live-edge-kpi" id="vEdgeKpi">Forecast KPI: —</div>
+              <div class="ai-live-edge-kpi" id="vEdgeQuality">Forecast Quality: —</div>
+              <div class="ai-live-edge-tiers" id="vEdgeTierStats"></div>
+              <div id="vEdgeFeed" class="ai-live-edge-feed"></div>
             </div>
           </div>
         </div>
