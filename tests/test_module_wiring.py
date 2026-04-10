@@ -195,3 +195,9 @@ def test_sanitize_exchange_switch_interval_sec_bounds():
     assert trading_ops._sanitize_exchange_switch_interval_sec(1, 20.0) == 5.0
     assert trading_ops._sanitize_exchange_switch_interval_sec(99999, 20.0) == 3600.0
     assert trading_ops._sanitize_exchange_switch_interval_sec("45", 20.0) == 45.0
+
+
+def test_sanitize_runtime_exchange_candidates_normalizes_and_dedupes():
+    values = ["BINANCE", "bybit", "invalid-exchange", " binance "]
+    out = trading_ops._sanitize_runtime_exchange_candidates(values)
+    assert out == ["binance", "bybit"]

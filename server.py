@@ -556,8 +556,19 @@ def _normalize_trade_mode(value: Any, default: str = "paper") -> str:
     return mode if mode in {"paper", "live"} else default
 
 
+def _sanitize_exchange_name_list(values: Any) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    cleaned: list[str] = []
+    for item in values:
+        name = normalize_exchange_name(item)
+        if name:
+            cleaned.append(name)
+    return sorted(set(cleaned))
+
+
 def _set_runtime_running_config() -> None:
-    CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
+    CONFIG["exchange_running_runtime"] = _sanitize_exchange_name_list(_exchange_runtime_running)
 
 
 def _sanitize_exchange_switch_interval(value: Any, default: int = 20) -> int:
@@ -1046,8 +1057,9 @@ def api_create_token():
 def api_user_settings_get():
     """Gibt die User-Settings aus der DB zurück."""
     settings = db.get_user_settings(request.user_id) or {}
-    settings["exchange_switch_interval_sec"] = safe_int(
-        settings.get("exchange_switch_interval_sec", CONFIG.get("exchange_switch_interval_sec", 20)), 20
+    settings["exchange_switch_interval_sec"] = _sanitize_exchange_switch_interval(
+        settings.get("exchange_switch_interval_sec", CONFIG.get("exchange_switch_interval_sec", 20)),
+        safe_int(CONFIG.get("exchange_switch_interval_sec", 20), 20),
     )
     settings["paper_trading"] = CONFIG.get("paper_trading", True)
     settings["trade_mode"] = "paper" if CONFIG.get("paper_trading", True) else "live"

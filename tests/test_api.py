@@ -676,6 +676,36 @@ class TestExchangeControlSocketRuntime:
             server._exchange_runtime_running = old_running
             server._exchange_runtime_modes = old_modes
 
+    def test_start_exchange_normalizes_mode_input(self, app_client, monkeypatch):
+        import server
+
+        monkeypatch.setattr(server, "_ws_admin_required", lambda: True)
+        monkeypatch.setattr(server, "emit", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(server, "_pin_user_exchange", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(server, "_save_user_exchange_mode", lambda *_args, **_kwargs: None)
+        monkeypatch.setenv("LIVE_TRADING_ENABLED", "true")
+
+        old_map = server.CONFIG.get("exchange_modes_runtime")
+        old_running_cfg = server.CONFIG.get("exchange_running_runtime")
+        old_running = set(server._exchange_runtime_running)
+        old_modes = dict(server._exchange_runtime_modes)
+
+        server.CONFIG["exchange_modes_runtime"] = {}
+        server.CONFIG["exchange_running_runtime"] = []
+        server._exchange_runtime_running = set()
+        server._exchange_runtime_modes = {}
+        server.state.running = True
+
+        try:
+            with app_client.application.test_request_context("/socket", method="POST"):
+                server.on_start_exchange({"exchange": "binance", "mode": " LIVE "})
+            assert server._exchange_runtime_modes["binance"] == "live"
+        finally:
+            server.CONFIG["exchange_modes_runtime"] = old_map
+            server.CONFIG["exchange_running_runtime"] = old_running_cfg
+            server._exchange_runtime_running = old_running
+            server._exchange_runtime_modes = old_modes
+
 
 class TestPasswordPolicy:
     """Tests für Password-Policy (Verbesserung #4)."""
@@ -732,6 +762,20 @@ class TestUserSettingsScope:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["exchange_switch_interval_sec"] == 30
+
+    def test_user_settings_get_clamps_invalid_switch_interval(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        monkeypatch.setitem(server.CONFIG, "exchange_switch_interval_sec", 20)
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {"exchange_switch_interval_sec": 99999})
+
+        resp = app_client.get("/api/v1/user/settings")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["exchange_switch_interval_sec"] == 3600
 
     def test_non_admin_settings_do_not_override_runtime_mode(self, app_client, monkeypatch):
         import server

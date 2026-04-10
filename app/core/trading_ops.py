@@ -108,6 +108,17 @@ def _sanitize_exchange_switch_interval_sec(value: Any, default: float = 20.0) ->
     return min(3600.0, max(5.0, safe_float(value, default)))
 
 
+def _sanitize_runtime_exchange_candidates(values: Any) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    normalized: list[str] = []
+    for item in values:
+        ex_name = normalize_exchange_name(str(item))
+        if ex_name:
+            normalized.append(ex_name)
+    return sorted(set(normalized))
+
+
 def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
     """Return latest VIRGINIE forecast events (newest first)."""
     lim = max(1, min(int(limit or 50), 200))
@@ -1636,21 +1647,15 @@ def bot_loop():
                 )
                 next_exchange_refresh_ts = now_ts + 5.0
                 runtime_running_cfg = CONFIG.get("exchange_running_runtime")
-                refreshed_exchanges: list[str] = []
-                if isinstance(runtime_running_cfg, (list, tuple, set)):
-                    for ex_item in runtime_running_cfg:
-                        normalized = normalize_exchange_name(str(ex_item))
-                        if normalized:
-                            refreshed_exchanges.append(normalized)
+                refreshed_exchanges: list[str] = _sanitize_runtime_exchange_candidates(runtime_running_cfg)
                 if not refreshed_exchanges:
                     admin_uid = _resolve_admin_user_id()
                     if admin_uid and db and hasattr(db, "get_enabled_exchanges"):
                         enabled_rows = db.get_enabled_exchanges(admin_uid)
-                        for row in enabled_rows:
-                            normalized = normalize_exchange_name(str(row.get("exchange", "")))
-                            if normalized:
-                                refreshed_exchanges.append(normalized)
-                enabled_exchanges = sorted(set(refreshed_exchanges))
+                        refreshed_exchanges = _sanitize_runtime_exchange_candidates(
+                            [row.get("exchange", "") for row in enabled_rows]
+                        )
+                enabled_exchanges = refreshed_exchanges
                 if enabled_exchanges:
                     ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
                     rr_idx %= len(enabled_exchanges)
