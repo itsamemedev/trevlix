@@ -528,7 +528,11 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
     score_pct = ai_score * 100.0
     bias = "bullish" if score_pct >= 60 else ("bearish" if score_pct <= 40 else "neutral")
     rec_action = "BUY" if allowed and bias != "bearish" else ("WAIT" if allowed else "BLOCK")
-    msg = f"VIRGINIE {status}: {symbol} | Score {score_pct:.1f}% | Bias {bias} | Action {rec_action}"
+    tier = "S" if score_pct >= 85 else ("A" if score_pct >= 70 else ("B" if score_pct >= 55 else "C"))
+    msg = (
+        f"VIRGINIE {status}: {symbol} | Score {score_pct:.1f}% | Tier {tier} | "
+        f"Bias {bias} | Action {rec_action}"
+    )
     detail = ai_reason[:220]
 
     try:
@@ -544,6 +548,7 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
                     "symbol": symbol,
                     "allowed": bool(allowed),
                     "score_pct": round(score_pct, 2),
+                    "tier": tier,
                     "bias": bias,
                     "recommended_action": rec_action,
                     "reason": detail,
@@ -556,7 +561,7 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         if allowed:
             discord.signal_opportunity(symbol, "buy", float(ai_score), 0.0, ai_score=ai_score * 100)
             telegram.send(
-                f"<b>VIRGINIE Forecast</b>\n{symbol} · {rec_action}\nScore: {score_pct:.1f}% · Bias: {bias}"
+                f"<b>VIRGINIE Forecast</b>\n{symbol} · {rec_action}\nScore: {score_pct:.1f}% · Tier {tier} · Bias: {bias}"
             )
         else:
             discord.error(f"{symbol}: {detail}")

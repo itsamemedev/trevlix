@@ -339,6 +339,17 @@ class TestVirginieChatAPI:
         assert isinstance(data["actions"], list)
         assert data["actions"]
 
+    def test_chat_edge_profile_endpoint_returns_signature(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/edge-profile")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "edge_score" in data
+        assert "tier" in data
+        assert "signature" in data
+
     def test_chat_clear_endpoint_resets_messages(self, app_client):
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1
@@ -382,6 +393,16 @@ class TestVirginieChatAPI:
         data = resp.get_json()
         assistant = str(data.get("assistant", {}).get("content", ""))
         assert "CPU-Quickcheck" in assistant
+
+    def test_chat_edge_command_returns_edge_profile(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/edge"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "VIRGINIE Edge:" in assistant
 
 
 class TestExchangesSnapshotAPI:

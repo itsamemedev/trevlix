@@ -684,6 +684,35 @@ def _virginie_runtime_advice() -> dict[str, Any]:
     }
 
 
+def _virginie_edge_profile() -> dict[str, Any]:
+    """Kompakter VIRGINIE-Edge-Score für Trading/Forecast-Workflows."""
+    status = _virginie_runtime_status()
+    advice = _virginie_runtime_advice()
+    snap = state.snapshot() if state else {}
+    wf = float(advice.get("wf_accuracy", 0) or 0)
+    drift = float(advice.get("drift_score", 0) or 0)
+    autonomy = float(status.get("autonomy_weight", 0.7) or 0.7)
+    running = bool(snap.get("running", False))
+    open_trades = int(snap.get("open_trades", 0) or 0)
+    risk_load = min(100.0, open_trades * 8.0)
+    edge_score = max(0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load))
+    tier = "S" if edge_score >= 85 else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
+    urgency = "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    signature = uuid.uuid5(
+        uuid.NAMESPACE_DNS,
+        f"{status.get('assistant_version','0')}-{snap.get('exchange','na')}-{tier}-{int(edge_score)}-{int(drift*100)}",
+    ).hex[:12]
+    return {
+        "edge_score": round(edge_score, 2),
+        "tier": tier,
+        "urgency": urgency,
+        "running": running,
+        "exchange": snap.get("exchange", "unbekannt"),
+        "open_trades": open_trades,
+        "signature": signature,
+    }
+
+
 def _virginie_cpu_fast_reply(prompt: str) -> str | None:
     """Ultraschnelle CPU-basierte VIRGINIE-Antwort ohne externen LLM-Call."""
     p = str(prompt or "").strip().lower()
@@ -748,7 +777,8 @@ def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
     if cmd in {"/help", "help"}:
         return (
             "VIRGINIE Kommandos: /status (Live-Status), /review (letztes Self-Review), "
-            "/help (diese Hilfe). Du kannst auch normale Fragen zu Risiko, Setup und Strategie stellen."
+            "/plan (Aktionsplan), /edge (Edge-Profil), /help (diese Hilfe). "
+            "Du kannst auch normale Fragen zu Risiko, Setup und Strategie stellen."
         )
     if cmd in {"/status", "status"}:
         agents = status.get("assistant_agents", {})
@@ -770,6 +800,12 @@ def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
             for i, a in enumerate(advice.get("actions", []))
         ]
         return "VIRGINIE Aktionsplan:\n" + ("\n".join(action_lines) if action_lines else "Keine Aktionen.")
+    if cmd in {"/edge", "edge"}:
+        edge = _virginie_edge_profile()
+        return (
+            f"VIRGINIE Edge: {edge.get('edge_score', 0)} / 100 | Tier {edge.get('tier')} | "
+            f"Urgency {edge.get('urgency')} | Exchange {edge.get('exchange')} | Sig {edge.get('signature')}"
+        )
     if bool(CONFIG.get("virginie_cpu_fast_chat", True)):
         fast_reply = _virginie_cpu_fast_reply(prompt)
         if fast_reply:
@@ -1272,6 +1308,13 @@ def api_virginie_status():
 def api_virginie_advice():
     """Liefert priorisierte VIRGINIE Handlungsempfehlungen."""
     return jsonify(_virginie_runtime_advice())
+
+
+@app.route("/api/v1/virginie/edge-profile")
+@api_auth_required
+def api_virginie_edge_profile():
+    """Liefert den VIRGINIE Edge-Score (Trading/Forecast Profil)."""
+    return jsonify(_virginie_edge_profile())
 
 
 @app.route("/api/v1/virginie/chat", methods=["POST"])
