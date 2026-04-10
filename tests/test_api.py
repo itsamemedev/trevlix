@@ -327,6 +327,17 @@ class TestVirginieChatAPI:
         assert "primary_control" in data
         assert "assistant_agents" in data
 
+    def test_chat_advice_endpoint_returns_actions(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/advice")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "actions" in data
+        assert isinstance(data["actions"], list)
+        assert data["actions"]
+
     def test_chat_clear_endpoint_resets_messages(self, app_client):
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1
@@ -350,6 +361,16 @@ class TestVirginieChatAPI:
         assistant = str(data.get("assistant", {}).get("content", ""))
         assert "Status:" in assistant
         assert "Agents=" in assistant
+
+    def test_chat_plan_command_returns_action_plan(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/plan"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "Aktionsplan" in assistant
 
 
 class TestExchangesSnapshotAPI:

@@ -618,6 +618,72 @@ def _virginie_runtime_status() -> dict[str, Any]:
     }
 
 
+def _virginie_runtime_advice() -> dict[str, Any]:
+    """Leitet konkrete nächste Schritte aus Runtime-Status ab."""
+    status = _virginie_runtime_status()
+    ai = ai_engine.to_dict() if ai_engine else {}
+    wf = float(ai.get("wf_accuracy", 0) or 0)
+    drift = float(ai.get("drift_score", 0) or 0)
+    trained = bool(ai.get("is_trained", False))
+    guardrail_min_score = float(status.get("min_score", 0) or 0)
+    actions: list[dict[str, str]] = []
+    if not status.get("enabled", True):
+        actions.append(
+            {
+                "priority": "high",
+                "title": "VIRGINIE aktivieren",
+                "detail": "Setze virginie_enabled=true, damit Guardrails und Agenten-Workflow aktiv sind.",
+            }
+        )
+    if not trained:
+        actions.append(
+            {
+                "priority": "high",
+                "title": "Training starten",
+                "detail": "Das Modell ist noch nicht trainiert. Starte ein Initial-Training im Admin-Bereich.",
+            }
+        )
+    if wf < 55:
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Qualität stabilisieren",
+                "detail": "WF-Accuracy ist niedrig. Prüfe Feature-Importance und erhöhe Trainingsdaten.",
+            }
+        )
+    if drift >= 0.7:
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Drift reduzieren",
+                "detail": "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren und Risk-Limits prüfen.",
+            }
+        )
+    if guardrail_min_score < 0.5:
+        actions.append(
+            {
+                "priority": "low",
+                "title": "Min-Score anheben",
+                "detail": "Für konservativeres Verhalten virginie_min_score leicht erhöhen (z.B. +0.05).",
+            }
+        )
+    if not actions:
+        actions.append(
+            {
+                "priority": "low",
+                "title": "System stabil",
+                "detail": "VIRGINIE läuft stabil. Fokus auf Monitoring und regelmäßiges Review.",
+            }
+        )
+    return {
+        "assistant": status.get("assistant_name", "VIRGINIE"),
+        "version": status.get("assistant_version", "0.0.0"),
+        "wf_accuracy": wf,
+        "drift_score": drift,
+        "actions": actions[:5],
+    }
+
+
 def _build_virginie_chat_context(user_id: int) -> str:
     ai = ai_engine.to_dict() if ai_engine else {}
     snap = state.snapshot() if state else {}
@@ -672,6 +738,13 @@ def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
         review = status.get("assistant_review", {})
         summary = str(review.get("summary", "")).strip() if isinstance(review, dict) else ""
         return summary or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
+    if cmd in {"/plan", "plan", "/diagnose", "diagnose"}:
+        advice = _virginie_runtime_advice()
+        action_lines = [
+            f"{i+1}. [{a.get('priority','low')}] {a.get('title','Schritt')} – {a.get('detail','')}"
+            for i, a in enumerate(advice.get("actions", []))
+        ]
+        return "VIRGINIE Aktionsplan:\n" + ("\n".join(action_lines) if action_lines else "Keine Aktionen.")
     context = _build_virginie_chat_context(user_id)
     try:
         reply = knowledge_base.query_llm_with_tools(prompt, context)
@@ -1162,6 +1235,13 @@ def api_virginie_chat_history():
 def api_virginie_status():
     """Liefert Runtime-Zustand und Guardrails von VIRGINIE."""
     return jsonify(_virginie_runtime_status())
+
+
+@app.route("/api/v1/virginie/advice")
+@api_auth_required
+def api_virginie_advice():
+    """Liefert priorisierte VIRGINIE Handlungsempfehlungen."""
+    return jsonify(_virginie_runtime_advice())
 
 
 @app.route("/api/v1/virginie/chat", methods=["POST"])

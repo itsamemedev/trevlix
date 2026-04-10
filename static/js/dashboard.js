@@ -657,13 +657,22 @@ function sendVirginieChat(){
     });
 }
 
+function sendVirginiePlanRequest(){
+  const input=document.getElementById('ai3dChatInput');
+  if(!input || _virginieChat.sending) return;
+  input.value='/plan';
+  sendVirginieChat();
+}
+
 function initVirginieChat(){
   const btn=document.getElementById('ai3dChatSendBtn');
   const input=document.getElementById('ai3dChatInput');
+  const planBtn=document.getElementById('ai3dChatPlanBtn');
   const refreshBtn=document.getElementById('ai3dChatRefreshBtn');
   const clearBtn=document.getElementById('ai3dChatClearBtn');
   if(btn) btn.addEventListener('click', sendVirginieChat);
   if(input) input.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); sendVirginieChat(); }});
+  if(planBtn) planBtn.addEventListener('click', sendVirginiePlanRequest);
   if(refreshBtn) refreshBtn.addEventListener('click', ()=>refreshVirginieChatHistory(true));
   if(clearBtn) clearBtn.addEventListener('click', clearVirginieChatHistory);
   loadVirginieChatHistory();
