@@ -170,3 +170,22 @@ def test_resolve_admin_user_id_returns_none_without_db():
 
     assert resolved_first is None
     assert resolved_second is None
+
+
+def test_invalidate_admin_user_id_cache_resets_state():
+    old_cache_id = trading_ops._ADMIN_USER_ID_CACHE
+    old_cache_ts = trading_ops._ADMIN_USER_ID_CACHE_TS
+    old_cache_valid = trading_ops._ADMIN_USER_ID_CACHE_VALID
+    trading_ops._ADMIN_USER_ID_CACHE = 99
+    trading_ops._ADMIN_USER_ID_CACHE_TS = 123.0
+    trading_ops._ADMIN_USER_ID_CACHE_VALID = True
+
+    try:
+        trading_ops._invalidate_admin_user_id_cache()
+        assert trading_ops._ADMIN_USER_ID_CACHE is None
+        assert trading_ops._ADMIN_USER_ID_CACHE_TS == 0.0
+        assert trading_ops._ADMIN_USER_ID_CACHE_VALID is False
+    finally:
+        trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
+        trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
+        trading_ops._ADMIN_USER_ID_CACHE_VALID = old_cache_valid

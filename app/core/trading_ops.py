@@ -198,6 +198,14 @@ def _resolve_admin_user_id(cache_ttl_sec: float = 60.0) -> int | None:
     return _ADMIN_USER_ID_CACHE
 
 
+def _invalidate_admin_user_id_cache() -> None:
+    """Reset cached admin user id resolution state."""
+    global _ADMIN_USER_ID_CACHE, _ADMIN_USER_ID_CACHE_TS, _ADMIN_USER_ID_CACHE_VALID
+    _ADMIN_USER_ID_CACHE = None
+    _ADMIN_USER_ID_CACHE_TS = 0.0
+    _ADMIN_USER_ID_CACHE_VALID = False
+
+
 def init_trading_ops(
     *,
     config: dict,
@@ -264,6 +272,7 @@ def init_trading_ops(
     CONFIG = config
     log = logger
     db = db_ref
+    _invalidate_admin_user_id_cache()
     state = state_ref
     discord = discord_ref
     emit_event = emit_event_fn
@@ -1617,24 +1626,21 @@ def bot_loop():
         try:
             if now_ts >= next_exchange_refresh_ts:
                 admin_uid = _resolve_admin_user_id()
-                enabled_rows = (
-                    db.get_enabled_exchanges(admin_uid)
-                    if admin_uid and db and hasattr(db, "get_enabled_exchanges")
-                    else []
-                )
-                enabled_exchanges = []
-                for row in enabled_rows:
-                    normalized = normalize_exchange_name(str(row.get("exchange", "")))
-                    if normalized:
-                        enabled_exchanges.append(normalized)
-                enabled_exchanges = sorted(set(enabled_exchanges))
                 next_exchange_refresh_ts = now_ts + 5.0
-                if enabled_exchanges:
-                    ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
-                    rr_idx %= len(enabled_exchanges)
-                else:
-                    ex_cache.clear()
-                    rr_idx = 0
+                if admin_uid and db and hasattr(db, "get_enabled_exchanges"):
+                    enabled_rows = db.get_enabled_exchanges(admin_uid)
+                    refreshed_exchanges: list[str] = []
+                    for row in enabled_rows:
+                        normalized = normalize_exchange_name(str(row.get("exchange", "")))
+                        if normalized:
+                            refreshed_exchanges.append(normalized)
+                    enabled_exchanges = sorted(set(refreshed_exchanges))
+                    if enabled_exchanges:
+                        ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
+                        rr_idx %= len(enabled_exchanges)
+                    else:
+                        ex_cache.clear()
+                        rr_idx = 0
             if enabled_exchanges:
                 target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
                 rr_idx = (rr_idx + 1) % len(enabled_exchanges)
