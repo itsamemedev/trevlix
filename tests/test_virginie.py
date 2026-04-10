@@ -6,6 +6,7 @@ from services.virginie import (
     ActionResult,
     AgentResult,
     AgentTask,
+    LearningExample,
     LLMPerformanceTracker,
     LLMResult,
     Opportunity,
@@ -166,6 +167,42 @@ def test_virginie_core_routes_llm_by_recorded_rewards():
         core.learn_from_llm(LLMResult(model="llm-deep", task_type="market_context", reward=0.9))
 
     assert core.recommend_llm("market_context") == "llm-deep"
+
+
+def test_virginie_core_examples_can_improve_from_feedback():
+    core = VirginieCore()
+    core.add_or_update_example(
+        LearningExample(
+            example_id="ex-fast-breakout",
+            task_type="market_context",
+            content="Momentum breakout playbook with strict stop-loss.",
+            quality_score=0.4,
+        )
+    )
+    core.add_or_update_example(
+        LearningExample(
+            example_id="ex-range-revert",
+            task_type="market_context",
+            content="Range mean-reversion playbook with conservative sizing.",
+            quality_score=0.6,
+        )
+    )
+
+    core.learn_from_example_result("ex-fast-breakout", 1.0)
+    core.learn_from_example_result("ex-fast-breakout", 0.9)
+    core.learn_from_example_result("ex-range-revert", 0.2)
+
+    top = core.top_examples("market_context", limit=2)
+    assert [item.example_id for item in top] == ["ex-fast-breakout", "ex-range-revert"]
+    assert top[0].quality_score > top[1].quality_score
+    snapshot = core.example_snapshot()
+    assert snapshot["ex-fast-breakout"]["count"] == 2.0
+
+
+def test_virginie_core_example_feedback_requires_existing_example():
+    core = VirginieCore()
+    with pytest.raises(KeyError):
+        core.learn_from_example_result("missing-example", 0.8)
 
 
 def test_virginie_orchestrator_routes_and_executes_default_agents():
