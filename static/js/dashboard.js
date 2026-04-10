@@ -779,6 +779,10 @@ function updateAI3DFromAI(ai){
   _ai3dState.agentNames = Array.isArray((ai.assistant_agents||{}).agent_names) ? (ai.assistant_agents||{}).agent_names : [];
   const m=document.getElementById('ai3dMeta');
   const assistantAgents = ai.assistant_agents || {};
+  const assistantExamples = ai.assistant_examples || {};
+  const loadedExamples = Number(assistantExamples.loaded||0);
+  const expectedExamples = Number(assistantExamples.expected||0);
+  const examplesOk = Boolean(assistantExamples.ok);
   if(m) m.textContent = assistantAgents.registered_agents
     ? `VIRGINIE Agents: ${assistantAgents.registered_agents} · Coverage: ${assistantAgents.coverage_pct||0}%`
     : `WF: ${_ai3dState.wf.toFixed(1)}% · Pred: ${_ai3dState.preds}`;
@@ -791,9 +795,12 @@ function updateAI3DFromAI(ai){
     const primary = Boolean(ai.assistant_primary_control);
     const autonomyW = Number(ai.assistant_autonomy_weight||0);
     const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
+    const examplesStatus = examplesOk
+      ? `Examples ${loadedExamples}/${expectedExamples||loadedExamples}`
+      : `⚠️ Examples ${loadedExamples}/${expectedExamples||loadedExamples}`;
     collabEl.textContent = active
-      ? `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
-      : `🤖 VIRGINIE wartet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+      ? `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
+      : `🤖 VIRGINIE wartet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
   }
   const agentsEl = document.getElementById('ai3dAgents');
   if(agentsEl){

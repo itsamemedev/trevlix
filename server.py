@@ -3327,6 +3327,7 @@ def _collect_system_analytics() -> dict[str, Any]:
             "version": ai_dict.get("training_version", 0),
             "assistant_name": ai_dict.get("assistant_name", "AI"),
             "assistant_version": ai_dict.get("assistant_version", "0.0.0"),
+            "assistant_examples": ai_dict.get("assistant_examples", {}),
             "assistant_agents": ai_dict.get("assistant_agents", {}),
             "assistant_review": ai_dict.get("assistant_review", {}),
             "assistant_primary_control": ai_dict.get("assistant_primary_control", False),

@@ -436,6 +436,10 @@ class TestVirginieChatAPI:
         ai = data.get("ai", {})
         assert "assistant_primary_control" in ai
         assert "assistant_autonomy_weight" in ai
+        assert "assistant_examples" in ai
+        assert "ok" in ai["assistant_examples"]
+        assert "loaded" in ai["assistant_examples"]
+        assert "expected" in ai["assistant_examples"]
         assert "allowed_count" in ai
         assert "blocked_count" in ai
 

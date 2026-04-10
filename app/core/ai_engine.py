@@ -22,6 +22,7 @@ from services.virginie import (
     VirginieGuardrails,
     VirginieOrchestrator,
     build_default_project_agents,
+    build_startup_examples,
 )
 
 # ---------------------------------------------------------------------------
@@ -286,6 +287,24 @@ class AIEngine:
                 max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 1000.0)),
             )
         )
+        virginie_examples = self.virginie.example_snapshot()
+        loaded_ids = sorted(virginie_examples.keys())
+        expected_ids = sorted(item.example_id for item in build_startup_examples())
+        missing_ids = [item for item in expected_ids if item not in virginie_examples]
+        if missing_ids:
+            log.warning(
+                "⚠️ VIRGINIE Startup-Examples unvollständig geladen: geladen=%s erwartet=%s fehlend=%s",
+                len(loaded_ids),
+                len(expected_ids),
+                ", ".join(missing_ids),
+            )
+        else:
+            log.info(
+                "✅ VIRGINIE Startup-Examples geladen: %s/%s (%s)",
+                len(loaded_ids),
+                len(expected_ids),
+                ", ".join(loaded_ids) or "keine",
+            )
         self.virginie_orchestrator = VirginieOrchestrator()
         for _agent in build_default_project_agents():
             self.virginie_orchestrator.register_agent(_agent)
@@ -1399,6 +1418,10 @@ class AIEngine:
             }
             for nm in STRATEGY_NAMES
         ]
+        example_snapshot = self.virginie.example_snapshot()
+        example_ids = sorted(example_snapshot.keys())
+        expected_example_ids = sorted(item.example_id for item in build_startup_examples())
+        missing_example_ids = [item for item in expected_example_ids if item not in example_snapshot]
         return {
             "enabled": ML_AVAILABLE,
             "is_trained": self.is_trained,
@@ -1427,6 +1450,13 @@ class AIEngine:
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
             "assistant_name": self.virginie.identity.name,
             "assistant_version": self.virginie.current_version(),
+            "assistant_examples": {
+                "loaded": len(example_ids),
+                "expected": len(expected_example_ids),
+                "ok": len(missing_example_ids) == 0,
+                "ids": example_ids,
+                "missing_ids": missing_example_ids,
+            },
             "assistant_agents": self.virginie_orchestrator.status(),
             "assistant_review": self.virginie.review_status(),
             "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", False)),
