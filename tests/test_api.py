@@ -426,6 +426,19 @@ class TestVirginieChatAPI:
         assistant = str(data.get("assistant", {}).get("content", ""))
         assert "VIRGINIE Edge:" in assistant
 
+    def test_state_ai_payload_contains_live_view_virginie_fields(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        ai = data.get("ai", {})
+        assert "assistant_primary_control" in ai
+        assert "assistant_autonomy_weight" in ai
+        assert "allowed_count" in ai
+        assert "blocked_count" in ai
+
 
 class TestExchangesSnapshotAPI:
     """Tests für Multi-Exchange Snapshot inkl. Märkte/Details im Dashboard."""
