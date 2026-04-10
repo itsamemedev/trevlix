@@ -525,7 +525,10 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         return
 
     status = "✅ freigegeben" if allowed else "🚫 blockiert"
-    msg = f"VIRGINIE {status}: {symbol} | Score {ai_score * 100:.1f}%"
+    score_pct = ai_score * 100.0
+    bias = "bullish" if score_pct >= 60 else ("bearish" if score_pct <= 40 else "neutral")
+    rec_action = "BUY" if allowed and bias != "bearish" else ("WAIT" if allowed else "BLOCK")
+    msg = f"VIRGINIE {status}: {symbol} | Score {score_pct:.1f}% | Bias {bias} | Action {rec_action}"
     detail = ai_reason[:220]
 
     try:
@@ -534,8 +537,27 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         pass
 
     try:
+        if emit_event:
+            emit_event(
+                "virginie_forecast",
+                {
+                    "symbol": symbol,
+                    "allowed": bool(allowed),
+                    "score_pct": round(score_pct, 2),
+                    "bias": bias,
+                    "recommended_action": rec_action,
+                    "reason": detail,
+                },
+            )
+    except Exception:
+        pass
+
+    try:
         if allowed:
             discord.signal_opportunity(symbol, "buy", float(ai_score), 0.0, ai_score=ai_score * 100)
+            telegram.send(
+                f"<b>VIRGINIE Forecast</b>\n{symbol} · {rec_action}\nScore: {score_pct:.1f}% · Bias: {bias}"
+            )
         else:
             discord.error(f"{symbol}: {detail}")
             telegram.error(f"{symbol}: {detail}")
