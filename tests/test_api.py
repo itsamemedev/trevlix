@@ -608,6 +608,43 @@ class TestExchangeControlSocketRuntime:
             server._exchange_runtime_running = old_running
             server._exchange_runtime_modes = old_modes
 
+    def test_stop_exchange_switches_active_exchange_when_possible(self, app_client, monkeypatch):
+        import server
+
+        emits = []
+        monkeypatch.setattr(server, "_ws_admin_required", lambda: True)
+        monkeypatch.setattr(server, "emit", lambda event, payload=None, **kwargs: emits.append((event, payload, kwargs)))
+
+        old_map = server.CONFIG.get("exchange_modes_runtime")
+        old_running_cfg = server.CONFIG.get("exchange_running_runtime")
+        old_running = set(server._exchange_runtime_running)
+        old_modes = dict(server._exchange_runtime_modes)
+        old_exchange = server.CONFIG.get("exchange")
+        old_paper = server.CONFIG.get("paper_trading")
+
+        server.CONFIG["exchange"] = "binance"
+        server.CONFIG["paper_trading"] = False
+        server.CONFIG["exchange_modes_runtime"] = {"binance": "live", "bybit": "paper"}
+        server.CONFIG["exchange_running_runtime"] = ["binance", "bybit"]
+        server._exchange_runtime_running = {"binance", "bybit"}
+        server._exchange_runtime_modes = {"binance": "live", "bybit": "paper"}
+        server.state._exchange_reset = False
+
+        try:
+            with app_client.application.test_request_context("/socket", method="POST"):
+                server.on_stop_exchange({"exchange": "binance"})
+            assert server.CONFIG["exchange"] == "bybit"
+            assert server.CONFIG["paper_trading"] is True
+            assert server.state._exchange_reset is True
+            assert any(event == "exchange_update" and payload["status"] == "stopped" for event, payload, _ in emits)
+        finally:
+            server.CONFIG["exchange_modes_runtime"] = old_map
+            server.CONFIG["exchange_running_runtime"] = old_running_cfg
+            server._exchange_runtime_running = old_running
+            server._exchange_runtime_modes = old_modes
+            server.CONFIG["exchange"] = old_exchange
+            server.CONFIG["paper_trading"] = old_paper
+
 
 class TestPasswordPolicy:
     """Tests für Password-Policy (Verbesserung #4)."""

@@ -3026,6 +3026,8 @@ def on_stop_exchange(data):
             {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
         )
         return
+    next_exchange = ""
+    next_mode = "paper"
     with _exchange_runtime_lock:
         _exchange_runtime_running.discard(ex_name)
         _exchange_runtime_modes.pop(ex_name, None)
@@ -3033,6 +3035,18 @@ def on_stop_exchange(data):
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if isinstance(runtime_modes, dict):
             runtime_modes.pop(ex_name, None)
+        if _exchange_runtime_running:
+            next_exchange = sorted(_exchange_runtime_running)[0]
+            next_mode = str(_exchange_runtime_modes.get(next_exchange, "paper")).lower()
+    current_exchange = normalize_exchange_name(CONFIG.get("exchange", ""))
+    if current_exchange == ex_name and next_exchange:
+        CONFIG["exchange"] = next_exchange
+        CONFIG["paper_trading"] = next_mode != "live"
+        try:
+            trade_mode.set_mode(next_mode)
+        except Exception:
+            pass
+        state._exchange_reset = True
     emit(
         "status",
         {
