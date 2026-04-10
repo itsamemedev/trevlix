@@ -152,6 +152,9 @@ from app.core.trading_ops import (
     create_exchange,
     fetch_aggregated_balance,
     fetch_markets,
+    get_virginie_forecast_feed,
+    get_virginie_forecast_quality,
+    get_virginie_forecast_stats,
     get_exchange_fee_rate,
     get_heatmap_data,
     init_trading_ops,
@@ -543,6 +546,9 @@ ai_engine = AIEngine(db)
 _VIRGINIE_CHAT_MAX_MESSAGES = 80
 _virginie_chat_lock = threading.Lock()
 _virginie_chat_by_user: dict[int, deque[dict[str, Any]]] = {}
+_exchange_runtime_lock = threading.Lock()
+_exchange_runtime_modes: dict[str, str] = {}
+_exchange_runtime_running: set[str] = set()
 
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
@@ -600,10 +606,156 @@ def _virginie_chat_append(user_id: int, role: str, content: str) -> dict[str, An
     return entry
 
 
-def _build_virginie_chat_context() -> str:
+def _virginie_runtime_status() -> dict[str, Any]:
+    """Verdichteter VIRGINIE Status für API/Chat."""
+    ai = ai_engine.to_dict() if ai_engine else {}
+    assistant_agents = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
+    assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
+    return {
+        "enabled": bool(CONFIG.get("virginie_enabled", True)),
+        "primary_control": bool(CONFIG.get("virginie_primary_control", True)),
+        "autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
+        "min_score": float(CONFIG.get("virginie_min_score", 0.0) or 0.0),
+        "max_risk_penalty": float(CONFIG.get("virginie_max_risk_penalty", 1000.0) or 1000.0),
+        "assistant_name": ai.get("assistant_name", "VIRGINIE"),
+        "assistant_version": ai.get("assistant_version", "0.0.0"),
+        "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
+        "assistant_review": assistant_review if isinstance(assistant_review, dict) else {},
+    }
+
+
+def _virginie_runtime_advice() -> dict[str, Any]:
+    """Leitet konkrete nächste Schritte aus Runtime-Status ab."""
+    status = _virginie_runtime_status()
+    ai = ai_engine.to_dict() if ai_engine else {}
+    wf = float(ai.get("wf_accuracy", 0) or 0)
+    drift = float(ai.get("drift_score", 0) or 0)
+    trained = bool(ai.get("is_trained", False))
+    guardrail_min_score = float(status.get("min_score", 0) or 0)
+    actions: list[dict[str, str]] = []
+    if not status.get("enabled", True):
+        actions.append(
+            {
+                "priority": "high",
+                "title": "VIRGINIE aktivieren",
+                "detail": "Setze virginie_enabled=true, damit Guardrails und Agenten-Workflow aktiv sind.",
+            }
+        )
+    if not trained:
+        actions.append(
+            {
+                "priority": "high",
+                "title": "Training starten",
+                "detail": "Das Modell ist noch nicht trainiert. Starte ein Initial-Training im Admin-Bereich.",
+            }
+        )
+    if wf < 55:
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Qualität stabilisieren",
+                "detail": "WF-Accuracy ist niedrig. Prüfe Feature-Importance und erhöhe Trainingsdaten.",
+            }
+        )
+    if drift >= 0.7:
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Drift reduzieren",
+                "detail": "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren und Risk-Limits prüfen.",
+            }
+        )
+    if guardrail_min_score < 0.5:
+        actions.append(
+            {
+                "priority": "low",
+                "title": "Min-Score anheben",
+                "detail": "Für konservativeres Verhalten virginie_min_score leicht erhöhen (z.B. +0.05).",
+            }
+        )
+    if not actions:
+        actions.append(
+            {
+                "priority": "low",
+                "title": "System stabil",
+                "detail": "VIRGINIE läuft stabil. Fokus auf Monitoring und regelmäßiges Review.",
+            }
+        )
+    return {
+        "assistant": status.get("assistant_name", "VIRGINIE"),
+        "version": status.get("assistant_version", "0.0.0"),
+        "wf_accuracy": wf,
+        "drift_score": drift,
+        "actions": actions[:5],
+    }
+
+
+def _virginie_edge_profile() -> dict[str, Any]:
+    """Kompakter VIRGINIE-Edge-Score für Trading/Forecast-Workflows."""
+    status = _virginie_runtime_status()
+    advice = _virginie_runtime_advice()
+    snap = state.snapshot() if state else {}
+    wf = float(advice.get("wf_accuracy", 0) or 0)
+    drift = float(advice.get("drift_score", 0) or 0)
+    autonomy = float(status.get("autonomy_weight", 0.7) or 0.7)
+    running = bool(snap.get("running", False))
+    open_trades = int(snap.get("open_trades", 0) or 0)
+    risk_load = min(100.0, open_trades * 8.0)
+    edge_score = max(0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load))
+    tier = "S" if edge_score >= 85 else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
+    urgency = "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    signature = uuid.uuid5(
+        uuid.NAMESPACE_DNS,
+        f"{status.get('assistant_version','0')}-{snap.get('exchange','na')}-{tier}-{int(edge_score)}-{int(drift*100)}",
+    ).hex[:12]
+    return {
+        "edge_score": round(edge_score, 2),
+        "tier": tier,
+        "urgency": urgency,
+        "running": running,
+        "exchange": snap.get("exchange", "unbekannt"),
+        "open_trades": open_trades,
+        "signature": signature,
+    }
+
+
+def _virginie_cpu_fast_reply(prompt: str) -> str | None:
+    """Ultraschnelle CPU-basierte VIRGINIE-Antwort ohne externen LLM-Call."""
+    p = str(prompt or "").strip().lower()
+    if not p:
+        return None
+    if any(k in p for k in ("risiko", "risk", "verlust", "drawdown")):
+        return (
+            "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades. "
+            "Wenn Drawdown steigt, Trade-Frequenz reduzieren und Stops enger setzen."
+        )
+    if any(k in p for k in ("markt", "market", "regime", "trend")):
+        return (
+            "CPU-Quickcheck: Regime + Volatilität zuerst prüfen. "
+            "Nur bei bestätigtem Trend aggressiv handeln, sonst Positionsgröße drosseln."
+        )
+    if any(k in p for k in ("setup", "konfig", "config", "einstellung")):
+        return (
+            "CPU-Quickcheck Setup: 1) virginie_primary_control aktiv, 2) ai_min_confidence validieren, "
+            "3) stop_loss/take_profit auf aktuelle Volatilität abstimmen."
+        )
+    if len(p.split()) <= 5:
+        return "Beschreibe bitte kurz Symbol, Ziel und Risiko-Toleranz, dann gebe ich dir einen konkreten Plan."
+    return None
+
+
+def _build_virginie_chat_context(user_id: int) -> str:
     ai = ai_engine.to_dict() if ai_engine else {}
     snap = state.snapshot() if state else {}
     ass = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
+    recent = _virginie_chat_history_for_user(user_id)[-8:]
+    recent_lines = []
+    for item in recent:
+        role = "User" if str(item.get("role", "")) == "user" else "VIRGINIE"
+        msg = str(item.get("content", "")).strip().replace("\n", " ")
+        if msg:
+            recent_lines.append(f"- {role}: {msg[:160]}")
+    recent_block = "\n".join(recent_lines) if recent_lines else "- (keine Historie)"
     return (
         "Du bist VIRGINIE, die Trading-Assistentin im TREVLIX Admin-Dashboard.\n"
         "Antwortstil: kurz, konkret, handlungsorientiert, sicherheitsbewusst.\n"
@@ -614,15 +766,89 @@ def _build_virginie_chat_context() -> str:
         f"portfolio={snap.get('portfolio_value', 0)}.\n"
         f"VIRGINIE-Agenten: count={ass.get('registered_agents', 0)}, "
         f"coverage={ass.get('coverage_pct', 0)}%, "
-        f"last_agent={ass.get('last_agent', '—')}."
+        f"last_agent={ass.get('last_agent', '—')}.\n"
+        "Letzte Unterhaltung (gekürzt):\n"
+        f"{recent_block}"
     )
 
 
-def _generate_virginie_chat_reply(user_prompt: str) -> str:
+def _get_user_exchange_modes(user_id: int) -> dict[str, str]:
+    """Loads persisted per-exchange trade modes (paper/live) for a user."""
+    try:
+        settings = db.get_user_settings(user_id) or {}
+        raw = settings.get("exchange_modes", {})
+        if not isinstance(raw, dict):
+            return {}
+        modes = {}
+        for k, v in raw.items():
+            ex = normalize_exchange_name(k)
+            mode = str(v or "").lower()
+            if ex and mode in {"paper", "live"}:
+                modes[ex] = mode
+        return modes
+    except Exception:
+        return {}
+
+
+def _save_user_exchange_mode(user_id: int, exchange: str, mode: str) -> None:
+    """Persist a single per-exchange mode without overriding other user settings."""
+    try:
+        current = db.get_user_settings(user_id) or {}
+        modes = current.get("exchange_modes", {})
+        if not isinstance(modes, dict):
+            modes = {}
+        modes[exchange] = mode
+        current["exchange_modes"] = modes
+        db.update_user_settings(user_id, current)
+    except Exception:
+        pass
+
+
+def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
     prompt = str(user_prompt or "").strip()
     if not prompt:
         return "Bitte sende eine konkrete Frage, damit ich dir gezielt helfen kann."
-    context = _build_virginie_chat_context()
+    status = _virginie_runtime_status()
+    if not status.get("enabled", True):
+        return "VIRGINIE ist aktuell deaktiviert. Aktiviere 'virginie_enabled' in den Settings."
+    cmd = prompt.lower()
+    if cmd in {"/help", "help"}:
+        return (
+            "VIRGINIE Kommandos: /status (Live-Status), /review (letztes Self-Review), "
+            "/plan (Aktionsplan), /edge (Edge-Profil), /help (diese Hilfe). "
+            "Du kannst auch normale Fragen zu Risiko, Setup und Strategie stellen."
+        )
+    if cmd in {"/status", "status"}:
+        agents = status.get("assistant_agents", {})
+        return (
+            f"Status: {'Primary' if status.get('primary_control') else 'Hybrid'} | "
+            f"w={status.get('autonomy_weight', 0):.2f} | "
+            f"Agents={agents.get('registered_agents', 0)} | "
+            f"Coverage={agents.get('coverage_pct', 0)}% | "
+            f"Last={agents.get('last_agent', '—')}"
+        )
+    if cmd in {"/review", "review"}:
+        review = status.get("assistant_review", {})
+        summary = str(review.get("summary", "")).strip() if isinstance(review, dict) else ""
+        return summary or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
+    if cmd in {"/plan", "plan", "/diagnose", "diagnose"}:
+        advice = _virginie_runtime_advice()
+        action_lines = [
+            f"{i+1}. [{a.get('priority','low')}] {a.get('title','Schritt')} – {a.get('detail','')}"
+            for i, a in enumerate(advice.get("actions", []))
+        ]
+        return "VIRGINIE Aktionsplan:\n" + ("\n".join(action_lines) if action_lines else "Keine Aktionen.")
+    if cmd in {"/edge", "edge"}:
+        edge = _virginie_edge_profile()
+        return (
+            f"VIRGINIE Edge: {edge.get('edge_score', 0)} / 100 | Tier {edge.get('tier')} | "
+            f"Urgency {edge.get('urgency')} | Exchange {edge.get('exchange')} | Sig {edge.get('signature')}"
+        )
+    if bool(CONFIG.get("virginie_cpu_fast_chat", True)):
+        fast_reply = _virginie_cpu_fast_reply(prompt)
+        if fast_reply:
+            return fast_reply
+    context = _build_virginie_chat_context(user_id)
     try:
         reply = knowledge_base.query_llm_with_tools(prompt, context)
         if reply:
@@ -845,6 +1071,7 @@ def api_user_settings_update():
         "virginie_autonomy_weight",
         "virginie_min_score",
         "virginie_max_risk_penalty",
+        "virginie_cpu_fast_chat",
         "discord_webhook",
         "discord_on_buy",
         "discord_on_sell",
@@ -855,18 +1082,24 @@ def api_user_settings_update():
         "max_daily_loss_pct",
     }
     filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
+    user = db.get_user_by_id(request.user_id) or {}
+    is_admin = str(user.get("role", "user")) == "admin"
     # Bestehende Settings laden und mergen
     current = db.get_user_settings(request.user_id)
     current.update(filtered)
-    if "paper_trading" in filtered:
+    if is_admin and "paper_trading" in filtered:
         mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
         if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
             return jsonify({"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}), 403
         trade_mode.set_mode(mode)
         CONFIG["paper_trading"] = mode == "paper"
-    current["paper_trading"] = CONFIG.get("paper_trading", True)
+    current["paper_trading"] = (
+        CONFIG.get("paper_trading", True)
+        if is_admin
+        else safe_bool(current.get("paper_trading", True), True)
+    )
     ok = db.update_user_settings(request.user_id, current)
-    return jsonify({"ok": ok, "updated": list(filtered.keys())})
+    return jsonify({"ok": ok, "updated": list(filtered.keys()), "scope": "runtime+user" if is_admin else "user"})
 
 
 @app.route("/api/v1/trading/mode", methods=["GET", "POST"])
@@ -1107,6 +1340,42 @@ def api_virginie_chat_history():
     )
 
 
+@app.route("/api/v1/virginie/status")
+@api_auth_required
+def api_virginie_status():
+    """Liefert Runtime-Zustand und Guardrails von VIRGINIE."""
+    return jsonify(_virginie_runtime_status())
+
+
+@app.route("/api/v1/virginie/advice")
+@api_auth_required
+def api_virginie_advice():
+    """Liefert priorisierte VIRGINIE Handlungsempfehlungen."""
+    return jsonify(_virginie_runtime_advice())
+
+
+@app.route("/api/v1/virginie/edge-profile")
+@api_auth_required
+def api_virginie_edge_profile():
+    """Liefert den VIRGINIE Edge-Score (Trading/Forecast Profil)."""
+    return jsonify(_virginie_edge_profile())
+
+
+@app.route("/api/v1/virginie/forecast-feed")
+@api_auth_required
+def api_virginie_forecast_feed():
+    """Liefert die letzten VIRGINIE Forecast-Events."""
+    limit = safe_int(request.args.get("limit", 30), 30)
+    return jsonify({"items": get_virginie_forecast_feed(limit), "stats": get_virginie_forecast_stats()})
+
+
+@app.route("/api/v1/virginie/forecast-quality")
+@api_auth_required
+def api_virginie_forecast_quality():
+    """Liefert geschätzte Forecast-Qualität (Win-Rate) nach Tier."""
+    return jsonify(get_virginie_forecast_quality())
+
+
 @app.route("/api/v1/virginie/chat", methods=["POST"])
 @api_auth_required
 def api_virginie_chat_post():
@@ -1120,9 +1389,19 @@ def api_virginie_chat_post():
         return jsonify({"error": "message ist zu lang (max. 2000 Zeichen)"}), 400
 
     user_entry = _virginie_chat_append(user_id, "user", message)
-    assistant_reply = _generate_virginie_chat_reply(message)
+    assistant_reply = _generate_virginie_chat_reply(user_id, message)
     assistant_entry = _virginie_chat_append(user_id, "assistant", assistant_reply)
     return jsonify({"ok": True, "user": user_entry, "assistant": assistant_entry})
+
+
+@app.route("/api/v1/virginie/chat/clear", methods=["POST"])
+@api_auth_required
+def api_virginie_chat_clear():
+    """Löscht den VIRGINIE-Chatverlauf des aktuellen Users."""
+    user_id = int(getattr(request, "user_id", 0) or 0)
+    with _virginie_chat_lock:
+        _virginie_chat_by_user[int(user_id)] = deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
+    return jsonify({"ok": True})
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1821,7 +2100,7 @@ def on_virginie_chat(data: dict | None = None) -> None:
     user_id = int(getattr(request, "user_id", session.get("user_id", 0)) or 0)
     user_entry = _virginie_chat_append(user_id, "user", message)
     emit("virginie_chat_message", user_entry)
-    assistant_reply = _generate_virginie_chat_reply(message)
+    assistant_reply = _generate_virginie_chat_reply(user_id, message)
     assistant_entry = _virginie_chat_append(user_id, "assistant", assistant_reply)
     emit("virginie_chat_message", assistant_entry)
 
@@ -1986,6 +2265,7 @@ def on_update_config(data):
         "virginie_autonomy_weight",
         "virginie_min_score",
         "virginie_max_risk_penalty",
+        "virginie_cpu_fast_chat",
         "circuit_breaker_losses",
         "circuit_breaker_min",
         "max_spread_pct",
@@ -2685,19 +2965,42 @@ def on_start_exchange(data):
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
+    requested_mode = str((data or {}).get("mode", "")).lower().strip()
     if not ex_name:
         emit(
             "status",
             {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
         )
         return
-    CONFIG["exchange"] = ex_name
-    state._exchange_reset = True
-    _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex_name)
+    uid = int(getattr(request, "user_id", session.get("user_id", 0)) or 0)
+    persisted_modes = _get_user_exchange_modes(uid) if uid else {}
+    mode = requested_mode if requested_mode in {"paper", "live"} else persisted_modes.get(ex_name, "paper")
+    if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+        emit(
+            "status",
+            {
+                "msg": "❌ Live-Trading ist serverseitig deaktiviert",
+                "key": "err_live_disabled",
+                "type": "error",
+            },
+        )
+        return
+    with _exchange_runtime_lock:
+        _exchange_runtime_running.add(ex_name)
+        _exchange_runtime_modes[ex_name] = mode
+    if uid:
+        _save_user_exchange_mode(uid, ex_name, mode)
+    # Keep existing active exchange when bot already running; otherwise switch active runtime.
+    if not getattr(state, "running", False):
+        CONFIG["exchange"] = ex_name
+        CONFIG["paper_trading"] = mode != "live"
+        trade_mode.set_mode(mode)
+        state._exchange_reset = True
+    _pin_user_exchange(uid, ex_name)
     emit(
         "status",
         {
-            "msg": f"▶ Exchange {ex_name.upper()} wird gestartet…",
+            "msg": f"▶ Exchange {ex_name.upper()} wird gestartet ({mode.upper()})…",
             "key": "ws_exchange_starting",
             "type": "info",
         },
@@ -2717,6 +3020,8 @@ def on_stop_exchange(data):
             {"msg": "❌ Unbekannte Exchange", "key": "err_unknown_exchange", "type": "error"},
         )
         return
+    with _exchange_runtime_lock:
+        _exchange_runtime_running.discard(ex_name)
     emit(
         "status",
         {
@@ -3998,7 +4303,31 @@ def api_exchanges():
             )
 
         # DB-only Snapshot (schnell, ohne externe API-Calls → keine Dashboard-Timeouts)
+        runtime = state.snapshot() if state else {}
+        active_exchange = str(runtime.get("exchange") or CONFIG.get("exchange", "")).lower()
+        runtime_positions = list(runtime.get("positions") or [])
+        runtime_markets = list(runtime.get("markets") or [])
+        runtime_last_scan = str(runtime.get("last_scan") or "")
+        runtime_running = bool(runtime.get("running", False))
+        runtime_portfolio = float(runtime.get("portfolio_value", 0) or 0)
+        runtime_return = float(runtime.get("return_pct", 0) or 0)
+        runtime_pnl = float(runtime.get("total_pnl", 0) or 0)
+        runtime_win_rate = float(runtime.get("win_rate", 0) or 0)
+        runtime_total_trades = int(runtime.get("total_trades", 0) or 0)
+        runtime_iteration = int(runtime.get("iteration", 0) or 0)
+        runtime_paper = bool(runtime.get("paper_trading", CONFIG.get("paper_trading", True)))
+        pos_by_exchange: dict[str, list[dict[str, Any]]] = {}
+        for pos in runtime_positions:
+            ex_name = str(pos.get("exchange") or active_exchange or "").lower()
+            if not ex_name:
+                continue
+            pos_by_exchange.setdefault(ex_name, []).append(pos)
+
         user_exchanges = db.get_user_exchanges(uid)
+        persisted_modes = _get_user_exchange_modes(int(uid))
+        with _exchange_runtime_lock:
+            running_exchanges = set(_exchange_runtime_running)
+            runtime_modes = dict(_exchange_runtime_modes)
         enabled_set = {
             str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
         }
@@ -4009,18 +4338,23 @@ def api_exchanges():
             ex_name = str(ex.get("exchange", "")).lower()
             if not ex_name:
                 continue
+            is_active_exchange = ex_name == active_exchange
+            ex_mode = runtime_modes.get(ex_name, persisted_modes.get(ex_name, "paper"))
             ex_map[ex_name] = {
                 "enabled": bool(ex.get("enabled")),
-                "running": False,  # Runtime-Engine für Multi-Exchange ist aktuell nicht aktiv
-                "portfolio_value": 0.0,
-                "return_pct": 0.0,
-                "trade_count": 0,
-                "open_trades": 0,
-                "win_rate": 0.0,
-                "total_pnl": 0.0,
-                "markets_count": 0,
-                "last_scan": now_iso,
-                "positions": [],
+                "running": (ex_name in running_exchanges) or (runtime_running and is_active_exchange),
+                "portfolio_value": runtime_portfolio if is_active_exchange else 0.0,
+                "return_pct": runtime_return if is_active_exchange else 0.0,
+                "trade_count": runtime_total_trades if is_active_exchange else 0,
+                "open_trades": len(pos_by_exchange.get(ex_name, [])),
+                "win_rate": runtime_win_rate if is_active_exchange else 0.0,
+                "total_pnl": runtime_pnl if is_active_exchange else 0.0,
+                "markets_count": len(runtime_markets) if is_active_exchange else 0,
+                "symbol_count": len(runtime_markets) if is_active_exchange else 0,
+                "last_scan": runtime_last_scan or now_iso,
+                "positions": pos_by_exchange.get(ex_name, []),
+                "trade_mode": ex_mode,
+                "paper_trading": ex_mode != "live",
                 "error": "" if ex.get("enabled") else "Nicht aktiviert",
             }
 
@@ -4038,18 +4372,30 @@ def api_exchanges():
         for ex_name, meta in ex_map.items():
             tc = int(meta.get("trade_count", 0) or 0)
             wins = float(meta.get("win_rate", 0) or 0)
-            if tc > 0:
+            if tc > 0 and ex_name != active_exchange:
                 meta["win_rate"] = round((wins / tc) * 100, 1)
             if ex_name in enabled_set and not meta.get("error"):
                 # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
-                meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+                if ex_name == active_exchange and runtime_running:
+                    meta["error"] = ""
+                else:
+                    meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+            meta["status_detail"] = (
+                "Live-Runtime aktiv"
+                if ex_name == active_exchange and runtime_running
+                else "Snapshot/Fallback"
+            )
 
         combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
+        combined_pv = round(sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2)
         response = {
             "exchanges": ex_map,
-            "combined_pv": 0.0,
+            "active_exchange": active_exchange,
+            "iteration": runtime_iteration,
+            "paper_trading": runtime_paper,
+            "combined_pv": combined_pv,
             "combined_pnl": combined_pnl,
-            "total_pv": 0.0,
+            "total_pv": combined_pv,
             "total_pnl": combined_pnl,
         }
         return jsonify(response)

@@ -200,6 +200,7 @@ _AI_CONFIG_DEFAULTS: dict[str, float | int | bool] = {
     "virginie_autonomy_weight": 0.7,
     "virginie_min_score": 0.0,
     "virginie_max_risk_penalty": 1000.0,
+    "virginie_cpu_fast_chat": True,
 }
 
 
@@ -1196,7 +1197,7 @@ class AIEngine:
     def should_buy(self, features, conf) -> tuple[bool, float, str]:
         """[26] Erweitert mit VIRGINIE-Guardrails + Conformal Prediction Intervals."""
         virginie_enabled = bool(CONFIG.get("virginie_enabled", True))
-        primary_control = bool(CONFIG.get("virginie_primary_control", False))
+        primary_control = bool(CONFIG.get("virginie_primary_control", True))
         autonomy_w = float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7)
         autonomy_w = min(1.0, max(0.0, autonomy_w))
         if not self.is_trained or not CONFIG.get("ai_enabled"):

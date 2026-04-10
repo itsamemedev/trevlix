@@ -297,13 +297,14 @@ class TestVirginieChatAPI:
             "query_llm_with_tools",
             lambda prompt, context: f"Echo: {prompt} ({'VIRGINIE' in context})",
         )
+        monkeypatch.setitem(server.CONFIG, "virginie_cpu_fast_chat", False)
 
-        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Wie ist das Risiko heute?"})
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Bitte antworte mit Echo Test."})
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
         assert data["user"]["role"] == "user"
-        assert "Risiko" in data["user"]["content"]
+        assert "Echo Test" in data["user"]["content"]
         assert data["assistant"]["role"] == "assistant"
         assert "Echo:" in data["assistant"]["content"]
 
@@ -315,6 +316,171 @@ class TestVirginieChatAPI:
         assert resp.status_code == 400
         data = resp.get_json()
         assert "error" in data
+
+    def test_chat_status_endpoint_returns_guardrails(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "enabled" in data
+        assert "primary_control" in data
+        assert "assistant_agents" in data
+
+    def test_chat_advice_endpoint_returns_actions(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/advice")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "actions" in data
+        assert isinstance(data["actions"], list)
+        assert data["actions"]
+
+    def test_chat_edge_profile_endpoint_returns_signature(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/edge-profile")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "edge_score" in data
+        assert "tier" in data
+        assert "signature" in data
+
+    def test_chat_forecast_feed_endpoint_returns_items(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/forecast-feed?limit=5")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "items" in data
+        assert isinstance(data["items"], list)
+        assert "stats" in data
+        assert "allow_rate" in data["stats"]
+
+    def test_chat_forecast_quality_endpoint_returns_winrate(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/forecast-quality")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "win_rate" in data
+        assert "by_tier" in data
+
+    def test_chat_clear_endpoint_resets_messages(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        app_client.post("/api/v1/virginie/chat", json={"message": "Test löschen"})
+        clear_resp = app_client.post("/api/v1/virginie/chat/clear")
+        assert clear_resp.status_code == 200
+        assert clear_resp.get_json().get("ok") is True
+
+        hist_resp = app_client.get("/api/v1/virginie/chat")
+        assert hist_resp.status_code == 200
+        assert hist_resp.get_json().get("messages") == []
+
+    def test_chat_status_command_returns_status_summary(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/status"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "Status:" in assistant
+        assert "Agents=" in assistant
+
+    def test_chat_plan_command_returns_action_plan(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/plan"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "Aktionsplan" in assistant
+
+    def test_chat_cpu_fast_reply_for_risk_prompt(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Risiko heute?"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "CPU-Quickcheck" in assistant
+
+    def test_chat_edge_command_returns_edge_profile(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/edge"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "VIRGINIE Edge:" in assistant
+
+
+class TestExchangesSnapshotAPI:
+    """Tests für Multi-Exchange Snapshot inkl. Märkte/Details im Dashboard."""
+
+    def test_exchanges_snapshot_includes_runtime_market_details(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [
+                {"exchange": "binance", "enabled": True},
+                {"exchange": "bybit", "enabled": True},
+            ],
+        )
+        monkeypatch.setattr(
+            server.state,
+            "snapshot",
+            lambda: {
+                "exchange": "binance",
+                "running": True,
+                "portfolio_value": 12345.67,
+                "return_pct": 4.2,
+                "total_pnl": 512.4,
+                "win_rate": 61.5,
+                "total_trades": 44,
+                "positions": [{"symbol": "BTC/USDT", "entry": 60000, "pnl": 42.0}],
+                "markets": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+                "last_scan": "12:34:56",
+                "iteration": 77,
+                "paper_trading": True,
+            },
+        )
+        monkeypatch.setattr(server, "_get_user_exchange_modes", lambda _uid: {"binance": "live", "bybit": "paper"})
+
+        resp = app_client.get("/api/v1/exchanges")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        ex = data["exchanges"]["binance"]
+        assert ex["running"] is True
+        assert ex["markets_count"] == 3
+        assert ex["symbol_count"] == 3
+        assert ex["open_trades"] == 1
+        assert ex["trade_count"] == 44
+        assert ex["last_scan"] == "12:34:56"
+        assert ex["status_detail"] == "Live-Runtime aktiv"
+        assert ex["trade_mode"] == "live"
+        assert ex["paper_trading"] is False
+        assert isinstance(ex["positions"], list)
+        assert data["combined_pv"] == 12345.67
+        assert data["active_exchange"] == "binance"
+        assert data["iteration"] == 77
 
 
 class TestPaperModeBuild:
@@ -389,3 +555,24 @@ class TestPasswordPolicy:
             CONFIG["allow_registration"] = old_val
         except Exception:
             pytest.skip("Registration endpoint not available")
+
+
+class TestUserSettingsScope:
+    def test_non_admin_settings_do_not_override_runtime_mode(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 2
+
+        old_runtime_mode = server.CONFIG.get("paper_trading", True)
+        store = {"paper_trading": True}
+
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 2, "role": "user"})
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: dict(store))
+        monkeypatch.setattr(server.db, "update_user_settings", lambda _uid, data: store.update(data) or True)
+
+        resp = app_client.post("/api/v1/user/settings", json={"paper_trading": False})
+        assert resp.status_code == 200
+        payload = resp.get_json()
+        assert payload["scope"] == "user"
+        assert server.CONFIG.get("paper_trading", True) == old_runtime_mode
