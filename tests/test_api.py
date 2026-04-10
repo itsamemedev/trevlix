@@ -463,6 +463,8 @@ class TestExchangesSnapshotAPI:
             },
         )
         monkeypatch.setattr(server, "_get_user_exchange_modes", lambda _uid: {"binance": "live", "bybit": "paper"})
+        server._exchange_runtime_running = {"binance", "bybit"}
+        server._exchange_runtime_modes = {"binance": "live", "bybit": "paper"}
 
         resp = app_client.get("/api/v1/exchanges")
         assert resp.status_code == 200
@@ -478,6 +480,9 @@ class TestExchangesSnapshotAPI:
         assert ex["trade_mode"] == "live"
         assert ex["paper_trading"] is False
         assert isinstance(ex["positions"], list)
+        bybit = data["exchanges"]["bybit"]
+        assert bybit["running"] is True
+        assert bybit["trade_mode"] == "paper"
         assert data["combined_pv"] == 12345.67
         assert data["active_exchange"] == "binance"
         assert data["iteration"] == 77

@@ -2988,6 +2988,7 @@ def on_start_exchange(data):
     with _exchange_runtime_lock:
         _exchange_runtime_running.add(ex_name)
         _exchange_runtime_modes[ex_name] = mode
+    CONFIG.setdefault("exchange_modes_runtime", {})[ex_name] = mode
     if uid:
         _save_user_exchange_mode(uid, ex_name, mode)
     # Keep existing active exchange when bot already running; otherwise switch active runtime.
@@ -3022,6 +3023,8 @@ def on_stop_exchange(data):
         return
     with _exchange_runtime_lock:
         _exchange_runtime_running.discard(ex_name)
+    if isinstance(CONFIG.get("exchange_modes_runtime"), dict):
+        CONFIG["exchange_modes_runtime"].pop(ex_name, None)
     emit(
         "status",
         {

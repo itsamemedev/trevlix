@@ -1570,6 +1570,9 @@ def _maybe_generate_market_context() -> None:
 
 def bot_loop():
     ex = None
+    ex_name = str(CONFIG.get("exchange", "cryptocom")).lower()
+    ex_cache: dict[str, Any] = {}
+    rr_idx = 0
     last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
@@ -1577,6 +1580,28 @@ def bot_loop():
             continue
         # Auto-Healing: Signal that bot loop is alive
         _maybe_healer_heartbeat()
+        # Multi-Exchange Round-Robin: rotiert über alle aktivierten Exchanges
+        try:
+            enabled_rows = db.get_enabled_exchanges(1) if db and hasattr(db, "get_enabled_exchanges") else []
+            enabled_exchanges = [
+                normalize_exchange_name(str(r.get("exchange", "")))
+                for r in enabled_rows
+                if normalize_exchange_name(str(r.get("exchange", "")))
+            ]
+            if enabled_exchanges:
+                target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
+                rr_idx += 1
+                if target and target != ex_name:
+                    ex_name = target
+                    CONFIG["exchange"] = ex_name
+                    mode_map = CONFIG.get("exchange_modes_runtime", {}) or {}
+                    if isinstance(mode_map, dict):
+                        mode = str(mode_map.get(ex_name, "paper")).lower()
+                        CONFIG["paper_trading"] = mode != "live"
+                    state._exchange_reset = True
+                    ex = ex_cache.get(ex_name)
+        except Exception:
+            pass
         # Exchange-Wechsel erkannt → alte Instanz verwerfen
         if state._exchange_reset:
             log.info("🔄 Exchange-Wechsel erkannt – erstelle neue Verbindung")
@@ -1587,6 +1612,7 @@ def bot_loop():
             if ex is None:
                 try:
                     ex = create_exchange()
+                    ex_cache[ex_name] = ex
                 except Exception as exc_err:
                     log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
                     now_ts = time.time()
