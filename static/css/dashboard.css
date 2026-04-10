@@ -923,6 +923,108 @@ body.is-admin .card{
 .admin-card .kv-label { color:#5f7e99; }
 .admin-card .kv-value { color:#d6e9ff; }
 
+/* Futuristic upgrade for both dashboards */
+#sec-home .card,
+#sec-admin .admin-card,
+#sec-analytics .admin-card{
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset,
+    0 16px 40px rgba(2,8,20,.35);
+}
+#sec-home .card{
+  background:
+    radial-gradient(circle at 12% 0%,rgba(0,212,255,.08),transparent 42%),
+    linear-gradient(160deg,rgba(8,13,26,.88),rgba(3,7,15,.92));
+  border-color:rgba(108,191,255,.16);
+}
+#sec-home .card:hover{
+  border-color:rgba(0,212,255,.28);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.05) inset,
+    0 18px 42px rgba(0,212,255,.12);
+}
+#sec-home .hero{
+  background:
+    radial-gradient(circle at 85% 20%,rgba(0,212,255,.2),transparent 35%),
+    radial-gradient(circle at 15% 80%,rgba(179,71,255,.2),transparent 45%),
+    linear-gradient(140deg,rgba(6,12,28,.96),rgba(3,6,15,.96));
+  border-color:rgba(124,212,255,.22);
+}
+#sec-home .sg{
+  background:rgba(70,110,160,.24);
+}
+#sec-home .sc{
+  background:linear-gradient(160deg,rgba(9,17,32,.86),rgba(5,11,24,.9));
+}
+#sec-home .sv{
+  text-shadow:0 0 20px rgba(116,224,255,.12);
+}
+
+/* Enhanced admin look */
+body.is-admin .admin-card{
+  background:
+    radial-gradient(circle at 100% 0%,rgba(212,175,55,.16),transparent 45%),
+    linear-gradient(165deg,rgba(20,15,4,.95),rgba(12,8,2,.96));
+}
+body.is-admin .admin-card:hover{
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset,
+    0 18px 42px rgba(212,175,55,.12);
+}
+body.is-admin .admin-stat-card{
+  background:
+    radial-gradient(circle at 88% 12%,rgba(245,208,96,.2),transparent 40%),
+    linear-gradient(150deg,#0a1627 0%,#10100a 100%);
+}
+
+/* AI live view special */
+.ai-live-nexus{
+  margin-top:12px;
+  border:1px solid rgba(120,208,255,.24);
+  border-radius:12px;
+  background:
+    radial-gradient(circle at 80% 15%,rgba(0,212,255,.22),transparent 38%),
+    radial-gradient(circle at 20% 100%,rgba(179,71,255,.16),transparent 45%),
+    linear-gradient(165deg,rgba(4,9,20,.95),rgba(2,5,12,.98));
+  padding:10px;
+  position:relative;
+  overflow:hidden;
+}
+.ai-live-grid{
+  position:absolute; inset:0; pointer-events:none; opacity:.3;
+  background-image:
+    linear-gradient(rgba(0,212,255,.15) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,212,255,.1) 1px, transparent 1px);
+  background-size:22px 22px;
+  mask-image:radial-gradient(circle at 50% 40%, black 45%, transparent 100%);
+}
+.ai-live-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;position:relative;z-index:1}
+.ai-live-title{font-size:12px;font-weight:800;color:#8fdfff;letter-spacing:.4px}
+.ai-live-subtitle{font-size:10px;color:#6aa8c7;font-family:var(--mono);margin-top:2px}
+.ai-live-meta{font-size:10px;color:#9fb4d6;font-family:var(--mono)}
+.ai-live-collab{font-size:10px;color:#bedcff;margin-bottom:8px;position:relative;z-index:1}
+.ai-live-canvas{
+  width:100%;height:240px;border-radius:10px;display:block;position:relative;z-index:1;
+  background:
+    radial-gradient(circle at 50% -30%,rgba(0,212,255,.2),transparent 50%),
+    linear-gradient(180deg,rgba(7,10,18,.88),rgba(3,5,9,.95));
+  border:1px solid rgba(0,212,255,.2);
+}
+.ai-live-chat-wrap{
+  margin-top:10px;border:1px solid rgba(120,208,255,.2);border-radius:8px;
+  background:rgba(2,6,12,.7);padding:8px;position:relative;z-index:1
+}
+.ai-live-chat-title{font-size:11px;color:#d6e9ff;font-weight:700;margin-bottom:6px}
+.ai-live-chat-input{
+  flex:1;background:rgba(6,12,22,.9);border:1px solid rgba(120,208,255,.28);
+  color:#f5efe1;border-radius:7px;padding:8px 10px;font-size:11px
+}
+.ai-live-chat-input:focus{
+  outline:none;border-color:rgba(0,212,255,.5);box-shadow:0 0 0 2px rgba(0,212,255,.12)
+}
+
 /* Admin grid layout on desktop */
 @media(min-width:900px){
   #sec-admin { display:grid!important; grid-template-columns:1fr 1fr; gap:12px; }
