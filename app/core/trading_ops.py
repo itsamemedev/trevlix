@@ -609,6 +609,8 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         forecast_payload = {
             "time": datetime.now().strftime("%H:%M:%S"),
             "symbol": symbol,
+            "side": "buy",
+            "event_type": "entry_decision",
             "allowed": bool(allowed),
             "score_pct": round(score_pct, 2),
             "tier": tier,
@@ -648,6 +650,61 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
             )
     except Exception:
         pass
+
+
+def _notify_virginie_sell_decision(
+    symbol: str,
+    reason: str,
+    pnl: float,
+    pnl_pct: float,
+    pos: dict | None = None,
+) -> None:
+    """Publish VIRGINIE sell decisions incl. monitored in-trade market context."""
+    position = pos or {}
+    ai_reason = str(position.get("ai_reason", "") or "")
+    if "VIRGINIE" not in ai_reason:
+        return
+
+    entry = safe_float(position.get("entry", 0), 0.0)
+    entry = entry if entry > 0 else 0.0
+    peak = safe_float(position.get("peak_price", entry), entry)
+    trough = safe_float(position.get("trough_price", entry), entry)
+    last_obs = safe_float(position.get("last_observed_price", entry), entry)
+    observed_ticks = max(0, safe_int(position.get("observed_ticks", 0), 0))
+    opened_ts = safe_float(position.get("opened_ts", 0), 0.0)
+    hold_seconds = int(max(0.0, time.time() - opened_ts)) if opened_ts > 0 else 0
+    hold_minutes = round(hold_seconds / 60.0, 1) if hold_seconds else 0.0
+
+    peak_pct = (((peak - entry) / entry) * 100.0) if entry > 0 else 0.0
+    drawdown_pct = (((trough - entry) / entry) * 100.0) if entry > 0 else 0.0
+    tier = "S" if pnl_pct >= 4 else ("A" if pnl_pct >= 2 else ("B" if pnl_pct >= 0 else "C"))
+    detail = (
+        f"{reason} | PnL {pnl:+.2f} USDT ({pnl_pct:+.2f}%) | Hold {hold_minutes}m | "
+        f"Peak {peak_pct:+.2f}% | DD {drawdown_pct:+.2f}% | Obs {observed_ticks}"
+    )
+    forecast_payload = {
+        "time": datetime.now().strftime("%H:%M:%S"),
+        "symbol": symbol,
+        "side": "sell",
+        "event_type": "exit_decision",
+        "allowed": True,
+        "score_pct": round(max(0.0, min(100.0, 50.0 + pnl_pct * 5.0)), 2),
+        "tier": tier,
+        "bias": "bullish_exit" if pnl >= 0 else "defensive_exit",
+        "recommended_action": "SELL",
+        "reason": detail[:220],
+        "pnl": round(float(pnl), 4),
+        "pnl_pct": round(float(pnl_pct), 4),
+        "hold_minutes": hold_minutes,
+        "observed_ticks": observed_ticks,
+        "entry_price": round(entry, 8) if entry > 0 else 0,
+        "peak_price": round(peak, 8) if peak > 0 else 0,
+        "trough_price": round(trough, 8) if trough > 0 else 0,
+        "last_observed_price": round(last_obs, 8) if last_obs > 0 else 0,
+    }
+    _VIRGINIE_FORECAST_FEED.append(forecast_payload)
+    if emit_event:
+        emit_event("virginie_forecast", forecast_payload)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -874,6 +931,12 @@ def open_position(ex, scan: dict):
         "price_vs_ema21": scan.get("price_vs_ema21", 0),
         "algo_buy_conf": round(algo_conf, 3),
         "algo_buy_reason": algo_reason,
+        "ai_reason": ai_reason,
+        "opened_ts": time.time(),
+        "observed_ticks": 0,
+        "last_observed_price": price,
+        "peak_price": price,
+        "trough_price": price,
     }
     # Trade DNA: Fingerprint in Position speichern
     if dna_result:
@@ -1139,6 +1202,10 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     _record_decision(
         symbol, "sell", reason, {"symbol": symbol, "confidence": pos.get("confidence", 0)}
     )
+    try:
+        _notify_virginie_sell_decision(symbol, reason, pnl, pnl_pct, pos)
+    except Exception:
+        pass
     # Trading-Algorithmen: Ergebnis für Selbstlernen aufzeichnen
     try:
         scan_at_entry = {
@@ -1436,6 +1503,11 @@ def manage_positions(ex):
             pos = state.positions.get(symbol)
         if not pos:
             continue
+        with state._lock:
+            pos["last_observed_price"] = price
+            pos["observed_ticks"] = int(pos.get("observed_ticks", 0) or 0) + 1
+            pos["peak_price"] = max(float(pos.get("peak_price", price) or price), price)
+            pos["trough_price"] = min(float(pos.get("trough_price", price) or price), price)
         if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
         elif price >= pos.get("tp", float("inf")):
