@@ -18,6 +18,7 @@ from services.virginie import (
     VirginieOrchestrator,
     VirginieRules,
     build_default_project_agents,
+    build_startup_examples,
 )
 
 
@@ -203,6 +204,24 @@ def test_virginie_core_example_feedback_requires_existing_example():
     core = VirginieCore()
     with pytest.raises(KeyError):
         core.learn_from_example_result("missing-example", 0.8)
+
+
+def test_virginie_core_loads_startup_examples_for_trading_and_agent_control():
+    core = VirginieCore()
+    trading = core.top_examples("trading_max_profit", limit=1)
+    orchestration = core.top_examples("agent_orchestration", limit=1)
+
+    assert trading
+    assert orchestration
+    assert "EV =" in trading[0].content
+    assert "Domänenrouting" in orchestration[0].content
+
+
+def test_build_startup_examples_contains_expected_playbooks():
+    examples = build_startup_examples()
+    ids = {item.example_id for item in examples}
+    assert "startup-trading-max-profit" in ids
+    assert "startup-agent-control" in ids
 
 
 def test_virginie_orchestrator_routes_and_executes_default_agents():

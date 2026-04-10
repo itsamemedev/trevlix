@@ -115,6 +115,32 @@ class LearningExample:
     quality_score: float = 0.5
 
 
+def build_startup_examples() -> list[LearningExample]:
+    """Return built-in examples that VIRGINIE should load on startup."""
+    return [
+        LearningExample(
+            example_id="startup-trading-max-profit",
+            task_type="trading_max_profit",
+            content=(
+                "Bewerte pro Marktchance: EV = P(success) * expected_profit - cost - risk_penalty. "
+                "Priorisiere Chancen mit hohem EV, niedriger Varianz und klaren Exit-Regeln "
+                "(Stop-Loss + Take-Profit), respektiere Guardrails und minimiere Overtrading."
+            ),
+            quality_score=0.75,
+        ),
+        LearningExample(
+            example_id="startup-agent-control",
+            task_type="agent_orchestration",
+            content=(
+                "Steuere alle Agenten über Domänenrouting, Failure-Cooldown und Priorisierung. "
+                "Delegiere Portfolio-Ziele an Trading-Agenten, blocke riskante Aktionen bei "
+                "Guardrail-Verletzungen und eskaliere bei wiederholten Fehlern."
+            ),
+            quality_score=0.72,
+        ),
+    ]
+
+
 @dataclass(frozen=True)
 class VirginieDecision:
     """Decision report with explainable score components."""
@@ -240,6 +266,7 @@ class VirginieCore:
         self._last_review_at = 0.0
         self._last_review_summary = "No review yet"
         self._examples: dict[str, dict[str, Any]] = {}
+        self._load_startup_examples()
 
     def select_opportunity(self, opportunities: list[Opportunity]) -> Opportunity | None:
         """Select the best allowed opportunity using EV + action UCB."""
@@ -319,6 +346,11 @@ class VirginieCore:
                 "quality_score": min(1.0, max(0.0, float(example.quality_score))),
                 "count": count,
             }
+
+    def _load_startup_examples(self) -> None:
+        """Load built-in examples so VIRGINIE starts with useful playbooks."""
+        for example in build_startup_examples():
+            self.add_or_update_example(example)
 
     def learn_from_example_result(self, example_id: str, reward: float) -> None:
         """Update one example quality score from real-world feedback.
