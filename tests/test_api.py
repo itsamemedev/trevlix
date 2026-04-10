@@ -362,6 +362,16 @@ class TestVirginieChatAPI:
         assert "stats" in data
         assert "allow_rate" in data["stats"]
 
+    def test_chat_forecast_quality_endpoint_returns_winrate(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/forecast-quality")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "win_rate" in data
+        assert "by_tier" in data
+
     def test_chat_clear_endpoint_resets_messages(self, app_client):
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1

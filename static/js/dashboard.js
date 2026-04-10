@@ -739,6 +739,14 @@ function _renderVirginieForecastStats(stats){
   }
 }
 
+function _renderVirginieForecastQuality(q){
+  const el = document.getElementById('vEdgeQuality');
+  if(!el) return;
+  const matched = Number(q?.matched_total||0);
+  const wr = Number(q?.win_rate||0).toFixed(1);
+  el.textContent = `Forecast Quality: ${wr}% Win-Rate · ${matched} matched`;
+}
+
 async function loadVirginieForecastFeed(){
   try{
     const r = await fetch('/api/v1/virginie/forecast-feed?limit=12', {credentials:'include'});
@@ -748,6 +756,12 @@ async function loadVirginieForecastFeed(){
     _virginieForecastFeed.splice(0, _virginieForecastFeed.length, ...items);
     _renderVirginieForecastFeed();
     _renderVirginieForecastStats(d.stats || {});
+  }catch(_e){}
+  try{
+    const rQ = await fetch('/api/v1/virginie/forecast-quality', {credentials:'include'});
+    if(!rQ.ok) return;
+    const q = await rQ.json();
+    _renderVirginieForecastQuality(q);
   }catch(_e){}
 }
 

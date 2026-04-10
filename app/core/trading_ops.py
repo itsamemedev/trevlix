@@ -131,6 +131,39 @@ def get_virginie_forecast_stats() -> dict:
     }
 
 
+def get_virginie_forecast_quality() -> dict:
+    """Estimate forecast quality by matching feed entries against closed trades."""
+    feed = list(_VIRGINIE_FORECAST_FEED)
+    closed = list(getattr(state, "closed_trades", []) or [])
+    by_tier: dict[str, dict[str, float | int]] = {}
+    matched_total = 0
+    matched_wins = 0
+    for tier in ("S", "A", "B", "C"):
+        tier_feed = [f for f in feed if str(f.get("tier", "")).upper() == tier and f.get("allowed")]
+        matched = 0
+        wins = 0
+        for f in tier_feed[-50:]:
+            sym = str(f.get("symbol", ""))
+            trade = next((t for t in reversed(closed) if str(t.get("symbol", "")) == sym), None)
+            if not trade:
+                continue
+            matched += 1
+            pnl = float(trade.get("pnl", 0) or 0)
+            if pnl > 0:
+                wins += 1
+        matched_total += matched
+        matched_wins += wins
+        by_tier[tier] = {
+            "matched": matched,
+            "win_rate": round((wins / matched) * 100, 1) if matched else 0.0,
+        }
+    return {
+        "matched_total": matched_total,
+        "win_rate": round((matched_wins / matched_total) * 100, 1) if matched_total else 0.0,
+        "by_tier": by_tier,
+    }
+
+
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
