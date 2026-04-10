@@ -915,7 +915,13 @@
             <div id="ai3dAgents" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
             <canvas id="ai3dCanvas" width="560" height="240" class="ai-live-canvas"></canvas>
             <div id="ai3dChatWrap" class="ai-live-chat-wrap">
-              <div class="ai-live-chat-title">💬 Chat mit VIRGINIE</div>
+              <div class="ai-live-chat-head">
+                <div class="ai-live-chat-title">💬 Chat mit VIRGINIE</div>
+                <div style="display:flex;gap:6px">
+                  <button id="ai3dChatRefreshBtn" class="btn btn-info" style="padding:5px 8px;font-size:9px">Sync</button>
+                  <button id="ai3dChatClearBtn" class="btn btn-red" style="padding:5px 8px;font-size:9px">Clear</button>
+                </div>
+              </div>
               <div id="ai3dChatLog" style="max-height:170px;overflow:auto;display:flex;flex-direction:column;gap:6px;padding-right:3px;margin-bottom:8px"></div>
               <div style="display:flex;gap:6px">
                 <input id="ai3dChatInput" type="text" maxlength="2000" placeholder="Frage zu Strategie, Risiko oder Setup…"

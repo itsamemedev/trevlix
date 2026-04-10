@@ -316,6 +316,41 @@ class TestVirginieChatAPI:
         data = resp.get_json()
         assert "error" in data
 
+    def test_chat_status_endpoint_returns_guardrails(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/status")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "enabled" in data
+        assert "primary_control" in data
+        assert "assistant_agents" in data
+
+    def test_chat_clear_endpoint_resets_messages(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        app_client.post("/api/v1/virginie/chat", json={"message": "Test löschen"})
+        clear_resp = app_client.post("/api/v1/virginie/chat/clear")
+        assert clear_resp.status_code == 200
+        assert clear_resp.get_json().get("ok") is True
+
+        hist_resp = app_client.get("/api/v1/virginie/chat")
+        assert hist_resp.status_code == 200
+        assert hist_resp.get_json().get("messages") == []
+
+    def test_chat_status_command_returns_status_summary(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "/status"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "Status:" in assistant
+        assert "Agents=" in assistant
+
 
 class TestPaperModeBuild:
     """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""

@@ -1016,6 +1016,7 @@ body.is-admin .admin-stat-card{
   margin-top:10px;border:1px solid rgba(120,208,255,.2);border-radius:8px;
   background:rgba(2,6,12,.7);padding:8px;position:relative;z-index:1
 }
+.ai-live-chat-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .ai-live-chat-title{font-size:11px;color:#d6e9ff;font-weight:700;margin-bottom:6px}
 .ai-live-chat-input{
   flex:1;background:rgba(6,12,22,.9);border:1px solid rgba(120,208,255,.28);

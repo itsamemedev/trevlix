@@ -596,6 +596,24 @@ async function loadVirginieChatHistory(){
   }catch(_e){}
 }
 
+async function refreshVirginieChatHistory(force=false){
+  if(force){ _virginieChat.loaded=false; }
+  await loadVirginieChatHistory();
+}
+
+async function clearVirginieChatHistory(){
+  try{
+    const r=await fetch('/api/v1/virginie/chat/clear',{method:'POST',credentials:'include'});
+    const d=await r.json();
+    if(!r.ok || d.error){ toast('⚠️ '+(d.error||'Chat konnte nicht gelöscht werden'),'warning'); return; }
+    _virginieChat.messages=[];
+    _renderVirginieChat();
+    toast('🧹 VIRGINIE Chat gelöscht','success');
+  }catch(_e){
+    toast('⚠️ VIRGINIE Chat aktuell nicht erreichbar','warning');
+  }
+}
+
 function sendVirginieChat(){
   const input=document.getElementById('ai3dChatInput');
   if(!input || _virginieChat.sending) return;
@@ -642,8 +660,12 @@ function sendVirginieChat(){
 function initVirginieChat(){
   const btn=document.getElementById('ai3dChatSendBtn');
   const input=document.getElementById('ai3dChatInput');
+  const refreshBtn=document.getElementById('ai3dChatRefreshBtn');
+  const clearBtn=document.getElementById('ai3dChatClearBtn');
   if(btn) btn.addEventListener('click', sendVirginieChat);
   if(input) input.addEventListener('keydown', (ev)=>{ if(ev.key==='Enter'){ ev.preventDefault(); sendVirginieChat(); }});
+  if(refreshBtn) refreshBtn.addEventListener('click', ()=>refreshVirginieChatHistory(true));
+  if(clearBtn) clearBtn.addEventListener('click', clearVirginieChatHistory);
   loadVirginieChatHistory();
 }
 
