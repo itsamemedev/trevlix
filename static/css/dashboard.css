@@ -1056,6 +1056,27 @@ body.is-admin .admin-stat-card{
   gap:5px;
   padding-right:2px;
 }
+.ai-live-edge-kpi{
+  margin-top:8px;
+  font-size:10px;
+  color:var(--sub);
+  font-family:var(--mono);
+}
+.ai-live-edge-tiers{
+  margin-top:6px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:6px;
+}
+.ai-live-edge-tiers .pill{
+  font-size:9px;
+  font-family:var(--mono);
+  border:1px solid rgba(120,208,255,.2);
+  border-radius:999px;
+  padding:3px 7px;
+  color:#bfe3ff;
+  background:rgba(3,12,24,.5);
+}
 .ai-live-edge-feed .row{
   font-size:10px;
   border:1px solid rgba(120,208,255,.18);
@@ -1066,6 +1087,11 @@ body.is-admin .admin-stat-card{
 [data-theme="light"] .ai-live-edge-feed .row{
   background:rgba(255,255,255,.92);
   border-color:rgba(52,130,191,.2);
+}
+[data-theme="light"] .ai-live-edge-tiers .pill{
+  color:#25567d;
+  background:rgba(255,255,255,.95);
+  border-color:rgba(52,130,191,.24);
 }
 [data-theme="light"] .ai-live-edge{
   background:rgba(255,255,255,.9);

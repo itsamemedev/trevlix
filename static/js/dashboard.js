@@ -721,6 +721,24 @@ function _renderVirginieForecastFeed(){
   }).join('');
 }
 
+function _renderVirginieForecastStats(stats){
+  const kpiEl = document.getElementById('vEdgeKpi');
+  const tiersEl = document.getElementById('vEdgeTierStats');
+  if(kpiEl){
+    const total = Number(stats?.total||0);
+    const allowRate = Number(stats?.allow_rate||0).toFixed(1);
+    kpiEl.textContent = `Forecast KPI: ${total} Events · Allow-Rate ${allowRate}%`;
+  }
+  if(tiersEl){
+    const by = stats?.by_tier || {};
+    const items = ['S','A','B','C'].map(t=>{
+      const d = by[t] || {};
+      return `<span class="pill">${t}: ${Number(d.allow_rate||0).toFixed(1)}% (${Number(d.count||0)})</span>`;
+    });
+    tiersEl.innerHTML = items.join('');
+  }
+}
+
 async function loadVirginieForecastFeed(){
   try{
     const r = await fetch('/api/v1/virginie/forecast-feed?limit=12', {credentials:'include'});
@@ -729,6 +747,7 @@ async function loadVirginieForecastFeed(){
     const items = Array.isArray(d.items) ? d.items : [];
     _virginieForecastFeed.splice(0, _virginieForecastFeed.length, ...items);
     _renderVirginieForecastFeed();
+    _renderVirginieForecastStats(d.stats || {});
   }catch(_e){}
 }
 

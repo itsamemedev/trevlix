@@ -359,6 +359,8 @@ class TestVirginieChatAPI:
         data = resp.get_json()
         assert "items" in data
         assert isinstance(data["items"], list)
+        assert "stats" in data
+        assert "allow_rate" in data["stats"]
 
     def test_chat_clear_endpoint_resets_messages(self, app_client):
         with app_client.session_transaction() as sess:

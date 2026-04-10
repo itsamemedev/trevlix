@@ -109,6 +109,28 @@ def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
     return items
 
 
+def get_virginie_forecast_stats() -> dict:
+    """Aggregate quick KPIs for VIRGINIE forecast feed."""
+    items = list(_VIRGINIE_FORECAST_FEED)
+    total = len(items)
+    allowed = sum(1 for i in items if i.get("allowed"))
+    by_tier: dict[str, dict[str, float | int]] = {}
+    for t in ("S", "A", "B", "C"):
+        tier_items = [i for i in items if str(i.get("tier", "")).upper() == t]
+        tier_total = len(tier_items)
+        tier_allowed = sum(1 for i in tier_items if i.get("allowed"))
+        by_tier[t] = {
+            "count": tier_total,
+            "allow_rate": round((tier_allowed / tier_total) * 100, 1) if tier_total else 0.0,
+        }
+    return {
+        "total": total,
+        "allowed": allowed,
+        "allow_rate": round((allowed / total) * 100, 1) if total else 0.0,
+        "by_tier": by_tier,
+    }
+
+
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
