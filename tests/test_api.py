@@ -553,8 +553,10 @@ class TestExchangeControlSocketRuntime:
         old_modes = dict(server._exchange_runtime_modes)
         old_exchange = server.CONFIG.get("exchange")
         old_paper = server.CONFIG.get("paper_trading")
+        old_running_cfg = server.CONFIG.get("exchange_running_runtime")
 
         server.CONFIG["exchange_modes_runtime"] = None
+        server.CONFIG["exchange_running_runtime"] = []
         server._exchange_runtime_running = set()
         server._exchange_runtime_modes = {}
         server.state.running = False
@@ -565,9 +567,11 @@ class TestExchangeControlSocketRuntime:
             assert "binance" in server._exchange_runtime_running
             assert server._exchange_runtime_modes["binance"] == "live"
             assert server.CONFIG["exchange_modes_runtime"]["binance"] == "live"
+            assert "binance" in server.CONFIG["exchange_running_runtime"]
             assert any(event == "exchange_update" and payload["status"] == "running" for event, payload, _ in emits)
         finally:
             server.CONFIG["exchange_modes_runtime"] = old_map
+            server.CONFIG["exchange_running_runtime"] = old_running_cfg
             server._exchange_runtime_running = old_running
             server._exchange_runtime_modes = old_modes
             server.CONFIG["exchange"] = old_exchange
@@ -581,10 +585,12 @@ class TestExchangeControlSocketRuntime:
         monkeypatch.setattr(server, "emit", lambda event, payload=None, **kwargs: emits.append((event, payload, kwargs)))
 
         old_map = server.CONFIG.get("exchange_modes_runtime")
+        old_running_cfg = server.CONFIG.get("exchange_running_runtime")
         old_running = set(server._exchange_runtime_running)
         old_modes = dict(server._exchange_runtime_modes)
 
         server.CONFIG["exchange_modes_runtime"] = {"binance": "live", "bybit": "paper"}
+        server.CONFIG["exchange_running_runtime"] = ["binance", "bybit"]
         server._exchange_runtime_running = {"binance", "bybit"}
         server._exchange_runtime_modes = {"binance": "live", "bybit": "paper"}
 
@@ -594,9 +600,11 @@ class TestExchangeControlSocketRuntime:
             assert "binance" not in server._exchange_runtime_running
             assert "binance" not in server._exchange_runtime_modes
             assert "binance" not in server.CONFIG["exchange_modes_runtime"]
+            assert "binance" not in server.CONFIG["exchange_running_runtime"]
             assert any(event == "exchange_update" and payload["status"] == "stopped" for event, payload, _ in emits)
         finally:
             server.CONFIG["exchange_modes_runtime"] = old_map
+            server.CONFIG["exchange_running_runtime"] = old_running_cfg
             server._exchange_runtime_running = old_running
             server._exchange_runtime_modes = old_modes
 

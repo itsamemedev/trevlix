@@ -1625,22 +1625,29 @@ def bot_loop():
         now_ts = time.time()
         try:
             if now_ts >= next_exchange_refresh_ts:
-                admin_uid = _resolve_admin_user_id()
                 next_exchange_refresh_ts = now_ts + 5.0
-                if admin_uid and db and hasattr(db, "get_enabled_exchanges"):
-                    enabled_rows = db.get_enabled_exchanges(admin_uid)
-                    refreshed_exchanges: list[str] = []
-                    for row in enabled_rows:
-                        normalized = normalize_exchange_name(str(row.get("exchange", "")))
+                runtime_running_cfg = CONFIG.get("exchange_running_runtime")
+                refreshed_exchanges: list[str] = []
+                if isinstance(runtime_running_cfg, (list, tuple, set)):
+                    for ex_item in runtime_running_cfg:
+                        normalized = normalize_exchange_name(str(ex_item))
                         if normalized:
                             refreshed_exchanges.append(normalized)
-                    enabled_exchanges = sorted(set(refreshed_exchanges))
-                    if enabled_exchanges:
-                        ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
-                        rr_idx %= len(enabled_exchanges)
-                    else:
-                        ex_cache.clear()
-                        rr_idx = 0
+                if not refreshed_exchanges:
+                    admin_uid = _resolve_admin_user_id()
+                    if admin_uid and db and hasattr(db, "get_enabled_exchanges"):
+                        enabled_rows = db.get_enabled_exchanges(admin_uid)
+                        for row in enabled_rows:
+                            normalized = normalize_exchange_name(str(row.get("exchange", "")))
+                            if normalized:
+                                refreshed_exchanges.append(normalized)
+                enabled_exchanges = sorted(set(refreshed_exchanges))
+                if enabled_exchanges:
+                    ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
+                    rr_idx %= len(enabled_exchanges)
+                else:
+                    ex_cache.clear()
+                    rr_idx = 0
             if enabled_exchanges:
                 target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
                 rr_idx = (rr_idx + 1) % len(enabled_exchanges)

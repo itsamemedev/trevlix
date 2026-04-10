@@ -2988,6 +2988,7 @@ def on_start_exchange(data):
     with _exchange_runtime_lock:
         _exchange_runtime_running.add(ex_name)
         _exchange_runtime_modes[ex_name] = mode
+        CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if not isinstance(runtime_modes, dict):
             runtime_modes = {}
@@ -3028,6 +3029,7 @@ def on_stop_exchange(data):
     with _exchange_runtime_lock:
         _exchange_runtime_running.discard(ex_name)
         _exchange_runtime_modes.pop(ex_name, None)
+        CONFIG["exchange_running_runtime"] = sorted(_exchange_runtime_running)
         runtime_modes = CONFIG.get("exchange_modes_runtime")
         if isinstance(runtime_modes, dict):
             runtime_modes.pop(ex_name, None)
