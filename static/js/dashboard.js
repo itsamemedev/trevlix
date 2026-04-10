@@ -1751,9 +1751,12 @@ socket.on('backtest_result', d=>{
 });
 socket.on('virginie_chat_message', d=>{
   _appendVirginieChatMessage(d);
-  _virginieChat.sending=false;
-  _virginieChat.pendingMessage='';
-  if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
+  const role = String(d?.role || '').toLowerCase();
+  if(role === 'assistant'){
+    _virginieChat.sending=false;
+    _virginieChat.pendingMessage='';
+    if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
+  }
 });
 socket.on('virginie_chat_error', d=>{
   _virginieChat.sending=false;
