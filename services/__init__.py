@@ -18,6 +18,7 @@ from .virginie import (
     ActionResult,
     AgentResult,
     AgentTask,
+    LearningExample,
     LLMPerformanceTracker,
     LLMResult,
     Opportunity,
@@ -29,6 +30,7 @@ from .virginie import (
     VirginieIdentity,
     VirginieOrchestrator,
     build_default_project_agents,
+    build_startup_examples,
 )
 
 # CryptoPanicClient erfordert httpx – optionaler Import damit Tests ohne
@@ -54,6 +56,7 @@ __all__ = [
     "ActionResult",
     "AgentTask",
     "AgentResult",
+    "LearningExample",
     "ProfitDecisionEngine",
     "LLMResult",
     "LLMPerformanceTracker",
@@ -61,5 +64,6 @@ __all__ = [
     "VirginieDecision",
     "VirginieAgent",
     "VirginieOrchestrator",
+    "build_startup_examples",
     "build_default_project_agents",
 ]

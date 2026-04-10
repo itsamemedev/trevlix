@@ -106,6 +106,42 @@ class LLMResult:
 
 
 @dataclass(frozen=True)
+class LearningExample:
+    """Reusable example that can be improved through outcome feedback."""
+
+    example_id: str
+    task_type: str
+    content: str
+    quality_score: float = 0.5
+
+
+def build_startup_examples() -> list[LearningExample]:
+    """Return built-in examples that VIRGINIE should load on startup."""
+    return [
+        LearningExample(
+            example_id="startup-trading-max-profit",
+            task_type="trading_max_profit",
+            content=(
+                "Bewerte pro Marktchance: EV = P(success) * expected_profit - cost - risk_penalty. "
+                "Priorisiere Chancen mit hohem EV, niedriger Varianz und klaren Exit-Regeln "
+                "(Stop-Loss + Take-Profit), respektiere Guardrails und minimiere Overtrading."
+            ),
+            quality_score=0.75,
+        ),
+        LearningExample(
+            example_id="startup-agent-control",
+            task_type="agent_orchestration",
+            content=(
+                "Steuere alle Agenten über Domänenrouting, Failure-Cooldown und Priorisierung. "
+                "Delegiere Portfolio-Ziele an Trading-Agenten, blocke riskante Aktionen bei "
+                "Guardrail-Verletzungen und eskaliere bei wiederholten Fehlern."
+            ),
+            quality_score=0.72,
+        ),
+    ]
+
+
+@dataclass(frozen=True)
 class VirginieDecision:
     """Decision report with explainable score components."""
 
@@ -229,6 +265,8 @@ class VirginieCore:
         self._version_manager = VirginieVersionManager(self.identity.version)
         self._last_review_at = 0.0
         self._last_review_summary = "No review yet"
+        self._examples: dict[str, dict[str, Any]] = {}
+        self._load_startup_examples()
 
     def select_opportunity(self, opportunities: list[Opportunity]) -> Opportunity | None:
         """Select the best allowed opportunity using EV + action UCB."""
@@ -291,6 +329,76 @@ class VirginieCore:
     def recommend_llm(self, task_type: str) -> str | None:
         """Return recommended model for the given task type."""
         return self.llm_tracker.recommend(task_type)
+
+    def add_or_update_example(self, example: LearningExample) -> None:
+        """Register a reusable example for a task."""
+        example_id = str(example.example_id or "").strip()
+        task_type = str(example.task_type or "").strip()
+        if not example_id or not task_type:
+            raise ValueError("example_id and task_type must not be empty")
+        with self._lock:
+            current = self._examples.get(example_id)
+            count = float(current.get("count", 0.0)) if current else 0.0
+            self._examples[example_id] = {
+                "example_id": example_id,
+                "task_type": task_type,
+                "content": str(example.content or "").strip(),
+                "quality_score": min(1.0, max(0.0, float(example.quality_score))),
+                "count": count,
+            }
+
+    def _load_startup_examples(self) -> None:
+        """Load built-in examples so VIRGINIE starts with useful playbooks."""
+        for example in build_startup_examples():
+            self.add_or_update_example(example)
+
+    def learn_from_example_result(self, example_id: str, reward: float) -> None:
+        """Update one example quality score from real-world feedback.
+
+        Reward is expected in range 0..1 and clamped if needed.
+        """
+        key = str(example_id or "").strip()
+        if not key:
+            raise ValueError("example_id must not be empty")
+
+        bounded_reward = min(1.0, max(0.0, float(reward)))
+        with self._lock:
+            if key not in self._examples:
+                raise KeyError(f"Unknown example_id: {key}")
+            data = self._examples[key]
+            count = float(data.get("count", 0.0))
+            score = float(data.get("quality_score", 0.5))
+            new_count = count + 1.0
+            data["quality_score"] = ((score * count) + bounded_reward) / new_count
+            data["count"] = new_count
+
+    def top_examples(self, task_type: str, *, limit: int = 3) -> list[LearningExample]:
+        """Return best examples for a task, sorted by learned quality score."""
+        normalized_task = str(task_type or "").strip()
+        if not normalized_task:
+            return []
+        max_items = max(1, int(limit))
+        with self._lock:
+            rows = [
+                item
+                for item in self._examples.values()
+                if str(item.get("task_type", "")).strip() == normalized_task
+            ]
+        rows.sort(key=lambda item: float(item.get("quality_score", 0.0)), reverse=True)
+        return [
+            LearningExample(
+                example_id=str(item["example_id"]),
+                task_type=str(item["task_type"]),
+                content=str(item.get("content", "")),
+                quality_score=float(item.get("quality_score", 0.0)),
+            )
+            for item in rows[:max_items]
+        ]
+
+    def example_snapshot(self) -> dict[str, dict[str, Any]]:
+        """Return a copy of tracked examples and their learned scores."""
+        with self._lock:
+            return {key: dict(value) for key, value in self._examples.items()}
 
     def action_average_profit(self, opportunity_key: str) -> float | None:
         """Return average realized profit for an opportunity."""
