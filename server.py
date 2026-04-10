@@ -4065,6 +4065,17 @@ def api_exchanges():
             )
 
         # DB-only Snapshot (schnell, ohne externe API-Calls → keine Dashboard-Timeouts)
+        runtime = state.snapshot() if state else {}
+        active_exchange = str(runtime.get("exchange") or CONFIG.get("exchange", "")).lower()
+        runtime_positions = list(runtime.get("positions") or [])
+        runtime_markets = list(runtime.get("markets") or [])
+        runtime_last_scan = str(runtime.get("last_scan") or "")
+        runtime_running = bool(runtime.get("running", False))
+        runtime_portfolio = float(runtime.get("portfolio_value", 0) or 0)
+        runtime_return = float(runtime.get("return_pct", 0) or 0)
+        runtime_pnl = float(runtime.get("total_pnl", 0) or 0)
+        runtime_win_rate = float(runtime.get("win_rate", 0) or 0)
+
         user_exchanges = db.get_user_exchanges(uid)
         enabled_set = {
             str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
@@ -4076,18 +4087,19 @@ def api_exchanges():
             ex_name = str(ex.get("exchange", "")).lower()
             if not ex_name:
                 continue
+            is_active_exchange = ex_name == active_exchange
             ex_map[ex_name] = {
                 "enabled": bool(ex.get("enabled")),
-                "running": False,  # Runtime-Engine für Multi-Exchange ist aktuell nicht aktiv
-                "portfolio_value": 0.0,
-                "return_pct": 0.0,
+                "running": runtime_running if is_active_exchange else False,
+                "portfolio_value": runtime_portfolio if is_active_exchange else 0.0,
+                "return_pct": runtime_return if is_active_exchange else 0.0,
                 "trade_count": 0,
-                "open_trades": 0,
-                "win_rate": 0.0,
-                "total_pnl": 0.0,
-                "markets_count": 0,
-                "last_scan": now_iso,
-                "positions": [],
+                "open_trades": len(runtime_positions) if is_active_exchange else 0,
+                "win_rate": runtime_win_rate if is_active_exchange else 0.0,
+                "total_pnl": runtime_pnl if is_active_exchange else 0.0,
+                "markets_count": len(runtime_markets) if is_active_exchange else 0,
+                "last_scan": runtime_last_scan or now_iso,
+                "positions": runtime_positions if is_active_exchange else [],
                 "error": "" if ex.get("enabled") else "Nicht aktiviert",
             }
 
@@ -4109,14 +4121,18 @@ def api_exchanges():
                 meta["win_rate"] = round((wins / tc) * 100, 1)
             if ex_name in enabled_set and not meta.get("error"):
                 # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
-                meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+                if ex_name == active_exchange and runtime_running:
+                    meta["error"] = ""
+                else:
+                    meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
 
         combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
+        combined_pv = round(sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2)
         response = {
             "exchanges": ex_map,
-            "combined_pv": 0.0,
+            "combined_pv": combined_pv,
             "combined_pnl": combined_pnl,
-            "total_pv": 0.0,
+            "total_pv": combined_pv,
             "total_pnl": combined_pnl,
         }
         return jsonify(response)

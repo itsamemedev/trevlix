@@ -352,6 +352,51 @@ class TestVirginieChatAPI:
         assert "Agents=" in assistant
 
 
+class TestExchangesSnapshotAPI:
+    """Tests für Multi-Exchange Snapshot inkl. Märkte/Details im Dashboard."""
+
+    def test_exchanges_snapshot_includes_runtime_market_details(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [
+                {"exchange": "binance", "enabled": True},
+                {"exchange": "bybit", "enabled": True},
+            ],
+        )
+        monkeypatch.setattr(
+            server.state,
+            "snapshot",
+            lambda: {
+                "exchange": "binance",
+                "running": True,
+                "portfolio_value": 12345.67,
+                "return_pct": 4.2,
+                "total_pnl": 512.4,
+                "win_rate": 61.5,
+                "positions": [{"symbol": "BTC/USDT", "entry": 60000, "pnl": 42.0}],
+                "markets": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
+                "last_scan": "12:34:56",
+            },
+        )
+
+        resp = app_client.get("/api/v1/exchanges")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        ex = data["exchanges"]["binance"]
+        assert ex["running"] is True
+        assert ex["markets_count"] == 3
+        assert ex["open_trades"] == 1
+        assert ex["last_scan"] == "12:34:56"
+        assert isinstance(ex["positions"], list)
+        assert data["combined_pv"] == 12345.67
+
+
 class TestPaperModeBuild:
     """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""
 
