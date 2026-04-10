@@ -1,5 +1,7 @@
 """Regression checks for extracted module symbol wiring."""
 
+import time
+
 from app.core import trading_classes, trading_ops
 
 
@@ -87,3 +89,76 @@ def test_trading_ops_heatmap_uses_cached_payload_within_ttl():
 
     assert calls["tickers"] == 1
     assert first == second
+
+
+def test_resolve_admin_user_id_uses_db_and_cache():
+    class _Cursor:
+        def execute(self, _sql):
+            return None
+
+        def fetchone(self):
+            return {"id": 42}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _Conn:
+        def cursor(self):
+            return _Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc):
+            return False
+
+    class _DB:
+        db_available = True
+
+        def __init__(self):
+            self.calls = 0
+
+        def _get_conn(self):
+            self.calls += 1
+            return _Conn()
+
+    old_db = trading_ops.db
+    old_cache_id = trading_ops._ADMIN_USER_ID_CACHE
+    old_cache_ts = trading_ops._ADMIN_USER_ID_CACHE_TS
+    fake_db = _DB()
+    trading_ops.db = fake_db
+    trading_ops._ADMIN_USER_ID_CACHE = None
+    trading_ops._ADMIN_USER_ID_CACHE_TS = 0.0
+
+    try:
+        first = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
+        second = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
+    finally:
+        trading_ops.db = old_db
+        trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
+        trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
+
+    assert first == 42
+    assert second == 42
+    assert fake_db.calls == 1
+
+
+def test_resolve_admin_user_id_returns_none_without_db():
+    old_db = trading_ops.db
+    old_cache_id = trading_ops._ADMIN_USER_ID_CACHE
+    old_cache_ts = trading_ops._ADMIN_USER_ID_CACHE_TS
+    trading_ops.db = None
+    trading_ops._ADMIN_USER_ID_CACHE = None
+    trading_ops._ADMIN_USER_ID_CACHE_TS = time.time()
+
+    try:
+        resolved = trading_ops._resolve_admin_user_id(cache_ttl_sec=60.0)
+    finally:
+        trading_ops.db = old_db
+        trading_ops._ADMIN_USER_ID_CACHE = old_cache_id
+        trading_ops._ADMIN_USER_ID_CACHE_TS = old_cache_ts
+
+    assert resolved is None

@@ -99,6 +99,8 @@ market_cache = None
 trade_mode = None
 trade_execution = None
 _VIRGINIE_FORECAST_FEED: deque = deque(maxlen=200)
+_ADMIN_USER_ID_CACHE: int | None = None
+_ADMIN_USER_ID_CACHE_TS = 0.0
 
 
 def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
@@ -167,6 +169,26 @@ def get_virginie_forecast_quality() -> dict:
 def normalize_exchange_name(raw):
     """Normalize exchange names with the shared EXCHANGE_MAP."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
+
+
+def _resolve_admin_user_id(cache_ttl_sec: float = 60.0) -> int | None:
+    """Resolve and cache the first admin user id for runtime exchange queries."""
+    global _ADMIN_USER_ID_CACHE, _ADMIN_USER_ID_CACHE_TS
+    now_ts = time.time()
+    if _ADMIN_USER_ID_CACHE and (now_ts - _ADMIN_USER_ID_CACHE_TS) < cache_ttl_sec:
+        return _ADMIN_USER_ID_CACHE
+    if not db or not getattr(db, "db_available", False):
+        return None
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT id FROM users WHERE role='admin' ORDER BY id ASC LIMIT 1")
+                row = c.fetchone()
+        _ADMIN_USER_ID_CACHE = int(row["id"]) if row and row.get("id") else None
+        _ADMIN_USER_ID_CACHE_TS = now_ts
+    except Exception:
+        _ADMIN_USER_ID_CACHE = None
+    return _ADMIN_USER_ID_CACHE
 
 
 def init_trading_ops(
@@ -1575,6 +1597,7 @@ def bot_loop():
     rr_idx = 0
     enabled_exchanges: list[str] = []
     next_exchange_refresh_ts = 0.0
+    last_exchange_refresh_error_ts = 0.0
     last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
@@ -1586,12 +1609,18 @@ def bot_loop():
         try:
             now_ts = time.time()
             if now_ts >= next_exchange_refresh_ts:
-                enabled_rows = db.get_enabled_exchanges(1) if db and hasattr(db, "get_enabled_exchanges") else []
+                admin_uid = _resolve_admin_user_id()
+                enabled_rows = (
+                    db.get_enabled_exchanges(admin_uid)
+                    if admin_uid and db and hasattr(db, "get_enabled_exchanges")
+                    else []
+                )
                 enabled_exchanges = [
                     normalize_exchange_name(str(r.get("exchange", "")))
                     for r in enabled_rows
                     if normalize_exchange_name(str(r.get("exchange", "")))
                 ]
+                enabled_exchanges = sorted(set(enabled_exchanges))
                 next_exchange_refresh_ts = now_ts + 5.0
                 if enabled_exchanges:
                     ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
@@ -1611,8 +1640,10 @@ def bot_loop():
                         CONFIG["paper_trading"] = mode != "live"
                     state._exchange_reset = True
                     ex = ex_cache.get(ex_name)
-        except Exception:
-            pass
+        except Exception as ex_rr:
+            if now_ts - last_exchange_refresh_error_ts > 30:
+                log.debug("Multi-Exchange Round-Robin skipped: %s", ex_rr)
+                last_exchange_refresh_error_ts = now_ts
         # Exchange-Wechsel erkannt → alte Instanz verwerfen
         if state._exchange_reset:
             log.info("🔄 Exchange-Wechsel erkannt – erstelle neue Verbindung")
