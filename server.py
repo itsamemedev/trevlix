@@ -4075,6 +4075,15 @@ def api_exchanges():
         runtime_return = float(runtime.get("return_pct", 0) or 0)
         runtime_pnl = float(runtime.get("total_pnl", 0) or 0)
         runtime_win_rate = float(runtime.get("win_rate", 0) or 0)
+        runtime_total_trades = int(runtime.get("total_trades", 0) or 0)
+        runtime_iteration = int(runtime.get("iteration", 0) or 0)
+        runtime_paper = bool(runtime.get("paper_trading", CONFIG.get("paper_trading", True)))
+        pos_by_exchange: dict[str, list[dict[str, Any]]] = {}
+        for pos in runtime_positions:
+            ex_name = str(pos.get("exchange") or active_exchange or "").lower()
+            if not ex_name:
+                continue
+            pos_by_exchange.setdefault(ex_name, []).append(pos)
 
         user_exchanges = db.get_user_exchanges(uid)
         enabled_set = {
@@ -4093,13 +4102,14 @@ def api_exchanges():
                 "running": runtime_running if is_active_exchange else False,
                 "portfolio_value": runtime_portfolio if is_active_exchange else 0.0,
                 "return_pct": runtime_return if is_active_exchange else 0.0,
-                "trade_count": 0,
-                "open_trades": len(runtime_positions) if is_active_exchange else 0,
+                "trade_count": runtime_total_trades if is_active_exchange else 0,
+                "open_trades": len(pos_by_exchange.get(ex_name, [])),
                 "win_rate": runtime_win_rate if is_active_exchange else 0.0,
                 "total_pnl": runtime_pnl if is_active_exchange else 0.0,
                 "markets_count": len(runtime_markets) if is_active_exchange else 0,
+                "symbol_count": len(runtime_markets) if is_active_exchange else 0,
                 "last_scan": runtime_last_scan or now_iso,
-                "positions": runtime_positions if is_active_exchange else [],
+                "positions": pos_by_exchange.get(ex_name, []),
                 "error": "" if ex.get("enabled") else "Nicht aktiviert",
             }
 
@@ -4117,7 +4127,7 @@ def api_exchanges():
         for ex_name, meta in ex_map.items():
             tc = int(meta.get("trade_count", 0) or 0)
             wins = float(meta.get("win_rate", 0) or 0)
-            if tc > 0:
+            if tc > 0 and ex_name != active_exchange:
                 meta["win_rate"] = round((wins / tc) * 100, 1)
             if ex_name in enabled_set and not meta.get("error"):
                 # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
@@ -4125,11 +4135,19 @@ def api_exchanges():
                     meta["error"] = ""
                 else:
                     meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+            meta["status_detail"] = (
+                "Live-Runtime aktiv"
+                if ex_name == active_exchange and runtime_running
+                else "Snapshot/Fallback"
+            )
 
         combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
         combined_pv = round(sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2)
         response = {
             "exchanges": ex_map,
+            "active_exchange": active_exchange,
+            "iteration": runtime_iteration,
+            "paper_trading": runtime_paper,
             "combined_pv": combined_pv,
             "combined_pnl": combined_pnl,
             "total_pv": combined_pv,

@@ -379,9 +379,12 @@ class TestExchangesSnapshotAPI:
                 "return_pct": 4.2,
                 "total_pnl": 512.4,
                 "win_rate": 61.5,
+                "total_trades": 44,
                 "positions": [{"symbol": "BTC/USDT", "entry": 60000, "pnl": 42.0}],
                 "markets": ["BTC/USDT", "ETH/USDT", "SOL/USDT"],
                 "last_scan": "12:34:56",
+                "iteration": 77,
+                "paper_trading": True,
             },
         )
 
@@ -391,10 +394,15 @@ class TestExchangesSnapshotAPI:
         ex = data["exchanges"]["binance"]
         assert ex["running"] is True
         assert ex["markets_count"] == 3
+        assert ex["symbol_count"] == 3
         assert ex["open_trades"] == 1
+        assert ex["trade_count"] == 44
         assert ex["last_scan"] == "12:34:56"
+        assert ex["status_detail"] == "Live-Runtime aktiv"
         assert isinstance(ex["positions"], list)
         assert data["combined_pv"] == 12345.67
+        assert data["active_exchange"] == "binance"
+        assert data["iteration"] == 77
 
 
 class TestPaperModeBuild:

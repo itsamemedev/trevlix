@@ -3007,6 +3007,8 @@ function mexUpdate(data) {
     const wr = ex.win_rate || 0;
     const pnl = ex.total_pnl || 0;
     const err = ex.error || '';
+    const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
+    const statusDetail = String(ex.status_detail || '');
     const positions = ex.positions || [];
 
     const statusDot = running
@@ -3030,7 +3032,7 @@ function mexUpdate(data) {
           <span style="font-size:20px">${MEX_LOGOS[id]}</span>
           <div>
             <div style="font-weight:800;font-size:14px;color:#e8f4ff">${label}</div>
-            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${ex.markets_count||0} Märkte · ${ex.last_scan||'—'}</div>
+            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${marketCount} Märkte · ${ex.last_scan||'—'}${statusDetail ? ` · ${esc(statusDetail)}` : ''}</div>
           </div>
         </div>
         <div style="display:flex;align-items:center;gap:6px">
