@@ -350,6 +350,16 @@ class TestVirginieChatAPI:
         assert "tier" in data
         assert "signature" in data
 
+    def test_chat_forecast_feed_endpoint_returns_items(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.get("/api/v1/virginie/forecast-feed?limit=5")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "items" in data
+        assert isinstance(data["items"], list)
+
     def test_chat_clear_endpoint_resets_messages(self, app_client):
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1

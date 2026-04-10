@@ -550,6 +550,7 @@ const _ai3dState = {
 };
 const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
 let _virginieEdgeTimer = null;
+const _virginieForecastFeed = [];
 
 function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
@@ -697,6 +698,37 @@ async function loadVirginieEdgeProfile(){
       const tier=String(d.tier||'');
       tierEl.style.color = tier==='S' ? 'var(--green)' : tier==='A' ? 'var(--jade)' : tier==='B' ? 'var(--yellow)' : 'var(--red)';
     }
+  }catch(_e){}
+  loadVirginieForecastFeed();
+}
+
+function _renderVirginieForecastFeed(){
+  const el = document.getElementById('vEdgeFeed');
+  if(!el) return;
+  if(!_virginieForecastFeed.length){
+    el.innerHTML = '<div class="row" style="color:var(--sub)">Noch keine Forecast-Events.</div>';
+    return;
+  }
+  el.innerHTML = _virginieForecastFeed.slice(0,8).map(item=>{
+    const clr = item.allowed ? 'var(--green)' : 'var(--red)';
+    return `<div class="row">
+      <div style="display:flex;justify-content:space-between;gap:6px">
+        <span style="color:${clr};font-weight:700">${esc(item.symbol||'—')} · ${esc(item.recommended_action||'—')}</span>
+        <span style="font-family:var(--mono);color:var(--sub)">${esc(item.time||'')}</span>
+      </div>
+      <div style="margin-top:2px;color:var(--sub)">Tier ${esc(item.tier||'—')} · ${esc(item.bias||'—')} · ${esc(String(item.score_pct||0))}%</div>
+    </div>`;
+  }).join('');
+}
+
+async function loadVirginieForecastFeed(){
+  try{
+    const r = await fetch('/api/v1/virginie/forecast-feed?limit=12', {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    const items = Array.isArray(d.items) ? d.items : [];
+    _virginieForecastFeed.splice(0, _virginieForecastFeed.length, ...items);
+    _renderVirginieForecastFeed();
   }catch(_e){}
 }
 
@@ -1560,7 +1592,7 @@ function wizFinish(){document.getElementById('wizardOverlay').style.display='non
 const _socketEvents = ['connect','connect_error','disconnect','auth_error',
   'update','ai_update','genetic_update','status','trade','price_alert','backtest_result',
   'update_status','update_result','system_analytics','healing_update','revenue_update',
-  'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error'];
+  'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error','virginie_forecast'];
 _socketEvents.forEach(ev => socket.off(ev));
 
 function _setConnStatus(state){
@@ -1695,6 +1727,12 @@ socket.on('virginie_chat_error', d=>{
   _virginieChat.pendingMessage='';
   if(_virginieChat.socketTimer){clearTimeout(_virginieChat.socketTimer);_virginieChat.socketTimer=null;}
   toast('⚠️ '+(d&&d.error?d.error:'Chat-Fehler'),'warning');
+});
+socket.on('virginie_forecast', d=>{
+  if(!d) return;
+  _virginieForecastFeed.unshift(d);
+  if(_virginieForecastFeed.length > 25) _virginieForecastFeed.length = 25;
+  _renderVirginieForecastFeed();
 });
 
 

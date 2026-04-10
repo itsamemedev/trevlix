@@ -15,6 +15,7 @@ import os
 import threading
 import time
 import traceback
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
@@ -97,6 +98,15 @@ _pin_user_exchange = None
 market_cache = None
 trade_mode = None
 trade_execution = None
+_VIRGINIE_FORECAST_FEED: deque = deque(maxlen=200)
+
+
+def get_virginie_forecast_feed(limit: int = 50) -> list[dict]:
+    """Return latest VIRGINIE forecast events (newest first)."""
+    lim = max(1, min(int(limit or 50), 200))
+    items = list(_VIRGINIE_FORECAST_FEED)[-lim:]
+    items.reverse()
+    return items
 
 
 def normalize_exchange_name(raw):
@@ -541,19 +551,19 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
         pass
 
     try:
+        forecast_payload = {
+            "time": datetime.now().strftime("%H:%M:%S"),
+            "symbol": symbol,
+            "allowed": bool(allowed),
+            "score_pct": round(score_pct, 2),
+            "tier": tier,
+            "bias": bias,
+            "recommended_action": rec_action,
+            "reason": detail,
+        }
+        _VIRGINIE_FORECAST_FEED.append(forecast_payload)
         if emit_event:
-            emit_event(
-                "virginie_forecast",
-                {
-                    "symbol": symbol,
-                    "allowed": bool(allowed),
-                    "score_pct": round(score_pct, 2),
-                    "tier": tier,
-                    "bias": bias,
-                    "recommended_action": rec_action,
-                    "reason": detail,
-                },
-            )
+            emit_event("virginie_forecast", forecast_payload)
     except Exception:
         pass
 

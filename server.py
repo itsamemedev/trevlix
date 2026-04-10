@@ -152,6 +152,7 @@ from app.core.trading_ops import (
     create_exchange,
     fetch_aggregated_balance,
     fetch_markets,
+    get_virginie_forecast_feed,
     get_exchange_fee_rate,
     get_heatmap_data,
     init_trading_ops,
@@ -1315,6 +1316,14 @@ def api_virginie_advice():
 def api_virginie_edge_profile():
     """Liefert den VIRGINIE Edge-Score (Trading/Forecast Profil)."""
     return jsonify(_virginie_edge_profile())
+
+
+@app.route("/api/v1/virginie/forecast-feed")
+@api_auth_required
+def api_virginie_forecast_feed():
+    """Liefert die letzten VIRGINIE Forecast-Events."""
+    limit = safe_int(request.args.get("limit", 30), 30)
+    return jsonify({"items": get_virginie_forecast_feed(limit)})
 
 
 @app.route("/api/v1/virginie/chat", methods=["POST"])
