@@ -924,41 +924,41 @@ body.is-admin .card{
 .admin-card .kv-value { color:#d6e9ff; }
 
 /* Futuristic upgrade for both dashboards */
-#sec-home .card,
-#sec-admin .admin-card,
-#sec-analytics .admin-card{
+body:not(.is-admin) #sec-home .card,
+body.is-admin #sec-admin .admin-card,
+body.is-admin #sec-analytics .admin-card{
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   box-shadow:
     0 1px 0 rgba(255,255,255,.04) inset,
     0 16px 40px rgba(2,8,20,.35);
 }
-#sec-home .card{
+body:not(.is-admin) #sec-home .card{
   background:
     radial-gradient(circle at 12% 0%,rgba(0,212,255,.08),transparent 42%),
     linear-gradient(160deg,rgba(8,13,26,.88),rgba(3,7,15,.92));
   border-color:rgba(108,191,255,.16);
 }
-#sec-home .card:hover{
+body:not(.is-admin) #sec-home .card:hover{
   border-color:rgba(0,212,255,.28);
   box-shadow:
     0 1px 0 rgba(255,255,255,.05) inset,
     0 18px 42px rgba(0,212,255,.12);
 }
-#sec-home .hero{
+body:not(.is-admin) #sec-home .hero{
   background:
     radial-gradient(circle at 85% 20%,rgba(0,212,255,.2),transparent 35%),
     radial-gradient(circle at 15% 80%,rgba(179,71,255,.2),transparent 45%),
     linear-gradient(140deg,rgba(6,12,28,.96),rgba(3,6,15,.96));
   border-color:rgba(124,212,255,.22);
 }
-#sec-home .sg{
+body:not(.is-admin) #sec-home .sg{
   background:rgba(70,110,160,.24);
 }
-#sec-home .sc{
+body:not(.is-admin) #sec-home .sc{
   background:linear-gradient(160deg,rgba(9,17,32,.86),rgba(5,11,24,.9));
 }
-#sec-home .sv{
+body:not(.is-admin) #sec-home .sv{
   text-shadow:0 0 20px rgba(116,224,255,.12);
 }
 
@@ -1024,6 +1024,40 @@ body.is-admin .admin-stat-card{
 }
 .ai-live-chat-input:focus{
   outline:none;border-color:rgba(0,212,255,.5);box-shadow:0 0 0 2px rgba(0,212,255,.12)
+}
+
+/* Light-Theme Safety: Anzeigen/Lesbarkeit nicht beeinträchtigen */
+[data-theme="light"] #sec-home .card{
+  background:#fff !important;
+  border-color:rgba(0,0,0,.08) !important;
+  box-shadow:0 6px 22px rgba(10,23,35,.08) !important;
+}
+[data-theme="light"] #sec-home .hero{
+  background:linear-gradient(155deg,#ffffff,#f4f9ff) !important;
+  border-color:rgba(66,138,202,.22) !important;
+}
+[data-theme="light"] body.is-admin .admin-card{
+  background:linear-gradient(165deg,#fffdf8,#fff8ea) !important;
+  border-color:rgba(191,145,33,.26) !important;
+  box-shadow:0 8px 24px rgba(130,95,0,.08) !important;
+}
+[data-theme="light"] .ai-live-nexus{
+  background:linear-gradient(165deg,#f3fbff,#eef5ff) !important;
+  border-color:rgba(52,130,191,.28) !important;
+}
+[data-theme="light"] .ai-live-title{color:#114f7d}
+[data-theme="light"] .ai-live-subtitle,
+[data-theme="light"] .ai-live-meta{color:#2e5f87}
+[data-theme="light"] .ai-live-collab{color:#214a70}
+[data-theme="light"] .ai-live-chat-wrap{
+  background:rgba(255,255,255,.85);
+  border-color:rgba(52,130,191,.2);
+}
+[data-theme="light"] .ai-live-chat-title{color:#163e62}
+[data-theme="light"] .ai-live-chat-input{
+  color:#16314a;
+  background:#fff;
+  border-color:rgba(52,130,191,.3);
 }
 
 /* Admin grid layout on desktop */
