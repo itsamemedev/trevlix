@@ -1573,6 +1573,8 @@ def bot_loop():
     ex_name = str(CONFIG.get("exchange", "cryptocom")).lower()
     ex_cache: dict[str, Any] = {}
     rr_idx = 0
+    enabled_exchanges: list[str] = []
+    next_exchange_refresh_ts = 0.0
     last_error_emit_ts = 0.0
     while state.running:
         if state.paused:
@@ -1582,15 +1584,24 @@ def bot_loop():
         _maybe_healer_heartbeat()
         # Multi-Exchange Round-Robin: rotiert über alle aktivierten Exchanges
         try:
-            enabled_rows = db.get_enabled_exchanges(1) if db and hasattr(db, "get_enabled_exchanges") else []
-            enabled_exchanges = [
-                normalize_exchange_name(str(r.get("exchange", "")))
-                for r in enabled_rows
-                if normalize_exchange_name(str(r.get("exchange", "")))
-            ]
+            now_ts = time.time()
+            if now_ts >= next_exchange_refresh_ts:
+                enabled_rows = db.get_enabled_exchanges(1) if db and hasattr(db, "get_enabled_exchanges") else []
+                enabled_exchanges = [
+                    normalize_exchange_name(str(r.get("exchange", "")))
+                    for r in enabled_rows
+                    if normalize_exchange_name(str(r.get("exchange", "")))
+                ]
+                next_exchange_refresh_ts = now_ts + 5.0
+                if enabled_exchanges:
+                    ex_cache = {name: ex_obj for name, ex_obj in ex_cache.items() if name in enabled_exchanges}
+                    rr_idx %= len(enabled_exchanges)
+                else:
+                    ex_cache.clear()
+                    rr_idx = 0
             if enabled_exchanges:
                 target = enabled_exchanges[rr_idx % len(enabled_exchanges)]
-                rr_idx += 1
+                rr_idx = (rr_idx + 1) % len(enabled_exchanges)
                 if target and target != ex_name:
                     ex_name = target
                     CONFIG["exchange"] = ex_name
