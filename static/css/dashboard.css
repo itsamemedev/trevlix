@@ -1025,6 +1025,33 @@ body.is-admin .admin-stat-card{
 .ai-live-chat-input:focus{
   outline:none;border-color:rgba(0,212,255,.5);box-shadow:0 0 0 2px rgba(0,212,255,.12)
 }
+.ai-live-edge{
+  margin-top:10px;
+  border:1px solid rgba(120,208,255,.2);
+  border-radius:8px;
+  background:rgba(3,10,21,.62);
+  padding:8px;
+  position:relative;
+  z-index:1;
+}
+.ai-live-edge-title{
+  font-size:10px;
+  letter-spacing:1.4px;
+  text-transform:uppercase;
+  color:#8fdfff;
+  font-family:var(--mono);
+  margin-bottom:8px;
+}
+.ai-live-edge-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:6px;
+}
+[data-theme="light"] .ai-live-edge{
+  background:rgba(255,255,255,.9);
+  border-color:rgba(52,130,191,.22);
+}
+[data-theme="light"] .ai-live-edge-title{color:#1f547a}
 
 /* Light-Theme Safety: Anzeigen/Lesbarkeit nicht beeinträchtigen */
 [data-theme="light"] #sec-home .card{

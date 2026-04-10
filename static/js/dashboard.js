@@ -549,6 +549,7 @@ const _ai3dState = {
   agentCount:0, lastAgent:'—', agentNames:[]
 };
 const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
+let _virginieEdgeTimer = null;
 
 function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
@@ -676,6 +677,27 @@ function initVirginieChat(){
   if(refreshBtn) refreshBtn.addEventListener('click', ()=>refreshVirginieChatHistory(true));
   if(clearBtn) clearBtn.addEventListener('click', clearVirginieChatHistory);
   loadVirginieChatHistory();
+  loadVirginieEdgeProfile();
+  if(!_virginieEdgeTimer){
+    _virginieEdgeTimer = setInterval(loadVirginieEdgeProfile, 30000);
+  }
+}
+
+async function loadVirginieEdgeProfile(){
+  try{
+    const r = await fetch('/api/v1/virginie/edge-profile', {credentials:'include'});
+    if(!r.ok) return;
+    const d = await r.json();
+    _s('vEdgeScore', `${Number(d.edge_score||0).toFixed(1)} / 100`);
+    _s('vEdgeTier', String(d.tier||'—'));
+    _s('vEdgeUrgency', String(d.urgency||'—'));
+    _s('vEdgeSignature', String(d.signature||'—'));
+    const tierEl=document.getElementById('vEdgeTier');
+    if(tierEl){
+      const tier=String(d.tier||'');
+      tierEl.style.color = tier==='S' ? 'var(--green)' : tier==='A' ? 'var(--jade)' : tier==='B' ? 'var(--yellow)' : 'var(--red)';
+    }
+  }catch(_e){}
 }
 
 function updateAI3DFromAI(ai){
@@ -1802,6 +1824,7 @@ let _gasInterval = setInterval(updateGasFees, 120000);
 window.addEventListener('beforeunload', () => {
   clearInterval(_gasInterval);
   _gasInterval = null;
+  if(_virginieEdgeTimer){ clearInterval(_virginieEdgeTimer); _virginieEdgeTimer = null; }
 });
 
 
