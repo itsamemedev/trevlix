@@ -286,6 +286,12 @@ class AIEngine:
                 max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 1000.0)),
             )
         )
+        virginie_examples = self.virginie.example_snapshot()
+        log.info(
+            "🤖 VIRGINIE Startup-Examples geladen: %s (%s)",
+            len(virginie_examples),
+            ", ".join(sorted(virginie_examples.keys())) or "keine",
+        )
         self.virginie_orchestrator = VirginieOrchestrator()
         for _agent in build_default_project_agents():
             self.virginie_orchestrator.register_agent(_agent)
@@ -1427,6 +1433,10 @@ class AIEngine:
             "blocked_pct": round(self.blocked_count / total * 100, 1) if total > 0 else 0,
             "assistant_name": self.virginie.identity.name,
             "assistant_version": self.virginie.current_version(),
+            "assistant_examples": {
+                "loaded": len(self.virginie.example_snapshot()),
+                "ids": sorted(self.virginie.example_snapshot().keys()),
+            },
             "assistant_agents": self.virginie_orchestrator.status(),
             "assistant_review": self.virginie.review_status(),
             "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", False)),
