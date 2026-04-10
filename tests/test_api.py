@@ -297,13 +297,14 @@ class TestVirginieChatAPI:
             "query_llm_with_tools",
             lambda prompt, context: f"Echo: {prompt} ({'VIRGINIE' in context})",
         )
+        monkeypatch.setitem(server.CONFIG, "virginie_cpu_fast_chat", False)
 
-        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Wie ist das Risiko heute?"})
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Bitte antworte mit Echo Test."})
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True
         assert data["user"]["role"] == "user"
-        assert "Risiko" in data["user"]["content"]
+        assert "Echo Test" in data["user"]["content"]
         assert data["assistant"]["role"] == "assistant"
         assert "Echo:" in data["assistant"]["content"]
 
@@ -371,6 +372,16 @@ class TestVirginieChatAPI:
         data = resp.get_json()
         assistant = str(data.get("assistant", {}).get("content", ""))
         assert "Aktionsplan" in assistant
+
+    def test_chat_cpu_fast_reply_for_risk_prompt(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Risiko heute?"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assistant = str(data.get("assistant", {}).get("content", ""))
+        assert "CPU-Quickcheck" in assistant
 
 
 class TestExchangesSnapshotAPI:

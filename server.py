@@ -607,7 +607,7 @@ def _virginie_runtime_status() -> dict[str, Any]:
     assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
     return {
         "enabled": bool(CONFIG.get("virginie_enabled", True)),
-        "primary_control": bool(CONFIG.get("virginie_primary_control", False)),
+        "primary_control": bool(CONFIG.get("virginie_primary_control", True)),
         "autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
         "min_score": float(CONFIG.get("virginie_min_score", 0.0) or 0.0),
         "max_risk_penalty": float(CONFIG.get("virginie_max_risk_penalty", 1000.0) or 1000.0),
@@ -684,6 +684,31 @@ def _virginie_runtime_advice() -> dict[str, Any]:
     }
 
 
+def _virginie_cpu_fast_reply(prompt: str) -> str | None:
+    """Ultraschnelle CPU-basierte VIRGINIE-Antwort ohne externen LLM-Call."""
+    p = str(prompt or "").strip().lower()
+    if not p:
+        return None
+    if any(k in p for k in ("risiko", "risk", "verlust", "drawdown")):
+        return (
+            "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades. "
+            "Wenn Drawdown steigt, Trade-Frequenz reduzieren und Stops enger setzen."
+        )
+    if any(k in p for k in ("markt", "market", "regime", "trend")):
+        return (
+            "CPU-Quickcheck: Regime + Volatilität zuerst prüfen. "
+            "Nur bei bestätigtem Trend aggressiv handeln, sonst Positionsgröße drosseln."
+        )
+    if any(k in p for k in ("setup", "konfig", "config", "einstellung")):
+        return (
+            "CPU-Quickcheck Setup: 1) virginie_primary_control aktiv, 2) ai_min_confidence validieren, "
+            "3) stop_loss/take_profit auf aktuelle Volatilität abstimmen."
+        )
+    if len(p.split()) <= 5:
+        return "Beschreibe bitte kurz Symbol, Ziel und Risiko-Toleranz, dann gebe ich dir einen konkreten Plan."
+    return None
+
+
 def _build_virginie_chat_context(user_id: int) -> str:
     ai = ai_engine.to_dict() if ai_engine else {}
     snap = state.snapshot() if state else {}
@@ -745,6 +770,10 @@ def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
             for i, a in enumerate(advice.get("actions", []))
         ]
         return "VIRGINIE Aktionsplan:\n" + ("\n".join(action_lines) if action_lines else "Keine Aktionen.")
+    if bool(CONFIG.get("virginie_cpu_fast_chat", True)):
+        fast_reply = _virginie_cpu_fast_reply(prompt)
+        if fast_reply:
+            return fast_reply
     context = _build_virginie_chat_context(user_id)
     try:
         reply = knowledge_base.query_llm_with_tools(prompt, context)
@@ -968,6 +997,7 @@ def api_user_settings_update():
         "virginie_autonomy_weight",
         "virginie_min_score",
         "virginie_max_risk_penalty",
+        "virginie_cpu_fast_chat",
         "discord_webhook",
         "discord_on_buy",
         "discord_on_sell",
@@ -2133,6 +2163,7 @@ def on_update_config(data):
         "virginie_autonomy_weight",
         "virginie_min_score",
         "virginie_max_risk_penalty",
+        "virginie_cpu_fast_chat",
         "circuit_breaker_losses",
         "circuit_breaker_min",
         "max_spread_pct",

@@ -80,6 +80,7 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "virginie_autonomy_weight": 0.7,
         "virginie_min_score": 0.0,
         "virginie_max_risk_penalty": 1000.0,
+        "virginie_cpu_fast_chat": True,
         "ai_use_kelly": True,
         "ai_optimize_every": 15,
         "ai_retrain_every": 5,
