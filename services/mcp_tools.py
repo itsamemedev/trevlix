@@ -11,6 +11,11 @@ Tools:
     - portfolio_status: Aktueller Portfolio-Stand und offene Positionen
     - risk_assessment: Risiko-Bewertung basierend auf aktuellen Daten
     - knowledge_query: Abfrage des Gemeinschaftswissens
+    - list_agents: Registrierte VIRGINIE-Agenten + Coverage
+    - execute_agent_task: VIRGINIE-Agent per Domain/Objective steuern
+    - healing_status: Auto-Healing-Agent Snapshot
+    - alert_status: Alert-Escalation Snapshot
+    - cluster_status: Cluster-Controller Snapshot
 
 Verwendung:
     from services.mcp_tools import MCPToolRegistry
@@ -23,6 +28,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import uuid
 from datetime import datetime
 from typing import Any
 
@@ -95,7 +101,37 @@ class MCPToolRegistry:
         self._call_cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl = 60  # 1 Minute Cache für Tool-Ergebnisse
 
+        # Agent-Referenzen werden nachträglich via set_agent_refs() gesetzt,
+        # da orchestrator/healer/alert/cluster erst nach der Registry entstehen.
+        self._virginie_orchestrator: Any | None = None
+        self._healer: Any | None = None
+        self._alert_escalation: Any | None = None
+        self._cluster_ctrl: Any | None = None
+
         self._register_builtin_tools()
+        self._register_agent_control_tools()
+
+    def set_agent_refs(
+        self,
+        *,
+        virginie_orchestrator: Any | None = None,
+        healer: Any | None = None,
+        alert_escalation: Any | None = None,
+        cluster_ctrl: Any | None = None,
+    ) -> None:
+        """Bind live agent references so the LLM can command them.
+
+        Called from server.py after agents are constructed. Passing ``None``
+        leaves the existing reference untouched (use a new registry to clear).
+        """
+        if virginie_orchestrator is not None:
+            self._virginie_orchestrator = virginie_orchestrator
+        if healer is not None:
+            self._healer = healer
+        if alert_escalation is not None:
+            self._alert_escalation = alert_escalation
+        if cluster_ctrl is not None:
+            self._cluster_ctrl = cluster_ctrl
 
     def _register_builtin_tools(self) -> None:
         """Registriert alle eingebauten Trading-Tools."""
@@ -256,6 +292,90 @@ class MCPToolRegistry:
                     "properties": {},
                 },
                 handler=self._tool_strategy_performance,
+            )
+        )
+
+    def _register_agent_control_tools(self) -> None:
+        """Registriert Tools, mit denen die LLM laufende Agenten steuert."""
+        self.register(
+            MCPTool(
+                name="list_agents",
+                description=(
+                    "Listet alle registrierten VIRGINIE-Agenten mit Domain, "
+                    "Auslastung und Fehlerquote. Zusätzlich Coverage-Report "
+                    "(welche Pflicht-Domains aktuell abgedeckt sind)."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=self._tool_list_agents,
+            )
+        )
+        self.register(
+            MCPTool(
+                name="execute_agent_task",
+                description=(
+                    "Sendet eine Aufgabe an einen VIRGINIE-Projekt-Agenten. "
+                    "Die Domain (z.B. 'trading', 'operations', 'risk', "
+                    "'notifications', 'quality', 'learning', 'portfolio') "
+                    "bestimmt das Routing. 'objective' beschreibt das Ziel "
+                    "in Klartext, 'payload' liefert strukturierte Parameter."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "domain": {
+                            "type": "string",
+                            "description": (
+                                "Ziel-Domain (trading, operations, risk, "
+                                "notifications, quality, learning, portfolio, "
+                                "planning, compliance)"
+                            ),
+                        },
+                        "objective": {
+                            "type": "string",
+                            "description": "Kurze Ziel-Beschreibung (max 240 Zeichen)",
+                        },
+                        "payload": {
+                            "type": "object",
+                            "description": "Optionale strukturierte Parameter",
+                        },
+                    },
+                    "required": ["domain", "objective"],
+                },
+                handler=self._tool_execute_agent_task,
+            )
+        )
+        self.register(
+            MCPTool(
+                name="healing_status",
+                description=(
+                    "Gibt den aktuellen Health-Snapshot des Auto-Healing-"
+                    "Agenten zurück (Heartbeat, Recovery-Zähler, aktive "
+                    "Probleme)."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=self._tool_healing_status,
+            )
+        )
+        self.register(
+            MCPTool(
+                name="alert_status",
+                description=(
+                    "Liefert aktive Alerts, History-Zusammenfassung und "
+                    "Eskalations-Stufen aus dem AlertEscalationManager."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=self._tool_alert_status,
+            )
+        )
+        self.register(
+            MCPTool(
+                name="cluster_status",
+                description=(
+                    "Zeigt den Zustand aller registrierten Cluster-Nodes "
+                    "(Status, letzter Check, Bot-Health)."
+                ),
+                parameters={"type": "object", "properties": {}},
+                handler=self._tool_cluster_status,
             )
         )
 
@@ -589,3 +709,119 @@ class MCPToolRegistry:
                 )
         perf_list.sort(key=lambda x: x["win_rate"], reverse=True)
         return {"strategies": perf_list, "count": len(perf_list)}
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # AGENT CONTROL HANDLERS – LLM steuert laufende VIRGINIE-Agenten
+    # ═════════════════════════════════════════════════════════════════════════
+
+    def _tool_list_agents(self, _args: dict[str, Any]) -> dict[str, Any]:
+        """Registrierte VIRGINIE-Agenten und Coverage-Report."""
+        orch = self._virginie_orchestrator
+        if orch is None:
+            return {"error": "VIRGINIE-Orchestrator ist nicht verbunden."}
+        try:
+            status = orch.status()
+            coverage = orch.coverage_report()
+            return {
+                "agents": status.get("agents", []),
+                "registered_agents": status.get("registered_agents", 0),
+                "required_domains": coverage.get("required_domains", []),
+                "missing_domains": coverage.get("missing_domains", []),
+                "coverage_pct": coverage.get("coverage_pct", 0),
+                "last_agent": status.get("last_agent"),
+                "history_size": status.get("history_size", 0),
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as exc:
+            log.debug("list_agents Fehler: %s", exc)
+            return {"error": f"list_agents fehlgeschlagen: {exc}"}
+
+    def _tool_execute_agent_task(self, args: dict[str, Any]) -> dict[str, Any]:
+        """LLM delegiert eine Aufgabe an einen VIRGINIE-Agenten."""
+        orch = self._virginie_orchestrator
+        if orch is None:
+            return {"error": "VIRGINIE-Orchestrator ist nicht verbunden."}
+        domain = str(args.get("domain", "")).strip()
+        objective = str(args.get("objective", "")).strip()
+        if not domain:
+            return {"error": "Parameter 'domain' fehlt."}
+        if not objective:
+            return {"error": "Parameter 'objective' fehlt."}
+        payload = args.get("payload") or {}
+        if not isinstance(payload, dict):
+            return {"error": "Parameter 'payload' muss ein Objekt sein."}
+        # Defensive Cap gegen übergroße Payloads aus LLM-Antworten.
+        if len(payload) > 32:
+            return {"error": "Payload zu groß (>32 Felder) – LLM bitte verdichten."}
+        try:
+            from services.virginie import AgentTask  # lazy import, vermeidet Zyklus
+        except Exception as exc:
+            return {"error": f"AgentTask-Import fehlgeschlagen: {exc}"}
+        task = AgentTask(
+            task_id=f"llm-{uuid.uuid4().hex[:10]}",
+            domain=domain,
+            objective=objective[:240],
+            payload=payload,
+        )
+        try:
+            result = orch.execute(task)
+        except Exception as exc:
+            log.debug("execute_agent_task Fehler: %s", exc)
+            return {"error": f"Agent-Ausführung fehlgeschlagen: {exc}"}
+        return {
+            "task_id": task.task_id,
+            "agent": result.agent_name,
+            "success": bool(result.success),
+            "summary": result.summary,
+            "data": result.data,
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def _tool_healing_status(self, _args: dict[str, Any]) -> dict[str, Any]:
+        """Auto-Healing-Agent Snapshot."""
+        healer = self._healer
+        if healer is None:
+            return {"error": "Auto-Healing-Agent ist nicht verbunden."}
+        try:
+            snap = healer.health_snapshot()
+            running = bool(getattr(healer, "is_running", lambda: False)())
+            return {
+                "running": running,
+                "snapshot": snap,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as exc:
+            log.debug("healing_status Fehler: %s", exc)
+            return {"error": f"healing_status fehlgeschlagen: {exc}"}
+
+    def _tool_alert_status(self, _args: dict[str, Any]) -> dict[str, Any]:
+        """Alert-Escalation Snapshot."""
+        mgr = self._alert_escalation
+        if mgr is None:
+            return {"error": "AlertEscalationManager ist nicht verbunden."}
+        try:
+            snap = mgr.snapshot()
+            active = mgr.get_active_alerts()
+            return {
+                "active_alerts": active,
+                "snapshot": snap,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as exc:
+            log.debug("alert_status Fehler: %s", exc)
+            return {"error": f"alert_status fehlgeschlagen: {exc}"}
+
+    def _tool_cluster_status(self, _args: dict[str, Any]) -> dict[str, Any]:
+        """Cluster-Controller Snapshot."""
+        cluster = self._cluster_ctrl
+        if cluster is None:
+            return {"error": "ClusterController ist nicht verbunden."}
+        try:
+            snap = cluster.snapshot()
+            return {
+                "snapshot": snap,
+                "timestamp": datetime.now().isoformat(),
+            }
+        except Exception as exc:
+            log.debug("cluster_status Fehler: %s", exc)
+            return {"error": f"cluster_status fehlgeschlagen: {exc}"}

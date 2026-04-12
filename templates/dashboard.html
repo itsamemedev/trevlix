@@ -407,23 +407,7 @@
 <!-- ══ TRADES ══ -->
 <div class="sec" id="sec-pos">
   <div class="card">
-    <div class="card-hd">
-      <span class="card-title">Execution Mode & Runtime</span>
-      <span class="card-badge" id="tradeModeBadge">PAPER</span>
-    </div>
-    <div class="card-body">
-      <div style="font-size:12px;color:var(--sub);line-height:1.6;margin-bottom:10px">
-        Trading-Modus und Bot-Steuerung wurden zentralisiert, um doppelte Aktionen zu vermeiden.
-        Verwende bitte die Haupt-Controls im Header (Start/Stop/Pause) sowie die Paper/Live-Einstellung im Settings-Bereich.
-      </div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-info" onclick="document.getElementById('btnStart')?.scrollIntoView({behavior:'smooth',block:'center'})">🎛️ Zu Haupt-Controls</button>
-        <button class="btn btn-info" onclick="document.getElementById('sPaper')?.scrollIntoView({behavior:'smooth',block:'center'})">⚙️ Zu Paper/Live Setting</button>
-      </div>
-    </div>
-  </div>
-  <div class="card">
-    <div class="card-hd"><span class="card-title"><span data-i18n="open_positions">Offene Positionen</span></span><span class="card-badge" id="posCount">0</span></div>
+    <div class="card-hd"><span class="card-title"><span data-i18n="open_positions">Offene Positionen</span></span><span style="display:flex;gap:6px;align-items:center"><span class="card-badge mode-badge" id="tradeModeBadge">PAPER</span><span class="card-badge" id="posCount">0</span></span></div>
     <div class="card-body" style="padding-top:10px" id="posList"><div class="empty"><div class="empty-ico">📭</div><span data-i18n="no_positions">Keine offenen Positionen</span></div></div>
   </div>
   <div class="card">

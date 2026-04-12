@@ -843,13 +843,13 @@ def _agent_notifier(msg: str) -> None:
     """Unified notifier callback for autonomous agents."""
     try:
         discord.send("Agent Alert", msg, "alert")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Agent-Notifier Discord fehlgeschlagen: %s", exc)
     try:
         telegram = TelegramNotifier(CONFIG)
         telegram.send(f"<b>Agent Alert</b>\n{msg}")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Agent-Notifier Telegram fehlgeschlagen: %s", exc)
 
 
 alert_escalation = AlertEscalationManager(
@@ -867,6 +867,19 @@ cluster_ctrl = ClusterController(
     config=CONFIG,
     notifier=_agent_notifier,
 )
+
+# LLM ↔ Agenten-Bridge: MCP-Registry erhält Live-Referenzen auf Orchestrator
+# und Ops-Agenten, damit die LLM über query_llm_with_tools() direkt
+# Agenten-Tasks ausführen kann (execute_agent_task, healing_status, ...).
+try:
+    mcp_registry.set_agent_refs(
+        virginie_orchestrator=getattr(ai_engine, "virginie_orchestrator", None),
+        healer=healer,
+        alert_escalation=alert_escalation,
+        cluster_ctrl=cluster_ctrl,
+    )
+except Exception as exc:  # noqa: BLE001
+    log.warning("MCP-Registry Agent-Bindung fehlgeschlagen: %s", exc)
 
 
 def emit_event(event: str, data: Any, to: str | None = None) -> None:

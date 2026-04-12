@@ -2,7 +2,9 @@ from contextlib import contextmanager
 
 import pytest
 
-server_mod = pytest.importorskip("server", reason="server import not available in this test runtime")
+server_mod = pytest.importorskip(
+    "server", reason="server import not available in this test runtime"
+)
 MySQLManager = server_mod.MySQLManager
 
 
@@ -45,7 +47,12 @@ def _build_manager_with_cursor(cursor):
 
 
 def test_upsert_user_exchange_keeps_existing_credentials_when_empty_payload():
-    existing = {"id": 7, "api_key": "enc:old_key", "api_secret": "enc:old_secret", "passphrase": "enc:old_pass"}
+    existing = {
+        "id": 7,
+        "api_key": "enc:old_key",
+        "api_secret": "enc:old_secret",
+        "passphrase": "enc:old_pass",
+    }
     cursor = _FakeCursor(existing)
     mgr = _build_manager_with_cursor(cursor)
 
@@ -68,7 +75,12 @@ def test_upsert_user_exchange_keeps_existing_credentials_when_empty_payload():
 
 
 def test_upsert_user_exchange_uses_new_credentials_when_provided():
-    existing = {"id": 11, "api_key": "enc:old_key", "api_secret": "enc:old_secret", "passphrase": "enc:old_pass"}
+    existing = {
+        "id": 11,
+        "api_key": "enc:old_key",
+        "api_secret": "enc:old_secret",
+        "passphrase": "enc:old_pass",
+    }
     cursor = _FakeCursor(existing)
     mgr = _build_manager_with_cursor(cursor)
 
