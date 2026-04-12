@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+_log = logging.getLogger(__name__)
+
 
 def ws_auth_required(*, session_obj, emit_fn) -> bool:
     """Return True when socket user is authenticated; otherwise emit auth error."""
@@ -21,7 +25,8 @@ def ws_admin_required(*, session_obj, emit_fn, db, ws_auth_required_fn) -> bool:
         if not user or user.get("role") != "admin":
             emit_fn("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
             return False
-    except Exception:
+    except Exception as exc:
+        _log.debug("ws_admin_required DB-Fehler für uid=%s: %s", uid, exc)
         emit_fn("status", {"msg": "Nur Admin", "key": "ws_admin_only", "type": "error"})
         return False
     return True

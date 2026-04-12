@@ -159,7 +159,8 @@ class AnomalyDetector:
                 self.is_anomaly = True
                 self.anomaly_symbol = symbol
                 self.anomaly_time = datetime.now()
-                discord.anomaly_detected(symbol, score)
+                if discord is not None:
+                    discord.anomaly_detected(symbol, score)
                 log.warning(f"🚨 Anomalie bei {symbol}: Score={score:.3f}")
                 if state:
                     state.add_activity(

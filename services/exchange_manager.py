@@ -136,7 +136,7 @@ class ExchangeManager:
                 # Handle klassische Timeout-Signaturen (requests/ccxt/socket)
                 timeout_like = isinstance(exc, TimeoutError) or "timeout" in str(exc).lower()
                 if CCXT_AVAILABLE and isinstance(exc, ccxt.NetworkError):
-                    timeout_like = timeout_like or True
+                    timeout_like = True
                 if CCXT_AVAILABLE and isinstance(exc, ccxt.RequestTimeout):
                     timeout_like = True
 
@@ -165,7 +165,8 @@ class ExchangeManager:
                 sleep_seconds = self._base_backoff * (2 ** (attempt - 1))
                 time.sleep(sleep_seconds)
 
-        assert last_exc is not None
+        if last_exc is None:
+            raise ConnectionError("Alle Retry-Versuche fehlgeschlagen (unbekannter Fehler)")
         raise last_exc
 
     def get_active_exchanges(self, user_id: int) -> list[tuple[str, Any]]:

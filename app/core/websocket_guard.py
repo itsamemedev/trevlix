@@ -45,7 +45,11 @@ class WsRateLimiter:
                     self._limits.pop(stale, None)
 
             if len(self._limits) > self._max_entries:
-                self._limits.clear()
+                # LRU eviction: remove oldest 20% instead of clearing all
+                sorted_keys = sorted(self._limits, key=self._limits.get)
+                evict_count = max(1, len(sorted_keys) // 5)
+                for old_key in sorted_keys[:evict_count]:
+                    self._limits.pop(old_key, None)
 
         return True
 

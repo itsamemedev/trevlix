@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import os
 import signal
+import sys
 
 
-def build_graceful_shutdown_handler(*, state, shutdown_event, healer, cluster_ctrl, db, socketio, log):
+def build_graceful_shutdown_handler(
+    *, state, shutdown_event, healer, cluster_ctrl, db, socketio, log
+):
     """Erzeugt den Graceful-Shutdown-Handler mit gebundenen Abhängigkeiten."""
 
     def _graceful_shutdown(signum, _frame):
@@ -42,7 +45,11 @@ def build_graceful_shutdown_handler(*, state, shutdown_event, healer, cluster_ct
             log.debug(f"socketio.stop: {exc}")
 
         log.info("Shutdown abgeschlossen.")
-        os._exit(0)
+        # Use sys.exit for cleaner shutdown; fall back to os._exit after timeout
+        try:
+            sys.exit(0)
+        except SystemExit:
+            os._exit(0)
 
     return _graceful_shutdown
 

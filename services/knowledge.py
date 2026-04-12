@@ -24,7 +24,7 @@ import json
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 log = logging.getLogger("trevlix.knowledge")
@@ -282,7 +282,7 @@ class KnowledgeBase:
             data["total_pnl"] = data.get("total_pnl", 0) + pnl
             data["wins"] = data.get("wins", 0) + (1 if pnl > 0 else 0)
             data["last_regime"] = regime
-            data["last_trade"] = datetime.now().isoformat()
+            data["last_trade"] = datetime.now(UTC).isoformat()
             wr = data["wins"] / data["total_trades"] if data["total_trades"] > 0 else 0
         else:
             data = {
@@ -290,7 +290,7 @@ class KnowledgeBase:
                 "total_pnl": pnl,
                 "wins": 1 if pnl > 0 else 0,
                 "last_regime": regime,
-                "last_trade": datetime.now().isoformat(),
+                "last_trade": datetime.now(UTC).isoformat(),
             }
             wr = 1.0 if pnl > 0 else 0.0
         self.store("symbol_info", symbol, data, confidence=min(wr, 0.95), source="trade")
@@ -715,7 +715,7 @@ class KnowledgeBase:
                     "providers_used": provider_count,
                     "responses_used": len(usable),
                     "summary": final_answer[:600],
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 confidence=0.62 if usable else 0.55,
                 source="llm",
@@ -723,7 +723,7 @@ class KnowledgeBase:
 
             with self._lock:
                 self._idle_learning["runs"] = int(self._idle_learning.get("runs", 0) or 0) + 1
-                self._idle_learning["last_run_at"] = datetime.now().isoformat()
+                self._idle_learning["last_run_at"] = datetime.now(UTC).isoformat()
                 self._idle_learning["last_summary"] = final_answer[:220]
                 self._idle_learning["last_error"] = ""
                 self._idle_learning["providers_used"] = provider_count
@@ -827,7 +827,7 @@ class KnowledgeBase:
                     "reason": reason,
                     "regime": regime,
                     "llm_analysis": answer[:500],
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 confidence=0.7 if won else 0.5,
                 source="llm",
@@ -922,7 +922,7 @@ class KnowledgeBase:
                     "analysis": answer[:500],
                     "regime": "bull" if regime_is_bull else "bear",
                     "fg_value": fg_value,
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 confidence=0.65,
                 source="llm",
@@ -1029,7 +1029,7 @@ class KnowledgeBase:
                     "bear_accuracy": round(bear_accuracy * 100, 1),
                     "threshold": round(threshold, 3),
                     "llm_analysis": answer[:500],
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 confidence=0.6,
                 source="llm",
@@ -1116,7 +1116,7 @@ class KnowledgeBase:
                     "ratio": round(ratio, 1),
                     "trade_count": trade_count,
                     "llm_analysis": answer[:500],
-                    "timestamp": datetime.now().isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 },
                 confidence=0.6,
                 source="llm",
