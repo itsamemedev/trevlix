@@ -868,6 +868,19 @@ cluster_ctrl = ClusterController(
     notifier=_agent_notifier,
 )
 
+# LLM ↔ Agenten-Bridge: MCP-Registry erhält Live-Referenzen auf Orchestrator
+# und Ops-Agenten, damit die LLM über query_llm_with_tools() direkt
+# Agenten-Tasks ausführen kann (execute_agent_task, healing_status, ...).
+try:
+    mcp_registry.set_agent_refs(
+        virginie_orchestrator=getattr(ai_engine, "virginie_orchestrator", None),
+        healer=healer,
+        alert_escalation=alert_escalation,
+        cluster_ctrl=cluster_ctrl,
+    )
+except Exception as exc:  # noqa: BLE001
+    log.warning("MCP-Registry Agent-Bindung fehlgeschlagen: %s", exc)
+
 
 def emit_event(event: str, data: Any, to: str | None = None) -> None:
     """Sendet Socket.io Events sicher aus Background-Threads."""
