@@ -184,3 +184,34 @@
 - [x] Ruff Lint: 4 pre-existierende Warnungen (keine neuen)
 - [x] Ruff Format: Alle geänderten Dateien formatiert
 - [x] Commit + Push
+
+### Phase 5: Follow-up – AI/Virginie-Architektur-Analyse
+
+**Befund:** Virginie wurde NICHT als Rename der alten AI implementiert,
+sondern als zusätzliche Gating-/Guardrail-Schicht in `AIEngine.should_buy()`
+(app/core/ai_engine.py:1216-1284) eingebettet. Die alte ML-Pipeline
+(RandomForest, XGBoost, LSTM, Kelly-Sizing, WF-Training) bleibt voll aktiv.
+
+**Status:**
+- `/ai_engine.py` (Root, 35kB): verwaist, nirgendwo importiert, nur als
+  Referenz-Modul dokumentiert (Header). Wird in Dockerfile/Makefile/
+  docker-compose.dev.yml/install.sh/scripts referenziert und deshalb
+  NICHT ohne abgestimmte Bereinigung entfernt.
+- `/app/core/ai_engine.py` (aktiv): enthält `AIEngine` mit eingebettetem
+  `VirginieCore` + `VirginieOrchestrator`. Blending-Formel:
+  `blended_prob = autonomy_w * model_prob + (1 - autonomy_w) * vote_conf`
+  steuerbar via `virginie_enabled`, `virginie_primary_control`,
+  `virginie_autonomy_weight`.
+
+**Offene Entscheidung (User):** Ob ein echter Rename (AIEngine → Virginie
+mit konsolidierter API) durchgeführt werden soll. Das wäre ein großer
+Refactor (server.py, trading_ops.py, trading_classes.py, routes/websocket.py,
+Tests, Dashboard-Templates) und sollte explizit freigegeben werden.
+
+### Phase 6: Kleinere Folge-Fixes
+
+- [x] `_agent_notifier`: Debug-Logging statt silent `pass` bei
+  Discord/Telegram-Fehlern (server.py:846-852)
+- [x] Ruff-Format-Drift in 4 Test-Dateien bereinigt
+  (test_api, test_cryptopanic, test_user_exchange_upsert, test_virginie)
+- [x] Tests weiterhin grün: 476 passed, 1 skipped
