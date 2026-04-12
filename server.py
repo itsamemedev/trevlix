@@ -843,13 +843,13 @@ def _agent_notifier(msg: str) -> None:
     """Unified notifier callback for autonomous agents."""
     try:
         discord.send("Agent Alert", msg, "alert")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Agent-Notifier Discord fehlgeschlagen: %s", exc)
     try:
         telegram = TelegramNotifier(CONFIG)
         telegram.send(f"<b>Agent Alert</b>\n{msg}")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Agent-Notifier Telegram fehlgeschlagen: %s", exc)
 
 
 alert_escalation = AlertEscalationManager(

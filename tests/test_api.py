@@ -131,7 +131,9 @@ class TestPaperTradingExchangeUpsert:
         CONFIG["paper_trading"] = True
         called = {}
 
-        def _fake_upsert(user_id, exchange, api_key, api_secret, enabled=False, is_primary=False, passphrase=""):
+        def _fake_upsert(
+            user_id, exchange, api_key, api_secret, enabled=False, is_primary=False, passphrase=""
+        ):
             called.update(
                 {
                     "user_id": user_id,
@@ -299,7 +301,9 @@ class TestVirginieChatAPI:
         )
         monkeypatch.setitem(server.CONFIG, "virginie_cpu_fast_chat", False)
 
-        resp = app_client.post("/api/v1/virginie/chat", json={"message": "Bitte antworte mit Echo Test."})
+        resp = app_client.post(
+            "/api/v1/virginie/chat", json={"message": "Bitte antworte mit Echo Test."}
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["ok"] is True

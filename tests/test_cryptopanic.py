@@ -274,8 +274,12 @@ class TestFetchPosts:
     def test_fetch_posts_rate_limited_sets_pause(self, mock_get):
         import httpx as hx
 
-        response = hx.Response(429, headers={"Retry-After": "15"}, request=hx.Request("GET", "https://x"))
-        mock_get.side_effect = hx.HTTPStatusError("rate limited", request=response.request, response=response)
+        response = hx.Response(
+            429, headers={"Retry-After": "15"}, request=hx.Request("GET", "https://x")
+        )
+        mock_get.side_effect = hx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
 
         client = CryptoPanicClient(token="test-token")
         posts = client.fetch_posts("BTC")
@@ -408,8 +412,12 @@ class TestGetScore:
     def test_get_score_uses_stale_cache_on_rate_limit(self, mock_get):
         import httpx as hx
 
-        response = hx.Response(429, headers={"Retry-After": "10"}, request=hx.Request("GET", "https://x"))
-        mock_get.side_effect = hx.HTTPStatusError("rate limited", request=response.request, response=response)
+        response = hx.Response(
+            429, headers={"Retry-After": "10"}, request=hx.Request("GET", "https://x")
+        )
+        mock_get.side_effect = hx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
 
         client = CryptoPanicClient(token="test-token")
         client._cache["BTC:free"] = {

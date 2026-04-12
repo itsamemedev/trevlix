@@ -258,7 +258,9 @@ def test_virginie_orchestrator_rejects_empty_agent_name():
     orchestrator = VirginieOrchestrator()
 
     with pytest.raises(ValueError):
-        orchestrator.register_agent(VirginieAgent(name="   ", domains=("ops",), handler=lambda _t: None))
+        orchestrator.register_agent(
+            VirginieAgent(name="   ", domains=("ops",), handler=lambda _t: None)
+        )
 
 
 def test_portfolio_goal_delegates_to_trading_agent_with_autonomous_allocation():
@@ -460,7 +462,9 @@ def test_virginie_orchestrator_prefers_healthier_agent_on_same_domain():
     orchestrator.register_agent(
         VirginieAgent(name="agent-flaky", domains=("quality",), handler=_flaky_handler)
     )
-    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("quality",), handler=_ok_handler))
+    orchestrator.register_agent(
+        VirginieAgent(name="agent-ok", domains=("quality",), handler=_ok_handler)
+    )
 
     # Prime one failure on flaky agent.
     orchestrator.execute(AgentTask(task_id="prime-failure", domain="quality", objective="prime"))
@@ -484,8 +488,12 @@ def test_virginie_orchestrator_applies_failure_cooldown_after_threshold():
     def _ok_handler(task):
         return AgentResult(agent_name="agent-ok", task_id=task.task_id, success=True, summary="ok")
 
-    orchestrator = VirginieOrchestrator(failure_cooldown_sec=60.0, failure_threshold=3, time_fn=_time)
-    orchestrator.register_agent(VirginieAgent(name="agent-fail", domains=("ops",), handler=_always_fail))
+    orchestrator = VirginieOrchestrator(
+        failure_cooldown_sec=60.0, failure_threshold=3, time_fn=_time
+    )
+    orchestrator.register_agent(
+        VirginieAgent(name="agent-fail", domains=("ops",), handler=_always_fail)
+    )
 
     # trigger consecutive failures for agent-fail
     for idx in range(3):
@@ -496,9 +504,13 @@ def test_virginie_orchestrator_applies_failure_cooldown_after_threshold():
     assert status["agent_health"]["agent-fail"]["consecutive_failure"] >= 3
     assert status["agent_health"]["agent-fail"]["cooldown_active"] is True
 
-    orchestrator.register_agent(VirginieAgent(name="agent-ok", domains=("ops",), handler=_ok_handler))
+    orchestrator.register_agent(
+        VirginieAgent(name="agent-ok", domains=("ops",), handler=_ok_handler)
+    )
     now["t"] += 1.0
-    routed = orchestrator.execute(AgentTask(task_id="after-cooldown", domain="ops", objective="restart"))
+    routed = orchestrator.execute(
+        AgentTask(task_id="after-cooldown", domain="ops", objective="restart")
+    )
     assert routed.success is True
     assert routed.agent_name == "agent-ok"
     assert "agent-fail" in routed.data["routing"]["cooldown_excluded"]
