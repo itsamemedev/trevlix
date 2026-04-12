@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import hmac
+import logging
 from datetime import datetime
 from typing import Any
 
 from flask import abort, redirect
+
+_log = logging.getLogger(__name__)
 
 
 def handle_session_and_csrf(
@@ -32,6 +35,9 @@ def handle_session_and_csrf(
                         abort(401)
                     return redirect("/login")
             except (ValueError, TypeError):
+                _log.warning(
+                    "Ungültiger last_active-Timestamp – Session gelöscht (mögliche Manipulation)"
+                )
                 session_obj.clear()
                 if request_obj.path.startswith("/api/"):
                     abort(401)

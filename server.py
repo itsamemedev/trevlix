@@ -698,12 +698,20 @@ def _virginie_edge_profile() -> dict[str, Any]:
     running = bool(snap.get("running", False))
     open_trades = int(snap.get("open_trades", 0) or 0)
     risk_load = min(100.0, open_trades * 8.0)
-    edge_score = max(0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load))
-    tier = "S" if edge_score >= 85 else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
-    urgency = "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    edge_score = max(
+        0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load)
+    )
+    tier = (
+        "S"
+        if edge_score >= 85
+        else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
+    )
+    urgency = (
+        "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    )
     signature = uuid.uuid5(
         uuid.NAMESPACE_DNS,
-        f"{status.get('assistant_version','0')}-{snap.get('exchange','na')}-{tier}-{int(edge_score)}-{int(drift*100)}",
+        f"{status.get('assistant_version', '0')}-{snap.get('exchange', 'na')}-{tier}-{int(edge_score)}-{int(drift * 100)}",
     ).hex[:12]
     return {
         "edge_score": round(edge_score, 2),
@@ -795,14 +803,19 @@ def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
     if cmd in {"/review", "review"}:
         review = status.get("assistant_review", {})
         summary = str(review.get("summary", "")).strip() if isinstance(review, dict) else ""
-        return summary or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
+        return (
+            summary
+            or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
+        )
     if cmd in {"/plan", "plan", "/diagnose", "diagnose"}:
         advice = _virginie_runtime_advice()
         action_lines = [
-            f"{i+1}. [{a.get('priority','low')}] {a.get('title','Schritt')} – {a.get('detail','')}"
+            f"{i + 1}. [{a.get('priority', 'low')}] {a.get('title', 'Schritt')} – {a.get('detail', '')}"
             for i, a in enumerate(advice.get("actions", []))
         ]
-        return "VIRGINIE Aktionsplan:\n" + ("\n".join(action_lines) if action_lines else "Keine Aktionen.")
+        return "VIRGINIE Aktionsplan:\n" + (
+            "\n".join(action_lines) if action_lines else "Keine Aktionen."
+        )
     if cmd in {"/edge", "edge"}:
         edge = _virginie_edge_profile()
         return (
@@ -1053,7 +1066,9 @@ def api_user_settings_update():
     if "paper_trading" in filtered:
         mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
         if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-            return jsonify({"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}), 403
+            return jsonify(
+                {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
+            ), 403
         trade_mode.set_mode(mode)
         CONFIG["paper_trading"] = mode == "paper"
     current["paper_trading"] = CONFIG.get("paper_trading", True)
@@ -1069,7 +1084,9 @@ def api_trading_mode():
     data = request.json or {}
     mode = str(data.get("mode", "paper")).lower()
     if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-        return jsonify({"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}), 403
+        return jsonify(
+            {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
+        ), 403
     new_mode = trade_mode.set_mode(mode)
     CONFIG["paper_trading"] = new_mode != "live"
     state.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
@@ -1207,7 +1224,14 @@ def api_trading_performance():
         return jsonify(db.performance_breakdown(user_id=request.user_id))
     except Exception as e:
         log.warning("api_trading_performance: %s", e)
-        return jsonify({"by_mode": [], "by_exchange": [], "by_strategy": [], "error": "temporarily_unavailable"}), 503
+        return jsonify(
+            {
+                "by_mode": [],
+                "by_exchange": [],
+                "by_strategy": [],
+                "error": "temporarily_unavailable",
+            }
+        ), 503
 
 
 @app.route("/api/v1/user/exchanges")
@@ -1325,7 +1349,9 @@ def api_virginie_edge_profile():
 def api_virginie_forecast_feed():
     """Liefert die letzten VIRGINIE Forecast-Events."""
     limit = safe_int(request.args.get("limit", 30), 30)
-    return jsonify({"items": get_virginie_forecast_feed(limit), "stats": get_virginie_forecast_stats()})
+    return jsonify(
+        {"items": get_virginie_forecast_feed(limit), "stats": get_virginie_forecast_stats()}
+    )
 
 
 @app.route("/api/v1/virginie/forecast-quality")
@@ -2308,7 +2334,9 @@ def on_update_config(data):
             continue
         if k == "paper_trading":
             desired_paper = bool(v)
-            if not desired_paper and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+            if not desired_paper and not safe_bool(
+                os.getenv("LIVE_TRADING_ENABLED", "false"), False
+            ):
                 continue
             CONFIG[k] = desired_paper
             trade_mode.set_mode("paper" if desired_paper else "live")
@@ -2325,10 +2353,25 @@ def on_update_config(data):
             continue
         if k in _numeric_keys:
             v = safe_float(v, CONFIG.get(k, 0.0))
+            if v < 0:
+                continue  # Reject negative numeric values
         elif k in _int_keys:
             v = safe_int(v, CONFIG.get(k, 0))
+            if v < 0:
+                continue  # Reject negative int values
         elif isinstance(CONFIG.get(k), bool):
             v = bool(v)
+        # Sanity: reject unreasonable values for critical keys
+        if k == "max_open_trades" and (v < 1 or v > 100):
+            continue
+        if k == "stop_loss_pct" and (v <= 0 or v > 50):
+            continue
+        if k == "take_profit_pct" and (v <= 0 or v > 500):
+            continue
+        if k == "scan_interval" and (v < 5 or v > 3600):
+            continue
+        if k == "risk_per_trade" and (v <= 0 or v > 0.5):
+            continue
         CONFIG[k] = v
         updated[k] = v
     # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
@@ -3002,6 +3045,8 @@ def on_save_exchange_keys(data):
         )
     else:
         ok = False
+    if not ok:
+        log.warning("Exchange-Keys DB-Speicherung fehlgeschlagen für %s", ex_name)
     # Zusätzlich in CONFIG für sofortige Nutzung im laufenden Prozess spiegeln
     if "extra_exchanges" not in CONFIG:
         CONFIG["extra_exchanges"] = {}
@@ -3027,6 +3072,12 @@ def on_save_exchange_keys(data):
 @socketio.on("close_exchange_position")
 def on_close_exchange_position(data):
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("close_exchange_position", min_interval=2.0):
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     symbol = str((data or {}).get("symbol", "")).strip().upper()
@@ -3077,10 +3128,32 @@ def on_close_exchange_position(data):
                 },
             )
             return
-        pos = state.positions.get(symbol)
-        amount = pos.get("qty", 0) if pos else 0
+        with state._lock:
+            pos = state.positions.get(symbol)
+            amount = pos.get("qty", 0) if pos else 0
         if amount > 0:
-            ex.create_market_sell_order(symbol, amount)
+            try:
+                order = ex.create_market_sell_order(symbol, amount)
+                log.info(
+                    "Exchange-Position geschlossen: %s auf %s (qty=%.6f, order=%s)",
+                    symbol,
+                    ex_name,
+                    amount,
+                    (order or {}).get("id", "?"),
+                )
+            except Exception as sell_err:
+                log.error("Sell-Order fehlgeschlagen: %s %s: %s", symbol, ex_name, sell_err)
+                emit(
+                    "status",
+                    {
+                        "msg": f"❌ Order fehlgeschlagen: {sell_err}",
+                        "key": "ws_close_error",
+                        "type": "error",
+                    },
+                )
+                return
+        elif amount <= 0:
+            log.warning("close_exchange_position: Keine offene Menge für %s", symbol)
         emit(
             "status",
             {
@@ -3091,6 +3164,7 @@ def on_close_exchange_position(data):
             broadcast=True,
         )
     except Exception as e:
+        log.error("close_exchange_position fehlgeschlagen: %s %s: %s", symbol, ex_name, e)
         emit(
             "status",
             {"msg": f"❌ Fehler beim Schließen: {e}", "key": "ws_close_error", "type": "error"},
@@ -4323,7 +4397,9 @@ def api_exchanges():
                 if ex_name == active_exchange and runtime_running:
                     meta["error"] = ""
                 else:
-                    meta["error"] = "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+                    meta["error"] = (
+                        "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
+                    )
             meta["status_detail"] = (
                 "Live-Runtime aktiv"
                 if ex_name == active_exchange and runtime_running
@@ -4331,7 +4407,9 @@ def api_exchanges():
             )
 
         combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
-        combined_pv = round(sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2)
+        combined_pv = round(
+            sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2
+        )
         response = {
             "exchanges": ex_map,
             "active_exchange": active_exchange,
@@ -4574,6 +4652,8 @@ def api_position_update_sl(symbol):
     sl_pct = data.get("sl_pct")
     if sl_pct is None or not isinstance(sl_pct, (int, float)) or sl_pct <= 0:
         return jsonify({"error": "Ungültiger SL-Wert"}), 400
+    if sl_pct > 50:
+        return jsonify({"error": "SL darf maximal 50% betragen"}), 400
     with state._lock:
         pos = state.positions.get(symbol)
         if not pos:
@@ -4583,7 +4663,21 @@ def api_position_update_sl(symbol):
             return jsonify({"error": "Kein Einstiegspreis"}), 400
         new_sl = entry * (1 - sl_pct / 100)
         pos["sl"] = new_sl
-    log.info(f"🔧 SL manuell: {symbol} → {new_sl:.4f} (-{sl_pct}%)")
+    log.info("SL manuell: %s → %.4f (-%s%%)", symbol, new_sl, sl_pct)
+    # Persist to DB if trade positions table available
+    try:
+        if hasattr(db, "upsert_trade_position"):
+            db.upsert_trade_position(
+                {
+                    "symbol": symbol,
+                    "side": "long",
+                    "stop_loss": new_sl,
+                    "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+                    "exchange": CONFIG.get("exchange", "cryptocom"),
+                }
+            )
+    except Exception as e:
+        log.warning("SL-DB-Persistenz fehlgeschlagen für %s: %s", symbol, e)
     return jsonify({"new_sl": new_sl, "symbol": symbol})
 
 

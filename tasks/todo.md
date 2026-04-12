@@ -138,3 +138,49 @@
 - 284 Tests bestanden (0 Fehler)
 - Ruff Lint: Keine Fehler
 - Ruff Format: Alle Dateien formatiert
+
+---
+
+## Session: stabilize-trading-system-mUHzh (2026-04-12)
+
+### Phase 1: Vollständige Codebase-Analyse
+
+- [x] Repository komplett analysiert (5 parallele Agents)
+- [x] Alle 476 Tests ausgeführt (0 Fehler, 1 übersprungen)
+- [x] Kritische Bugs in Trading-Engine identifiziert
+- [x] Dashboard-Frontend-Probleme identifiziert
+- [x] Service-Modul-Probleme identifiziert
+
+### Phase 2: Kritische Fixes
+
+- [x] Race Condition in `on_close_exchange_position()` behoben (state._lock hinzugefügt)
+- [x] Rate-Limit für `close_exchange_position` WebSocket-Event
+- [x] Logging für Exchange-Sell-Order-Erfolg/Fehler
+- [x] SL-Update Validierung: Obergrenze 50% + DB-Persistenz
+- [x] CONFIG-Range-Validierung (max_open_trades, stop_loss_pct, risk_per_trade, etc.)
+- [x] Trade Execution: Balance-Check-Fehler blockiert jetzt Order statt silent pass
+- [x] WebSocket Guard: LRU Eviction statt clear-all bei Überlauf
+- [x] Null-Safety in scan_symbol (sentiment_f, news_fetcher, onchain, adv_risk)
+- [x] Null-Safety in manage_positions (adv_risk)
+- [x] Null-Safety in fetch_markets (sentiment_f)
+- [x] Exchange Manager: assert → graceful error bei retry exhaustion
+- [x] Exchange Manager: redundante timeout_like-Logik bereinigt
+- [x] Anomaly Detector: discord null-check bei Anomalie-Meldung
+
+### Phase 3: Härtung
+
+- [x] Dashboard.js: 6 unsafe fetch-Patterns mit .ok-Check abgesichert
+- [x] Dashboard.js: CSRF-Token für Virginie Chat POST-Requests
+- [x] WebSocket Authz: Logging bei Admin-Check-Fehler
+- [x] WebSocket State: Logging bei Benutzerrolle-Ladefehler
+- [x] Session Guard: Warnung bei möglicher Session-Manipulation
+- [x] Knowledge Base: Konsistente UTC-Timestamps statt naive datetimes
+- [x] Lifecycle: Sauberer Shutdown mit sys.exit statt os._exit
+- [x] Exchange Keys: Warnung bei fehlgeschlagener DB-Persistierung
+
+### Phase 4: Verifizierung
+
+- [x] 476 Tests bestanden (0 neue Fehler)
+- [x] Ruff Lint: 4 pre-existierende Warnungen (keine neuen)
+- [x] Ruff Format: Alle geänderten Dateien formatiert
+- [x] Commit + Push

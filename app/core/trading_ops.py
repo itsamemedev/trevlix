@@ -413,7 +413,7 @@ def fetch_markets(ex) -> list[str]:
                     "Volumenfilter übersprungen (Marktdaten-Timeout/API-Fehler): %s",
                     vol_err,
                 )
-        trending = sentiment_f.get_trending()
+        trending = sentiment_f.get_trending() if sentiment_f is not None else []
         priority = [s for s in trending if s in syms]
         rest = [s for s in syms if s not in priority]
         all_markets = priority + rest
@@ -474,7 +474,8 @@ def scan_symbol(ex, symbol) -> dict | None:
         price = float(row["close"])
         # [24+27] Multi-Regime classification
         ph = list(df["close"].values[-50:])
-        adv_risk.classify_regime(ph) if ph else None
+        if adv_risk is not None and ph:
+            adv_risk.classify_regime(ph)
         risk.update_prices(symbol, price)
         with state._lock:
             state.prices[symbol] = price
@@ -498,9 +499,13 @@ def scan_symbol(ex, symbol) -> dict | None:
         signal, conf = ai_engine.weighted_vote(votes, CONFIG.get("min_vote_score", 0.3))
         ob_ratio, ob_desc = ob.get(ex, symbol)
         mtf_ok, mtf_desc = mtf.is_confirmed(ex, symbol, signal)
-        sentiment = sentiment_f.get_score(symbol)
-        news_score, news_hl, news_cnt = news_fetcher.get_score(symbol)
-        onchain_score, onchain_detail = onchain.get_score(symbol)
+        sentiment = sentiment_f.get_score(symbol) if sentiment_f is not None else 0.5
+        news_score, news_hl, news_cnt = (
+            news_fetcher.get_score(symbol) if news_fetcher is not None else (0.0, "", 0)
+        )
+        onchain_score, onchain_detail = (
+            onchain.get_score(symbol) if onchain is not None else (0, "")
+        )
 
         # Anomalie-Check (NaN-Werte filtern, da sie den IsolationForest vergiften)
         price_chg = float(row.get("returns", 0) * 100)
@@ -593,7 +598,9 @@ def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_sco
     score_pct = ai_score * 100.0
     bias = "bullish" if score_pct >= 60 else ("bearish" if score_pct <= 40 else "neutral")
     rec_action = "BUY" if allowed and bias != "bearish" else ("WAIT" if allowed else "BLOCK")
-    tier = "S" if score_pct >= 85 else ("A" if score_pct >= 70 else ("B" if score_pct >= 55 else "C"))
+    tier = (
+        "S" if score_pct >= 85 else ("A" if score_pct >= 70 else ("B" if score_pct >= 55 else "C"))
+    )
     msg = (
         f"VIRGINIE {status}: {symbol} | Score {score_pct:.1f}% | Tier {tier} | "
         f"Bias {bias} | Action {rec_action}"
@@ -1420,7 +1427,8 @@ def manage_positions(ex):
             price = float(last_price)
             with state._lock:
                 state.prices[symbol] = price
-            adv_risk.update_volatility(price)  # [25] EWMA vol update
+            if adv_risk is not None:
+                adv_risk.update_volatility(price)  # [25] EWMA vol update
         except (ccxt.BaseError, OSError, TimeoutError) as ticker_err:
             log.debug(f"Ticker {symbol}: {ticker_err}")
             price = state.prices.get(symbol)

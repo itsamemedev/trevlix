@@ -137,3 +137,29 @@
 ### Lektion 27: Inline-Imports nicht vergessen
 **Problem:** `TaxReportGenerator` wurde inline importiert (`from services.tax_report import TaxReportGenerator`) innerhalb eines entfernten Abschnitts und war danach nicht mehr verfügbar.
 **Regel:** Vor dem Entfernen eines Abschnitts immer `grep` für `from ... import` und `import ...` innerhalb dieses Abschnitts ausführen, um inline-Imports zu identifizieren.
+
+## Session: stabilize-trading-system-mUHzh (2026-04-12)
+
+### Lektion 28: State-Lock bei WebSocket-Handlern für Position-Operationen
+**Problem:** `on_close_exchange_position()` las `state.positions.get(symbol)` ohne Lock, während bot_loop gleichzeitig Positionen modifizieren konnte → Race Condition führt zu Doppel-Sells oder Sells auf nicht-existierende Positionen.
+**Regel:** Jeder WebSocket-Handler der `state.positions` oder `state.short_positions` liest, MUSS `with state._lock:` verwenden. Besonders kritisch bei Operationen die auf dem gelesenen Wert eine Exchange-Order auslösen.
+**Code:** `server.py:on_close_exchange_position`
+
+### Lektion 29: Silent Exception-Handler in Live-Trading sind gefährlich
+**Problem:** `TradeExecutionService.execute_buy()` fing Balance-Check-Fehler mit `except Exception: pass` ab. Bei API-Timeout wurde die Order trotzdem platziert, ohne den echten Kontostand zu kennen → Margin-Risiko.
+**Regel:** In Live-Trading-Pfaden NIEMALS Exceptions stillschweigend schlucken. Bei fehlgeschlagener Balance-Prüfung die Order blockieren und loggen. Paper-Trading darf toleranter sein, Live-Trading nicht.
+**Code:** `services/trade_execution.py:execute_buy`
+
+### Lektion 30: Rate-Limiter mit clear-all bei Overflow erlaubt Burst-Angriffe
+**Problem:** `WsRateLimiter` löschte bei >5000 Einträgen ALLE Limits mit `.clear()`. Ein Angreifer konnte viele IDs registrieren → Overflow → alle Limits gelöscht → ungebremster Burst.
+**Regel:** Bei Rate-Limit-Overflow LRU-Eviction (älteste 20% entfernen) statt clear-all. So bleiben aktive Limits erhalten und nur inaktive werden entfernt.
+**Code:** `app/core/websocket_guard.py:WsRateLimiter.check`
+
+### Lektion 31: fetch().json() ohne .ok-Check crasht bei HTTP-Fehlern
+**Problem:** 6 Stellen im Dashboard verwendeten `await(await fetch(url)).json()` ohne Status-Prüfung. Bei 404/500 Responses ist `.json()` undefined → TypeError → Section bricht ab.
+**Regel:** JEDER fetch-Aufruf braucht `if(!r.ok) throw/return` vor `.json()`. Pattern: `const r=await fetch(url); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json();`
+**Code:** `static/js/dashboard.js:loadHeatmap, openChart, loadBtHistory, loadTaxReport`
+
+### Lektion 32: CONFIG-Werte müssen Range-validiert werden
+**Problem:** `on_update_config()` validierte Typen (int/float/bool), aber nicht Wertebereiche. `max_open_trades=-5` oder `stop_loss_pct=0` passierte die Validierung, führte aber zu absurdem Bot-Verhalten.
+**Regel:** Für alle numerischen Trading-Parameter Ober- und Untergrenzen definieren. Reject statt Clamp, damit der User explizites Feedback bekommt.

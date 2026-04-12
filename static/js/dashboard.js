@@ -630,9 +630,9 @@ function sendVirginieChat(){
     _virginieChat.socketTimer = setTimeout(()=>{
       if(!_virginieChat.sending) return;
       fetch('/api/v1/virginie/chat',{
-        method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({message:_virginieChat.pendingMessage})
-      }).then(r=>r.json()).then(d=>{
+        method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken},
+        body:JSON.stringify({message:_virginieChat.pendingMessage,_csrf:_csrfToken})
+      }).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
         if(d && d.user) _appendVirginieChatMessage(d.user);
         if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
         if(d && d.error) toast('⚠️ '+d.error,'warning');
@@ -646,9 +646,9 @@ function sendVirginieChat(){
     return;
   }
   fetch('/api/v1/virginie/chat',{
-    method:'POST',credentials:'include',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({message})
-  }).then(r=>r.json()).then(d=>{
+    method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken},
+    body:JSON.stringify({message,_csrf:_csrfToken})
+  }).then(r=>{if(!r.ok)throw new Error('HTTP '+r.status);return r.json();}).then(d=>{
     if(d && d.user) _appendVirginieChatMessage(d.user);
     if(d && d.assistant) _appendVirginieChatMessage(d.assistant);
     if(d && d.error) toast('⚠️ '+d.error,'warning');
@@ -1201,7 +1201,7 @@ async function loadHeatmap(sortBy){
   const btn=document.getElementById('hmBtn'+sortBy); if(btn) btn.classList.add('active');
   document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
   try{
-    const data=await(await fetch('/api/heatmap')).json();
+    const r=await fetch('/api/heatmap'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json();
     if(data.error){document.getElementById('heatmapGrid').innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error)}</div>`;return;}
     const sorted=[...data].sort((a,b)=>sortBy==='volume'?b.volume-a.volume:sortBy==='news'?b.news_score-a.news_score:b.change-a.change);
     document.getElementById('heatmapGrid').innerHTML=sorted.slice(0,40).map(coin=>{
@@ -1227,12 +1227,12 @@ async function loadChart(){
   const chartEl=document.getElementById('tvChart');
   chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--sub);font-size:12px">⏳ Lade Chart...</div>';
   try{
-    const data=await(await fetch(`/api/ohlcv/${encodeURIComponent(sym.replace('/','-'))}?tf=${encodeURIComponent(tf)}&limit=200`)).json();
+    const _r2=await fetch(`/api/ohlcv/${encodeURIComponent(sym.replace('/','-'))}?tf=${encodeURIComponent(tf)}&limit=200`); if(!_r2.ok) throw new Error('HTTP '+_r2.status); const data=await _r2.json();
     if(data.error){chartEl.innerHTML=`<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--red);font-size:12px">${esc(data.error)}</div>`;return;}
     renderTVChart(data, chartEl);
     // News
     try{
-      const ndata=await(await fetch(`/api/v1/news/${encodeURIComponent(sym.replace('/USDT',''))}`)).json();
+      const _rn=await fetch(`/api/v1/news/${encodeURIComponent(sym.replace('/USDT',''))}`); if(!_rn.ok) throw new Error('HTTP '+_rn.status); const ndata=await _rn.json();
       const nScore=typeof ndata.score==='number'?ndata.score:0;
       const nCount=typeof ndata.count==='number'?ndata.count:0;
       if(ndata.headline&&ndata.headline!=='—'){
@@ -1250,7 +1250,7 @@ async function loadChart(){
     }catch(e){}
     // On-chain
     try{
-      const oc=await(await fetch(`/api/v1/onchain/${encodeURIComponent(sym.replace('/USDT',''))}`)).json();
+      const _ro=await fetch(`/api/v1/onchain/${encodeURIComponent(sym.replace('/USDT',''))}`); if(!_ro.ok) throw new Error('HTTP '+_ro.status); const oc=await _ro.json();
       const ocScore=typeof oc.score==='number'?oc.score:0;
       document.getElementById('cOnchain').textContent=(ocScore>=0?'+':'')+ocScore.toFixed(2);
       document.getElementById('cOnchain').style.color=ocScore>=0?'var(--green)':'var(--red)';
@@ -1330,7 +1330,7 @@ function runBacktest(){
 }
 async function loadBtHistory(){
   try{
-    const data=await(await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}})).json();
+    const _rb=await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
     if(!data||!data.length){
       const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
       const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
@@ -1376,7 +1376,7 @@ async function loadTax(){
   const year=taxYearEl.value||new Date().getFullYear();
   const method=taxMethodEl.value;
   try{
-    const data=await(await fetch(`/api/tax_report?year=${encodeURIComponent(year)}&method=${encodeURIComponent(method)}`)).json();
+    const _rt=await fetch(`/api/tax_report?year=${encodeURIComponent(year)}&method=${encodeURIComponent(method)}`); if(!_rt.ok) throw new Error('HTTP '+_rt.status); const data=await _rt.json();
     if(data.error){toast(data.error,'error');return;}
     const s=data.summary;
     const taxResultEl=document.getElementById('taxResult');

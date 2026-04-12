@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -106,8 +109,9 @@ class TradeExecutionService:
             free = self._safe_float((bal.get("USDT") or {}).get("free"), 0.0)
             if free and free < invest_usdt:
                 return ExecutionResult(False, mode, "Live-Guthaben zu niedrig")
-        except Exception:
-            pass
+        except Exception as e:
+            log.warning("Live-Balance-Prüfung fehlgeschlagen: %s – blockiere Order", e)
+            return ExecutionResult(False, mode, f"Balance-Check fehlgeschlagen: {e}")
         try:
             order = ex.create_market_buy_order(symbol, qty)
             if self._mode_manager is not None:
@@ -136,7 +140,9 @@ class TradeExecutionService:
         if mode == "paper":
             if self._mode_manager is not None:
                 self._mode_manager.mark_order(symbol)
-            return ExecutionResult(True, mode, "filled", fee=fee, executed_at=datetime.now().isoformat())
+            return ExecutionResult(
+                True, mode, "filled", fee=fee, executed_at=datetime.now().isoformat()
+            )
         try:
             order = ex.create_market_sell_order(symbol, qty)
             if self._mode_manager is not None:
@@ -152,4 +158,3 @@ class TradeExecutionService:
             )
         except Exception as exc:
             return ExecutionResult(False, mode, f"live_sell_failed:{exc}")
-
