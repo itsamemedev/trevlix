@@ -1,11 +1,16 @@
 :root{
   --bg0:#020507;--bg1:#060c12;--bg2:#091017;--bg3:#0d1820;--bg4:#122030;
   --line:rgba(212,175,55,.07);--line2:rgba(255,255,255,.08);
-  --jade:#D4AF37;--cyan:#D4AF37;--green:#22c55e;
+  --jade:#D4AF37;--green:#22c55e;
   --red:#ef4444;--yellow:#f59e0b;--blue:#0ea5e9;
-  --purple:#0ea5e9;--orange:#f59e0b;--teal:#C9A227;--pink:#ef4444;
+  --orange:#f59e0b;--teal:#C9A227;--pink:#ef4444;
+  /* Legacy aliases (do not remove – used across dashboard.js for accents).
+     Kept identical to current theme colors to avoid visual regressions. */
+  --cyan:var(--jade);--purple:var(--blue);
   --text:#b8d0e4;--muted:#1e3344;--sub:#5a7890;--dim:#7a9ab0;
   --font:'Barlow',sans-serif;--fc:'Barlow Condensed',sans-serif;--mono:'Fira Code',monospace;--r:10px;--r2:14px;
+  /* Spacing rhythm – consistent 4/8/12/16/24 scale for future cleanup. */
+  --sp-1:4px;--sp-2:8px;--sp-3:12px;--sp-4:16px;--sp-6:24px;
   /* Semantic status tokens */
   --status-ok:var(--jade);--status-warn:var(--yellow);--status-err:var(--red);
   --chip-bg:rgba(212,175,55,.08);
@@ -1193,3 +1198,113 @@ body.is-admin .admin-stat-card{
 }
 .ex-start-btn:active { transform:scale(.97); }
 .ex-start-btn:disabled { opacity:.35; cursor:not-allowed; transform:none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   VISUAL UPGRADE LAYER – User/Admin-Dashboard Polish
+   ═══════════════════════════════════════════════════════════════════════════
+   Additive rules — do not alter existing selectors.  Groups:
+   1. Tablet breakpoint (768–900px)
+   2. Admin mode indicator + banner
+   3. Hero shimmer (subtle animated accent)
+   4. Unified ghost button + mode badge
+   5. Alert severity dots + quick-action footer
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* ── 1. Tablet layout (bridges the old 700↔900 gap) ───────────────────────── */
+@media(min-width:768px) and (max-width:899px){
+  main{max-width:720px;padding:14px 14px 96px;gap:12px}
+  #sec-home,#sec-trading,#sec-pos,#sec-settings{
+    display:grid!important;grid-template-columns:1fr 1fr;gap:12px;
+  }
+  #sec-home>.card.hero,#sec-trading>:first-child,
+  #sec-pos>:first-child,#sec-settings .save-btn-wrap{grid-column:1/-1}
+  .sg{grid-template-columns:repeat(3,1fr)!important}
+  .admin-stat-row{grid-template-columns:repeat(4,1fr)!important}
+  .chart-wrap{height:180px}
+  .card-title{letter-spacing:2px;font-size:10px}
+}
+
+/* ── 2. Admin mode indicator ─────────────────────────────────────────────── */
+body.is-admin .h-title::after{
+  content:'ADMIN';display:inline-block;margin-left:8px;
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.5px;
+  padding:2px 7px;border-radius:4px;vertical-align:2px;
+  color:var(--jade);background:rgba(212,175,55,.1);
+  border:1px solid rgba(212,175,55,.32);
+  text-shadow:0 0 8px rgba(212,175,55,.35);
+}
+body.is-admin .h-logo-icon{
+  box-shadow:0 0 18px rgba(212,175,55,.55),inset 0 1px 0 rgba(255,255,255,.15);
+}
+/* Subtle top border on admin sections to reinforce the theme. */
+body.is-admin #sec-admin::before,
+body.is-admin #sec-analytics::before{
+  content:'';display:block;height:2px;margin-bottom:10px;border-radius:2px;
+  background:linear-gradient(90deg,transparent,var(--jade) 30%,var(--teal) 70%,transparent);
+  opacity:.55;
+}
+
+/* Reduce admin stat bloat (was 24px) and add breathing room. */
+.admin-stat-val{font-size:22px}
+.admin-stat-card{padding:18px 14px 16px}
+
+/* ── 3. Hero: animated shimmer on the accent border ───────────────────────── */
+.hero{position:relative;isolation:isolate}
+.hero::before{
+  content:'';position:absolute;inset:-1px;border-radius:inherit;padding:1px;
+  background:linear-gradient(120deg,
+    rgba(212,175,55,0) 0%,
+    rgba(212,175,55,.35) 48%,
+    rgba(212,175,55,0) 100%);
+  background-size:240% 100%;
+  -webkit-mask:linear-gradient(#000,#000) content-box,linear-gradient(#000,#000);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  pointer-events:none;z-index:-1;opacity:.55;
+  animation:hero-shimmer 9s linear infinite;
+}
+@keyframes hero-shimmer{
+  0%{background-position:200% 0}
+  100%{background-position:-100% 0}
+}
+@media(prefers-reduced-motion:reduce){
+  .hero::before{animation:none;opacity:.35}
+}
+
+/* ── 4. Unified ghost button + mode badge ─────────────────────────────────── */
+.btn-ghost{
+  background:rgba(13,16,23,.65);color:var(--text);
+  border:1px solid var(--line2);
+}
+.btn-ghost:hover{
+  background:rgba(212,175,55,.06);border-color:rgba(212,175,55,.32);
+  color:var(--jade);
+}
+/* Tiny status badge: Paper/Live mode next to position count. */
+.mode-badge{
+  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.2px;
+  padding:3px 7px;border-radius:5px;
+  background:rgba(245,158,11,.1);color:var(--yellow);
+  border:1px solid rgba(245,158,11,.25);text-transform:uppercase;
+}
+
+/* ── 5. Alert severity dots + tighter list rhythm ─────────────────────────── */
+.alert-bar{position:relative;padding-left:32px}
+.alert-bar::before{
+  content:'';position:absolute;left:14px;top:50%;transform:translateY(-50%);
+  width:6px;height:6px;border-radius:50%;background:currentColor;
+  box-shadow:0 0 8px currentColor;
+}
+
+/* Slightly calmer hover on long lists for reading comfort. */
+.trade-row:hover,.pos-card:hover{
+  border-color:rgba(212,175,55,.18);
+  background:var(--bg3);
+  transition:border-color .2s, background .2s;
+}
+
+/* ── 6. Accessibility: stronger focus ring on admin actions ───────────────── */
+body.is-admin .btn-gold:focus-visible,
+body.is-admin .btn-gold-outline:focus-visible{
+  outline:2px solid var(--jade);outline-offset:3px;
+  box-shadow:0 0 0 5px rgba(212,175,55,.22);
+}
