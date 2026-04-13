@@ -165,7 +165,7 @@ function initCharts(){
 
 // ── Main UI Update ───────────────────────────────────────────────────
 // Header-Status-Chips: Exchange, API-Keys, LLM, Paper-Trading
-const _SUPPORTED_EXCHANGES = ['binance','bybit','okx','kucoin','cryptocom'];
+const _SUPPORTED_EXCHANGES = ['binance','bybit','okx','kucoin','cryptocom','kraken','huobi','coinbase','bitget','mexc','gateio'];
 let _installedKeysCount = null;
 async function _refreshInstalledKeys(){
   try{
@@ -1475,7 +1475,7 @@ function startBotWithExchange() {
 
 function _initExchangeSelector(activeEx, keyStates) {
   // keyStates: {cryptocom: true, binance: false, ...}
-  const exchanges = ['cryptocom','binance','bybit','okx','kucoin','kraken','huobi','coinbase'];
+  const exchanges = ['cryptocom','binance','bybit','okx','kucoin','kraken','huobi','coinbase','bitget','mexc','gateio'];
   exchanges.forEach(ex => {
     const btn = document.getElementById('ex-btn-' + ex);
     if (!btn) return;
@@ -3044,10 +3044,14 @@ if(_storage.get('trevlix_push')==='1' && 'Notification' in window && Notificatio
 
 const MEX_NAMES = {
   cryptocom: 'Crypto.com', binance: 'Binance',
-  bybit: 'Bybit', okx: 'OKX', kucoin: 'KuCoin'
+  bybit: 'Bybit', okx: 'OKX', kucoin: 'KuCoin',
+  kraken: 'Kraken', huobi: 'Huobi', coinbase: 'Coinbase',
+  bitget: 'Bitget', mexc: 'MEXC', gateio: 'Gate.io'
 };
 const MEX_LOGOS = {
-  cryptocom:'🔵', binance:'🟡', bybit:'⚫', okx:'⬛', kucoin:'🟢'
+  cryptocom:'🔵', binance:'🟡', bybit:'⚫', okx:'⬛', kucoin:'🟢',
+  kraken:'🟣', huobi:'🔴', coinbase:'🔷',
+  bitget:'🟦', mexc:'🟩', gateio:'🟫'
 };
 
 // Socket-Handler für Exchange-Updates

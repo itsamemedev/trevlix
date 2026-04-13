@@ -2114,7 +2114,19 @@ def on_select_exchange(data: dict) -> None:
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
-    _valid = {"cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase"}
+    _valid = {
+        "cryptocom",
+        "binance",
+        "bybit",
+        "okx",
+        "kucoin",
+        "kraken",
+        "huobi",
+        "coinbase",
+        "bitget",
+        "mexc",
+        "gateio",
+    }
     ex = normalize_exchange_name(str((data or {}).get("exchange", "")))
     if not ex or ex not in _valid:
         emit("status", {"msg": "❌ Ungültige Exchange", "key": "ws_bad_exchange", "type": "error"})
@@ -2340,6 +2352,9 @@ def on_update_config(data):
         "kraken",
         "huobi",
         "coinbase",
+        "bitget",
+        "mexc",
+        "gateio",
     }
     updated: dict[str, Any] = {}
     for k, v in data.items():
