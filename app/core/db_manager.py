@@ -223,7 +223,9 @@ class MySQLManager:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ergänzende Felder für Trading-Modus + Gebühren
                 try:
-                    c.execute("ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'")
+                    c.execute(
+                        "ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'"
+                    )
                 except Exception:
                     pass
                 try:
@@ -711,7 +713,9 @@ class MySQLManager:
         except Exception as e:
             log.error(f"upsert_trade_position: {e}")
 
-    def close_trade_position(self, symbol: str, trade_mode: str = "paper", user_id: int = 1) -> None:
+    def close_trade_position(
+        self, symbol: str, trade_mode: str = "paper", user_id: int = 1
+    ) -> None:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -724,7 +728,9 @@ class MySQLManager:
         except Exception as e:
             log.error(f"close_trade_position: {e}")
 
-    def load_open_positions(self, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_open_positions(
+        self, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -739,12 +745,17 @@ class MySQLManager:
                     q += " ORDER BY opened_at DESC"
                     c.execute(q, p)
                     rows = c.fetchall()
-            return [self._serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at")) for r in rows]
+            return [
+                self._serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at"))
+                for r in rows
+            ]
         except Exception as e:
             log.error(f"load_open_positions: {e}")
             return []
 
-    def load_orders(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_orders(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -768,7 +779,9 @@ class MySQLManager:
             log.error(f"load_orders: {e}")
             return []
 
-    def load_trade_decisions(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_trade_decisions(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1345,8 +1358,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(UTC)
-                            + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
                         ),
                     )
         except Exception as e:
@@ -1435,19 +1447,45 @@ class MySQLManager:
         except Exception as e:
             log.error(f"trigger_alert({aid}): {e}")
 
-    def delete_alert(self, aid: int):
+    def delete_alert(self, aid: int, user_id: int | None = None) -> bool:
+        """Delete a price alert.
+
+        If ``user_id`` is given, the delete is scoped to that user so a
+        caller cannot delete another user's alert (IDOR protection).
+        Returns True if a row was deleted.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
+                    if user_id is not None:
+                        c.execute(
+                            "DELETE FROM price_alerts WHERE id=%s AND user_id=%s",
+                            (aid, user_id),
+                        )
+                    else:
+                        c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
+                    return bool(c.rowcount)
         except Exception as e:
             log.error(f"delete_alert({aid}): {e}")
+            return False
 
-    def get_all_alerts(self) -> list[dict]:
+    def get_all_alerts(self, user_id: int | None = None) -> list[dict]:
+        """Return recent price alerts.
+
+        If ``user_id`` is provided the result is scoped to that user so
+        shared snapshots do not leak other users' watchlists.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
+                    if user_id is not None:
+                        c.execute(
+                            "SELECT * FROM price_alerts WHERE user_id=%s "
+                            "ORDER BY created_at DESC LIMIT 50",
+                            (user_id,),
+                        )
+                    else:
+                        c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
                     rows = c.fetchall()
             result = []
             for r in rows:

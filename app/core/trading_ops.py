@@ -1087,6 +1087,12 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
         if not exec_result.ok:
             log.error("Sell %s fehlgeschlagen: %s", symbol, exec_result.reason)
+            # Restore the position if we eagerly popped it — otherwise we'd lose
+            # tracking of an open exchange position after a failed sell.
+            if not is_partial:
+                with state._lock:
+                    if symbol not in state.positions:
+                        state.positions[symbol] = pos
             _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
             return
         order_resp = (exec_result.meta or {}).get("order") or {}
@@ -1718,7 +1724,12 @@ def bot_loop():
             short_engine.update_shorts()
             # Grid Trading: update active grids with current prices
             if grid_engine.grids:
-                bal_ref = [state.balance]
+                # Snapshot under lock to avoid racing with concurrent trades.
+                # We apply the resulting delta back under the lock so we never
+                # overwrite balance changes made by parallel buy/sell paths.
+                with state._lock:
+                    bal_before = state.balance
+                bal_ref = [bal_before]
                 for sym, grid in list(grid_engine.grids.items()):
                     if not grid.get("active", False):
                         continue
@@ -1729,8 +1740,10 @@ def bot_loop():
                             emit_event(
                                 "trade", {**act, "type": act["action"].lower(), "source": "grid"}
                             )
-                with state._lock:
-                    state.balance = bal_ref[0]
+                grid_delta = bal_ref[0] - bal_before
+                if grid_delta:
+                    with state._lock:
+                        state.balance += grid_delta
             price_alerts.check(state.prices)
 
             # Anomalie global prüfen

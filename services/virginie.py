@@ -595,7 +595,9 @@ class VirginieOrchestrator:
         normalized_domains = tuple(
             d
             for d in (
-                self._domain_aliases.get(self._normalize_domain(domain), self._normalize_domain(domain))
+                self._domain_aliases.get(
+                    self._normalize_domain(domain), self._normalize_domain(domain)
+                )
                 for domain in agent.domains
             )
             if d
@@ -858,8 +860,12 @@ class VirginieOrchestrator:
                 "required_domains": sorted(self._required_domains),
                 "coverage_complete": len(missing) == 0,
                 "total_tasks": int(sum(self._agent_task_counts.values())),
-                "total_success": int(sum(int(s.get("success", 0)) for s in self._agent_stats.values())),
-                "total_failures": int(sum(int(s.get("failure", 0)) for s in self._agent_stats.values())),
+                "total_success": int(
+                    sum(int(s.get("success", 0)) for s in self._agent_stats.values())
+                ),
+                "total_failures": int(
+                    sum(int(s.get("failure", 0)) for s in self._agent_stats.values())
+                ),
                 "failure_threshold": self._failure_threshold,
                 "failure_cooldown_sec": self._failure_cooldown_sec,
                 "updated_at": datetime.utcnow().isoformat(timespec="seconds"),
@@ -987,8 +993,12 @@ def build_default_project_agents() -> list[VirginieAgent]:
         if is_paper_mode:
             tradable_gap = gap_to_target > 0
         else:
-            tradable_gap = gap_to_target >= min_trade_notional if constraints_known else gap_to_target > 0
-        objective_text = f"{task.objective} | Ziel={target_amount:.2f} USDT" if has_goal else task.objective
+            tradable_gap = (
+                gap_to_target >= min_trade_notional if constraints_known else gap_to_target > 0
+            )
+        objective_text = (
+            f"{task.objective} | Ziel={target_amount:.2f} USDT" if has_goal else task.objective
+        )
 
         return AgentResult(
             agent_name="portfolio-agent",

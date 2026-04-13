@@ -152,11 +152,11 @@ from app.core.trading_ops import (
     create_exchange,
     fetch_aggregated_balance,
     fetch_markets,
+    get_exchange_fee_rate,
+    get_heatmap_data,
     get_virginie_forecast_feed,
     get_virginie_forecast_quality,
     get_virginie_forecast_stats,
-    get_exchange_fee_rate,
-    get_heatmap_data,
     init_trading_ops,
     open_position,
     safety_scan,
@@ -2601,7 +2601,11 @@ def on_add_alert(data):
 def on_delete_alert(data):
     if not _ws_auth_required():
         return
-    db.delete_alert(safe_int(data.get("id", 0), 0))
+    uid = session.get("user_id")
+    # Scope to current user unless session user is admin (user_id=1 by policy)
+    # so a non-admin cannot delete alerts owned by someone else.
+    is_admin = bool(session.get("is_admin")) or uid == 1
+    db.delete_alert(safe_int(data.get("id", 0), 0), user_id=None if is_admin else uid)
     emit("update", state.snapshot(), broadcast=True)
 
 

@@ -163,3 +163,30 @@
 ### Lektion 32: CONFIG-Werte müssen Range-validiert werden
 **Problem:** `on_update_config()` validierte Typen (int/float/bool), aber nicht Wertebereiche. `max_open_trades=-5` oder `stop_loss_pct=0` passierte die Validierung, führte aber zu absurdem Bot-Verhalten.
 **Regel:** Für alle numerischen Trading-Parameter Ober- und Untergrenzen definieren. Reject statt Clamp, damit der User explizites Feedback bekommt.
+
+## Session: stabilize-trading-system-5fY6A (2026-04-13)
+
+### Lektion 33: Cooldown muss VOR dem Exchange-Call gesetzt werden
+**Problem:** `create_market_buy_order()` kann eine Exception werfen, NACHDEM die Order beim Exchange angenommen wurde (z.B. Netzwerk-Timeout auf der Response). Wenn `mark_order()` erst bei Erfolg aufgerufen wird, steht kein Cooldown – der Bot kann beim nächsten Tick denselben Symbol erneut kaufen → Duplicate Order.
+**Regel:** In Live-Execution den Cooldown IMMER vor dem Exchange-Call setzen. Lieber ein paar Sekunden „verlorenes" Trade-Window als eine Doppelorder.
+**Code:** `services/trade_execution.py:execute_buy, execute_sell`
+
+### Lektion 34: Eager-Pop + Sell-Fail = verlorene Position
+**Problem:** `close_position` hat die Position vor dem Sell aus `state.positions` entfernt, um Double-Close zu verhindern. Wenn der Sell danach fehlschlägt, verliert der Bot die Tracking-Referenz – die Coins liegen noch auf dem Exchange, aber niemand überwacht sie.
+**Regel:** Bei Eager-Pop Patterns IMMER einen Restore-Pfad bei Fehler einbauen: bei Sell-Failure die Position unter dem Lock zurückschreiben.
+**Code:** `app/core/trading_ops.py:close_position`
+
+### Lektion 35: Silent 1e-12 Fallback bei Division ist gefährlich
+**Problem:** `qty = invest / max(price, 1e-12)` schützt zwar vor Division-by-Zero, erzeugt aber bei price=0 eine astronomisch große qty, die dann an den Exchange gesendet werden kann.
+**Regel:** Eingaben am Systemrand explizit validieren (`if price <= 0: return error`). Nie auf ein Epsilon-Fallback verlassen, wenn der Fallback einen sinnlosen Wert produziert.
+**Code:** `services/trade_execution.py:execute_buy`
+
+### Lektion 36: DB-Deletes IMMER mit Owner-Scope
+**Problem:** `delete_alert(aid)` löschte Preis-Alerts rein per ID ohne user_id-Filter. Jeder authentifizierte User konnte Alerts fremder User löschen (IDOR).
+**Regel:** Jeder DELETE/UPDATE auf einer multi-user-Tabelle muss einen `WHERE user_id=%s`-Filter haben, außer der Aufrufer ist nachweislich Admin. API-Layer muss user_id aus Session/JWT ziehen und an DB durchreichen.
+**Code:** `app/core/db_manager.py:delete_alert`, `server.py:on_delete_alert`
+
+### Lektion 37: Snapshot-then-Overwrite ist Balance-Diebstahl auf Thread-Ebene
+**Problem:** `bot_loop` hat im Grid-Block `bal_ref = [state.balance]` außerhalb des Locks gesetzt und am Ende `state.balance = bal_ref[0]` geschrieben. Wenn parallel ein `close_position` oder `execute_buy` die Balance geändert hat, ging diese Änderung verloren – die Balance wurde auf einen veralteten Wert "zurückgesetzt".
+**Regel:** Bei mutablen Share-Variablen in Multi-Thread-Code NIE mit Snapshot überschreiben. Stattdessen Delta berechnen und unter Lock additiv anwenden: `state.X += delta`.
+**Code:** `app/core/trading_ops.py:bot_loop` (Grid-Block)

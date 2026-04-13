@@ -27,7 +27,16 @@ from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from enum import Enum
+from enum import Enum  # noqa: F401  (kept for potential external imports)
+
+try:
+    from enum import StrEnum
+except ImportError:  # pragma: no cover - Python < 3.11
+
+    class StrEnum(str, Enum):  # type: ignore[no-redef]  # noqa: UP042
+        """Fallback for older Python versions."""
+
+
 from typing import Any
 
 from app.core.time_compat import UTC
@@ -46,7 +55,7 @@ _ESCALATION_WINDOW: int = 600  # 10 minutes in seconds
 _ESCALATION_LIMIT: int = 3  # failures within window before escalation
 
 
-class ServiceName(str, Enum):
+class ServiceName(StrEnum):
     """Identifiers for each monitored subsystem."""
 
     BOT_LOOP = "bot_loop"
@@ -56,7 +65,7 @@ class ServiceName(str, Enum):
     MEMORY = "memory"
 
 
-class Severity(str, Enum):
+class Severity(StrEnum):
     """Incident severity levels."""
 
     WARNING = "warning"

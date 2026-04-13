@@ -547,7 +547,9 @@ class TelegramNotifier:
 
     def info(self, msg: str) -> None:
         short = str(msg)[:400]
-        self.send(f"ℹ️ <b>{(self._bot_full.split() or ['TREVLIX'])[0]} INFO</b>\n<code>{short}</code>")
+        self.send(
+            f"ℹ️ <b>{(self._bot_full.split() or ['TREVLIX'])[0]} INFO</b>\n<code>{short}</code>"
+        )
 
     def circuit_breaker(self, losses: int, pause_min: int) -> None:
         self.send(
