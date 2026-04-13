@@ -24,6 +24,9 @@ const PT = {
   nav_faq:             {de:'FAQ',en:'FAQ',es:'FAQ',ru:'FAQ',pt:'FAQ'},
   nav_dashboard:       {de:'Dashboard',en:'Dashboard',es:'Dashboard',ru:'Дашборд',pt:'Dashboard'},
   nav_download:        {de:'Download',en:'Download',es:'Descargar',ru:'Скачать',pt:'Baixar'},
+  nav_changelog:       {de:'Changelog',en:'Changelog',es:'Changelog',ru:'История изменений',pt:'Changelog'},
+  nav_roadmap:         {de:'Roadmap',en:'Roadmap',es:'Hoja de Ruta',ru:'Дорожная карта',pt:'Roteiro'},
+  nav_about:           {de:'Über uns',en:'About',es:'Acerca de',ru:'О нас',pt:'Sobre'},
 
   /* ── SHARED FOOTER ── */
   footer_product:      {de:'Produkt',en:'Product',es:'Producto',ru:'Продукт',pt:'Produto'},
@@ -31,6 +34,7 @@ const PT = {
   footer_security:     {de:'Sicherheit',en:'Security',es:'Seguridad',ru:'Безопасность',pt:'Segurança'},
   footer_copyright:    {de:'Open Source, MIT Lizenz',en:'Open Source, MIT License',es:'Código Abierto, Licencia MIT',ru:'Открытый код, MIT Лицензия',pt:'Código Aberto, Licença MIT'},
   footer_paper:        {de:'Paper Trading empfohlen',en:'Paper Trading recommended',es:'Paper Trading recomendado',ru:'Бумажная торговля рекомендуется',pt:'Paper Trading recomendado'},
+  footer_gh_star:      {de:'Star auf GitHub',en:'Star on GitHub',es:'Destacar en GitHub',ru:'Поставить звезду на GitHub',pt:'Marcar com estrela no GitHub'},
 
   /* ══════════════════════════════════════════════════════════
      ABOUT PAGE

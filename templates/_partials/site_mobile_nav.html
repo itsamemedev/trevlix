@@ -1,0 +1,25 @@
+{#
+  Shared mobile navigation drawer.
+  Usage:
+    {% with active='security' %}{% include '_partials/site_mobile_nav.html' %}{% endwith %}
+  Valid `active` values: home, strategies, api, installation, faq, security,
+  changelog, roadmap, about, dashboard.
+#}
+{% set active = active|default('') %}
+<div class="site-mobile-nav" id="siteMobileNav">
+  <a href="/"{% if active == 'home' %} class="active"{% endif %} data-i18n="nav_home">Home</a>
+  <a href="/#features">Features</a>
+  <a href="/strategies"{% if active == 'strategies' %} class="active"{% endif %} data-i18n="nav_strategies">Strategien</a>
+  <a href="/api-docs"{% if active == 'api' %} class="active"{% endif %} data-i18n="nav_api">API</a>
+  <a href="/installation"{% if active == 'installation' %} class="active"{% endif %} data-i18n="nav_installation">Installation</a>
+  <a href="/faq"{% if active == 'faq' %} class="active"{% endif %} data-i18n="nav_faq">FAQ</a>
+  <a href="/security"{% if active == 'security' %} class="active"{% endif %} data-i18n="footer_security">Sicherheit</a>
+  <a href="/changelog"{% if active == 'changelog' %} class="active"{% endif %} data-i18n="nav_changelog">Changelog</a>
+  <a href="/roadmap"{% if active == 'roadmap' %} class="active"{% endif %} data-i18n="nav_roadmap">Roadmap</a>
+  <a href="/about"{% if active == 'about' %} class="active"{% endif %} data-i18n="nav_about">About</a>
+  <a href="/"{% if active == 'dashboard' %} class="active"{% endif %} data-i18n="nav_dashboard">Dashboard</a>
+  <hr>
+  <a href="https://github.com/itsamemedev/Trevlix" target="_blank" rel="noopener" style="color:var(--jade)">GitHub</a>
+  <a href="/login" data-i18n="web_nav_login">Anmelden</a>
+  <a href="/register" style="color:var(--ink);background:var(--blue);padding:10px 18px;border-radius:7px;text-align:center;font-weight:700;font-size:15px" data-i18n="web_nav_register">Registrieren</a>
+</div>

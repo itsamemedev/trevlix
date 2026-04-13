@@ -190,3 +190,46 @@
 **Problem:** `bot_loop` hat im Grid-Block `bal_ref = [state.balance]` außerhalb des Locks gesetzt und am Ende `state.balance = bal_ref[0]` geschrieben. Wenn parallel ein `close_position` oder `execute_buy` die Balance geändert hat, ging diese Änderung verloren – die Balance wurde auf einen veralteten Wert "zurückgesetzt".
 **Regel:** Bei mutablen Share-Variablen in Multi-Thread-Code NIE mit Snapshot überschreiben. Stattdessen Delta berechnen und unter Lock additiv anwenden: `state.X += delta`.
 **Code:** `app/core/trading_ops.py:bot_loop` (Grid-Block)
+
+## Session: trading-dashboard-production-QB4Sj (2026-04-13)
+
+### Lektion 38: Greenfield-Prompts gegen maturen Codebase prüfen
+**Problem:** Der Session-Prompt las sich wie ein kompletter Rewrite-Auftrag
+(„Erstelle ein modernes Trading-Dashboard...", „VOLLSTÄNDIGER CODE keine
+Kürzungen"). Der Codebase war aber bereits v1.7.1, 476 Tests grün, 100+ Fixes
+in den letzten Sessions, Ruff clean. Ein blinder Rewrite hätte Wochen von
+Security-Hardening (IDOR, XSS, Race Conditions, Cooldown-Ordering) zerstört.
+**Regel:** Vor jedem „baue X" erst `tasks/todo.md`, `tasks/lessons.md`,
+`LAST_WORK.md`, `PROJECT_STRUCTURE.md` lesen und Tests/Lint-Status prüfen.
+Bei Konflikt zwischen Prompt und Ist-Zustand AskUserQuestion nutzen, nicht
+den Prompt wörtlich nehmen.
+
+### Lektion 39: Jinja-Include für Nav/Footer ist risikoarm extrahierbar
+**Problem:** 9 statische Templates hatten dupliziert/driftend dieselbe
+Navigation und denselben Footer. Data-i18n-Keys waren je Template
+unterschiedlich komplett (manche hatten `data-i18n` auf `/Home`, andere nicht).
+**Lösung:** `templates/_partials/{site_nav,site_mobile_nav,site_footer}.html`
+mit `{% with active='x' %}{% include ... %}{% endwith %}`-Pattern. Die
+Partials standardisieren den i18n-Stand auf das jeweils vollständigste Template.
+**Regel:** Vor Extract: `awk '/<pattern>/,/<endtag>/' | md5sum` über alle
+Kandidaten, um Drift zu quantifizieren. Bei >2 Varianten auf die i18n-vollste
+normalisieren, nicht die erste Datei.
+
+### Lektion 40: i18n-Key-Lint als Regressionsschutz
+**Problem:** Lektion 17 warnte, dass 85+ `data-i18n`-Keys keine Entsprechung
+in `trevlix_translations.js` hatten. Ohne automatisierten Check schleicht sich
+diese Drift bei jedem Template-Edit zurück.
+**Lösung:** `tests/test_i18n_sync.py` parst beide JS-Dicts (`QT`, `PT`) mit
+Regex, extrahiert alle `data-i18n`-Keys aus `templates/**/*.html` und failt,
+sobald ein Key fehlt oder weniger als 5 Sprachen hat. Läuft in <200 ms.
+**Regel:** Sobald eine Lessons-Learned-Regel eine menschliche
+Checkliste vorschreibt, mit einem Test automatisieren — sonst wird sie
+vergessen.
+
+### Lektion 41: Pre-existing Test-Failures nicht stillschweigend als grün melden
+**Problem:** `test_eight_exchanges_supported` erwartet 8 Exchanges, seit
+Commit 83139e0 sind es 11. Test war beim Start der Session bereits rot.
+Versuchung: einfach ignorieren und `497 passed` behaupten.
+**Regel:** Baseline-Tests vor der Arbeit ausführen. Pre-existing Fails
+mit `--deselect` dokumentieren und im Abschlussbericht explizit als
+„pre-existing, außerhalb Scope" markieren — niemals als „alle grün" melden.
