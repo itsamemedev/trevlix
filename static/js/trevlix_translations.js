@@ -1170,6 +1170,19 @@ const QT = {
   empty_no_backtests: {de:'Keine Backtests',en:'No backtests',es:'Sin backtests',ru:'Нет бэктестов',pt:'Sem backtests'},
   empty_no_trades:    {de:'Keine Trades',en:'No trades',es:'Sin trades',ru:'Нет сделок',pt:'Sem trades'},
   msg_bt_load_fail:   {de:'Backtest-Verlauf konnte nicht geladen werden',en:'Failed to load backtest history',es:'Error al cargar historial de backtests',ru:'Не удалось загрузить историю бэктестов',pt:'Erro ao carregar histórico de backtests'},
+
+  /* ── ADMIN STATS (orphan keys fixed 2026-04-13) ── */
+  admin_total_revenue:    {de:'Gesamtumsatz',en:'Total Revenue',es:'Ingresos Totales',ru:'Общий доход',pt:'Receita Total'},
+  admin_total_trades:     {de:'Trades Gesamt',en:'Total Trades',es:'Trades Totales',ru:'Всего сделок',pt:'Trades Totais'},
+  admin_active_users:     {de:'Aktive Nutzer',en:'Active Users',es:'Usuarios Activos',ru:'Активные пользователи',pt:'Utilizadores Ativos'},
+  admin_win_rate_global:  {de:'Trefferquote',en:'Win Rate',es:'Tasa de Aciertos',ru:'Процент побед',pt:'Taxa de Acertos'},
+
+  /* ── WIZARD / EXCHANGE / NAV (orphan keys fixed 2026-04-13) ── */
+  wiz_next:               {de:'→ Weiter',en:'→ Next',es:'→ Siguiente',ru:'→ Далее',pt:'→ Próximo'},
+  exchange_help:          {de:'Primäre Exchange für den Bot',en:'Primary exchange for the bot',es:'Exchange principal del bot',ru:'Основная биржа бота',pt:'Exchange principal do bot'},
+  nav_trading:            {de:'Trading',en:'Trading',es:'Trading',ru:'Торговля',pt:'Trading'},
+  api_keys_moved:         {de:'API-Keys werden im Trading-Tab konfiguriert.',en:'API keys are configured in the Trading tab.',es:'Las claves API se configuran en la pestaña Trading.',ru:'Ключи API настраиваются во вкладке Trading.',pt:'As chaves de API são configuradas na aba Trading.'},
+  api_keys_goto:          {de:'Zu Trading & Exchanges',en:'Go to Trading & Exchanges',es:'Ir a Trading & Exchanges',ru:'Перейти в Trading & Exchanges',pt:'Ir para Trading & Exchanges'},
 };
 
 /* ════════════════════════════════════════════════════════════

@@ -215,3 +215,56 @@ Tests, Dashboard-Templates) und sollte explizit freigegeben werden.
 - [x] Ruff-Format-Drift in 4 Test-Dateien bereinigt
   (test_api, test_cryptopanic, test_user_exchange_upsert, test_virginie)
 - [x] Tests weiterhin grün: 476 passed, 1 skipped
+
+## Session: trading-dashboard-production-QB4Sj (2026-04-13)
+
+### Scope (vom User bestätigt): Frontend-Polish only
+
+Nach Codebase-Audit war klar: Das Projekt ist bereits v1.7.1, 476+ Tests grün,
+Ruff clean, 100+ Bugs in den letzten Sessions gefixt. Ein vollständiger
+Rewrite hätte gegen CLAUDE.md (Minimal Impact) verstoßen. Statt Greenfield
+gezielte Template-Konsolidierung nach `TODO.md` Priorität Medium.
+
+### Umgesetzt
+
+- [x] `templates/_partials/site_nav.html` — Desktop-Navi als Jinja-Partial
+      mit `active`-Parameter (home/strategies/api/installation/faq/dashboard)
+- [x] `templates/_partials/site_mobile_nav.html` — Mobile-Navi mit 10 aktiven
+      Seiten (vorher 7-9 je Template, inkonsistent)
+- [x] `templates/_partials/site_footer.html` — Einheitlicher Footer mit voll-
+      ständiger i18n (vorher Drift zwischen Templates)
+- [x] 9 Templates refaktoriert: 404, about, api-docs, changelog, faq,
+      INSTALLATION, roadmap, security, strategies
+- [x] `tests/test_i18n_sync.py` — Verhindert Lektion-17-Drift: prüft dass
+      jeder `data-i18n`-Key in allen 5 Sprachen (de/en/es/ru/pt) existiert
+- [x] 9 verwaiste i18n-Keys in `dashboard.html` nachgepflegt in
+      `trevlix_translations.js` (admin_total_revenue, admin_total_trades,
+      admin_active_users, admin_win_rate_global, wiz_next, exchange_help,
+      nav_trading, api_keys_moved, api_keys_goto)
+- [x] 4 neue Shared-Nav-Keys angelegt in `page_i18n.js` (nav_changelog,
+      nav_roadmap, nav_about, footer_gh_star)
+
+### Nicht angefasst (bewusst außerhalb Scope)
+
+- `dashboard.html` (82 KB) — zu eng mit JS gekoppelt, Risiko > Nutzen
+- `index.html` (117 KB) — Landing Page, zu spezifisch für Partial-Extract
+- Backend-Routen / Blueprint-Extraktion — User-Scope war "nur Frontend"
+- CSP-Header — wäre Backend-Änderung in `services/security.py`
+
+### Verifizierung
+
+- 499 Tests bestanden (497 vorher + 2 neue i18n-Tests)
+- 1 skipped (unverändert)
+- 1 pre-existing Fail (test_eight_exchanges_supported — stale seit Commit
+  83139e0, erwartet 8 Exchanges, tatsächlich 11; außerhalb Scope)
+- Ruff check: clean
+- Ruff format: 125 files already formatted
+
+### Offene Punkte für Folge-Sessions
+
+- [ ] `test_eight_exchanges_supported` an 11 Exchanges anpassen
+  (`tests/test_exchange_factory.py:26`)
+- [ ] Footer-Version (`v1.7.1` hardcoded) auf Jinja-Global umstellen
+  (Lektion 20 — erfordert kleinen Backend-Touch)
+- [ ] `routes/auth.py` (46 KB Inline-HTML) → `templates/auth.html` migrieren
+- [ ] REST-Routen aus `server.py` in Blueprints aufteilen (TODO.md P1)
