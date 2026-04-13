@@ -185,3 +185,8 @@
 **Problem:** `delete_alert(aid)` löschte Preis-Alerts rein per ID ohne user_id-Filter. Jeder authentifizierte User konnte Alerts fremder User löschen (IDOR).
 **Regel:** Jeder DELETE/UPDATE auf einer multi-user-Tabelle muss einen `WHERE user_id=%s`-Filter haben, außer der Aufrufer ist nachweislich Admin. API-Layer muss user_id aus Session/JWT ziehen und an DB durchreichen.
 **Code:** `app/core/db_manager.py:delete_alert`, `server.py:on_delete_alert`
+
+### Lektion 37: Snapshot-then-Overwrite ist Balance-Diebstahl auf Thread-Ebene
+**Problem:** `bot_loop` hat im Grid-Block `bal_ref = [state.balance]` außerhalb des Locks gesetzt und am Ende `state.balance = bal_ref[0]` geschrieben. Wenn parallel ein `close_position` oder `execute_buy` die Balance geändert hat, ging diese Änderung verloren – die Balance wurde auf einen veralteten Wert "zurückgesetzt".
+**Regel:** Bei mutablen Share-Variablen in Multi-Thread-Code NIE mit Snapshot überschreiben. Stattdessen Delta berechnen und unter Lock additiv anwenden: `state.X += delta`.
+**Code:** `app/core/trading_ops.py:bot_loop` (Grid-Block)
