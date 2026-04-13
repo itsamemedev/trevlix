@@ -1087,6 +1087,12 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
         )
         if not exec_result.ok:
             log.error("Sell %s fehlgeschlagen: %s", symbol, exec_result.reason)
+            # Restore the position if we eagerly popped it — otherwise we'd lose
+            # tracking of an open exchange position after a failed sell.
+            if not is_partial:
+                with state._lock:
+                    if symbol not in state.positions:
+                        state.positions[symbol] = pos
             _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
             return
         order_resp = (exec_result.meta or {}).get("order") or {}

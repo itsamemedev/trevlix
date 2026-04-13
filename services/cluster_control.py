@@ -35,7 +35,8 @@ from app.core.time_compat import UTC
 try:
     from enum import StrEnum
 except ImportError:  # Python < 3.11 compatibility
-    class StrEnum(str, Enum):
+
+    class StrEnum(str, Enum):  # noqa: UP042 - intentional fallback for Python < 3.11
         """Fallback for Python versions without enum.StrEnum."""
 
 

@@ -163,3 +163,20 @@
 ### Lektion 32: CONFIG-Werte müssen Range-validiert werden
 **Problem:** `on_update_config()` validierte Typen (int/float/bool), aber nicht Wertebereiche. `max_open_trades=-5` oder `stop_loss_pct=0` passierte die Validierung, führte aber zu absurdem Bot-Verhalten.
 **Regel:** Für alle numerischen Trading-Parameter Ober- und Untergrenzen definieren. Reject statt Clamp, damit der User explizites Feedback bekommt.
+
+## Session: stabilize-trading-system-5fY6A (2026-04-13)
+
+### Lektion 33: Cooldown muss VOR dem Exchange-Call gesetzt werden
+**Problem:** `create_market_buy_order()` kann eine Exception werfen, NACHDEM die Order beim Exchange angenommen wurde (z.B. Netzwerk-Timeout auf der Response). Wenn `mark_order()` erst bei Erfolg aufgerufen wird, steht kein Cooldown – der Bot kann beim nächsten Tick denselben Symbol erneut kaufen → Duplicate Order.
+**Regel:** In Live-Execution den Cooldown IMMER vor dem Exchange-Call setzen. Lieber ein paar Sekunden „verlorenes" Trade-Window als eine Doppelorder.
+**Code:** `services/trade_execution.py:execute_buy, execute_sell`
+
+### Lektion 34: Eager-Pop + Sell-Fail = verlorene Position
+**Problem:** `close_position` hat die Position vor dem Sell aus `state.positions` entfernt, um Double-Close zu verhindern. Wenn der Sell danach fehlschlägt, verliert der Bot die Tracking-Referenz – die Coins liegen noch auf dem Exchange, aber niemand überwacht sie.
+**Regel:** Bei Eager-Pop Patterns IMMER einen Restore-Pfad bei Fehler einbauen: bei Sell-Failure die Position unter dem Lock zurückschreiben.
+**Code:** `app/core/trading_ops.py:close_position`
+
+### Lektion 35: Silent 1e-12 Fallback bei Division ist gefährlich
+**Problem:** `qty = invest / max(price, 1e-12)` schützt zwar vor Division-by-Zero, erzeugt aber bei price=0 eine astronomisch große qty, die dann an den Exchange gesendet werden kann.
+**Regel:** Eingaben am Systemrand explizit validieren (`if price <= 0: return error`). Nie auf ein Epsilon-Fallback verlassen, wenn der Fallback einen sinnlosen Wert produziert.
+**Code:** `services/trade_execution.py:execute_buy`

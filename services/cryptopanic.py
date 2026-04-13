@@ -159,9 +159,14 @@ class CryptoPanicClient:
         if now < self._rate_limited_until:
             self._last_fetch_was_rate_limited = True
             wait_s = int(self._rate_limited_until - now)
-            log.debug("CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency)
+            log.debug(
+                "CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency
+            )
             return []
-        if self._last_api_call_at > 0 and (now - self._last_api_call_at) < self._min_request_interval:
+        if (
+            self._last_api_call_at > 0
+            and (now - self._last_api_call_at) < self._min_request_interval
+        ):
             self._last_fetch_was_rate_limited = True
             return []
 
@@ -218,7 +223,9 @@ class CryptoPanicClient:
             if e.response is not None and e.response.status_code == 404 and use_currency_filter:
                 # Einige Coins/Ticker werden von CryptoPanic im "currencies"-Filter nicht unterstützt.
                 # Fallback: ohne currencies-Filter erneut anfragen (allgemeine News), damit kein Hard-Fail entsteht.
-                self._unsupported_currencies[currency_norm] = time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
+                self._unsupported_currencies[currency_norm] = (
+                    time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
+                )
                 fallback_params = {k: v for k, v in params.items() if k != "currencies"}
                 try:
                     fallback_resp = httpx.get(
@@ -249,7 +256,9 @@ class CryptoPanicClient:
                 # Einmalig auf v1 wechseln und erneut versuchen.
                 try:
                     self._active_url = self._fallback_url
-                    legacy_resp = httpx.get(self._active_url, params=params, timeout=_REQUEST_TIMEOUT)
+                    legacy_resp = httpx.get(
+                        self._active_url, params=params, timeout=_REQUEST_TIMEOUT
+                    )
                     self._last_api_call_at = time.time()
                     legacy_resp.raise_for_status()
                     payload = legacy_resp.json()
@@ -257,7 +266,9 @@ class CryptoPanicClient:
                     log.info("CryptoPanic: v2 Endpoint nicht verfügbar – fallback auf v1 aktiviert")
                     return results if isinstance(results, list) else []
                 except Exception as legacy_err:
-                    log.warning("CryptoPanic v1 Fallback fehlgeschlagen für %s: %s", currency, legacy_err)
+                    log.warning(
+                        "CryptoPanic v1 Fallback fehlgeschlagen für %s: %s", currency, legacy_err
+                    )
                     self._active_url = self._base_url
                     return []
             log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)

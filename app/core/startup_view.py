@@ -17,9 +17,9 @@ def render_startup_banner(*, bot_version: str, config: dict) -> str:
 ║                                                                              ║
 ║  Algorithmic Crypto Trading  ·  v{bot_version}  ·  trevlix.dev                ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
-║  MySQL:   {config['mysql_host']}/{config['mysql_db']:<44}║
-║  Exchange:{config['exchange']:<51}║
-║  Modus:   {'📝 Paper Trading' if config['paper_trading'] else '💰 Live Trading':<50}║
-║  Kapital: {config['paper_balance']:<50}║
+║  MySQL:   {config["mysql_host"]}/{config["mysql_db"]:<44}║
+║  Exchange:{config["exchange"]:<51}║
+║  Modus:   {"📝 Paper Trading" if config["paper_trading"] else "💰 Live Trading":<50}║
+║  Kapital: {config["paper_balance"]:<50}║
 ╚══════════════════════════════════════════════════════════════════════════════╝
     """

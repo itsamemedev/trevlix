@@ -1254,7 +1254,11 @@ class AIEngine:
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed_by_virginie = virginie_decision.selected is not None
-                allowed = allowed_by_virginie if primary_control else (allowed_by_model and allowed_by_virginie)
+                allowed = (
+                    allowed_by_virginie
+                    if primary_control
+                    else (allowed_by_model and allowed_by_virginie)
+                )
                 reason_prefix = "VIRGINIE-Primary" if primary_control else "VIRGINIE"
             else:
                 allowed = allowed_by_model
@@ -1421,7 +1425,9 @@ class AIEngine:
         example_snapshot = self.virginie.example_snapshot()
         example_ids = sorted(example_snapshot.keys())
         expected_example_ids = sorted(item.example_id for item in build_startup_examples())
-        missing_example_ids = [item for item in expected_example_ids if item not in example_snapshot]
+        missing_example_ids = [
+            item for item in expected_example_ids if item not in example_snapshot
+        ]
         return {
             "enabled": ML_AVAILABLE,
             "is_trained": self.is_trained,

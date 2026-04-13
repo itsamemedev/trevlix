@@ -55,7 +55,9 @@ def run_server(
         state.paused = False
         threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
         log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
-        state.add_activity("🚀", "Auto-Start", f"v{bot_version} · {config['exchange'].upper()}", "success")
+        state.add_activity(
+            "🚀", "Auto-Start", f"v{bot_version} · {config['exchange'].upper()}", "success"
+        )
     else:
         log.info("⏸️  Bot wartet auf manuellen Start (AUTO_START=false)")
 

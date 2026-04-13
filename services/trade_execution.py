@@ -75,8 +75,16 @@ class TradeExecutionService:
         return bool(guard.allowed), guard.reason
 
     def execute_buy(self, ex, *, symbol: str, price: float, invest_usdt: float) -> ExecutionResult:
-        qty = max(0.0, (invest_usdt - (invest_usdt * self._get_fee_rate())) / max(price, 1e-12))
         mode = self._mode()
+        # Explicit price validation avoids the silent "1e-12" fallback which would
+        # produce an absurdly large qty if price were ever 0/negative.
+        if price is None or price <= 0:
+            return ExecutionResult(False, mode, "Ungültiger Preis (<=0)")
+        if invest_usdt is None or invest_usdt <= 0:
+            return ExecutionResult(False, mode, "Ungültiges Investment (<=0)")
+        qty = max(0.0, (invest_usdt - (invest_usdt * self._get_fee_rate())) / price)
+        if qty <= 0:
+            return ExecutionResult(False, mode, "Berechnete Menge <= 0")
         valid_symbol, reason_symbol = self._validate_symbol(ex, symbol)
         if not valid_symbol:
             return ExecutionResult(False, mode, reason_symbol)
@@ -94,8 +102,7 @@ class TradeExecutionService:
                 if self._safe_float(self._state.balance, 0.0) < invest_usdt:
                     return ExecutionResult(False, mode, "Unzureichendes Guthaben")
                 self._state.balance -= invest_usdt
-            if self._mode_manager is not None:
-                self._mode_manager.mark_order(symbol)
+            self._safe_mark_order(symbol)
             return ExecutionResult(
                 True,
                 mode,
@@ -112,24 +119,43 @@ class TradeExecutionService:
         except Exception as e:
             log.warning("Live-Balance-Prüfung fehlgeschlagen: %s – blockiere Order", e)
             return ExecutionResult(False, mode, f"Balance-Check fehlgeschlagen: {e}")
+        # Mark the cooldown BEFORE sending the order: if the exchange call raises
+        # (e.g. network timeout) we do not know whether it was accepted, and we
+        # must not retry immediately — the symbol cooldown prevents a duplicate.
+        self._safe_mark_order(symbol)
         try:
             order = ex.create_market_buy_order(symbol, qty)
-            if self._mode_manager is not None:
-                self._mode_manager.mark_order(symbol)
-            return ExecutionResult(
-                True,
-                mode,
-                "filled",
-                fee=fee,
-                order_id=str((order or {}).get("id", "")),
-                executed_at=datetime.now().isoformat(),
-                meta={"qty": qty, "order": order},
-            )
         except Exception as exc:
+            log.error(
+                "Live-Order fehlgeschlagen für %s qty=%.8f: %s (Cooldown aktiviert)",
+                symbol,
+                qty,
+                exc,
+            )
             return ExecutionResult(False, mode, f"live_buy_failed:{exc}")
+        return ExecutionResult(
+            True,
+            mode,
+            "filled",
+            fee=fee,
+            order_id=str((order or {}).get("id", "")),
+            executed_at=datetime.now().isoformat(),
+            meta={"qty": qty, "order": order},
+        )
+
+    def _safe_mark_order(self, symbol: str) -> None:
+        """Mark order for cooldown tracking. Never raises."""
+        if self._mode_manager is None:
+            return
+        try:
+            self._mode_manager.mark_order(symbol)
+        except Exception as exc:  # pragma: no cover - defensive
+            log.warning("mark_order failed for %s: %s", symbol, exc)
 
     def execute_sell(self, ex, *, symbol: str, qty: float, invest_usdt: float) -> ExecutionResult:
         mode = self._mode()
+        if qty is None or qty <= 0:
+            return ExecutionResult(False, mode, "Ungültige Menge (<=0)")
         fee = invest_usdt * self._get_fee_rate()
         valid_symbol, reason_symbol = self._validate_symbol(ex, symbol)
         if not valid_symbol:
@@ -138,23 +164,28 @@ class TradeExecutionService:
         if not valid_precision:
             return ExecutionResult(False, mode, reason_precision)
         if mode == "paper":
-            if self._mode_manager is not None:
-                self._mode_manager.mark_order(symbol)
+            self._safe_mark_order(symbol)
             return ExecutionResult(
                 True, mode, "filled", fee=fee, executed_at=datetime.now().isoformat()
             )
+        # Mark cooldown BEFORE sending the order (see execute_buy for rationale).
+        self._safe_mark_order(symbol)
         try:
             order = ex.create_market_sell_order(symbol, qty)
-            if self._mode_manager is not None:
-                self._mode_manager.mark_order(symbol)
-            return ExecutionResult(
-                True,
-                mode,
-                "filled",
-                fee=fee,
-                order_id=str((order or {}).get("id", "")),
-                executed_at=datetime.now().isoformat(),
-                meta={"order": order},
-            )
         except Exception as exc:
+            log.error(
+                "Live-Sell fehlgeschlagen für %s qty=%.8f: %s (Cooldown aktiviert)",
+                symbol,
+                qty,
+                exc,
+            )
             return ExecutionResult(False, mode, f"live_sell_failed:{exc}")
+        return ExecutionResult(
+            True,
+            mode,
+            "filled",
+            fee=fee,
+            order_id=str((order or {}).get("id", "")),
+            executed_at=datetime.now().isoformat(),
+            meta={"order": order},
+        )

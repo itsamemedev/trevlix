@@ -74,7 +74,9 @@ class RedisMarketCache:
     def get_ticker(self, exchange: str, symbol: str) -> dict[str, Any] | None:
         return self._get(f"ticker:{exchange}:{symbol}")
 
-    def set_ohlcv(self, exchange: str, symbol: str, tf: str, ohlcv: list[list[float]], ttl: int = 30) -> None:
+    def set_ohlcv(
+        self, exchange: str, symbol: str, tf: str, ohlcv: list[list[float]], ttl: int = 30
+    ) -> None:
         self._set(f"ohlcv:{exchange}:{symbol}:{tf}", {"rows": ohlcv}, ttl)
 
     def get_ohlcv(self, exchange: str, symbol: str, tf: str) -> list[list[float]] | None:
@@ -84,7 +86,9 @@ class RedisMarketCache:
         rows = data.get("rows")
         return rows if isinstance(rows, list) else None
 
-    def set_snapshot(self, exchange: str, symbol: str, snapshot: dict[str, Any], ttl: int = 20) -> None:
+    def set_snapshot(
+        self, exchange: str, symbol: str, snapshot: dict[str, Any], ttl: int = 20
+    ) -> None:
         self._set(f"snapshot:{exchange}:{symbol}", snapshot, ttl)
 
     def get_snapshot(self, exchange: str, symbol: str) -> dict[str, Any] | None:

@@ -156,8 +156,13 @@ def get_update_status() -> UpdateStatus:
 
     repo_url = repo_url_proc.stdout.strip() if repo_url_proc.returncode == 0 else ""
     branch = branch_proc.stdout.strip() if branch_proc.returncode == 0 else "main"
-    current = _pick_latest_version([_git_latest_local_tag(), _read_version_md(), BOT_VERSION, _DEFAULT_VERSION])
-    latest = _pick_latest_version([_git_latest_remote_tag(), current, BOT_VERSION, _DEFAULT_VERSION]) or current
+    current = _pick_latest_version(
+        [_git_latest_local_tag(), _read_version_md(), BOT_VERSION, _DEFAULT_VERSION]
+    )
+    latest = (
+        _pick_latest_version([_git_latest_remote_tag(), current, BOT_VERSION, _DEFAULT_VERSION])
+        or current
+    )
     update_available = latest != current
     timestamp = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
 

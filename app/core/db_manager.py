@@ -223,7 +223,9 @@ class MySQLManager:
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
                 # Ergänzende Felder für Trading-Modus + Gebühren
                 try:
-                    c.execute("ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'")
+                    c.execute(
+                        "ALTER TABLE trades ADD COLUMN trade_mode VARCHAR(10) DEFAULT 'paper'"
+                    )
                 except Exception:
                     pass
                 try:
@@ -711,7 +713,9 @@ class MySQLManager:
         except Exception as e:
             log.error(f"upsert_trade_position: {e}")
 
-    def close_trade_position(self, symbol: str, trade_mode: str = "paper", user_id: int = 1) -> None:
+    def close_trade_position(
+        self, symbol: str, trade_mode: str = "paper", user_id: int = 1
+    ) -> None:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -724,7 +728,9 @@ class MySQLManager:
         except Exception as e:
             log.error(f"close_trade_position: {e}")
 
-    def load_open_positions(self, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_open_positions(
+        self, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -739,12 +745,17 @@ class MySQLManager:
                     q += " ORDER BY opened_at DESC"
                     c.execute(q, p)
                     rows = c.fetchall()
-            return [self._serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at")) for r in rows]
+            return [
+                self._serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at"))
+                for r in rows
+            ]
         except Exception as e:
             log.error(f"load_open_positions: {e}")
             return []
 
-    def load_orders(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_orders(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -768,7 +779,9 @@ class MySQLManager:
             log.error(f"load_orders: {e}")
             return []
 
-    def load_trade_decisions(self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None) -> list[dict]:
+    def load_trade_decisions(
+        self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
+    ) -> list[dict]:
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1345,8 +1358,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(UTC)
-                            + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
                         ),
                     )
         except Exception as e:
