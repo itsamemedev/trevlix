@@ -1447,19 +1447,45 @@ class MySQLManager:
         except Exception as e:
             log.error(f"trigger_alert({aid}): {e}")
 
-    def delete_alert(self, aid: int):
+    def delete_alert(self, aid: int, user_id: int | None = None) -> bool:
+        """Delete a price alert.
+
+        If ``user_id`` is given, the delete is scoped to that user so a
+        caller cannot delete another user's alert (IDOR protection).
+        Returns True if a row was deleted.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
+                    if user_id is not None:
+                        c.execute(
+                            "DELETE FROM price_alerts WHERE id=%s AND user_id=%s",
+                            (aid, user_id),
+                        )
+                    else:
+                        c.execute("DELETE FROM price_alerts WHERE id=%s", (aid,))
+                    return bool(c.rowcount)
         except Exception as e:
             log.error(f"delete_alert({aid}): {e}")
+            return False
 
-    def get_all_alerts(self) -> list[dict]:
+    def get_all_alerts(self, user_id: int | None = None) -> list[dict]:
+        """Return recent price alerts.
+
+        If ``user_id`` is provided the result is scoped to that user so
+        shared snapshots do not leak other users' watchlists.
+        """
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
+                    if user_id is not None:
+                        c.execute(
+                            "SELECT * FROM price_alerts WHERE user_id=%s "
+                            "ORDER BY created_at DESC LIMIT 50",
+                            (user_id,),
+                        )
+                    else:
+                        c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
                     rows = c.fetchall()
             result = []
             for r in rows:

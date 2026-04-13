@@ -180,3 +180,8 @@
 **Problem:** `qty = invest / max(price, 1e-12)` schützt zwar vor Division-by-Zero, erzeugt aber bei price=0 eine astronomisch große qty, die dann an den Exchange gesendet werden kann.
 **Regel:** Eingaben am Systemrand explizit validieren (`if price <= 0: return error`). Nie auf ein Epsilon-Fallback verlassen, wenn der Fallback einen sinnlosen Wert produziert.
 **Code:** `services/trade_execution.py:execute_buy`
+
+### Lektion 36: DB-Deletes IMMER mit Owner-Scope
+**Problem:** `delete_alert(aid)` löschte Preis-Alerts rein per ID ohne user_id-Filter. Jeder authentifizierte User konnte Alerts fremder User löschen (IDOR).
+**Regel:** Jeder DELETE/UPDATE auf einer multi-user-Tabelle muss einen `WHERE user_id=%s`-Filter haben, außer der Aufrufer ist nachweislich Admin. API-Layer muss user_id aus Session/JWT ziehen und an DB durchreichen.
+**Code:** `app/core/db_manager.py:delete_alert`, `server.py:on_delete_alert`
