@@ -190,6 +190,9 @@ if PYDANTIC_AVAILABLE:
                 "kraken",
                 "huobi",
                 "coinbase",
+                "bitget",
+                "mexc",
+                "gateio",
             }
             if v not in supported:
                 raise ValueError(f"Nicht unterstützte Exchange '{v}'. Erlaubt: {supported}")

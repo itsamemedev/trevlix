@@ -45,6 +45,9 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
     "kraken": 0.0016,  # 0.16% Standard
     "huobi": 0.0020,  # 0.20% Standard
     "coinbase": 0.0060,  # 0.60% Standard (Advanced Trade niedriger)
+    "bitget": 0.0010,  # 0.10% Standard
+    "mexc": 0.0020,  # 0.20% Standard Spot (Maker gratis auf Promo)
+    "gateio": 0.0020,  # 0.20% Standard
 }
 
 # Exchanges die eine API-Passphrase zusätzlich zu Key/Secret benötigen

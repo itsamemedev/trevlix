@@ -15,7 +15,19 @@ def _get_admin_id(db) -> int | None:
 
 def get_exchange_key_states(db) -> dict[str, bool]:
     """Return which exchanges have API keys configured for admin user."""
-    exchanges = ("cryptocom", "binance", "bybit", "okx", "kucoin", "kraken", "huobi", "coinbase")
+    exchanges = (
+        "cryptocom",
+        "binance",
+        "bybit",
+        "okx",
+        "kucoin",
+        "kraken",
+        "huobi",
+        "coinbase",
+        "bitget",
+        "mexc",
+        "gateio",
+    )
     result = {ex: False for ex in exchanges}
     try:
         admin_id = _get_admin_id(db)

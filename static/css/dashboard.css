@@ -1308,3 +1308,437 @@ body.is-admin .btn-gold-outline:focus-visible{
   outline:2px solid var(--jade);outline-offset:3px;
   box-shadow:0 0 0 5px rgba(212,175,55,.22);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MODERN FUTURISTIC LAYER – v1.7 Dashboard Restyle
+   ═══════════════════════════════════════════════════════════════════════════
+   Additive rules layered on top of the existing gold/jade theme.
+   Objective: cleaner typography, glass surfaces, neon edge accents,
+   subtle scanline/grid overlays on hero cards, modern KPI tiles, and
+   upgraded navigation + exchange selector (incl. Bitget/MEXC/Gate.io).
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* Ambient aurora background – very subtle, never steals attention */
+body::before{
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 0%,rgba(212,175,55,.05),transparent 55%),
+    radial-gradient(ellipse 40% 30% at 90% 100%,rgba(14,165,233,.035),transparent 55%),
+    radial-gradient(ellipse 80% 50% at 50% 120%,rgba(201,162,39,.04),transparent 60%);
+}
+body.is-admin::before{
+  background:
+    radial-gradient(ellipse 60% 40% at 10% 0%,rgba(212,175,55,.1),transparent 55%),
+    radial-gradient(ellipse 50% 40% at 90% 100%,rgba(201,162,39,.08),transparent 55%),
+    radial-gradient(ellipse 80% 50% at 50% 120%,rgba(212,175,55,.05),transparent 60%);
+}
+
+/* Animated thin accent line under the header */
+header{
+  border-bottom:1px solid rgba(212,175,55,.12);
+  box-shadow:0 2px 24px rgba(0,0,0,.35), 0 1px 0 rgba(212,175,55,.06) inset;
+}
+header::after{
+  background:linear-gradient(90deg,
+    transparent,
+    rgba(212,175,55,.38) 20%,
+    rgba(245,208,96,.5) 50%,
+    rgba(212,175,55,.38) 80%,
+    transparent);
+  background-size:200% 100%;
+  animation:header-flow 12s linear infinite;
+  height:1px;opacity:.85;
+}
+@keyframes header-flow{
+  0%{background-position:200% 0}
+  100%{background-position:-100% 0}
+}
+@media(prefers-reduced-motion:reduce){
+  header::after{animation:none}
+}
+
+/* Logo icon: continuous subtle pulse for a "live" feel */
+.h-logo-icon{
+  animation:logo-pulse 4s ease-in-out infinite;
+}
+@keyframes logo-pulse{
+  0%,100%{box-shadow:0 0 16px rgba(212,175,55,.4), inset 0 1px 0 rgba(255,255,255,.15)}
+  50%    {box-shadow:0 0 24px rgba(245,208,96,.65), inset 0 1px 0 rgba(255,255,255,.2)}
+}
+@media(prefers-reduced-motion:reduce){ .h-logo-icon{animation:none} }
+
+/* Title typography */
+.h-title{
+  font-family:var(--fc);font-weight:900;letter-spacing:.5px;
+  background:linear-gradient(180deg,#fff 0%,#d4e3f2 100%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+}
+
+/* Cards: glass surface + gradient hairline border */
+.card{
+  position:relative;
+  background:
+    linear-gradient(160deg,rgba(9,16,23,.92),rgba(6,12,18,.94));
+  border:1px solid rgba(212,175,55,.1);
+  backdrop-filter:blur(8px) saturate(1.15);
+  -webkit-backdrop-filter:blur(8px) saturate(1.15);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.03) inset,
+    0 8px 28px rgba(0,0,0,.28);
+}
+.card:hover{
+  border-color:rgba(212,175,55,.24);
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.05) inset,
+    0 12px 36px rgba(212,175,55,.08),
+    0 8px 28px rgba(0,0,0,.32);
+}
+.card-title{
+  color:#a3c4de;
+  text-shadow:0 0 12px rgba(163,196,222,.08);
+}
+
+/* Hero: futuristic scanline grid + corner accents */
+.hero{
+  background:
+    radial-gradient(circle at 90% 0%,rgba(245,208,96,.18),transparent 40%),
+    radial-gradient(circle at 0% 100%,rgba(201,162,39,.12),transparent 45%),
+    linear-gradient(145deg,#120e02 0%,#0c0900 55%,#080600 100%) !important;
+  border-color:rgba(212,175,55,.22) !important;
+}
+.hero::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(212,175,55,.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212,175,55,.04) 1px, transparent 1px);
+  background-size:28px 28px;
+  mask-image:radial-gradient(ellipse 75% 70% at 50% 50%,black 30%,transparent 80%);
+  -webkit-mask-image:radial-gradient(ellipse 75% 70% at 50% 50%,black 30%,transparent 80%);
+  opacity:.7;
+}
+.hero-val{
+  background:linear-gradient(180deg,#fff 0%,#f5d060 95%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 42px rgba(245,208,96,.18);
+  letter-spacing:-1.2px;
+}
+.hero-label{
+  font-family:var(--mono);font-size:10px;letter-spacing:2.2px;
+  text-transform:uppercase;color:rgba(212,175,55,.72);
+}
+
+/* Stat grid: slim neon dividers + glow on values */
+.sg{
+  background:linear-gradient(180deg,rgba(212,175,55,.08),rgba(212,175,55,.02));
+  gap:1px;
+}
+.sc{
+  background:linear-gradient(160deg,rgba(9,17,26,.96),rgba(5,10,17,.98));
+  position:relative;transition:background .25s;
+}
+.sc:hover{
+  background:linear-gradient(160deg,rgba(13,22,34,.96),rgba(9,15,24,.98));
+}
+.sc::before{
+  content:'';position:absolute;top:0;left:8px;right:8px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(212,175,55,.25),transparent);
+  opacity:0;transition:opacity .25s;
+}
+.sc:hover::before{opacity:1}
+.sv{
+  font-family:var(--mono);font-weight:600;
+  text-shadow:0 0 14px rgba(212,175,55,.12);
+}
+
+/* Generic buttons – subtle rise + gradient reveal */
+.btn{
+  position:relative;overflow:hidden;
+  letter-spacing:.6px;
+  transition:transform .15s, box-shadow .2s, border-color .2s, background .2s;
+}
+.btn::after{
+  content:'';position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.08) 50%,transparent 70%);
+  transform:translateX(-100%);transition:transform .55s, opacity .25s;
+}
+.btn:hover::after{opacity:1;transform:translateX(100%)}
+.btn-start{
+  background:linear-gradient(135deg,#F5D060 0%,#D4AF37 55%,#C9A227 100%);
+  box-shadow:
+    0 2px 14px rgba(212,175,55,.35),
+    0 0 0 1px rgba(245,208,96,.35) inset;
+}
+.btn-stop{
+  background:linear-gradient(135deg,#e03535 0%,#c62828 100%);
+  box-shadow:0 2px 14px rgba(239,68,68,.28);
+}
+.save-btn{
+  background:linear-gradient(135deg,#F5D060 0%,#D4AF37 55%,#C9A227 100%);
+  box-shadow:
+    0 2px 18px rgba(212,175,55,.28),
+    0 0 0 1px rgba(245,208,96,.35) inset;
+  letter-spacing:.6px;
+}
+
+/* Navigation: bottom bar glass + animated active indicator */
+.bnav{
+  background:linear-gradient(180deg,rgba(2,5,7,.7),rgba(2,5,7,.96));
+  backdrop-filter:blur(28px) saturate(1.9);
+  -webkit-backdrop-filter:blur(28px) saturate(1.9);
+  border-top:1px solid rgba(212,175,55,.14);
+  box-shadow:0 -4px 28px rgba(0,0,0,.45);
+}
+.nb{font-size:10px;letter-spacing:.6px;padding:8px 2px 6px;gap:2px}
+.nb-icon{font-size:18px;filter:drop-shadow(0 0 4px rgba(0,0,0,.5))}
+.nb::before{
+  content:'';position:absolute;top:0;left:50%;transform:translateX(-50%) scaleX(0);
+  width:40%;height:2px;border-radius:0 0 4px 4px;
+  background:linear-gradient(90deg,transparent,var(--jade),transparent);
+  box-shadow:0 0 12px rgba(212,175,55,.6);
+  transition:transform .3s ease;
+}
+.nb.active::before{transform:translateX(-50%) scaleX(1)}
+.nb.active{color:var(--jade);text-shadow:0 0 10px rgba(212,175,55,.4)}
+.nb.active .nb-icon{filter:drop-shadow(0 0 6px rgba(212,175,55,.55))}
+.nb:hover:not(.active){color:#d4e3f2}
+
+/* Exchange selector cards – modern chip style */
+.ex-grid{
+  grid-template-columns:repeat(3,1fr);
+  gap:9px;
+}
+@media(max-width:520px){ .ex-grid{grid-template-columns:1fr 1fr} }
+.ex-btn{
+  padding:16px 10px 14px;
+  border-radius:12px;
+  background:
+    linear-gradient(160deg,rgba(11,18,28,.95),rgba(5,10,17,.96));
+  border:1px solid rgba(212,175,55,.12);
+  transition:transform .18s, border-color .2s, box-shadow .25s, color .2s;
+}
+.ex-btn:hover{
+  transform:translateY(-2px);
+  border-color:rgba(245,208,96,.42);
+  box-shadow:
+    0 10px 26px rgba(0,0,0,.35),
+    0 0 18px rgba(212,175,55,.18);
+}
+.ex-btn.active{
+  background:
+    radial-gradient(circle at 50% 0%,rgba(245,208,96,.2),transparent 55%),
+    linear-gradient(160deg,rgba(18,14,5,.95),rgba(10,8,2,.96));
+  border-color:var(--jade);
+  box-shadow:
+    0 10px 30px rgba(0,0,0,.4),
+    0 0 24px rgba(212,175,55,.32),
+    inset 0 0 0 1px rgba(245,208,96,.3);
+}
+.ex-name{font-family:var(--fc);font-weight:800;letter-spacing:.4px}
+.ex-btn.has-keys::after{
+  content:'';width:8px;height:8px;border-radius:50%;
+  background:var(--jade);box-shadow:0 0 8px rgba(212,175,55,.7);
+  top:9px;right:9px;
+}
+
+/* Status chips: subtle glow on OK state */
+.status-chips .chip--ok .chip-dot{
+  animation:chip-pulse 2.4s ease-in-out infinite;
+}
+@keyframes chip-pulse{
+  0%,100%{box-shadow:0 0 6px var(--status-ok)}
+  50%   {box-shadow:0 0 12px var(--status-ok)}
+}
+@media(prefers-reduced-motion:reduce){
+  .status-chips .chip--ok .chip-dot{animation:none}
+}
+
+/* Admin KPI tiles – premium finish */
+.admin-stat-card{
+  background:
+    radial-gradient(circle at 95% 5%,rgba(245,208,96,.26),transparent 45%),
+    linear-gradient(145deg,#0e1a2a 0%,#0a1322 55%,#0a0a07 100%) !important;
+  border:1px solid rgba(212,175,55,.22) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset,
+    0 10px 28px rgba(0,0,0,.38);
+  transition:transform .2s, box-shadow .25s, border-color .2s;
+}
+.admin-stat-card:hover{
+  transform:translateY(-2px);
+  border-color:rgba(245,208,96,.42) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.06) inset,
+    0 16px 36px rgba(212,175,55,.14),
+    0 10px 28px rgba(0,0,0,.4);
+}
+.admin-stat-card::before{
+  background:linear-gradient(90deg,#F5D060,#D4AF37 50%,#8b6914);
+  box-shadow:0 0 12px rgba(245,208,96,.45);
+}
+.admin-stat-val{
+  background:linear-gradient(180deg,#fff,#f0e3bd 85%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 24px rgba(245,208,96,.15);
+}
+
+/* Admin section header – commanding futuristic look */
+.admin-sec-hd{
+  background:
+    radial-gradient(circle at 90% 0%,rgba(245,208,96,.22),transparent 45%),
+    linear-gradient(135deg,#0c0a03 0%,#120d02 50%,#0a0800 100%) !important;
+  border:1px solid rgba(212,175,55,.3) !important;
+  box-shadow:
+    0 0 0 1px rgba(245,208,96,.08) inset,
+    0 10px 32px rgba(0,0,0,.45);
+  position:relative;
+}
+.admin-sec-hd::before{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(212,175,55,.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212,175,55,.04) 1px, transparent 1px);
+  background-size:24px 24px;
+  mask-image:radial-gradient(ellipse 70% 80% at 100% 0%,black 20%,transparent 70%);
+  -webkit-mask-image:radial-gradient(ellipse 70% 80% at 100% 0%,black 20%,transparent 70%);
+  opacity:.6;
+}
+.admin-sec-hd::after{
+  background:linear-gradient(90deg,transparent,rgba(245,208,96,.5),transparent) !important;
+  box-shadow:0 0 12px rgba(245,208,96,.35);
+}
+.admin-sec-title{
+  background:linear-gradient(180deg,#fff,#f0d97a 90%);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 28px rgba(245,208,96,.18);
+}
+.admin-sec-title .admin-badge{
+  background:linear-gradient(135deg,rgba(245,208,96,.22),rgba(212,175,55,.1));
+  border:1px solid rgba(245,208,96,.45);
+  color:#fde9a6;
+  box-shadow:0 0 12px rgba(245,208,96,.3), inset 0 0 0 1px rgba(255,255,255,.04);
+}
+.admin-sec-sub{color:#c8a34a}
+
+/* Admin cards: glass + neon gold border on hover */
+body.is-admin .admin-card{
+  border-color:rgba(212,175,55,.16) !important;
+  backdrop-filter:blur(10px) saturate(1.2);
+  -webkit-backdrop-filter:blur(10px) saturate(1.2);
+}
+body.is-admin .admin-card:hover{
+  border-color:rgba(245,208,96,.4) !important;
+  box-shadow:
+    0 1px 0 rgba(255,255,255,.04) inset,
+    0 14px 36px rgba(212,175,55,.14),
+    0 10px 28px rgba(0,0,0,.45) !important;
+}
+.admin-card .card-title{
+  background:linear-gradient(180deg,#f5d060,#c9a227);
+  -webkit-background-clip:text;background-clip:text;color:transparent;
+  letter-spacing:2.4px;
+}
+
+/* Gold button – premium glossy finish */
+.btn-gold{
+  background:linear-gradient(135deg,#F5D060 0%,#D4AF37 50%,#B8960C 100%) !important;
+  box-shadow:
+    0 2px 16px rgba(212,175,55,.35),
+    inset 0 1px 0 rgba(255,255,255,.25),
+    inset 0 -1px 0 rgba(0,0,0,.2) !important;
+  position:relative;overflow:hidden;
+}
+.btn-gold::after{
+  content:'';position:absolute;inset:0;pointer-events:none;opacity:0;
+  background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.3) 50%,transparent 70%);
+  transform:translateX(-100%);transition:transform .6s, opacity .2s;
+}
+.btn-gold:hover{
+  box-shadow:
+    0 4px 24px rgba(245,208,96,.55),
+    inset 0 1px 0 rgba(255,255,255,.3),
+    inset 0 -1px 0 rgba(0,0,0,.25) !important;
+  transform:translateY(-1px);
+}
+.btn-gold:hover::after{opacity:1;transform:translateX(100%)}
+
+/* Role badge upgrades */
+.role-badge.admin{
+  background:linear-gradient(135deg,rgba(245,208,96,.22),rgba(212,175,55,.12));
+  color:#F5D060;border-color:rgba(245,208,96,.45);
+  box-shadow:0 0 10px rgba(245,208,96,.25);
+  text-shadow:0 0 6px rgba(245,208,96,.45);
+}
+.role-badge.user{
+  background:linear-gradient(135deg,rgba(212,175,55,.14),rgba(201,162,39,.08));
+  color:#d4af37;border-color:rgba(212,175,55,.32);
+}
+
+/* Wizard overlay glassmorphic */
+.wizard-box{
+  background:
+    radial-gradient(circle at 50% -20%,rgba(245,208,96,.18),transparent 55%),
+    linear-gradient(180deg,rgba(10,14,20,.96) 0%,rgba(6,10,16,.98) 100%) !important;
+  border:1px solid rgba(245,208,96,.22) !important;
+  box-shadow:
+    0 20px 80px rgba(0,0,0,.55),
+    0 0 0 1px rgba(245,208,96,.08),
+    inset 0 1px 0 rgba(255,255,255,.04) !important;
+}
+
+/* Toast: glass look */
+.toast{
+  backdrop-filter:blur(20px) saturate(1.4);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);
+  box-shadow:0 8px 28px rgba(0,0,0,.35);
+}
+
+/* Admin sections - additional corner grid overlay on cards */
+body.is-admin #sec-admin .admin-card::before{
+  content:'';position:absolute;top:0;right:0;width:96px;height:96px;
+  pointer-events:none;opacity:.18;
+  background-image:
+    linear-gradient(rgba(212,175,55,.3) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(212,175,55,.3) 1px, transparent 1px);
+  background-size:12px 12px;
+  mask-image:radial-gradient(circle at 100% 0%,black 10%,transparent 75%);
+  -webkit-mask-image:radial-gradient(circle at 100% 0%,black 10%,transparent 75%);
+}
+body.is-admin #sec-admin .admin-card{position:relative}
+
+/* Softer filter-btn with active glow */
+.filter-btn.active{
+  box-shadow:0 0 10px rgba(212,175,55,.22), inset 0 0 0 1px rgba(212,175,55,.1);
+}
+
+/* Page-load overlay polish */
+#pageLoadOverlay{
+  background:
+    radial-gradient(circle at 50% 40%,rgba(212,175,55,.12),transparent 55%),
+    var(--bg0);
+}
+
+/* Scrollbar accent */
+::-webkit-scrollbar-thumb{
+  background:linear-gradient(180deg,rgba(212,175,55,.35),rgba(201,162,39,.18));
+  border-radius:3px;
+}
+
+/* Settings section title accent */
+.s-section-title{
+  position:relative;padding-left:12px;
+}
+.s-section-title::before{
+  content:'';position:absolute;left:0;top:0;bottom:8px;width:2px;
+  background:linear-gradient(180deg,var(--jade),transparent);
+  border-radius:2px;
+}
+
+/* Light-theme friendly fallbacks for new gradients */
+[data-theme="light"] .hero-val,
+[data-theme="light"] .admin-sec-title,
+[data-theme="light"] .admin-stat-val,
+[data-theme="light"] .admin-card .card-title,
+[data-theme="light"] .h-title{
+  -webkit-text-fill-color:initial;color:inherit;
+  background:none;text-shadow:none;
+}
+

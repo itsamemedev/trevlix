@@ -20,6 +20,9 @@ EXCHANGE_MAP = {
     "kraken": "kraken",
     "huobi": "huobi",
     "coinbase": "coinbaseadvanced",  # CCXT-Klassenname für Coinbase Advanced Trade
+    "bitget": "bitget",
+    "mexc": "mexc",
+    "gateio": "gateio",
 }
 
 # Valid CCXT-style timeframe strings
