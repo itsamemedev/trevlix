@@ -4854,4 +4854,5 @@ if __name__ == "__main__":
         app=app,
         auto_start=_AUTO_START,
         has_configured_exchanges=_has_any_configured_exchange,
+        db=db,
     )

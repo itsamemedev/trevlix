@@ -7,6 +7,35 @@ import threading
 from collections.abc import Callable
 from typing import Any
 
+from app.core.startup_view import render_ready_summary
+
+
+def _db_ping(db) -> bool:
+    """Prüft per SELECT 1, ob die DB antwortet."""
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute("SELECT 1")
+                c.fetchone()
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _ollama_ping() -> bool | None:
+    """Liefert True/False bei konfiguriertem Ollama, sonst None (nicht angezeigt)."""
+    host = os.getenv("OLLAMA_HOST", "").strip()
+    model = os.getenv("OLLAMA_MODEL", "").strip()
+    endpoint = os.getenv("LLM_ENDPOINT", "").strip()
+    if not (host or model or "11434" in endpoint):
+        return None
+    try:
+        from services.ollama_client import is_ollama_available
+
+        return is_ollama_available()
+    except Exception:  # noqa: BLE001
+        return False
+
 
 def run_server(
     *,
@@ -27,6 +56,7 @@ def run_server(
     app,
     auto_start: bool,
     has_configured_exchanges: Callable[[], bool] | None = None,
+    db=None,
 ) -> None:
     """Startet Hintergrunddienste und den SocketIO-Server."""
     startup_banner()
@@ -36,28 +66,40 @@ def run_server(
         for err in cfg_errors:
             log.error(f"⚠️  CONFIG-Fehler: {err}")
         log.warning("⚠️  Konfigurationsfehler gefunden – bitte prüfen. Bot startet trotzdem.")
+    else:
+        log.info("✅ Config validiert (keine Fehler)")
 
     os.makedirs(config["backup_dir"], exist_ok=True)
+    log.info(f"📁 Backup-Verzeichnis: {config['backup_dir']}")
 
-    threading.Thread(target=daily_sched.run, daemon=True, name="DailyReport").start()
-    threading.Thread(target=backup_sched.run, daemon=True, name="Backup").start()
-    threading.Thread(target=fg_idx.update, daemon=True).start()
-    threading.Thread(target=dominance.update, daemon=True).start()
-    threading.Thread(target=safety_scan, daemon=True).start()
+    bg_threads = [
+        ("DailyReport", daily_sched.run),
+        ("Backup", backup_sched.run),
+        ("FearGreedIndex", fg_idx.update),
+        ("BTCDominance", dominance.update),
+        ("SafetyScan", safety_scan),
+    ]
+    for name, target in bg_threads:
+        threading.Thread(target=target, daemon=True, name=name).start()
+        log.info(f"🧵 Thread gestartet: {name}")
 
+    healer_ok = False
     try:
         healer.start()
+        healer_ok = True
         log.info("🩺 Auto-Healing Agent gestartet")
     except Exception as exc:  # noqa: BLE001
         log.warning(f"Auto-Healing Agent Start fehlgeschlagen: {exc}")
 
+    auto_started = False
+    exchanges_ready = has_configured_exchanges() if has_configured_exchanges else True
     if auto_start:
-        exchanges_ready = has_configured_exchanges() if has_configured_exchanges else True
         if exchanges_ready:
             state.running = True
             state.paused = False
             threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-            log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
+            auto_started = True
+            log.info(f"🚀 Bot auto-gestartet (AUTO_START=true · {config['exchange'].upper()})")
             state.add_activity(
                 "🚀", "Auto-Start", f"v{bot_version} · {config['exchange'].upper()}", "success"
             )
@@ -69,7 +111,29 @@ def run_server(
     else:
         log.info("⏸️  Bot wartet auf manuellen Start (AUTO_START=false)")
 
-    log.info("🌐 Dashboard: http://0.0.0.0:5000")
-    log.info("📡 REST-API:  http://0.0.0.0:5000/api/v1/")
-    log.info("📚 API-Docs:  http://0.0.0.0:5000/api/v1/docs")
-    socketio.run(app, host="0.0.0.0", port=5000, debug=False, allow_unsafe_werkzeug=True)
+    # ── Ready-Summary ───────────────────────────────────────────────────
+    active_threads = sum(
+        1 for t in threading.enumerate() if t.is_alive() and t is not threading.main_thread()
+    )
+    db_ok = _db_ping(db) if db is not None else False
+    ollama_ok = _ollama_ping()
+    try:
+        print(
+            render_ready_summary(
+                bot_version=bot_version,
+                config=config,
+                thread_count=active_threads + (1 if healer_ok else 0),
+                db_ok=db_ok,
+                ollama_ok=ollama_ok,
+                auto_started=auto_started,
+                exchange_ready=exchanges_ready,
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.debug(f"Ready-Summary Rendering fehlgeschlagen: {exc}")
+
+    port = int(os.getenv("PORT", "5000"))
+    log.info(f"🌐 Dashboard: http://0.0.0.0:{port}")
+    log.info(f"📡 REST-API:  http://0.0.0.0:{port}/api/v1/")
+    log.info(f"📚 API-Docs:  http://0.0.0.0:{port}/api/v1/docs")
+    socketio.run(app, host="0.0.0.0", port=port, debug=False, allow_unsafe_werkzeug=True)
