@@ -226,6 +226,20 @@ sobald ein Key fehlt oder weniger als 5 Sprachen hat. Läuft in <200 ms.
 Checkliste vorschreibt, mit einem Test automatisieren — sonst wird sie
 vergessen.
 
+### Lektion 42: `send_from_directory`/`send_file` rendert kein Jinja
+**Problem:** `routes/dashboard.py` lieferte statische HTML-Seiten via
+`send_from_directory(template_dir, filename)` aus, obwohl die Templates
+Jinja-Direktiven wie `{% include '_partials/site_footer.html' %}` und
+`{{ csrf_token() }}` enthielten. Diese Tags wurden im Browser als
+Literal-Text ausgeliefert – Partials wurden nie eingebunden und der
+CSRF-Meta-Tag enthielt den String `{{ csrf_token() }}` statt des Tokens.
+**Regel:** Sobald ein Template irgendeine Jinja-Syntax (`{%`, `{{`) enthält,
+MUSS der View `render_template(name)` verwenden. `send_file`/`send_from_directory`
+sind nur für reine statische Assets gedacht (Bilder, PDFs, JS). Prüfstein
+vor Commit: `grep -l '{%\|{{' templates/*.html` und dann sicherstellen,
+dass die Routen dieser Templates `render_template` nutzen.
+**Code:** `routes/dashboard.py`, `routes/auth.py:index`
+
 ### Lektion 41: Pre-existing Test-Failures nicht stillschweigend als grün melden
 **Problem:** `test_eight_exchanges_supported` erwartet 8 Exchanges, seit
 Commit 83139e0 sind es 11. Test war beim Start der Session bereits rot.

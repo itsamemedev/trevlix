@@ -1,7 +1,7 @@
 """Tests für services.exchange_factory.
 
-Verifiziert, dass alle 8 unterstützten Exchanges korrekt erstellt werden
-und Passphrasen für OKX/KuCoin/Crypto.com korrekt gesetzt sind.
+Verifiziert, dass alle 11 unterstützten Exchanges korrekt erstellt werden
+und Passphrasen für OKX/KuCoin korrekt gesetzt sind.
 """
 
 from __future__ import annotations
@@ -21,17 +21,20 @@ from services.exchange_factory import (
 
 
 class TestSupportedExchanges:
-    def test_eight_exchanges_supported(self):
+    def test_all_exchanges_supported(self):
         names = supported_exchanges()
-        assert len(names) == 8
+        assert len(names) == 11
         assert set(names) == {
             "binance",
+            "bitget",
             "bybit",
             "coinbase",
             "cryptocom",
+            "gateio",
             "huobi",
             "kraken",
             "kucoin",
+            "mexc",
             "okx",
         }
 
@@ -73,7 +76,7 @@ class TestGetExchangeClass:
 
 class TestCreateCcxtExchange:
     def test_create_all_supported_exchanges(self):
-        """Alle 8 Exchanges müssen ohne Fehler erstellt werden können."""
+        """Alle unterstützten Exchanges müssen ohne Fehler erstellt werden können."""
         for name in supported_exchanges():
             inst = create_ccxt_exchange(name)
             assert inst is not None, f"Creating {name} failed"

@@ -135,7 +135,7 @@ body { padding-top:62px; }
   <div class="logo-row">
     <div class="logo-mark">⚡</div>
     <div class="logo-txt">TREV<em>LIX</em></div>
-    <span class="version-badge">v1.7.1</span>
+    <span class="version-badge">v{{ bot_version|default('dev') }}</span>
   </div>
   <div class="hero-sub" data-i18n="inst_subtitle">Algorithmic Trading Intelligence — Installations-Anleitung</div>
   <div class="lang-row">
@@ -657,7 +657,7 @@ GITHUB_BRANCH=<span class="c-var">main</span></pre>
     <div class="site-footer-brand">
       <div class="footer-logo" style="font-family:var(--fc);font-weight:900;font-size:24px;color:var(--white)">TREV<em style="font-style:normal;color:var(--jade)">LIX</em></div>
       <p style="font-size:13px;color:var(--sub);margin-top:8px">Algorithmic Trading Intelligence</p>
-      <div style="font-family:var(--fm);font-size:10px;color:var(--muted,#1e3344);margin-top:8px">v1.7.1 &middot; MIT License</div>
+      <div style="font-family:var(--fm);font-size:10px;color:var(--muted,#1e3344);margin-top:8px">v{{ bot_version|default('dev') }} &middot; MIT License</div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px">
       <div><h4 style="font-family:var(--fc);font-size:13px;font-weight:800;color:var(--white);letter-spacing:1px;text-transform:uppercase;margin-bottom:12px">Produkt</h4><a href="/" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Home</a><a href="/strategies" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Strategien</a><a href="/api-docs" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">API Docs</a><a href="/" style="display:block;font-size:13px;color:var(--sub);text-decoration:none;padding:3px 0">Dashboard</a></div>

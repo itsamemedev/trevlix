@@ -408,6 +408,8 @@ def _generate_csrf_token() -> str:
 
 
 app.jinja_env.globals["csrf_token"] = _generate_csrf_token
+app.jinja_env.globals["bot_version"] = BOT_VERSION
+app.jinja_env.globals["bot_name"] = BOT_NAME
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

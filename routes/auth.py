@@ -13,447 +13,22 @@ from __future__ import annotations
 
 import hmac
 import logging
-import os
 import secrets
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
 import jwt as pyjwt
-from flask import Blueprint, make_response, redirect, request, send_file, session
+from flask import Blueprint, make_response, redirect, render_template, request, session
 
 from app.core.time_compat import UTC
 
 log = logging.getLogger("trevlix.auth")
 
-# Auth-Seite HTML-Template (Glassmorphism-Design mit i18n)
-_AUTH_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TREVLIX %(page_title)s</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;900&display=swap"
-      rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-@keyframes gradMove{
-  0%%{background-position:0%% 50%%}
-  25%%{background-position:50%% 100%%}
-  50%%{background-position:100%% 50%%}
-  75%%{background-position:50%% 0%%}
-  100%%{background-position:0%% 50%%}
-}
-@keyframes fadeUp{from{opacity:0;transform:translateY(24px) scale(.97)}
-  to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes pulseGlow{
-  0%%,100%%{opacity:.4}50%%{opacity:.7}
-}
-@keyframes shimmer{
-  0%%{background-position:-200%% 0}100%%{background-position:200%% 0}
-}
-html{height:100%%}
-body{font-family:'Barlow',sans-serif;color:#ccd6f6;min-height:100vh;
-  display:flex;align-items:center;justify-content:center;flex-direction:column;
-  background:#060912;overflow-x:hidden;position:relative}
-body::before{content:'';position:fixed;inset:0;z-index:0;
-  background:linear-gradient(135deg,#060912 0%%,#0a1628 20%%,#0d1a2e 40%%,#081a14 60%%,#0d0f20 80%%,#060912 100%%);
-  background-size:400%% 400%%;animation:gradMove 25s ease infinite}
-body::after{content:'';position:fixed;inset:0;z-index:0;
-  background:radial-gradient(ellipse 700px 500px at 25%% 15%%,rgba(0,255,136,.05),transparent),
-             radial-gradient(ellipse 600px 400px at 75%% 85%%,rgba(0,212,255,.05),transparent),
-             radial-gradient(ellipse 400px 300px at 50%% 50%%,rgba(0,180,255,.02),transparent)}
-.orb{position:fixed;border-radius:50%%;filter:blur(80px);z-index:0;
-  animation:pulseGlow 8s ease-in-out infinite;pointer-events:none}
-.orb-1{width:300px;height:300px;top:-80px;left:-60px;
-  background:radial-gradient(circle,rgba(0,255,136,.12),transparent 70%%)}
-.orb-2{width:250px;height:250px;bottom:-60px;right:-40px;
-  background:radial-gradient(circle,rgba(0,212,255,.1),transparent 70%%);
-  animation-delay:4s}
-.orb-3{width:180px;height:180px;top:40%%;right:15%%;
-  background:radial-gradient(circle,rgba(0,255,200,.06),transparent 70%%);
-  animation-delay:2s}
-.box{position:relative;z-index:1;
-  background:rgba(10,15,30,.55);
-  backdrop-filter:blur(32px) saturate(1.4);-webkit-backdrop-filter:blur(32px) saturate(1.4);
-  border:1px solid rgba(255,255,255,.07);border-radius:28px;
-  padding:48px 44px 36px;width:100%%;max-width:420px;margin:20px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 80px rgba(0,212,255,.04),
-    inset 0 1px 0 rgba(255,255,255,.06);
-  animation:fadeUp .6s cubic-bezier(.22,1,.36,1)}
-.box::before{content:'';position:absolute;inset:-1px;border-radius:28px;
-  padding:1px;background:linear-gradient(160deg,rgba(0,212,255,.15),transparent 40%%,
-    transparent 60%%,rgba(0,255,136,.1));
-  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
-  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
-.logo{text-align:center;margin-bottom:32px}
-.logo-icon{font-size:52px;margin-bottom:10px;
-  filter:drop-shadow(0 0 18px rgba(0,212,255,.4)) drop-shadow(0 0 40px rgba(0,255,136,.15));
-  animation:pulseGlow 4s ease-in-out infinite}
-.logo-name{font-size:32px;font-weight:900;letter-spacing:-1px;
-  background:linear-gradient(135deg,#e0e8ff 0%%,#ccd6f6 50%%,#a0b4d0 100%%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text}
-.logo-name span{background:linear-gradient(135deg,#00d4ff,#00ff88);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text}
-.logo-sub{font-size:11px;color:#3a4a6a;letter-spacing:3px;
-  text-transform:uppercase;margin-top:6px;font-weight:500}
-.divider{height:1px;margin:0 0 24px;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,.15),transparent)}
-label{display:block;font-size:11px;font-weight:700;color:#5a7a9a;letter-spacing:.8px;
-  text-transform:uppercase;margin-bottom:6px}
-input[type="text"],input[type="password"]{width:100%%;
-  background:rgba(12,18,35,.8);border:1px solid rgba(255,255,255,.06);
-  border-radius:14px;padding:15px 18px;color:#ccd6f6;font-size:14px;
-  font-family:'Barlow',sans-serif;outline:none;margin-bottom:18px;
-  transition:border-color .3s,box-shadow .3s,background .3s}
-input[type="text"]:focus,input[type="password"]:focus{
-  border-color:rgba(0,212,255,.45);background:rgba(12,18,35,.95);
-  box-shadow:0 0 0 3px rgba(0,212,255,.08),0 0 24px rgba(0,212,255,.06),
-    0 0 60px rgba(0,212,255,.03)}
-input[type="text"]::placeholder,input[type="password"]::placeholder{
-  color:#3a4a6a;font-weight:400}
-input[type="hidden"]{display:none;margin:0;padding:0}
-.msg{font-size:12px;margin-bottom:16px;padding:11px 14px;border-radius:12px;
-  display:%(msg_display)s;text-align:center;font-weight:500;
-  backdrop-filter:blur(8px)}
-.msg-err{background:rgba(255,61,113,.08);color:#ff5a85;
-  border:1px solid rgba(255,61,113,.18)}
-.msg-ok{background:rgba(0,255,136,.06);color:#00ff88;
-  border:1px solid rgba(0,255,136,.18)}
-button{width:100%%;padding:16px;border-radius:14px;
-  background:linear-gradient(135deg,#00ff88 0%%,#00d4ff 100%%);
-  color:#060912;font-size:15px;font-weight:800;border:none;cursor:pointer;
-  font-family:'Barlow',sans-serif;letter-spacing:.4px;
-  transition:transform .18s,box-shadow .3s;position:relative;overflow:hidden;
-  box-shadow:0 4px 24px rgba(0,212,255,.2),0 0 60px rgba(0,255,136,.08)}
-button::after{content:'';position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.15),transparent);
-  background-size:200%% 100%%;animation:shimmer 3s ease-in-out infinite}
-button:hover{transform:translateY(-2px);
-  box-shadow:0 8px 32px rgba(0,212,255,.35),0 0 80px rgba(0,255,136,.12)}
-button:active{transform:translateY(0)}
-.ver{text-align:center;margin-top:24px;font-size:10px;color:#2a3a5a;
-  letter-spacing:.5px;font-weight:500}
-.alt-link{text-align:center;margin-top:16px;font-size:13px;color:#5a7090;font-weight:500}
-.alt-link a{color:#00d4ff;text-decoration:none;transition:color .2s;font-weight:600}
-.alt-link a:hover{color:#00ff88;text-shadow:0 0 12px rgba(0,255,136,.2)}
-.pw-wrap{position:relative}
-.pw-wrap input{padding-right:48px}
-.pw-toggle{position:absolute;right:16px;top:15px;cursor:pointer;
-  color:#5a7090;font-size:16px;line-height:1;user-select:none;
-  transition:color .2s,transform .15s;background:none;border:none;width:auto;padding:0;
-  box-shadow:none}
-.pw-toggle:hover{color:#00d4ff;transform:scale(1.15)}
-.lang-bar{display:flex;justify-content:center;gap:6px;margin-top:18px}
-.lang-btn{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
-  border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;
-  color:#4a5a7a;font-family:'Barlow',sans-serif;font-weight:600;
-  transition:all .25s;width:auto;box-shadow:none;letter-spacing:.3px}
-.lang-btn:hover{color:#00d4ff;border-color:rgba(0,212,255,.25);
-  background:rgba(0,212,255,.06)}
-.lang-btn.active{color:#00d4ff;border-color:rgba(0,212,255,.35);
-  background:rgba(0,212,255,.1);box-shadow:0 0 12px rgba(0,212,255,.08)}
-@media(max-width:480px){.box{margin:12px;padding:36px 28px 28px;border-radius:22px}
-  .logo-name{font-size:28px}.logo-icon{font-size:44px}}
-</style></head><body>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="orb orb-3"></div>
-<div class="box">
-  <div class="logo">
-    <div class="logo-icon">&#9889;</div>
-    <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.5.0</div>
-  </div>
-  <div class="divider"></div>
-  %(body)s
-  <div class="ver" data-i18n="footer">TREVLIX &middot; Open-Source Trading Bot</div>
-  <div class="lang-bar">
-    <button class="lang-btn" data-lang="de" title="Deutsch">DE</button>
-    <button class="lang-btn active" data-lang="en" title="English">EN</button>
-    <button class="lang-btn" data-lang="es" title="Espa&#241;ol">ES</button>
-    <button class="lang-btn" data-lang="ru" title="&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;">RU</button>
-    <button class="lang-btn" data-lang="pt" title="Portugu&#234;s">PT</button>
-  </div>
-</div>
-<script>
-(function(){
-  var T={
-    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.5.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
-        username:"Benutzername",password:"Passwort",password_confirm:"Passwort best\\u00e4tigen",
-        login_btn:"Anmelden &rarr;",register_btn:"Konto erstellen &rarr;",
-        no_account:"Noch kein Konto?",register_link:"Registrieren",
-        back_login:"&larr; Zur Anmeldung"},
-    en:{subtitle:"Algorithmic Trading Bot &middot; v1.5.0",footer:"TREVLIX &middot; Open-Source Trading Bot",
-        username:"Username",password:"Password",password_confirm:"Confirm Password",
-        login_btn:"Sign In &rarr;",register_btn:"Create Account &rarr;",
-        no_account:"No account yet?",register_link:"Register",
-        back_login:"&larr; Back to Login"},
-    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.5.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
-        username:"Usuario",password:"Contrase\\u00f1a",password_confirm:"Confirmar Contrase\\u00f1a",
-        login_btn:"Iniciar Sesi\\u00f3n &rarr;",register_btn:"Crear Cuenta &rarr;",
-        no_account:"\\u00bfNo tienes cuenta?",register_link:"Registrarse",
-        back_login:"&larr; Volver al Login"},
-    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.5.0",
-        footer:"TREVLIX &middot; \\u041e\\u043f\\u0435\\u043d-\\u0441\\u043e\\u0443\\u0440\\u0441 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442",
-        username:"\\u0418\\u043c\\u044f \\u043f\\u043e\\u043b\\u044c\\u0437\\u043e\\u0432\\u0430\\u0442\\u0435\\u043b\\u044f",
-        password:"\\u041f\\u0430\\u0440\\u043e\\u043b\\u044c",
-        password_confirm:"\\u041f\\u043e\\u0434\\u0442\\u0432\\u0435\\u0440\\u0434\\u0438\\u0442\\u0435 \\u043f\\u0430\\u0440\\u043e\\u043b\\u044c",
-        login_btn:"\\u0412\\u043e\\u0439\\u0442\\u0438 &rarr;",register_btn:"\\u0421\\u043e\\u0437\\u0434\\u0430\\u0442\\u044c &rarr;",
-        no_account:"\\u041d\\u0435\\u0442 \\u0430\\u043a\\u043a\\u0430\\u0443\\u043d\\u0442\\u0430?",register_link:"\\u0420\\u0435\\u0433\\u0438\\u0441\\u0442\\u0440\\u0430\\u0446\\u0438\\u044f",
-        back_login:"&larr; \\u041a \\u0432\\u0445\\u043e\\u0434\\u0443"},
-    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.5.0",footer:"TREVLIX &middot; Bot de Trading Open-Source",
-        username:"Usu\\u00e1rio",password:"Senha",password_confirm:"Confirmar Senha",
-        login_btn:"Entrar &rarr;",register_btn:"Criar Conta &rarr;",
-        no_account:"N\\u00e3o tem conta?",register_link:"Registrar",
-        back_login:"&larr; Voltar ao Login"}
-  };
-  function setLang(l){
-    if(!T[l])return;
-    document.querySelectorAll('[data-i18n]').forEach(function(el){
-      var k=el.getAttribute('data-i18n');if(T[l][k])el.innerHTML=T[l][k];
-    });
-    document.querySelectorAll('.lang-btn').forEach(function(b){
-      b.classList.toggle('active',b.getAttribute('data-lang')===l);
-    });
-    try{localStorage.setItem('trevlix_lang',l);}catch(e){}
-  }
-  document.querySelectorAll('.lang-btn').forEach(function(b){
-    b.addEventListener('click',function(){setLang(this.getAttribute('data-lang'));});
-  });
-  var saved;try{saved=localStorage.getItem('trevlix_lang');}catch(e){}
-  if(saved&&T[saved])setLang(saved);
-  document.querySelectorAll('input[type="password"]').forEach(function(inp){
-    var wrap=document.createElement('div');wrap.className='pw-wrap';
-    inp.parentNode.insertBefore(wrap,inp);wrap.appendChild(inp);
-    var btn=document.createElement('button');btn.type='button';btn.className='pw-toggle';
-    btn.innerHTML='&#128065;';btn.setAttribute('aria-label','Toggle password visibility');
-    wrap.appendChild(btn);
-    btn.addEventListener('click',function(){
-      var t=inp.type==='password'?'text':'password';inp.type=t;
-      btn.style.color=t==='text'?'#00d4ff':'';
-    });
-  });
-})();
-</script>
-</body></html>"""
-
-
-# Admin-Login Template (Gold/Amber Akzent statt Cyan um Admin-Bereich zu kennzeichnen)
-_ADMIN_AUTH_TEMPLATE = """<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TREVLIX %(page_title)s</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;500;600;700;900&display=swap"
-      rel="stylesheet">
-<style>
-*{margin:0;padding:0;box-sizing:border-box}
-@keyframes gradMove{
-  0%%{background-position:0%% 50%%}
-  25%%{background-position:50%% 100%%}
-  50%%{background-position:100%% 50%%}
-  75%%{background-position:50%% 0%%}
-  100%%{background-position:0%% 50%%}
-}
-@keyframes fadeUp{from{opacity:0;transform:translateY(24px) scale(.97)}
-  to{opacity:1;transform:translateY(0) scale(1)}}
-@keyframes pulseGlow{
-  0%%,100%%{opacity:.4}50%%{opacity:.7}
-}
-@keyframes shimmer{
-  0%%{background-position:-200%% 0}100%%{background-position:200%% 0}
-}
-html{height:100%%}
-body{font-family:'Barlow',sans-serif;color:#ccd6f6;min-height:100vh;
-  display:flex;align-items:center;justify-content:center;flex-direction:column;
-  background:#0a0608;overflow-x:hidden;position:relative}
-body::before{content:'';position:fixed;inset:0;z-index:0;
-  background:linear-gradient(135deg,#0a0608 0%%,#1a0f10 20%%,#12081a 40%%,#0f0a06 60%%,#0a0814 80%%,#0a0608 100%%);
-  background-size:400%% 400%%;animation:gradMove 25s ease infinite}
-body::after{content:'';position:fixed;inset:0;z-index:0;
-  background:radial-gradient(ellipse 700px 500px at 25%% 15%%,rgba(0,212,255,.05),transparent),
-             radial-gradient(ellipse 600px 400px at 75%% 85%%,rgba(255,140,0,.03),transparent),
-             radial-gradient(ellipse 400px 300px at 50%% 50%%,rgba(255,200,50,.02),transparent)}
-.orb{position:fixed;border-radius:50%%;filter:blur(80px);z-index:0;
-  animation:pulseGlow 8s ease-in-out infinite;pointer-events:none}
-.orb-1{width:280px;height:280px;top:-70px;left:-50px;
-  background:radial-gradient(circle,rgba(0,212,255,.1),transparent 70%%)}
-.orb-2{width:220px;height:220px;bottom:-50px;right:-30px;
-  background:radial-gradient(circle,rgba(255,140,0,.08),transparent 70%%);
-  animation-delay:4s}
-.box{position:relative;z-index:1;
-  background:rgba(18,12,22,.6);
-  backdrop-filter:blur(32px) saturate(1.4);-webkit-backdrop-filter:blur(32px) saturate(1.4);
-  border:1px solid rgba(0,212,255,.08);border-radius:28px;
-  padding:48px 44px 36px;width:100%%;max-width:420px;margin:20px;
-  box-shadow:0 8px 32px rgba(0,0,0,.5),0 0 80px rgba(0,212,255,.04),
-    inset 0 1px 0 rgba(255,255,255,.04);
-  animation:fadeUp .6s cubic-bezier(.22,1,.36,1)}
-.box::before{content:'';position:absolute;inset:-1px;border-radius:28px;
-  padding:1px;background:linear-gradient(160deg,rgba(0,212,255,.15),transparent 40%%,
-    transparent 60%%,rgba(0,255,136,.12));
-  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
-  -webkit-mask-composite:xor;mask-composite:exclude;pointer-events:none}
-.logo{text-align:center;margin-bottom:28px}
-.logo-icon{font-size:52px;margin-bottom:10px;
-  filter:drop-shadow(0 0 18px rgba(0,212,255,.4)) drop-shadow(0 0 40px rgba(0,255,136,.15));
-  animation:pulseGlow 4s ease-in-out infinite}
-.logo-name{font-size:32px;font-weight:900;letter-spacing:-1px;
-  background:linear-gradient(135deg,#e0e8ff 0%%,#ccd6f6 50%%,#a0b4d0 100%%);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text}
-.logo-name span{background:linear-gradient(135deg,#00d4ff,#00ff88);
-  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
-  background-clip:text}
-.logo-sub{font-size:11px;color:#5a4a3a;letter-spacing:3px;
-  text-transform:uppercase;margin-top:6px;font-weight:500}
-.admin-badge{display:inline-block;margin-top:12px;
-  background:rgba(0,212,255,.1);color:#00d4ff;
-  font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;
-  padding:5px 16px;border-radius:8px;border:1px solid rgba(0,212,255,.25);
-  box-shadow:0 0 20px rgba(0,212,255,.08)}
-.divider{height:1px;margin:0 0 24px;
-  background:linear-gradient(90deg,transparent,rgba(0,212,255,.15),transparent)}
-label{display:block;font-size:11px;font-weight:700;color:#907050;letter-spacing:.8px;
-  text-transform:uppercase;margin-bottom:6px}
-input[type="text"],input[type="password"]{width:100%%;
-  background:rgba(12,18,35,.8);border:1px solid rgba(0,212,255,.08);
-  border-radius:14px;padding:15px 18px;color:#ccd6f6;font-size:14px;
-  font-family:'Barlow',sans-serif;outline:none;margin-bottom:18px;
-  transition:border-color .3s,box-shadow .3s,background .3s}
-input[type="text"]:focus,input[type="password"]:focus{
-  border-color:rgba(0,212,255,.45);background:rgba(12,18,35,.95);
-  box-shadow:0 0 0 3px rgba(0,212,255,.08),0 0 24px rgba(255,180,0,.05)}
-input[type="text"]::placeholder,input[type="password"]::placeholder{
-  color:#4a3a2a;font-weight:400}
-input[type="hidden"]{display:none;margin:0;padding:0}
-.msg{font-size:12px;margin-bottom:16px;padding:11px 14px;border-radius:12px;
-  display:%(msg_display)s;text-align:center;font-weight:500;
-  backdrop-filter:blur(8px)}
-.msg-err{background:rgba(255,61,113,.08);color:#ff5a85;
-  border:1px solid rgba(255,61,113,.18)}
-button{width:100%%;padding:16px;border-radius:14px;
-  background:linear-gradient(135deg,#00d4ff 0%%,#00a8d6 100%%);
-  color:#0a0608;font-size:15px;font-weight:800;border:none;cursor:pointer;
-  font-family:'Barlow',sans-serif;letter-spacing:.4px;
-  transition:transform .18s,box-shadow .3s;position:relative;overflow:hidden;
-  box-shadow:0 4px 24px rgba(255,180,0,.18),0 0 60px rgba(0,255,136,.08)}
-button::after{content:'';position:absolute;inset:0;
-  background:linear-gradient(90deg,transparent,rgba(255,255,255,.12),transparent);
-  background-size:200%% 100%%;animation:shimmer 3s ease-in-out infinite}
-button:hover{transform:translateY(-2px);
-  box-shadow:0 8px 32px rgba(255,180,0,.3),0 0 80px rgba(0,255,136,.12)}
-button:active{transform:translateY(0)}
-.ver{text-align:center;margin-top:24px;font-size:10px;color:#3a2a1a;
-  letter-spacing:.5px;font-weight:500}
-.alt-link{text-align:center;margin-top:16px;font-size:13px;color:#5a7090;font-weight:500}
-.alt-link a{color:#00d4ff;text-decoration:none;transition:color .2s;font-weight:600}
-.alt-link a:hover{color:#00ff88;text-shadow:0 0 12px rgba(0,212,255,.15)}
-.pw-wrap{position:relative}
-.pw-wrap input{padding-right:48px}
-.pw-toggle{position:absolute;right:16px;top:15px;cursor:pointer;
-  color:#6a5a3a;font-size:16px;line-height:1;user-select:none;
-  transition:color .2s,transform .15s;background:none;border:none;width:auto;padding:0;
-  box-shadow:none}
-.pw-toggle:hover{color:#00d4ff;transform:scale(1.15)}
-.lang-bar{display:flex;justify-content:center;gap:6px;margin-top:18px}
-.lang-btn{background:rgba(255,255,255,.02);border:1px solid rgba(255,255,255,.05);
-  border-radius:8px;padding:4px 10px;font-size:11px;cursor:pointer;
-  color:#5a4a3a;font-family:'Barlow',sans-serif;font-weight:600;
-  transition:all .25s;width:auto;box-shadow:none;letter-spacing:.3px}
-.lang-btn:hover{color:#00d4ff;border-color:rgba(0,212,255,.25);
-  background:rgba(0,212,255,.08)}
-.lang-btn.active{color:#00d4ff;border-color:rgba(0,212,255,.4);
-  background:rgba(0,212,255,.1);box-shadow:0 0 12px rgba(0,212,255,.08)}
-@media(max-width:480px){.box{margin:12px;padding:36px 28px 28px;border-radius:22px}
-  .logo-name{font-size:28px}.logo-icon{font-size:44px}}
-</style></head><body>
-<div class="orb orb-1"></div>
-<div class="orb orb-2"></div>
-<div class="box">
-  <div class="logo">
-    <div class="logo-icon">&#128274;</div>
-    <div class="logo-name">TREV<span>LIX</span></div>
-    <div class="logo-sub" data-i18n="subtitle">Algorithmic Trading Bot &middot; v1.5.0</div>
-    <div class="admin-badge" data-i18n="admin_badge">Admin Panel</div>
-  </div>
-  <div class="divider"></div>
-  %(body)s
-  <div class="ver" data-i18n="footer">TREVLIX &middot; Admin Panel &middot; v1.5.0</div>
-  <div class="lang-bar">
-    <button class="lang-btn" data-lang="de" title="Deutsch">DE</button>
-    <button class="lang-btn active" data-lang="en" title="English">EN</button>
-    <button class="lang-btn" data-lang="es" title="Espa&#241;ol">ES</button>
-    <button class="lang-btn" data-lang="ru" title="&#1056;&#1091;&#1089;&#1089;&#1082;&#1080;&#1081;">RU</button>
-    <button class="lang-btn" data-lang="pt" title="Portugu&#234;s">PT</button>
-  </div>
-</div>
-<script>
-(function(){
-  var T={
-    de:{subtitle:"Algorithmischer Trading Bot &middot; v1.5.0",
-        footer:"TREVLIX &middot; Admin-Bereich &middot; v1.5.0",
-        admin_badge:"Admin-Bereich",
-        admin_user:"Admin Benutzername",admin_pass:"Admin Passwort",
-        admin_btn:"Admin-Anmeldung &rarr;",
-        back_login:"&larr; Zum normalen Login"},
-    en:{subtitle:"Algorithmic Trading Bot &middot; v1.5.0",
-        footer:"TREVLIX &middot; Admin Panel &middot; v1.5.0",
-        admin_badge:"Admin Panel",
-        admin_user:"Admin Username",admin_pass:"Admin Password",
-        admin_btn:"Admin Sign In &rarr;",
-        back_login:"&larr; Back to User Login"},
-    es:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.5.0",
-        footer:"TREVLIX &middot; Panel de Admin &middot; v1.5.0",
-        admin_badge:"Panel de Admin",
-        admin_user:"Usuario Admin",admin_pass:"Contrase\\u00f1a Admin",
-        admin_btn:"Acceso Admin &rarr;",
-        back_login:"&larr; Volver al Login"},
-    ru:{subtitle:"\\u0410\\u043b\\u0433\\u043e\\u0440\\u0438\\u0442\\u043c\\u0438\\u0447\\u0435\\u0441\\u043a\\u0438\\u0439 \\u0422\\u0440\\u0435\\u0439\\u0434\\u0438\\u043d\\u0433 \\u0411\\u043e\\u0442 &middot; v1.5.0",
-        footer:"TREVLIX &middot; \\u041f\\u0430\\u043d\\u0435\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430 &middot; v1.5.0",
-        admin_badge:"\\u041f\\u0430\\u043d\\u0435\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
-        admin_user:"\\u0418\\u043c\\u044f \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
-        admin_pass:"\\u041f\\u0430\\u0440\\u043e\\u043b\\u044c \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430",
-        admin_btn:"\\u0412\\u0445\\u043e\\u0434 \\u0430\\u0434\\u043c\\u0438\\u043d\\u0430 &rarr;",
-        back_login:"&larr; \\u041a \\u043e\\u0431\\u044b\\u0447\\u043d\\u043e\\u043c\\u0443 \\u0432\\u0445\\u043e\\u0434\\u0443"},
-    pt:{subtitle:"Bot de Trading Algor\\u00edtmico &middot; v1.5.0",
-        footer:"TREVLIX &middot; Painel Admin &middot; v1.5.0",
-        admin_badge:"Painel Admin",
-        admin_user:"Usu\\u00e1rio Admin",admin_pass:"Senha Admin",
-        admin_btn:"Acesso Admin &rarr;",
-        back_login:"&larr; Voltar ao Login"}
-  };
-  function setLang(l){
-    if(!T[l])return;
-    document.querySelectorAll('[data-i18n]').forEach(function(el){
-      var k=el.getAttribute('data-i18n');if(T[l][k])el.innerHTML=T[l][k];
-    });
-    document.querySelectorAll('.lang-btn').forEach(function(b){
-      b.classList.toggle('active',b.getAttribute('data-lang')===l);
-    });
-    try{localStorage.setItem('trevlix_lang',l);}catch(e){}
-  }
-  document.querySelectorAll('.lang-btn').forEach(function(b){
-    b.addEventListener('click',function(){setLang(this.getAttribute('data-lang'));});
-  });
-  var saved;try{saved=localStorage.getItem('trevlix_lang');}catch(e){}
-  if(saved&&T[saved])setLang(saved);
-  document.querySelectorAll('input[type="password"]').forEach(function(inp){
-    var wrap=document.createElement('div');wrap.className='pw-wrap';
-    inp.parentNode.insertBefore(wrap,inp);wrap.appendChild(inp);
-    var btn=document.createElement('button');btn.type='button';btn.className='pw-toggle';
-    btn.innerHTML='&#128065;';btn.setAttribute('aria-label','Toggle password visibility');
-    wrap.appendChild(btn);
-    btn.addEventListener('click',function(){
-      var t=inp.type==='password'?'text':'password';inp.type=t;
-      btn.style.color=t==='text'?'#00d4ff':'';
-    });
-  });
-})();
-</script>
-</body></html>"""
+# Auth-Seiten liegen als Jinja-Templates unter templates/auth.html
+# (User-Login/Register) und templates/auth_admin.html (Admin-Login/Reset).
+# Die Routen rendern sie mit `render_template(...)` und den Variablen
+# page_title, msg_display und body (bereits gerenderter Formular-HTML-Snippet).
 
 
 def _ensure_csrf() -> str:
@@ -499,7 +74,7 @@ def create_auth_blueprint(
         """
         if not session.get("user_id"):
             return redirect("/login")
-        return send_file(os.path.join(template_dir, "dashboard.html"))
+        return render_template("dashboard.html")
 
     @bp.route("/login", methods=["GET", "POST"])
     @limiter.limit("10 per minute")
@@ -533,7 +108,7 @@ def create_auth_blueprint(
     <button type="submit">Anmelden &rarr;</button>
   </form>
   {reg_link}"""
-            return _AUTH_TEMPLATE % {"page_title": "Login", "msg_display": "none", "body": body}
+            return render_template("auth.html", page_title="Login", msg_display="none", body=body)
 
         csrf_submitted = request.form.get("_csrf", "")
         csrf_expected = session.get("_csrf_token", "")
@@ -619,11 +194,15 @@ def create_auth_blueprint(
     Registrierung ist deaktiviert. Bitte wende dich an den Administrator.
   </div>
   <div class="alt-link" style="margin-top:20px"><a href="/login">&larr; Zur Anmeldung</a></div>"""
-            return _AUTH_TEMPLATE % {
-                "page_title": "Registrierung",
-                "msg_display": "none",
-                "body": body,
-            }, 403
+            return (
+                render_template(
+                    "auth.html",
+                    page_title="Registrierung",
+                    msg_display="none",
+                    body=body,
+                ),
+                403,
+            )
 
         if request.method == "GET":
             err = request.args.get("err", "")
@@ -667,11 +246,12 @@ def create_auth_blueprint(
     <button type="submit">Konto erstellen &rarr;</button>
   </form>
   <div class="alt-link"><a href="/login">&larr; Zur Anmeldung</a></div>"""
-            return _AUTH_TEMPLATE % {
-                "page_title": "Registrierung",
-                "msg_display": "none",
-                "body": body,
-            }
+            return render_template(
+                "auth.html",
+                page_title="Registrierung",
+                msg_display="none",
+                body=body,
+            )
 
         csrf_submitted = request.form.get("_csrf", "")
         csrf_expected = session.get("_csrf_token", "")
@@ -776,11 +356,12 @@ def create_auth_blueprint(
   </form>
   <div class="alt-link"><a href="/login">&larr; Zum normalen Login</a></div>
   <div class="alt-link" style="margin-top:8px"><a href="/admin/reset-password">Passwort vergessen?</a></div>"""
-            return _ADMIN_AUTH_TEMPLATE % {
-                "page_title": "Admin Login",
-                "msg_display": "none",
-                "body": body,
-            }
+            return render_template(
+                "auth_admin.html",
+                page_title="Admin Login",
+                msg_display="none",
+                body=body,
+            )
 
         csrf_submitted = request.form.get("_csrf", "")
         csrf_expected = session.get("_csrf_token", "")
@@ -887,11 +468,12 @@ def create_auth_blueprint(
     <button type="submit">Passwort zurücksetzen &rarr;</button>
   </form>
   <div class="alt-link"><a href="/admin/login">&larr; Zum Admin-Login</a></div>"""
-            return _ADMIN_AUTH_TEMPLATE % {
-                "page_title": "Passwort zurücksetzen",
-                "msg_display": "none",
-                "body": body,
-            }
+            return render_template(
+                "auth_admin.html",
+                page_title="Passwort zurücksetzen",
+                msg_display="none",
+                body=body,
+            )
 
         # POST
         csrf_submitted = request.form.get("_csrf", "")

@@ -23,6 +23,12 @@ TRANSLATIONS_FILES = (
 )
 REQUIRED_LANGS = frozenset({"de", "en", "es", "ru", "pt"})
 
+# Templates that ship their own inline i18n dict (no dependency on
+# trevlix_translations.js / page_i18n.js). Auth-Seiten tragen den Übersetzungs-
+# Kontext aus Sicherheitsgründen (minimaler externer JS-Surface) selbst im
+# Template. Die Drift-Prüfung ist hier daher nicht anwendbar.
+_SELF_TRANSLATED = frozenset({"auth.html", "auth_admin.html"})
+
 # Matches `ident: { ... }` entries whose body contains no nested braces.
 # Keeps the parser cheap and safe for the flat QT/PT dicts.
 _ENTRY_RE = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*\{([^{}]*)\}")
@@ -58,6 +64,8 @@ def test_all_template_i18n_keys_have_translations() -> None:
 
     missing: dict[str, list[str]] = {}
     for tpl in sorted(TEMPLATES_DIR.rglob("*.html")):
+        if tpl.name in _SELF_TRANSLATED:
+            continue
         orphans = _extract_template_keys(tpl) - available
         if orphans:
             missing[tpl.relative_to(REPO_ROOT).as_posix()] = sorted(orphans)

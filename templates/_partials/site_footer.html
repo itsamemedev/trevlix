@@ -3,16 +3,16 @@
   Usage:
     {% include '_partials/site_footer.html' %}
 
-  Note: version string "v1.7.1" is duplicated from services/utils.py:BOT_VERSION.
-  Lektion 20 in tasks/lessons.md warns to keep these in sync at every version bump.
-  Grep target: grep -rn 'v1\.' templates/ services/utils.py
+  Version is pulled from the Jinja global `bot_version` (registered in server.py
+  from services.utils.BOT_VERSION). Falls back to "dev" when unset (e.g. for
+  template unit tests without a full Flask app context).
 #}
 <footer class="site-footer">
   <div class="site-footer-inner">
     <div class="site-footer-brand">
       <div class="footer-logo">TREV<em>LIX</em></div>
       <p class="footer-desc">Algorithmic Trading Intelligence</p>
-      <div class="footer-version">v1.7.1 &middot; MIT License</div>
+      <div class="footer-version">v{{ bot_version|default('dev') }} &middot; MIT License</div>
     </div>
     <div class="site-footer-links">
       <div>
