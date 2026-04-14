@@ -21,10 +21,8 @@
 ║  UNIQUE FEATURES                                                             ║
 ║  · Trade DNA             – 7D-Fingerprint + Pattern Mining für Trades       ║
 ║  · Smart Exits           – ATR-basierte volatilitätsadaptive SL/TP          ║
-║  · KI-Gemeinschaftswissen – LLM-Anbindung + Shared Knowledge Base          ║
 ║                                                                              ║
 ║  TRADING-FEATURES                                                            ║
-║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
 ║  · Anomalie-Erkennung    – Isolation Forest stoppt bei Flash-Crash          ║
