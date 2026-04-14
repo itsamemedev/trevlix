@@ -326,6 +326,137 @@ _json_value() {
     echo "$json" | grep -oP "\"${key}\"\\s*:\\s*\"?\\K[^\",}]+" 2>/dev/null | head -1
 }
 
+_redis_status() {
+    # Prüft sowohl Service als auch Response über redis-cli
+    # Rückgabe: "running", "stopped" oder "absent" (nicht installiert)
+    local have_cli=false have_svc=false
+    if command -v redis-cli &>/dev/null; then
+        have_cli=true
+        local pong
+        pong=$(redis-cli -t 1 ping 2>/dev/null)
+        if [[ "$pong" == "PONG" ]]; then
+            echo "running"
+            return
+        fi
+    fi
+    local svc
+    for svc in redis redis-server; do
+        if command -v systemctl &>/dev/null; then
+            if systemctl cat "$svc" &>/dev/null; then
+                have_svc=true
+                if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                    echo "running"
+                    return
+                fi
+            fi
+        fi
+    done
+    if [[ "$have_cli" == "true" || "$have_svc" == "true" ]]; then
+        echo "stopped"
+    else
+        echo "absent"
+    fi
+}
+
+_ollama_status() {
+    # Ollama ist nur relevant, wenn binary vorhanden
+    if ! command -v ollama &>/dev/null; then
+        echo "absent"
+        return
+    fi
+    # HTTP-Check auf Standard-Port 11434
+    if command -v curl &>/dev/null; then
+        if curl -s --max-time 2 "http://127.0.0.1:11434/api/tags" &>/dev/null; then
+            echo "running"
+            return
+        fi
+    fi
+    if command -v systemctl &>/dev/null && systemctl is-active --quiet ollama 2>/dev/null; then
+        echo "running"
+        return
+    fi
+    echo "stopped"
+}
+
+_ollama_models() {
+    # Gibt die erste geladene Modell-ID zurück (oder leer)
+    if ! command -v curl &>/dev/null; then return; fi
+    local resp
+    resp=$(curl -s --max-time 2 "http://127.0.0.1:11434/api/tags" 2>/dev/null) || return
+    echo "$resp" | grep -oP '"name"\s*:\s*"\K[^"]+' 2>/dev/null | head -3 | tr '\n' ',' | sed 's/,$//'
+}
+
+_cron_status() {
+    local svc
+    for svc in cron crond cronie; do
+        if command -v systemctl &>/dev/null; then
+            if systemctl cat "$svc" &>/dev/null; then
+                if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                    echo "running"
+                    return
+                fi
+            fi
+        fi
+    done
+    # Fallback: Prozess-Check
+    if pgrep -x "cron\|crond" &>/dev/null; then
+        echo "running"
+        return
+    fi
+    echo "stopped"
+}
+
+_mysql_status() {
+    # Prüft MariaDB / MySQL Service
+    local svc
+    for svc in mariadb mysql mysqld; do
+        if command -v systemctl &>/dev/null && systemctl is-active --quiet "$svc" 2>/dev/null; then
+            echo "running"
+            return
+        fi
+    done
+    # Optional: Port-Check 3306
+    if command -v ss &>/dev/null && ss -tlnH 2>/dev/null | grep -q ':3306'; then
+        echo "running"
+        return
+    fi
+    echo "stopped"
+}
+
+_last_backup() {
+    local env_file="${INSTALL_DIR}/.env"
+    local backup_dir=""
+    if [[ -f "$env_file" ]]; then
+        backup_dir=$(grep -i '^BACKUP_DIR=' "$env_file" 2>/dev/null | cut -d= -f2 | tr -d '[:space:]"')
+    fi
+    [[ -z "$backup_dir" ]] && backup_dir="${INSTALL_DIR}/backups"
+    if [[ ! -d "$backup_dir" ]]; then
+        echo "—"
+        return
+    fi
+    local newest
+    newest=$(ls -t "$backup_dir"/*.sql* "$backup_dir"/*.gz "$backup_dir"/*.tar* 2>/dev/null | head -1)
+    if [[ -z "$newest" ]]; then
+        echo "—"
+        return
+    fi
+    local mtime age_hours
+    mtime=$(stat -c %Y "$newest" 2>/dev/null || echo "0")
+    age_hours=$(( ( $(date +%s) - mtime ) / 3600 ))
+    if [[ "$age_hours" -lt 1 ]]; then
+        echo "vor <1h"
+    elif [[ "$age_hours" -lt 24 ]]; then
+        echo "vor ${age_hours}h"
+    else
+        echo "vor $((age_hours / 24))d"
+    fi
+}
+
+_disk_free_mb() {
+    # Verfügbarer Speicher in MB auf der Root-Partition
+    df -Pm / 2>/dev/null | awk 'NR==2{print $4}' || echo "0"
+}
+
 # ── Daten sammeln ──────────────────────────────────────────────────────────
 HOSTNAME_VAL=$(hostname -s 2>/dev/null || cat /etc/hostname 2>/dev/null || echo "?")
 OS_PRETTY=$(grep PRETTY_NAME /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "Linux")
@@ -347,6 +478,13 @@ TREVLIX_VERSION=$(_trevlix_version)
 TRADING_MODE=$(_trading_mode)
 EXCHANGE=$(_exchange)
 DASH_URL=$(_dashboard_url)
+REDIS_STATUS=$(_redis_status)
+MYSQL_STATUS=$(_mysql_status)
+OLLAMA_STATUS=$(_ollama_status)
+OLLAMA_MODELS=$(_ollama_models)
+CRON_STATUS=$(_cron_status)
+LAST_BACKUP=$(_last_backup)
+DISK_FREE_MB=$(_disk_free_mb)
 STATUS_JSON=$(_api_get "/api/v1/status")
 SHARED_AI_JSON=$(_api_get "/api/v1/ai/shared/status")
 OPEN_POS=$(_json_value "${STATUS_JSON}" "open_positions")
@@ -449,6 +587,46 @@ if [[ -n "$SHARED_AI_READY" || -n "$SHARED_AI_VER" ]]; then
     [[ -z "$SHARED_AI_READY" ]] && SHARED_AI_READY="?"
     [[ -z "$SHARED_AI_VER" ]] && SHARED_AI_VER="?"
     printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s (v%s)${RESET}\n" "Shared AI:" "$SHARED_AI_READY" "$SHARED_AI_VER"
+fi
+
+echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"
+
+# Infrastruktur-Services
+# Redis nur anzeigen, wenn installiert (optional)
+if [[ "$REDIS_STATUS" == "running" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${GREEN}● OK${RESET}\n" "Redis:"
+elif [[ "$REDIS_STATUS" == "stopped" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${RED}○ gestoppt${RESET}\n" "Redis:"
+fi
+if [[ "$MYSQL_STATUS" == "running" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${GREEN}● OK${RESET}\n" "MariaDB:"
+else
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${RED}○ gestoppt${RESET}\n" "MariaDB:"
+fi
+# Ollama (nur wenn installiert)
+if [[ "$OLLAMA_STATUS" == "running" ]]; then
+    if [[ -n "$OLLAMA_MODELS" ]]; then
+        printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${GREEN}● OK${RESET} ${DIM}(%s)${RESET}\n" "Ollama:" "$OLLAMA_MODELS"
+    else
+        printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${GREEN}● OK${RESET}\n" "Ollama:"
+    fi
+elif [[ "$OLLAMA_STATUS" == "stopped" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${ORANGE}○ installiert, nicht aktiv${RESET}\n" "Ollama:"
+fi
+# Cron-Dienst
+if [[ "$CRON_STATUS" == "running" ]]; then
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${GREEN}● OK${RESET}\n" "Cron:"
+else
+    printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${RED}○ gestoppt${RESET}\n" "Cron:"
+fi
+printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${DIM}%s${RESET}\n" "Letztes Backup:" "$LAST_BACKUP"
+# Disk-Free-Warnung bei <1GB (1024 MB)
+if [[ "$DISK_FREE_MB" =~ ^[0-9]+$ ]]; then
+    if [[ "$DISK_FREE_MB" -lt 1024 ]]; then
+        printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${RED}%s MB ⚠ (kritisch)${RESET}\n" "Disk frei:" "$DISK_FREE_MB"
+    elif [[ "$DISK_FREE_MB" -lt 5120 ]]; then
+        printf "${JADE}║${RESET}  ${BOLD}%-14s${RESET} ${ORANGE}%s MB${RESET}\n" "Disk frei:" "$DISK_FREE_MB"
+    fi
 fi
 
 echo -e "${JADE}╠══════════════════════════════════════════════════════════════════╣${RESET}"

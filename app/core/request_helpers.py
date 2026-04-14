@@ -6,6 +6,18 @@ import math
 from typing import Any
 
 
+def get_json_body() -> dict:
+    """Gibt den JSON-Body des aktuellen Flask-Requests als Dict zurück.
+
+    Ersatz für das wiederkehrende ``request.json or {}``-Muster. Liefert
+    immer ein Dict – leer, wenn der Body fehlt oder kein JSON-Dict enthält.
+    """
+    from flask import request
+
+    data = request.json or {}
+    return data if isinstance(data, dict) else {}
+
+
 def safe_int(val: Any, default: int) -> int:
     """Sicherer int()-Cast für Request-Parameter."""
     try:

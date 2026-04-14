@@ -794,13 +794,20 @@ function updateAI3DFromAI(ai){
     const ag = ai.assistant_agents || {};
     const primary = Boolean(ai.assistant_primary_control);
     const autonomyW = Number(ai.assistant_autonomy_weight||0);
-    const active = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
+    const collabActive = providers > 0 || answers > 0 || Number(ag.history_size||0) > 0;
+    const botRunning = Boolean(lastData && lastData.running);
     const examplesStatus = examplesOk
       ? `Examples ${loadedExamples}/${expectedExamples||loadedExamples}`
       : `⚠️ Examples ${loadedExamples}/${expectedExamples||loadedExamples}`;
-    collabEl.textContent = active
-      ? `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`
-      : `🤖 VIRGINIE wartet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+    let label;
+    if (collabActive) {
+      label = `🤖 VIRGINIE aktiv · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}% · Last ${ag.last_agent||'—'}`;
+    } else if (botRunning) {
+      label = `🛰️ VIRGINIE beobachtet · ${primary?'Primary':'Hybrid'} · w=${autonomyW.toFixed(2)} · ${examplesStatus} · Agents ${ag.registered_agents||0} · Coverage ${ag.coverage_pct||0}%`;
+    } else {
+      label = `💤 VIRGINIE im Leerlauf · Bot pausiert · ${primary?'Primary':'Hybrid'} · Agents ${ag.registered_agents||0}`;
+    }
+    collabEl.textContent = label;
   }
   const agentsEl = document.getElementById('ai3dAgents');
   if(agentsEl){
@@ -1589,6 +1596,8 @@ function saveSettings(){
     backup_enabled:document.getElementById('sBackup').checked,
     portfolio_goal:_pf(document.getElementById('sGoal').value)||0,
     news_block_score:_pf(document.getElementById('sNewsBlock').value),
+    discord_report_hour:_pi(document.getElementById('sReportHour').value),
+    timeframe:document.getElementById('sTf')?.value||undefined,
     virginie_enabled:document.getElementById('sVirginieEnabled').checked,
     virginie_primary_control:document.getElementById('sVirginiePrimary').checked,
     virginie_autonomy_weight:_pf(document.getElementById('sVirginieAutonomy').value),

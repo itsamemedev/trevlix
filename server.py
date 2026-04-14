@@ -21,10 +21,8 @@
 ║  UNIQUE FEATURES                                                             ║
 ║  · Trade DNA             – 7D-Fingerprint + Pattern Mining für Trades       ║
 ║  · Smart Exits           – ATR-basierte volatilitätsadaptive SL/TP          ║
-║  · KI-Gemeinschaftswissen – LLM-Anbindung + Shared Knowledge Base          ║
 ║                                                                              ║
 ║  TRADING-FEATURES                                                            ║
-║  · News-Sentiment        – CryptoPanic Echtzeit-Nachrichten als KI-Signal   ║
 ║  · On-Chain Daten        – Whale-Alarm, Exchange-Flows (CryptoQuant)        ║
 ║  · BTC/USDT Dominanz     – Automatische Marktphasen-Erkennung               ║
 ║  · Anomalie-Erkennung    – Isolation Forest stoppt bei Flash-Crash          ║
@@ -113,12 +111,13 @@ from app.core.ml_models import (
 from app.core.paper_mode import enforce_paper_trading
 from app.core.prometheus_metrics import build_prometheus_lines
 from app.core.request_helpers import (
-    normalize_exchange_name as _normalize_exchange_name,
-)
-from app.core.request_helpers import (
+    get_json_body,
     safe_bool,
     safe_float,
     safe_int,
+)
+from app.core.request_helpers import (
+    normalize_exchange_name as _normalize_exchange_name,
 )
 from app.core.runtime import run_server
 from app.core.security import (
@@ -977,7 +976,7 @@ def api_heatmap_v1():
 @app.route("/api/v1/backtest", methods=["POST"])
 @api_auth_required
 def api_backtest():
-    data = request.json or {}
+    data = get_json_body()
     try:
         ex = create_exchange()
         result = bt.run(
@@ -1010,7 +1009,7 @@ def api_tax_v1():
 @app.route("/api/v1/token", methods=["POST"])
 @api_auth_required
 def api_create_token():
-    label = (request.json or {}).get("label", "api")
+    label = get_json_body().get("label", "api")
     token = db.create_api_token(request.user_id, label)
     return jsonify({"token": token, "expires_hours": CONFIG["jwt_expiry_hours"]})
 
@@ -1034,7 +1033,7 @@ def api_user_settings_get():
 @api_auth_required
 def api_user_settings_update():
     """Speichert User-Settings in der DB (kein .env nötig)."""
-    data = request.json or {}
+    data = get_json_body()
     # Erlaubte Settings für User (keine Admin-/System-Settings)
     _ALLOWED_USER_SETTINGS = {
         "paper_trading",
@@ -1096,7 +1095,7 @@ def api_user_settings_update():
 def api_trading_mode():
     if request.method == "GET":
         return jsonify(trade_mode.status())
-    data = request.json or {}
+    data = get_json_body()
     mode = str(data.get("mode", "paper")).lower()
     if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
         return jsonify(
@@ -1113,7 +1112,7 @@ def api_trading_mode():
 @app.route("/api/v1/trading/control", methods=["POST"])
 @api_auth_required
 def api_trading_control():
-    data = request.json or {}
+    data = get_json_body()
     action = str(data.get("action", "start")).lower()
     if action == "start":
         trade_mode.set_enabled(True)
@@ -1135,7 +1134,7 @@ def api_trading_control():
 @app.route("/api/v1/trading/close-position", methods=["POST"])
 @api_auth_required
 def api_trading_close_position():
-    data = request.json or {}
+    data = get_json_body()
     sym = str(data.get("symbol", "")).strip().upper()
     if not sym:
         return jsonify({"error": "symbol required"}), 400
@@ -1261,7 +1260,7 @@ def api_user_exchanges_list():
 @api_auth_required
 def api_user_exchanges_upsert():
     """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
-    data = request.json or {}
+    data = get_json_body()
     exchange = normalize_exchange_name(data.get("exchange", ""))
     api_key = str(data.get("api_key", "")).strip()
     api_secret = str(data.get("api_secret", "")).strip()
@@ -1283,16 +1282,22 @@ def api_user_exchanges_upsert():
         passphrase=passphrase,
     )
     _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
-    return jsonify({"ok": ok})
+    auto_started = False
+    if ok and enabled:
+        auto_started = _maybe_auto_start_bot()
+    return jsonify({"ok": ok, "bot_auto_started": auto_started})
 
 
 @app.route("/api/v1/user/exchanges/<int:exchange_id>/toggle", methods=["POST"])
 @api_auth_required
 def api_user_exchange_toggle(exchange_id):
     """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = safe_bool((request.json or {}).get("enabled", False), False)
+    enabled = safe_bool(get_json_body().get("enabled", False), False)
     ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
-    return jsonify({"ok": ok})
+    auto_started = False
+    if ok and enabled:
+        auto_started = _maybe_auto_start_bot()
+    return jsonify({"ok": ok, "bot_auto_started": auto_started})
 
 
 @app.route("/api/v1/user/exchanges/<int:exchange_id>", methods=["DELETE"])
@@ -1307,7 +1312,7 @@ def api_user_exchange_delete(exchange_id):
 @api_auth_required
 def api_user_update_keys():
     """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
-    data = request.json or {}
+    data = get_json_body()
     exchange = normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
     api_key = str(data.get("api_key", "")).strip()
     api_secret = str(data.get("api_secret", "")).strip()
@@ -1381,7 +1386,7 @@ def api_virginie_forecast_quality():
 def api_virginie_chat_post():
     """Nimmt eine User-Nachricht an und erzeugt eine VIRGINIE-Antwort."""
     user_id = int(getattr(request, "user_id", 0) or 0)
-    payload = request.json or {}
+    payload = get_json_body()
     message = str(payload.get("message", "")).strip()
     if not message:
         return jsonify({"error": "message ist Pflichtfeld"}), 400
@@ -1435,7 +1440,7 @@ def api_knowledge_category(category):
 @api_auth_required
 def api_knowledge_query():
     """Fragt die lokale LLM nach einer Analyse."""
-    data = request.json or {}
+    data = get_json_body()
     prompt = data.get("prompt", "")
     if not prompt:
         return jsonify({"error": "prompt ist Pflichtfeld"}), 400
@@ -1488,7 +1493,7 @@ def api_mcp_tools():
 @api_auth_required
 def api_mcp_execute():
     """Führt ein MCP-Tool direkt aus."""
-    data = request.json or {}
+    data = get_json_body()
     tool_name = data.get("tool", "")
     arguments = data.get("arguments", {})
     if not tool_name:
@@ -1529,7 +1534,7 @@ def api_admin_exchanges():
 @admin_required
 def api_admin_exchange_toggle(exchange_id):
     """Admin kann jede Exchange aktivieren/deaktivieren."""
-    enabled = (request.json or {}).get("enabled", False)
+    enabled = get_json_body().get("enabled", False)
     try:
         with db._get_conn() as conn:
             with conn.cursor() as c:
@@ -1548,7 +1553,7 @@ def api_admin_exchange_toggle(exchange_id):
 @limiter.limit("60 per minute")
 def api_signal():
     """TradingView Webhook → sofortiger Scan."""
-    data = request.json or {}
+    data = get_json_body()
     sym = data.get("symbol", "")
     action = data.get("action", "buy").lower()
     if not sym or not state.running:
@@ -1696,7 +1701,7 @@ def api_admin_users():
 @api_auth_required
 @admin_required
 def api_admin_create_user():
-    data = request.json or {}
+    data = get_json_body()
     is_valid, payload, error_key, error_message = validate_admin_user_payload(data)
     if not is_valid:
         return jsonify({"ok": False, "error": error_message, "key": error_key}), 400
@@ -1762,7 +1767,7 @@ def api_admin_config_update():
             "encryption_key",
         }
     )
-    data = request.json or {}
+    data = get_json_body()
     updated = []
     for k, v in data.items():
         if k in _PROTECTED_KEYS:
@@ -2317,6 +2322,7 @@ def on_update_config(data):
         "use_lstm",
         # Exchange selection – allowed for all authenticated users
         "exchange",
+        "timeframe",
     }
     # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
     _numeric_keys = {
@@ -2380,6 +2386,12 @@ def on_update_config(data):
                 _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
                 updated["exchange"] = ex
                 log.info(f"🔀 Exchange manuell gewechselt → {ex.upper()}")
+            continue
+        if k == "timeframe":
+            tf = str(v).strip().lower()
+            if tf in {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"}:
+                CONFIG["timeframe"] = tf
+                updated["timeframe"] = tf
             continue
         if k in _numeric_keys:
             v = safe_float(v, CONFIG.get(k, 0.0))
@@ -2809,7 +2821,7 @@ def api_grid_list():
 @api_auth_required
 @admin_required
 def api_grid_create():
-    d = request.json or {}
+    d = get_json_body()
     symbol = d.get("symbol", "")
     lower = safe_float(d.get("lower", 0), 0.0)
     upper = safe_float(d.get("upper", 0), 0.0)
@@ -3666,7 +3678,7 @@ def api_telegram_test():
 @api_auth_required
 @admin_required
 def api_telegram_configure():
-    d = request.json or {}
+    d = get_json_body()
     token = d.get("token", "").strip()
     chat_id = d.get("chat_id", "").strip()
     if not token or not chat_id:
@@ -3752,7 +3764,7 @@ def api_ip_whitelist_get():
 @api_auth_required
 @admin_required
 def api_ip_whitelist_set():
-    ips = (request.json or {}).get("ips", [])
+    ips = get_json_body().get("ips", [])
     CONFIG["ip_whitelist"] = [ip.strip() for ip in ips if ip.strip()]
     _set_env_var("IP_WHITELIST", ",".join(CONFIG["ip_whitelist"]))
     db_audit(session.get("user_id", 0), "ip_whitelist_update", str(CONFIG["ip_whitelist"]))
@@ -3764,7 +3776,7 @@ def api_ip_whitelist_set():
 @admin_required
 def api_news_filter():
     if request.method == "POST":
-        d = request.json or {}
+        d = get_json_body()
         CONFIG["news_sentiment_min"] = safe_float(
             d.get("min_score", CONFIG["news_sentiment_min"]), CONFIG["news_sentiment_min"]
         )
@@ -3820,7 +3832,7 @@ def api_funding_rates():
 @api_auth_required
 @admin_required
 def api_funding_config():
-    d = request.json or {}
+    d = get_json_body()
     CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
     CONFIG["funding_rate_max"] = safe_float(d.get("max_rate", 0.001), 0.001)
     return jsonify({"success": True, **funding_tracker.status()})
@@ -4175,7 +4187,7 @@ def api_cluster_nodes_list():
 @admin_required
 def api_cluster_nodes_add():
     """Cluster Control: register a new remote node."""
-    data = request.json or {}
+    data = get_json_body()
     name = data.get("name", "").strip()
     host = data.get("host", "").strip()
     port = safe_int(data.get("port", 5000), 5000)
@@ -4464,7 +4476,7 @@ def api_exchanges():
 @api_auth_required
 def api_copy_trading_register():
     """Registriert einen Follower für Copy-Trading."""
-    data = request.json or {}
+    data = get_json_body()
     follower_key = data.get("api_key", "")
     if not follower_key:
         return jsonify({"error": "API-Key erforderlich"}), 400
@@ -4597,7 +4609,7 @@ def api_ai_feature_importance():
 @api_auth_required
 def api_portfolio_optimize():
     """Markowitz Portfolio-Optimierung."""
-    data = request.json or {}
+    data = get_json_body()
     symbols = data.get("symbols", [])
     if len(symbols) < 2:
         return jsonify({"error": "Mindestens 2 Symbole erforderlich"}), 400
@@ -4636,7 +4648,7 @@ def api_portfolio_optimize():
 @api_auth_required
 def api_backtest_compare():
     """Vergleichender Backtest über mehrere Symbole."""
-    data = request.json or {}
+    data = get_json_body()
     symbols = data.get("symbols", [])
     tf = data.get("timeframe", "1h")
     candles = safe_int(data.get("candles", 500), 500)
@@ -4682,7 +4694,7 @@ def api_backtest_compare():
 @api_auth_required
 def api_position_update_sl(symbol):
     """Manuelles SL-Update für eine offene Position."""
-    data = request.json or {}
+    data = get_json_body()
     sl_pct = data.get("sl_pct")
     if sl_pct is None or not isinstance(sl_pct, (int, float)) or sl_pct <= 0:
         return jsonify({"error": "Ungültiger SL-Wert"}), 400
@@ -4770,6 +4782,59 @@ register_default_blueprints(
 _AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
 
 
+def _has_any_configured_exchange() -> bool:
+    """Prüft, ob mindestens ein aktivierter Exchange mit API-Keys vorhanden ist.
+
+    Im Paper-Trading-Modus ist keine Exchange-Konfiguration erforderlich –
+    dann immer True. Im Live-Modus: mindestens ein User-Exchange in der DB
+    mit ``enabled=1`` und vorhandenem ``api_key``, oder Legacy-ENV-Keys.
+    """
+    if CONFIG.get("paper_trading", True):
+        return True
+    # Legacy Single-Exchange-ENV (API_KEY/API_SECRET) – zählt als konfiguriert.
+    legacy_key = (os.getenv("API_KEY") or "").strip()
+    legacy_secret = (os.getenv("API_SECRET") or "").strip()
+    if legacy_key and legacy_secret:
+        return True
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT COUNT(*) AS n FROM user_exchanges "
+                    "WHERE enabled=1 AND api_key IS NOT NULL AND api_key!=''"
+                )
+                row = c.fetchone() or {}
+                return int(row.get("n", 0) or 0) > 0
+    except Exception as e:  # noqa: BLE001
+        log.debug(f"_has_any_configured_exchange: {e}")
+        return False
+
+
+def _maybe_auto_start_bot() -> bool:
+    """Startet den Bot-Loop, wenn AUTO_START aktiv ist, der Bot noch nicht
+    läuft und mindestens eine Exchange konfiguriert ist.
+
+    Gibt True zurück, wenn der Bot in diesem Aufruf gestartet wurde.
+    """
+    if not _AUTO_START:
+        return False
+    if getattr(state, "running", False):
+        return False
+    if not _has_any_configured_exchange():
+        return False
+    state.running = True
+    state.paused = False
+    threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
+    log.info("🚀 Bot auto-gestartet (Exchange konfiguriert)")
+    state.add_activity(
+        "🚀",
+        "Auto-Start",
+        f"v{BOT_VERSION} · {CONFIG.get('exchange', '—').upper()}",
+        "success",
+    )
+    return True
+
+
 if __name__ == "__main__":
     run_server(
         startup_banner=startup_banner,
@@ -4788,4 +4853,6 @@ if __name__ == "__main__":
         socketio=socketio,
         app=app,
         auto_start=_AUTO_START,
+        has_configured_exchanges=_has_any_configured_exchange,
+        db=db,
     )
