@@ -26,6 +26,7 @@ def run_server(
     socketio,
     app,
     auto_start: bool,
+    has_configured_exchanges: Callable[[], bool] | None = None,
 ) -> None:
     """Startet Hintergrunddienste und den SocketIO-Server."""
     startup_banner()
@@ -51,13 +52,20 @@ def run_server(
         log.warning(f"Auto-Healing Agent Start fehlgeschlagen: {exc}")
 
     if auto_start:
-        state.running = True
-        state.paused = False
-        threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-        log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
-        state.add_activity(
-            "🚀", "Auto-Start", f"v{bot_version} · {config['exchange'].upper()}", "success"
-        )
+        exchanges_ready = has_configured_exchanges() if has_configured_exchanges else True
+        if exchanges_ready:
+            state.running = True
+            state.paused = False
+            threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
+            log.info("🚀 Bot auto-gestartet (AUTO_START=true)")
+            state.add_activity(
+                "🚀", "Auto-Start", f"v{bot_version} · {config['exchange'].upper()}", "success"
+            )
+        else:
+            log.info(
+                "⏸️  AUTO_START aktiv, aber keine Exchange konfiguriert – "
+                "Bot startet automatisch, sobald ein Exchange hinzugefügt wird."
+            )
     else:
         log.info("⏸️  Bot wartet auf manuellen Start (AUTO_START=false)")
 

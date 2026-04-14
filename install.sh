@@ -112,6 +112,53 @@ warn() { echo -e "${YELLOW}  ⚠${RESET} $*"; }
 err()  { echo -e "${RED}  ✗ ERROR:${RESET} $*"; exit 1; }
 step() { echo -e "\n${BOLD}${CYAN}━━ $* ━━${RESET}"; }
 
+# ── Interaktive Prompts ─────────────────────────────────────────────────────
+# ask_yn FRAGE DEFAULT  →  echo "yes" oder "no"
+#   DEFAULT: "y" (Standard ja) oder "n" (Standard nein).
+#   Bei --yes / -y oder nicht-interaktivem TTY wird DEFAULT ohne Frage genutzt.
+ask_yn() {
+    local question="$1" default="${2:-n}" reply
+    if [[ "$AUTO_NO" == "true" || ! -t 0 ]]; then
+        [[ "$default" == "y" ]] && echo "yes" || echo "no"
+        return
+    fi
+    local hint="[y/N]"
+    [[ "$default" == "y" ]] && hint="[Y/n]"
+    read -rp "$(echo -e "${CYAN}${question} ${hint}: ${RESET}")" reply
+    reply="${reply,,}"
+    if [[ -z "$reply" ]]; then
+        [[ "$default" == "y" ]] && echo "yes" || echo "no"
+    elif [[ "$reply" =~ ^(y|yes|ja|j)$ ]]; then
+        echo "yes"
+    else
+        echo "no"
+    fi
+}
+
+# ask_value FRAGE DEFAULT  →  echo Antwort (DEFAULT bei leerer Eingabe)
+ask_value() {
+    local question="$1" default="${2:-}" reply hint=""
+    if [[ "$AUTO_NO" == "true" || ! -t 0 ]]; then
+        echo "$default"
+        return
+    fi
+    [[ -n "$default" ]] && hint=" ${DIM}(leer = ${default})${RESET}"
+    read -rp "$(echo -e "${CYAN}${question}${hint}: ${RESET}")" reply
+    echo "${reply:-$default}"
+}
+
+# ask_secret FRAGE  →  echo Antwort (Eingabe ohne Echo, optional leer)
+ask_secret() {
+    local question="$1" reply
+    if [[ "$AUTO_NO" == "true" || ! -t 0 ]]; then
+        echo ""
+        return
+    fi
+    read -rsp "$(echo -e "${CYAN}${question} ${DIM}(leer = überspringen)${RESET}: ")" reply
+    echo "" >&2
+    echo "$reply"
+}
+
 # ── Banner ───────────────────────────────────────────────────────────────────
 clear
 echo -e "${JADE}"
@@ -515,6 +562,67 @@ else
 fi
 
 # ══════════════════════════════════════════════════════════════════════════════
+# ── Optional Features Prompt ─────────────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Optional features"
+echo ""
+echo -e "${DIM}Du kannst folgende Zusatzfunktionen jetzt konfigurieren oder später manuell"
+echo -e "in ${INSTALL_DIR}/.env nachtragen. Leere Eingaben überspringen den jeweiligen Block.${RESET}"
+echo ""
+
+# Trading-Modus
+PAPER_TRADING_CHOICE="true"
+if [[ "$(ask_yn 'Paper-Trading-Modus aktivieren? (dringend empfohlen für den Erststart)' 'y')" == "no" ]]; then
+    PAPER_TRADING_CHOICE="false"
+    warn "LIVE-Trading aktiviert – echtes Geld wird eingesetzt!"
+fi
+
+# Auto-Start
+AUTO_START_CHOICE="true"
+if [[ "$(ask_yn 'Bot automatisch starten, sobald ein Exchange konfiguriert ist?' 'y')" == "no" ]]; then
+    AUTO_START_CHOICE="false"
+fi
+
+# Exchange
+EXCHANGE_CHOICE="$(ask_value 'Primärer Exchange (cryptocom/binance/bybit/okx/kucoin)' 'cryptocom')"
+EXCHANGE_API_KEY=""
+EXCHANGE_API_SECRET=""
+if [[ "$(ask_yn 'Exchange API-Keys jetzt eintragen?' 'n')" == "yes" ]]; then
+    EXCHANGE_API_KEY="$(ask_value "  API_KEY für ${EXCHANGE_CHOICE}" '')"
+    EXCHANGE_API_SECRET="$(ask_secret "  API_SECRET für ${EXCHANGE_CHOICE}")"
+fi
+
+# CryptoPanic
+CRYPTOPANIC_TOKEN_CHOICE=""
+if [[ "$(ask_yn 'CryptoPanic News-Integration konfigurieren?' 'n')" == "yes" ]]; then
+    CRYPTOPANIC_TOKEN_CHOICE="$(ask_value '  CryptoPanic Auth-Token' '')"
+fi
+
+# Discord
+DISCORD_WEBHOOK_CHOICE=""
+if [[ "$(ask_yn 'Discord-Benachrichtigungen aktivieren?' 'n')" == "yes" ]]; then
+    DISCORD_WEBHOOK_CHOICE="$(ask_value '  Discord Webhook-URL' '')"
+fi
+
+# Telegram
+TELEGRAM_TOKEN_CHOICE=""
+TELEGRAM_CHAT_ID_CHOICE=""
+if [[ "$(ask_yn 'Telegram-Benachrichtigungen aktivieren?' 'n')" == "yes" ]]; then
+    TELEGRAM_TOKEN_CHOICE="$(ask_value '  Telegram Bot-Token' '')"
+    TELEGRAM_CHAT_ID_CHOICE="$(ask_value '  Telegram Chat-ID' '')"
+fi
+
+# Ollama (lokales LLM)
+INSTALL_OLLAMA_CHOICE="no"
+OLLAMA_MODEL_CHOICE="qwen2.5:3b"
+if [[ "$(ask_yn 'Lokales Ollama-LLM installieren? (für VIRGINIE-KI / News-Analyse, benötigt ~3-4 GB)' 'n')" == "yes" ]]; then
+    INSTALL_OLLAMA_CHOICE="yes"
+    OLLAMA_MODEL_CHOICE="$(ask_value '  Startmodell (leer = qwen2.5:3b)' 'qwen2.5:3b')"
+fi
+
+ok "Optionen erfasst"
+
+# ══════════════════════════════════════════════════════════════════════════════
 # ── System Update ────────────────────────────────────────────────────────────
 # ══════════════════════════════════════════════════════════════════════════════
 step "Updating system packages"
@@ -545,28 +653,29 @@ case "$OS_FAMILY" in
     debian)
         BASE_PKGS="build-essential libssl-dev libffi-dev pkg-config \
                    libmariadb-dev libxml2-dev libxslt1-dev zlib1g-dev \
-                   curl wget git ca-certificates gnupg lsb-release software-properties-common"
+                   curl wget git ca-certificates gnupg lsb-release software-properties-common \
+                   cron"
         ;;
     rhel)
         BASE_PKGS="gcc gcc-c++ make openssl-devel libffi-devel pkgconfig \
                    mariadb-devel libxml2-devel libxslt-devel zlib-devel \
-                   curl wget git ca-certificates gnupg2"
+                   curl wget git ca-certificates gnupg2 cronie"
         # Enable EPEL for additional packages
         $PKG_INSTALL epel-release 2>/dev/null || true
         ;;
     fedora)
         BASE_PKGS="gcc gcc-c++ make openssl-devel libffi-devel pkgconfig \
                    mariadb-connector-c-devel libxml2-devel libxslt-devel zlib-devel \
-                   curl wget git ca-certificates gnupg2"
+                   curl wget git ca-certificates gnupg2 cronie"
         ;;
     suse)
         BASE_PKGS="gcc gcc-c++ make libopenssl-devel libffi-devel pkg-config \
                    libmariadb-devel libxml2-devel libxslt-devel zlib-devel \
-                   curl wget git ca-certificates gpg2"
+                   curl wget git ca-certificates gpg2 cron"
         ;;
     arch)
         BASE_PKGS="base-devel openssl libffi pkg-config mariadb-libs \
-                   libxml2 libxslt zlib curl wget git ca-certificates gnupg"
+                   libxml2 libxslt zlib curl wget git ca-certificates gnupg cronie"
         ;;
 esac
 
@@ -730,6 +839,67 @@ else
     service mariadb start 2>/dev/null || service mysql start 2>/dev/null || true
 fi
 ok "MariaDB running"
+
+# Enable cron (für nightly Backups + Health-Checks)
+if command -v systemctl &>/dev/null; then
+    systemctl enable cron 2>/dev/null || systemctl enable crond 2>/dev/null \
+        || systemctl enable cronie 2>/dev/null || true
+    systemctl start  cron 2>/dev/null || systemctl start  crond 2>/dev/null \
+        || systemctl start  cronie 2>/dev/null || true
+fi
+ok "Cron service enabled"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Ollama (lokales LLM, optional) ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+LLM_ENDPOINT_DEFAULT=""
+LLM_MODEL_DEFAULT=""
+if [[ "$INSTALL_OLLAMA_CHOICE" == "yes" ]]; then
+    step "Installing Ollama (lokales LLM)"
+    if command -v ollama &>/dev/null; then
+        ok "Ollama bereits installiert ($(ollama --version 2>/dev/null | head -1))"
+    else
+        log "Lade offiziellen Ollama-Installer..."
+        if curl -fsSL https://ollama.com/install.sh | sh; then
+            ok "Ollama installiert"
+        else
+            warn "Ollama-Installation fehlgeschlagen – überspringe Modell-Download"
+            INSTALL_OLLAMA_CHOICE="no"
+        fi
+    fi
+
+    if [[ "$INSTALL_OLLAMA_CHOICE" == "yes" ]]; then
+        # Service aktivieren & starten
+        if command -v systemctl &>/dev/null; then
+            systemctl enable ollama 2>/dev/null || true
+            systemctl start  ollama 2>/dev/null || true
+        fi
+        # Auf API warten (max. 20 s)
+        for _ in {1..20}; do
+            if curl -fs --max-time 2 http://127.0.0.1:11434/api/tags &>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        if curl -fs --max-time 2 http://127.0.0.1:11434/api/tags &>/dev/null; then
+            ok "Ollama-API erreichbar auf http://127.0.0.1:11434"
+        else
+            warn "Ollama-API nicht erreichbar – Modell-Pull wird übersprungen"
+            INSTALL_OLLAMA_CHOICE="no"
+        fi
+    fi
+
+    if [[ "$INSTALL_OLLAMA_CHOICE" == "yes" && -n "$OLLAMA_MODEL_CHOICE" ]]; then
+        log "Lade Modell '${OLLAMA_MODEL_CHOICE}' (kann einige Minuten dauern)..."
+        if ollama pull "$OLLAMA_MODEL_CHOICE"; then
+            ok "Modell '${OLLAMA_MODEL_CHOICE}' bereit"
+            LLM_ENDPOINT_DEFAULT="http://127.0.0.1:11434/api/chat"
+            LLM_MODEL_DEFAULT="$OLLAMA_MODEL_CHOICE"
+        else
+            warn "Modell-Pull fehlgeschlagen – kann später mit 'ollama pull ${OLLAMA_MODEL_CHOICE}' wiederholt werden"
+        fi
+    fi
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ── System User ──────────────────────────────────────────────────────────────
@@ -938,9 +1108,9 @@ if [[ ! -f "$INSTALL_DIR/.env" ]]; then
 # Never commit to git! (listed in .gitignore)
 
 # ── Exchange (configure now!) ──────────────────────────────────
-EXCHANGE=cryptocom
-API_KEY=
-API_SECRET=
+EXCHANGE=${EXCHANGE_CHOICE}
+API_KEY=${EXCHANGE_API_KEY}
+API_SECRET=${EXCHANGE_API_SECRET}
 
 # ── MariaDB (auto-generated) ──────────────────────────────────
 MYSQL_HOST=localhost
@@ -960,25 +1130,28 @@ SESSION_TIMEOUT_MIN=30
 ALLOWED_ORIGINS=${ALLOWED_ORIGINS}
 
 # ── Trading (recommendation: start with paper trading!) ────────
-PAPER_TRADING=true
+PAPER_TRADING=${PAPER_TRADING_CHOICE}
 
 # ── Registration ───────────────────────────────────────────────
 ALLOW_REGISTRATION=false
 
 # ── Features (optional) ───────────────────────────────────────
-DISCORD_WEBHOOK=
-TELEGRAM_TOKEN=
-TELEGRAM_CHAT_ID=
-CRYPTOPANIC_TOKEN=
+DISCORD_WEBHOOK=${DISCORD_WEBHOOK_CHOICE}
+TELEGRAM_TOKEN=${TELEGRAM_TOKEN_CHOICE}
+TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID_CHOICE}
+CRYPTOPANIC_TOKEN=${CRYPTOPANIC_TOKEN_CHOICE}
 CRYPTOPANIC_API_PLAN=free
 BLOCKNATIVE_KEY=
-LLM_ENDPOINT=
+LLM_ENDPOINT=${LLM_ENDPOINT_DEFAULT}
 LLM_API_KEY=
+LLM_MODEL=${LLM_MODEL_DEFAULT}
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_MODEL=${OLLAMA_MODEL_CHOICE}
 
 # ── Server ─────────────────────────────────────────────────────
 PORT=5000
 LANGUAGE=de
-AUTO_START=true
+AUTO_START=${AUTO_START_CHOICE}
 LOG_LEVEL=INFO
 JSON_LOGS=false
 COLOR_LOGS=true
@@ -1040,6 +1213,107 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 chmod 750 "$INSTALL_DIR"
 chmod 600 "$INSTALL_DIR/.env"
 ok "Permissions set"
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ── Cronjobs (Backup · Health-Check · Logrotate) ─────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+step "Installing cronjobs"
+
+# 1) Nightly MariaDB-Backup-Skript
+BACKUP_SCRIPT="${INSTALL_DIR}/scripts/backup_db.sh"
+mkdir -p "${INSTALL_DIR}/scripts" "${INSTALL_DIR}/backups"
+cat > "$BACKUP_SCRIPT" << 'BACKUP_EOF'
+#!/usr/bin/env bash
+# TREVLIX – Nightly DB backup (installed by install.sh)
+set -euo pipefail
+INSTALL_DIR="__INSTALL_DIR__"
+ENV_FILE="${INSTALL_DIR}/.env"
+BACKUP_DIR="${INSTALL_DIR}/backups"
+mkdir -p "$BACKUP_DIR"
+# .env einlesen (ohne export von Kommentaren)
+set -a
+# shellcheck disable=SC1090
+[[ -f "$ENV_FILE" ]] && . "$ENV_FILE"
+set +a
+TS=$(date +%Y%m%d_%H%M%S)
+OUT="${BACKUP_DIR}/trevlix_${TS}.sql.gz"
+if command -v mariadb-dump &>/dev/null; then
+    DUMP=mariadb-dump
+elif command -v mysqldump &>/dev/null; then
+    DUMP=mysqldump
+else
+    echo "no mysqldump / mariadb-dump available" >&2
+    exit 1
+fi
+"$DUMP" -h "${MYSQL_HOST:-localhost}" -P "${MYSQL_PORT:-3306}" \
+        -u "${MYSQL_USER:-trevlix}" "-p${MYSQL_PASS:-}" \
+        --single-transaction --quick --lock-tables=false \
+        "${MYSQL_DB:-trevlix}" 2>/dev/null | gzip > "$OUT"
+# Alte Backups ausmisten (>14 Tage)
+find "$BACKUP_DIR" -name 'trevlix_*.sql.gz' -mtime +14 -delete 2>/dev/null || true
+BACKUP_EOF
+sed -i "s|__INSTALL_DIR__|${INSTALL_DIR}|g" "$BACKUP_SCRIPT"
+chmod 750 "$BACKUP_SCRIPT"
+chown "${SERVICE_USER}:${SERVICE_USER}" "$BACKUP_SCRIPT"
+ok "Backup-Skript: ${BACKUP_SCRIPT}"
+
+# 2) Health-Check-Skript (neustart bei API-Ausfall)
+HEALTH_SCRIPT="${INSTALL_DIR}/scripts/health_check.sh"
+cat > "$HEALTH_SCRIPT" << 'HEALTH_EOF'
+#!/usr/bin/env bash
+# TREVLIX – Health-Check. Restartet den Service, wenn /api/v1/status nicht antwortet.
+set -euo pipefail
+PORT=$(grep -i '^PORT=' __INSTALL_DIR__/.env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]"')
+PORT="${PORT:-5000}"
+if ! curl -fs --max-time 5 "http://127.0.0.1:${PORT}/api/v1/status" >/dev/null; then
+    logger -t trevlix-health "API nicht erreichbar – Service-Neustart"
+    systemctl restart trevlix 2>/dev/null || true
+fi
+HEALTH_EOF
+sed -i "s|__INSTALL_DIR__|${INSTALL_DIR}|g" "$HEALTH_SCRIPT"
+chmod 750 "$HEALTH_SCRIPT"
+chown "root:root" "$HEALTH_SCRIPT"
+ok "Health-Check-Skript: ${HEALTH_SCRIPT}"
+
+# 3) Cron-Datei in /etc/cron.d (systemweit, definierte User)
+CRON_FILE="/etc/cron.d/trevlix"
+cat > "$CRON_FILE" << CRON_EOF
+# TREVLIX – Automatische Wartungsjobs (auto-generated)
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+MAILTO=""
+# Nightly DB-Backup um 03:17
+17 3 * * * ${SERVICE_USER} ${BACKUP_SCRIPT} >> ${INSTALL_DIR}/logs/backup.log 2>&1
+# Health-Check alle 5 Minuten (root, damit Neustart funktioniert)
+*/5 * * * * root ${HEALTH_SCRIPT} >> ${INSTALL_DIR}/logs/health.log 2>&1
+CRON_EOF
+chmod 644 "$CRON_FILE"
+ok "Cron-Datei: ${CRON_FILE}"
+
+# 4) Logrotate
+LOGROTATE_FILE="/etc/logrotate.d/trevlix"
+if [[ -d /etc/logrotate.d ]]; then
+    cat > "$LOGROTATE_FILE" << LOGR_EOF
+${INSTALL_DIR}/logs/*.log {
+    daily
+    rotate 14
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    su ${SERVICE_USER} ${SERVICE_USER}
+}
+LOGR_EOF
+    chmod 644 "$LOGROTATE_FILE"
+    ok "Logrotate konfiguriert: ${LOGROTATE_FILE}"
+fi
+
+# Cron neu laden
+if command -v systemctl &>/dev/null; then
+    systemctl reload cron 2>/dev/null || systemctl reload crond 2>/dev/null \
+        || systemctl restart cron 2>/dev/null || systemctl restart crond 2>/dev/null || true
+fi
 
 # ══════════════════════════════════════════════════════════════════════════════
 # ── Nginx + SSL (Domain Setup) ───────────────────────────────────────────────
