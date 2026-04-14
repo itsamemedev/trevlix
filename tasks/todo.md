@@ -262,9 +262,80 @@ gezielte Template-Konsolidierung nach `TODO.md` Priorität Medium.
 
 ### Offene Punkte für Folge-Sessions
 
-- [ ] `test_eight_exchanges_supported` an 11 Exchanges anpassen
-  (`tests/test_exchange_factory.py:26`)
-- [ ] Footer-Version (`v1.7.1` hardcoded) auf Jinja-Global umstellen
-  (Lektion 20 — erfordert kleinen Backend-Touch)
-- [ ] `routes/auth.py` (46 KB Inline-HTML) → `templates/auth.html` migrieren
-- [ ] REST-Routen aus `server.py` in Blueprints aufteilen (TODO.md P1)
+- [x] `test_eight_exchanges_supported` an 11 Exchanges anpassen
+  (`tests/test_exchange_factory.py:26`) — umbenannt zu
+  `test_all_exchanges_supported`, prüft jetzt die 11 tatsächlich
+  registrierten Exchanges (binance, bitget, bybit, coinbase,
+  cryptocom, gateio, huobi, kraken, kucoin, mexc, okx).
+- [x] Footer-Version (`v1.7.1` hardcoded) auf Jinja-Global umstellen
+  (Lektion 20). `BOT_VERSION` jetzt als `bot_version` in
+  `app.jinja_env.globals` registriert (`server.py:410`). Footer-Partial
+  (`templates/_partials/site_footer.html`) und INSTALLATION-Footer
+  nutzen `{{ bot_version|default('dev') }}`.
+- [x] `routes/auth.py` (46 KB Inline-HTML) → `templates/auth.html` migrieren.
+  Zwei neue Jinja-Templates angelegt (`templates/auth.html`,
+  `templates/auth_admin.html`). Routen nutzen `render_template`.
+  `routes/auth.py` reduziert von 961 Zeilen auf ~400, `_AUTH_TEMPLATE`
+  und `_ADMIN_AUTH_TEMPLATE` entfernt.
+- [x] Statische Seiten-Auslieferung korrigiert: `routes/dashboard.py`
+  und `routes/auth.py` nutzen jetzt `render_template` statt
+  `send_from_directory`/`send_file`. Damit werden die in Session
+  QB4Sj eingeführten Jinja-Partials (`site_nav`, `site_mobile_nav`,
+  `site_footer`) tatsächlich aufgelöst und der neue `bot_version`-
+  Global greift auf allen Seiten (about, faq, strategies, …).
+
+### Weiterhin offen
+
+- [ ] REST-Routen aus `server.py` in Blueprints aufteilen (TODO.md P1).
+  `server.py` enthält ~120 API-Routen als `@app.route(...)`-Decorators.
+  Eine saubere Extraktion erfordert:
+  1. Factory-Pattern pro Blueprint (Analog zu `create_auth_blueprint`),
+     das Runtime-Abhängigkeiten (`db`, `state`, `discord`, Agenten,
+     `api_auth_required`-Decorator) injiziert.
+  2. Zwei-Phasen-Init beachten (siehe Lektion 25): `CONFIG`/`log` früh,
+     `state`/`notifier` spät.
+  3. Gruppierung, z.B.: `routes/api_v1/trading.py`, `api_v1/admin.py`,
+     `api_v1/revenue.py`, `api_v1/cluster.py`, `api_v1/virginie.py`,
+     `api_v1/risk.py`, `api_v1/health.py` etc.
+  Scope ist zu groß für eine einzelne Session – sollte dedizierte
+  Refactor-Session mit expliziter User-Freigabe bekommen.
+
+## Session: complete-todo-tasks-1L9pU (2026-04-14)
+
+### Scope: 4 offene Punkte aus QB4Sj abarbeiten
+
+3 von 4 Punkten abgeschlossen. Der vierte (Blueprint-Extraktion aus
+`server.py`) wurde bewusst nicht in Angriff genommen: ~120 Routen, zu
+viele Runtime-Abhängigkeiten für einen sicheren "Big Bang"-Refactor in
+einer Session. Bleibt als "Weiterhin offen" dokumentiert.
+
+### Umgesetzt
+
+- Test `test_eight_exchanges_supported` → `test_all_exchanges_supported`
+  mit 11 Exchanges (`tests/test_exchange_factory.py`).
+- `BOT_VERSION` als Jinja-Global registriert
+  (`server.py:410-411`).
+- Footer-Partial nutzt `{{ bot_version|default('dev') }}`
+  (`templates/_partials/site_footer.html`, `templates/INSTALLATION.html`).
+- Zwei neue Jinja-Templates für Auth:
+  - `templates/auth.html` (User Login/Register)
+  - `templates/auth_admin.html` (Admin Login/Reset)
+- `routes/auth.py`: inline `_AUTH_TEMPLATE` und `_ADMIN_AUTH_TEMPLATE`
+  entfernt, Routen rendern jetzt via `render_template`. Datei von
+  961 → ~390 Zeilen.
+- `routes/dashboard.py`: `send_from_directory` → `render_template` für
+  alle statischen Seiten (about, api-docs, strategies, faq, security,
+  changelog, roadmap, INSTALLATION, dashboard). Damit werden die in
+  Session QB4Sj eingeführten Jinja-Partials tatsächlich server-seitig
+  aufgelöst (vorher wurden `{% include %}` und `{{ csrf_token() }}`
+  roh ausgeliefert, siehe Lektion 42 unten).
+- `routes/auth.py` `/` Route: `send_file` → `render_template` für
+  gleiche Gründe.
+
+### Verifizierung
+
+- Syntax-Check: `python3 -c "import ast; ast.parse(...)"` grün für
+  `routes/auth.py` und `routes/dashboard.py`.
+- Tests/Lint siehe Commit-Verifizierung (Entwicklungs-Sandbox hatte
+  `_cffi_backend` Import-Fehler, daher lokal nicht voll lauffähig —
+  CI validiert).

@@ -14,19 +14,24 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from flask import Blueprint, send_from_directory
+from flask import Blueprint, render_template
 
 log = logging.getLogger("NEXUS.dashboard")
 
 
 def create_dashboard_blueprint(
-    template_dir: str,
+    template_dir: str,  # noqa: ARG001 – kept for API compatibility with older callers
     require_auth_fn: Callable,
 ) -> Blueprint:
     """Erstellt den Dashboard-Blueprint für statische Web-Seiten.
 
+    Seiten werden via ``render_template`` ausgeliefert, damit die Jinja-
+    Partials (``_partials/site_nav.html``, ``site_footer.html``) und
+    globals wie ``bot_version`` korrekt aufgelöst werden.
+
     Args:
-        template_dir: Absoluter Pfad zum Templates-Verzeichnis.
+        template_dir: Absoluter Pfad zum Templates-Verzeichnis (historisch,
+            wird nur noch für Aufwärtskompatibilität akzeptiert).
         require_auth_fn: Decorator-Funktion für Login-Anforderung.
 
     Returns:
@@ -38,7 +43,7 @@ def create_dashboard_blueprint(
     @require_auth_fn
     def dashboard():
         """Login-geschützte Dashboard-Seite."""
-        return send_from_directory(template_dir, "dashboard.html")
+        return render_template("dashboard.html")
 
     page_routes = {
         "/about": "about.html",
@@ -53,7 +58,7 @@ def create_dashboard_blueprint(
 
     def _make_handler(filename: str):
         def _handler():
-            return send_from_directory(template_dir, filename)
+            return render_template(filename)
 
         _handler.__name__ = f"page_{filename.replace('.', '_').replace('-', '_')}"
         return _handler

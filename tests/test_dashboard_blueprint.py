@@ -18,7 +18,7 @@ def _require_auth(func):
 def test_dashboard_route_requires_auth(tmp_path: Path):
     (tmp_path / "dashboard.html").write_text("dashboard")
 
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder=str(tmp_path))
     app.secret_key = "test"
     app.register_blueprint(create_dashboard_blueprint(str(tmp_path), _require_auth))
 
@@ -39,7 +39,7 @@ def test_dashboard_route_requires_auth(tmp_path: Path):
 def test_public_dashboard_blueprint_pages(tmp_path: Path):
     (tmp_path / "about.html").write_text("about")
 
-    app = Flask(__name__)
+    app = Flask(__name__, template_folder=str(tmp_path))
     app.secret_key = "test"
     app.register_blueprint(create_dashboard_blueprint(str(tmp_path), _require_auth))
 
