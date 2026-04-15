@@ -1051,6 +1051,8 @@ def api_user_settings_update():
         "trailing_stop",
         "trailing_pct",
         "break_even_enabled",
+        "break_even_trigger",
+        "break_even_buffer",
         "use_fear_greed",
         "use_sentiment",
         "use_news",
@@ -1839,6 +1841,85 @@ def api_tax_report():
     return jsonify(report)
 
 
+@app.route("/api/v1/pine-script")
+@dashboard_auth
+def api_pine_script():
+    """Liefert die aktuelle Trevlix-Strategie als TradingView Pine Script v5.
+
+    Verwendet die Live-CONFIG-Werte (SL/TP/Trailing/Break-Even), damit das
+    exportierte Skript mit der Bot-Konfiguration übereinstimmt.
+    """
+    symbol = str(request.args.get("symbol", "BTCUSDT")).upper().replace("/", "")
+    sl_pct = float(CONFIG.get("stop_loss_pct", 0.02)) * 100
+    tp_pct = float(CONFIG.get("take_profit_pct", 0.05)) * 100
+    trailing_pct = float(CONFIG.get("trailing_pct", 0.015)) * 100
+    be_trigger = float(CONFIG.get("break_even_trigger", 0.015)) * 100
+    be_buffer = float(CONFIG.get("break_even_buffer", 0.001)) * 100
+    min_conf = float(CONFIG.get("ai_min_confidence", 0.55)) * 100
+    script = f"""//@version=5
+// TREVLIX Strategy Export – automatisch generiert
+// Symbol: {symbol}
+strategy("TREVLIX {symbol}", overlay=true, initial_capital=10000,
+         default_qty_type=strategy.percent_of_equity, default_qty_value=10,
+         pyramiding=0, commission_type=strategy.commission.percent, commission_value=0.1)
+
+// ── Parameter (aus Live-Config) ────────────────────────────────────────
+slPct       = input.float({sl_pct:.2f}, "Stop-Loss %",   step=0.1) / 100
+tpPct       = input.float({tp_pct:.2f}, "Take-Profit %", step=0.1) / 100
+trailPct    = input.float({trailing_pct:.2f}, "Trailing %",    step=0.1) / 100
+beTrigger   = input.float({be_trigger:.2f}, "Break-Even Trigger %", step=0.1) / 100
+beBuffer    = input.float({be_buffer:.3f}, "Break-Even Buffer %",  step=0.01) / 100
+aiMinConf   = input.float({min_conf:.0f}, "Min. Konfidenz %", step=5) / 100
+
+// ── Indikatoren (Trevlix-Kerngewichte) ─────────────────────────────────
+rsiVal  = ta.rsi(close, 14)
+emaFast = ta.ema(close, 21)
+emaSlow = ta.ema(close, 50)
+[macdLine, signalLine, _hist] = ta.macd(close, 12, 26, 9)
+bbBasis = ta.sma(close, 20)
+bbDev   = 2 * ta.stdev(close, 20)
+bbUpper = bbBasis + bbDev
+bbLower = bbBasis - bbDev
+
+// ── Signal-Score (vereinfachte Trevlix-Voting-Logik) ───────────────────
+score =  (rsiVal < 35 ? 1 : 0)
+       + (emaFast > emaSlow ? 1 : 0)
+       + (macdLine > signalLine ? 1 : 0)
+       + (close < bbLower ? 1 : 0)
+confidence = score / 4.0
+
+longCond  = confidence >= aiMinConf and strategy.position_size == 0
+exitCond  = rsiVal > 70 or close < emaSlow
+
+// ── Entries / Exits ────────────────────────────────────────────────────
+if longCond
+    strategy.entry("Long", strategy.long)
+
+if strategy.position_size > 0
+    entry = strategy.position_avg_price
+    slLvl = entry * (1 - slPct)
+    tpLvl = entry * (1 + tpPct)
+    // Break-Even Stop anheben
+    if close >= entry * (1 + beTrigger)
+        slLvl := entry * (1 + beBuffer)
+    strategy.exit("Exit", "Long", stop=slLvl, limit=tpLvl, trail_points=close * trailPct, trail_offset=close * trailPct)
+    if exitCond
+        strategy.close("Long", comment="Signal")
+
+plot(emaFast, "EMA 21", color=color.new(color.yellow, 0))
+plot(emaSlow, "EMA 50", color=color.new(color.orange, 0))
+plot(bbUpper, "BB Upper", color=color.new(color.gray, 70))
+plot(bbLower, "BB Lower", color=color.new(color.gray, 70))
+"""
+    return Response(
+        script,
+        mimetype="text/plain",
+        headers={
+            "Content-Disposition": f"attachment;filename=trevlix_{symbol.lower()}.pine",
+        },
+    )
+
+
 @app.route("/api/export/csv")
 @dashboard_auth
 def api_export_csv():
@@ -2321,7 +2402,8 @@ def on_update_config(data):
         "language",
         "allow_registration",
         "break_even_enabled",
-        "break_even_pct",
+        "break_even_trigger",
+        "break_even_buffer",
         "partial_tp_pct",
         "use_grid",
         "use_rl",
@@ -2344,7 +2426,8 @@ def on_update_config(data):
         "news_boost_score",
         "dca_drop_pct",
         "trailing_pct",
-        "break_even_pct",
+        "break_even_trigger",
+        "break_even_buffer",
         "partial_tp_pct",
         "portfolio_goal",
         "arb_min_spread_pct",
@@ -4864,12 +4947,15 @@ def _maybe_auto_start_bot() -> bool:
     """
     if not _AUTO_START:
         return False
-    if getattr(state, "running", False):
-        return False
     if not _has_any_configured_exchange():
         return False
-    state.running = True
-    state.paused = False
+    # Start atomar unter state._lock prüfen und setzen, damit parallele
+    # HTTP-Calls nicht zwei Bot-Loops gleichzeitig starten.
+    with state._lock:
+        if getattr(state, "running", False):
+            return False
+        state.running = True
+        state.paused = False
     threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
     log.info("🚀 Bot auto-gestartet (Exchange konfiguriert)")
     state.add_activity(
