@@ -15,6 +15,7 @@ Verwendung:
 
 import logging
 import os
+import re as _re
 import threading
 import time
 from datetime import datetime
@@ -24,6 +25,24 @@ import httpx
 from app.core.time_compat import UTC
 
 log = logging.getLogger("trevlix.notifications")
+
+
+# Entfernt Telegram-Bot-Tokens (Format: <digits>:<base64url>) und Discord
+# Webhook-IDs/Tokens aus Exception-Messages, bevor sie geloggt werden.
+_TG_TOKEN_RE = _re.compile(r"bot\d{6,12}:[A-Za-z0-9_-]{20,}")
+_DISCORD_WEBHOOK_RE = _re.compile(r"discord(?:app)?\.com/api/webhooks/\d+/[A-Za-z0-9_-]+")
+
+
+def _redact(msg: object) -> str:
+    """Redigiert sensible Tokens/Webhook-URLs aus Log-Messages.
+
+    httpx-Exceptions enthalten häufig die komplette Request-URL inkl. Bot-Token
+    bzw. Webhook-Secret. Ohne Redaction würden diese in Log-Files landen.
+    """
+    text = str(msg)
+    text = _TG_TOKEN_RE.sub("bot<redacted>", text)
+    text = _DISCORD_WEBHOOK_RE.sub("discord.com/api/webhooks/<redacted>", text)
+    return text
 
 
 class DiscordNotifier:
@@ -100,7 +119,7 @@ class DiscordNotifier:
             if resp.status_code >= 400:
                 log.warning("Discord webhook HTTP %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            log.warning("Discord send failed: %s", e)
+            log.warning("Discord send failed: %s", _redact(e))
 
     def trade_buy(
         self,
@@ -476,7 +495,7 @@ class TelegramNotifier:
             )
             return resp.status_code == 200
         except Exception as e:
-            log.warning("Telegram test failed: %s", e)
+            log.warning("Telegram test failed: %s", _redact(e))
             return False
 
     def send(self, text: str, parse_mode: str = "HTML") -> None:
@@ -498,7 +517,7 @@ class TelegramNotifier:
             if resp.status_code >= 400:
                 log.warning("Telegram HTTP %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            log.warning("Telegram send failed: %s", e)
+            log.warning("Telegram send failed: %s", _redact(e))
 
     def trade_buy(
         self,
