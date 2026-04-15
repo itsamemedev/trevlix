@@ -40,6 +40,71 @@ CREATE TABLE IF NOT EXISTS trades (
     INDEX idx_user   (user_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- ── Trade Orders (Paper + Live Order-Historie) ───────────────────
+CREATE TABLE IF NOT EXISTS trade_orders (
+    id                  BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id             INT DEFAULT 1,
+    symbol              VARCHAR(20) NOT NULL,
+    side                VARCHAR(8) NOT NULL,
+    order_type          VARCHAR(20) DEFAULT 'market',
+    status              VARCHAR(20) DEFAULT 'filled',
+    price               DECIMAL(20,8) DEFAULT 0,
+    qty                 DECIMAL(20,8) DEFAULT 0,
+    cost                DECIMAL(16,4) DEFAULT 0,
+    fees                DECIMAL(16,4) DEFAULT 0,
+    trade_mode          VARCHAR(10) DEFAULT 'paper',
+    exchange            VARCHAR(20) DEFAULT '',
+    exchange_order_id   VARCHAR(120) DEFAULT '',
+    reason              VARCHAR(200) DEFAULT '',
+    meta_json           MEDIUMTEXT,
+    created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_orders_user_time (user_id, created_at),
+    INDEX idx_orders_symbol    (symbol),
+    INDEX idx_orders_mode      (trade_mode)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Trade Decisions (Entscheidungs-Historie) ─────────────────────
+CREATE TABLE IF NOT EXISTS trade_decisions (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id         INT DEFAULT 1,
+    symbol          VARCHAR(20) NOT NULL,
+    decision        VARCHAR(20) NOT NULL,
+    reason          VARCHAR(255) DEFAULT '',
+    confidence      DECIMAL(6,4) DEFAULT 0,
+    ai_score        DECIMAL(6,4) DEFAULT 0,
+    win_prob        DECIMAL(6,4) DEFAULT 0,
+    trade_mode      VARCHAR(10) DEFAULT 'paper',
+    exchange        VARCHAR(20) DEFAULT '',
+    payload_json    MEDIUMTEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_dec_user_time (user_id, created_at),
+    INDEX idx_dec_symbol    (symbol),
+    INDEX idx_dec_mode      (trade_mode)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ── Trade Positions (offene Positionen Paper + Live) ─────────────
+CREATE TABLE IF NOT EXISTS trade_positions (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id         INT DEFAULT 1,
+    symbol          VARCHAR(20) NOT NULL,
+    side            VARCHAR(10) DEFAULT 'long',
+    qty             DECIMAL(20,8) DEFAULT 0,
+    entry_price     DECIMAL(20,8) DEFAULT 0,
+    invested        DECIMAL(16,4) DEFAULT 0,
+    stop_loss       DECIMAL(20,8) DEFAULT 0,
+    take_profit     DECIMAL(20,8) DEFAULT 0,
+    trade_mode      VARCHAR(10) DEFAULT 'paper',
+    exchange        VARCHAR(20) DEFAULT '',
+    status          VARCHAR(20) DEFAULT 'open',
+    opened_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+    closed_at       DATETIME NULL,
+    updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    meta_json       MEDIUMTEXT,
+    UNIQUE KEY uq_open_pos (user_id, symbol, trade_mode, status),
+    INDEX idx_pos_user_status (user_id, status),
+    INDEX idx_pos_exchange    (exchange)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
 -- ── Users ────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS users (
     id              INT AUTO_INCREMENT PRIMARY KEY,

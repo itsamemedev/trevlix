@@ -529,15 +529,21 @@ def create_auth_blueprint(
                 f"Admin-PW-Reset für '{username[:32]}' · {client_ip}",
                 client_ip,
             )
+            # Session UND JWT-Cookie invalidieren, sonst bleibt altes Token
+            # bis zu 8 h gültig obwohl das Passwort bereits getauscht wurde.
             session.clear()
-            return redirect("/admin/reset-password?ok=1")
+            resp = make_response(redirect("/admin/reset-password?ok=1"))
+            resp.delete_cookie("token", path="/")
+            return resp
 
         return redirect("/admin/reset-password?err=1")
 
     @bp.route("/admin/logout")
     def admin_logout():
-        """Admin-Abmeldung."""
+        """Admin-Abmeldung: Session UND JWT-Cookie löschen."""
         session.clear()
-        return redirect("/admin/login")
+        resp = make_response(redirect("/admin/login"))
+        resp.delete_cookie("token", path="/")
+        return resp
 
     return bp

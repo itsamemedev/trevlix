@@ -329,6 +329,11 @@ function updateUI(d){
   }
   // ARB stat
   _s('sArb', (d.arb_log||[]).length);
+  // Sync admin/settings toggles with current server state
+  const _chk=(id,val)=>{const el=document.getElementById(id); if(el&&typeof val!=='undefined') el.checked=!!val;};
+  _chk('allowReg', d.allow_registration);
+  _chk('paperMode', d.paper_trading);
+  _chk('sPaper', d.paper_trading);
   refreshTradingInsights();
   } catch(e){ console.warn('updateUI error:', e); }
 }
@@ -1591,6 +1596,7 @@ function saveSettings(){
     use_shorts:document.getElementById('sShorts').checked,
     use_arbitrage:document.getElementById('sArb').checked,
     arb_min_spread_pct:_pf(document.getElementById('sArbSpread').value),
+    arb_scan_limit:_pi(document.getElementById('sArbLimit')?.value||0),
     genetic_enabled:document.getElementById('sGenetic').checked,
     rl_enabled:document.getElementById('sRL').checked,
     backup_enabled:document.getElementById('sBackup').checked,
@@ -2402,6 +2408,11 @@ async function createUser() {
 async function toggleRegistration(enabled) {
   if(_emitSafe('update_config', {allow_registration: enabled}))
     toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
+}
+
+async function togglePaperMode(enabled) {
+  if(_emitSafe('update_config', {paper_trading: enabled}))
+    toast(enabled ? '📄 Paper Trading' : '⚠️ Live Trading', 'info');
 }
 
 

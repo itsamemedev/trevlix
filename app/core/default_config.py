@@ -133,6 +133,8 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "arb_min_spread_pct": 0.3,
         "arb_exchanges": ["binance", "bybit"],
         "arb_api_keys": {},
+        # 0 = scan alle verfügbaren Märkte; >0 begrenzt für Performance.
+        "arb_scan_limit": 0,
         "genetic_enabled": True,
         "genetic_generations": 20,
         "genetic_population": 30,
