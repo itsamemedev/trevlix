@@ -1,5 +1,45 @@
 # Lessons Learned
 
+## Session: fix-bugs-xtf60 (2026-04-15)
+
+### Lektion 44: Guards müssen an jeder Division mit demselben Divisor wiederholt werden
+**Problem:** In `run_monte_carlo()` wurde `var_pct` mit `if start_value > 0 else 0` geschützt,
+aber 20 Zeilen weiter unten `expected_return` teilte erneut durch `start_value` – diesmal
+ohne Guard. Ein Zero-Balance-Szenario (Paper-Trading mit 0 USDT) führt zu ZeroDivisionError.
+**Regel:** Jeder Zugriff auf einen potenziell 0-Wert braucht einen eigenen Guard. "Ich habe
+oben schon geprüft" zählt nicht, wenn die Operation woanders wiederholt wird.
+**Code:** `server.py:run_monte_carlo` (expected_return Zeile)
+
+### Lektion 45: Metrik-Aggregation muss konsistente Skalen haben
+**Problem:** In `api_multi_exchange_status` wurde `win_rate` für die active-Exchange mit
+Live-Runtime-Wert (Prozent) initialisiert, dann in derselben Loop um 1 pro Win-Trade
+erhöht (absolute Zahl). Die spätere Neuberechnung `wins/tc*100` wurde explizit für die
+active-Exchange übersprungen → Ergebnis: `runtime_win_rate% + count_of_wins` (Unsinn).
+**Regel:** Wenn in einem Dict denselben Feld für unterschiedliche Sources unterschiedliche
+Skalen verwendet werden, muss die Aggregation per Condition auf die passenden Einträge
+beschränkt werden. Lieber active-Exchange komplett aus der Aggregations-Loop ausschließen.
+**Code:** `server.py:api_multi_exchange_status` win_rate-Aggregation
+
+### Lektion 46: Defense-in-Depth bei WebSocket-Auth
+**Problem:** `uid = session.get("user_id", 1)` fiel auf `user_id=1` (Admin) zurück, wenn
+aus irgendeinem Grund die Session-Variable fehlte – obwohl `_ws_auth_required()` vorher
+geprüft hatte. Ebenso `int(... or 0)` → user_id=0, was in DB-Queries als ungültiger,
+aber lesender Zugriff landen kann.
+**Regel:** Nach `_ws_auth_required()` niemals auf einen Default-User-ID (0, 1, ...)
+zurückfallen. Bei fehlender user_id explizit Fehler melden und returnen, auch wenn der
+Pfad "unmöglich" erscheint.
+**Code:** `server.py:on_virginie_chat`, `server.py:on_add_alert`
+
+### Lektion 47: setInterval-Handles immer für Cleanup zuweisen
+**Problem:** `setInterval(fn, 60000)` und `setInterval(..., 10000)` in `dashboard.js`
+wurden ohne Variable aufgerufen → kein `clearInterval` möglich. Bei SPA-ähnlichen
+Navigationen (z.B. Hot-Reload oder fetch-Redirect) laufen die Timer weiter und führen
+zu Memory-Leak + unerwünschten API-Calls.
+**Regel:** Jedes `setInterval`/`setTimeout` das länger als eine Seiten-Lebenszeit laufen
+kann, MUSS einer Variable zugewiesen und im `beforeunload`-Handler gecleart werden.
+Bestehender Handler (ab Lektion 6) sollte entsprechend erweitert werden.
+**Code:** `static/js/dashboard.js:_installedKeysInterval`, `_insightsInterval`
+
 ## Session: follow-instructions-VGCsp (2026-03-09)
 
 ### Lektion 1: Loop-Variable Capture in Lambdas (B023)

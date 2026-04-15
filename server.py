@@ -2102,7 +2102,11 @@ def on_virginie_chat(data: dict | None = None) -> None:
     if len(message) > 2000:
         emit("virginie_chat_error", {"error": "Nachricht zu lang (max. 2000 Zeichen)."})
         return
-    user_id = int(getattr(request, "user_id", session.get("user_id", 0)) or 0)
+    raw_uid = getattr(request, "user_id", None) or session.get("user_id")
+    if not raw_uid:
+        emit("virginie_chat_error", {"error": "Nicht authentifiziert."})
+        return
+    user_id = int(raw_uid)
     user_entry = _virginie_chat_append(user_id, "user", message)
     emit("virginie_chat_message", user_entry)
     assistant_reply = _generate_virginie_chat_reply(user_id, message)
@@ -2608,7 +2612,10 @@ def on_run_backtest(data):
 def on_add_alert(data):
     if not _ws_auth_required():
         return
-    uid = session.get("user_id", 1)
+    uid = session.get("user_id")
+    if not uid:
+        emit("auth_error", {"msg": "Nicht authentifiziert"})
+        return
     db.add_alert(
         data.get("symbol", ""),
         safe_float(data.get("target", 0), 0.0),
@@ -3644,7 +3651,9 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
         "var_95_pct": round(var_pct, 2),
         "prob_profit_pct": round(prob_profit, 1),
         "prob_ruin_pct": round(prob_ruin, 1),
-        "expected_return": round((float(p50) - start_value) / start_value * 100, 2),
+        "expected_return": round((float(p50) - start_value) / start_value * 100, 2)
+        if start_value > 0
+        else 0.0,
     }
 
 
@@ -4422,10 +4431,12 @@ def api_exchanges():
                 "error": "" if ex.get("enabled") else "Nicht aktiviert",
             }
 
-        # Historische Kennzahlen aus lokalen closed_trades aggregieren (ohne Exchange-API)
+        # Historische Kennzahlen aus lokalen closed_trades aggregieren (ohne Exchange-API).
+        # Active Exchange wird übersprungen – dort stammen Werte aus Live-Runtime (Zeile ~4416),
+        # sonst würden win_rate (%) und wins-Count inkompatibel vermischt.
         for t in list(getattr(state, "closed_trades", [])):
             ex_name = str(t.get("exchange", "")).lower()
-            if ex_name not in ex_map:
+            if ex_name not in ex_map or ex_name == active_exchange:
                 continue
             ex_map[ex_name]["trade_count"] += 1
             pnl_val = float(t.get("pnl", 0) or 0)
@@ -4434,10 +4445,11 @@ def api_exchanges():
                 ex_map[ex_name]["win_rate"] += 1
 
         for ex_name, meta in ex_map.items():
-            tc = int(meta.get("trade_count", 0) or 0)
-            wins = float(meta.get("win_rate", 0) or 0)
-            if tc > 0 and ex_name != active_exchange:
-                meta["win_rate"] = round((wins / tc) * 100, 1)
+            if ex_name != active_exchange:
+                tc = int(meta.get("trade_count", 0) or 0)
+                wins = float(meta.get("win_rate", 0) or 0)
+                if tc > 0:
+                    meta["win_rate"] = round((wins / tc) * 100, 1)
             if ex_name in enabled_set and not meta.get("error"):
                 # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
                 if ex_name == active_exchange and runtime_running:
