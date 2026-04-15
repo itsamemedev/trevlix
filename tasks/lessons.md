@@ -247,3 +247,19 @@ Versuchung: einfach ignorieren und `497 passed` behaupten.
 **Regel:** Baseline-Tests vor der Arbeit ausführen. Pre-existing Fails
 mit `--deselect` dokumentieren und im Abschlussbericht explizit als
 „pre-existing, außerhalb Scope" markieren — niemals als „alle grün" melden.
+
+## Session: fix-cryptopanic-api-PVU5n (2026-04-15)
+
+### Lektion 42: Fallback-Ketten vollständig durchreichen
+**Problem:** `services/cryptopanic.py:fetch_posts` hatte zwei 404-Fallback-
+Pfade (currencies-Filter entfernen **oder** v2→v1 wechseln), aber sie
+waren alternativ statt verkettet. Wenn das v2-Endpoint sowohl mit als
+auch ohne currencies 404 lieferte (Logs: `developer/v2/posts/...` 404
+für RENDER, BBSOL, DBR, SCR, …), wurde der v1-Legacy-Fallback nie
+angestoßen — kein Hard-Fail wurde zu einem stillen „keine News".
+**Regel:** Mehrstufige Fallback-Logik explizit als Matrix modellieren
+(hier: `{v2, v1} × {mit currencies, ohne currencies}`) und in einer
+Schleife durchlaufen, statt Spezialfälle ineinander zu verschachteln.
+Jeder 404-Zweig muss entscheiden, ob er *weiter* oder *abbrechen* soll —
+niemals „Fallback fehlgeschlagen" ohne die nächste Option zu testen.
+**Code:** `services/cryptopanic.py:_request_posts`, `fetch_posts`

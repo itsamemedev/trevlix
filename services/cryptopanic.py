@@ -136,11 +136,71 @@ class CryptoPanicClient:
             return False
         return (time.time() - self._cache[cache_key]["ts"]) < CACHE_TTL
 
+    def _request_posts(
+        self, url: str, params: dict, currency: str
+    ) -> tuple[bool, list, int | None]:
+        """
+        Führt einen einzelnen API-Request aus.
+
+        Returns:
+            Tuple (success, results, error_status).
+            - success=True, results=list, error_status=None bei 2xx-Antworten.
+            - success=False, results=[], error_status=<code> bei HTTP-Fehler.
+            - success=False, results=[], error_status=None bei Netzwerk-/Parse-Fehlern
+              oder wenn der Call aufgrund eines 429 als rate-limited markiert wurde.
+        """
+        try:
+            resp = httpx.get(url, params=params, timeout=_REQUEST_TIMEOUT)
+            self._last_api_call_at = time.time()
+            resp.raise_for_status()
+            remaining = (resp.headers or {}).get("X-RateLimit-Remaining")
+            reset_raw = (resp.headers or {}).get("X-RateLimit-Reset")
+            if str(remaining).strip() == "0":
+                try:
+                    reset_after = max(int(float(reset_raw)), 1)
+                except (TypeError, ValueError):
+                    reset_after = _RATE_LIMIT_FALLBACK_SECONDS
+                self._rate_limited_until = max(self._rate_limited_until, time.time() + reset_after)
+                log.warning(
+                    "CryptoPanic API-Limit erschöpft laut Header für %s – pausiere %ss",
+                    currency,
+                    reset_after,
+                )
+            payload = resp.json()
+            results = payload.get("results", []) if isinstance(payload, dict) else []
+            return True, (results if isinstance(results, list) else []), None
+        except httpx.HTTPStatusError as e:
+            self._last_api_call_at = time.time()
+            status = e.response.status_code if e.response is not None else None
+            if status == 429:
+                retry_after_raw = (e.response.headers or {}).get("Retry-After", "").strip()
+                try:
+                    retry_after = max(int(float(retry_after_raw)), 1)
+                except (TypeError, ValueError):
+                    retry_after = _RATE_LIMIT_FALLBACK_SECONDS
+                self._rate_limited_until = max(self._rate_limited_until, time.time() + retry_after)
+                self._last_fetch_was_rate_limited = True
+                log.warning(
+                    "CryptoPanic API Rate-Limit (429) für %s – pausiere %ss", currency, retry_after
+                )
+                return False, [], None
+            return False, [], status
+        except httpx.RequestError as e:
+            log.debug("CryptoPanic Netzwerk-Fehler für %s: %s", currency, e)
+            return False, [], None
+        except (ValueError, KeyError) as e:
+            log.debug("CryptoPanic Parse-Fehler für %s: %s", currency, e)
+            return False, [], None
+
     def fetch_posts(
         self, currency: str, filter_type: str = "hot", kind: str = "news", regions: str = "en"
     ) -> list:
         """
-        Holt Posts von der CryptoPanic API v2.
+        Holt Posts von der CryptoPanic API.
+
+        Versucht zunächst die aktive URL (standardmäßig v2). Bei 404/410 wird der
+        currencies-Filter entfernt und bei Bedarf auf v1 zurückgefallen, damit auch
+        Accounts ohne v2-Zugriff und nicht-indexierte Coins Ergebnisse liefern.
 
         Args:
             currency: Währungskürzel (z.B. "BTC", "ETH")
@@ -174,111 +234,77 @@ class CryptoPanicClient:
         unsupported_until = self._unsupported_currencies.get(currency_norm, 0.0)
         use_currency_filter = bool(currency_norm) and now >= unsupported_until
 
-        params = {
+        base_params = {
             "auth_token": self.token,
             "filter": filter_type,
             "kind": kind,
             "regions": regions,
             "public": "true",
         }
-        if use_currency_filter:
-            params["currencies"] = currency_norm
 
-        try:
-            resp = httpx.get(self._active_url, params=params, timeout=_REQUEST_TIMEOUT)
-            self._last_api_call_at = time.time()
-            resp.raise_for_status()
-            remaining = (resp.headers or {}).get("X-RateLimit-Remaining")
-            reset_raw = (resp.headers or {}).get("X-RateLimit-Reset")
-            if str(remaining).strip() == "0":
-                try:
-                    reset_after = max(int(float(reset_raw)), 1)
-                except (TypeError, ValueError):
-                    reset_after = _RATE_LIMIT_FALLBACK_SECONDS
-                self._rate_limited_until = max(self._rate_limited_until, time.time() + reset_after)
-                log.warning(
-                    "CryptoPanic API-Limit erschöpft laut Header für %s – pausiere %ss",
-                    currency,
-                    reset_after,
-                )
-            payload = resp.json()
-            results = payload.get("results", []) if isinstance(payload, dict) else []
-            return results if isinstance(results, list) else []
-        except httpx.HTTPStatusError as e:
-            if e.response is not None and e.response.status_code == 429:
-                retry_after_raw = (e.response.headers or {}).get("Retry-After", "").strip()
-                try:
-                    retry_after = max(int(float(retry_after_raw)), 1)
-                except (TypeError, ValueError):
-                    retry_after = _RATE_LIMIT_FALLBACK_SECONDS
+        # Kandidaten-URLs: aktuelle URL zuerst, dann ggf. v1-Legacy.
+        urls_to_try: list[str] = [self._active_url]
+        if self._active_url != self._fallback_url:
+            urls_to_try.append(self._fallback_url)
 
-                self._rate_limited_until = max(self._rate_limited_until, time.time() + retry_after)
-                self._last_fetch_was_rate_limited = True
-                log.warning(
-                    "CryptoPanic API v2 Rate-Limit (429) für %s – pausiere %ss",
-                    currency,
-                    retry_after,
-                )
-                return []
-            if e.response is not None and e.response.status_code == 404 and use_currency_filter:
-                # Einige Coins/Ticker werden von CryptoPanic im "currencies"-Filter nicht unterstützt.
-                # Fallback: ohne currencies-Filter erneut anfragen (allgemeine News), damit kein Hard-Fail entsteht.
-                self._unsupported_currencies[currency_norm] = (
-                    time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
-                )
-                fallback_params = {k: v for k, v in params.items() if k != "currencies"}
-                try:
-                    fallback_resp = httpx.get(
-                        self._active_url, params=fallback_params, timeout=_REQUEST_TIMEOUT
+        not_found_seen = False
+        currency_fallback_used = False
+        for url in urls_to_try:
+            # 1. Versuch: mit currencies-Filter (falls aktiv)
+            if use_currency_filter:
+                params = {**base_params, "currencies": currency_norm}
+                success, results, err_status = self._request_posts(url, params, currency)
+                if success:
+                    self._promote_url(url)
+                    return results
+                if err_status is None:
+                    # Rate-Limit, Netzwerk- oder Parse-Fehler → nicht weiter versuchen
+                    return []
+                if err_status in (404, 410):
+                    not_found_seen = True
+                    # currencies-Filter nicht unterstützt → ohne erneut versuchen
+                    self._unsupported_currencies[currency_norm] = (
+                        time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
                     )
-                    self._last_api_call_at = time.time()
-                    fallback_resp.raise_for_status()
-                    payload = fallback_resp.json()
-                    results = payload.get("results", []) if isinstance(payload, dict) else []
+                    currency_fallback_used = True
+                else:
+                    log.warning(
+                        "CryptoPanic HTTP-Fehler %s für %s auf %s", err_status, currency, url
+                    )
+                    return []
+
+            # 2. Versuch: ohne currencies-Filter
+            success, results, err_status = self._request_posts(url, base_params, currency)
+            if success:
+                if currency_fallback_used:
                     log.info(
-                        "CryptoPanic: currencies=%s nicht unterstützt (404) – nutze Fallback ohne currencies",
+                        "CryptoPanic: currencies=%s nicht unterstützt – nutze Fallback ohne currencies",
                         currency_norm,
                     )
-                    return results if isinstance(results, list) else []
-                except Exception as fallback_err:
-                    log.warning(
-                        "CryptoPanic Fallback ohne currencies fehlgeschlagen für %s: %s",
-                        currency_norm,
-                        fallback_err,
-                    )
-                    return []
-            if (
-                e.response is not None
-                and e.response.status_code in (404, 410)
-                and self._active_url == self._base_url
-            ):
-                # Einige Accounts/Keys liefern nur Legacy-v1 Antworten.
-                # Einmalig auf v1 wechseln und erneut versuchen.
-                try:
-                    self._active_url = self._fallback_url
-                    legacy_resp = httpx.get(
-                        self._active_url, params=params, timeout=_REQUEST_TIMEOUT
-                    )
-                    self._last_api_call_at = time.time()
-                    legacy_resp.raise_for_status()
-                    payload = legacy_resp.json()
-                    results = payload.get("results", []) if isinstance(payload, dict) else []
-                    log.info("CryptoPanic: v2 Endpoint nicht verfügbar – fallback auf v1 aktiviert")
-                    return results if isinstance(results, list) else []
-                except Exception as legacy_err:
-                    log.warning(
-                        "CryptoPanic v1 Fallback fehlgeschlagen für %s: %s", currency, legacy_err
-                    )
-                    self._active_url = self._base_url
-                    return []
-            log.warning("CryptoPanic API v2 HTTP-Fehler für %s: %s", currency, e)
+                self._promote_url(url)
+                return results
+            if err_status is None:
+                return []
+            if err_status in (404, 410):
+                not_found_seen = True
+                # Nächste URL (v1) versuchen
+                continue
+            log.warning("CryptoPanic HTTP-Fehler %s für %s auf %s", err_status, currency, url)
             return []
-        except httpx.RequestError as e:
-            log.debug("CryptoPanic API v2 Fehler für %s: %s", currency, e)
-            return []
-        except (ValueError, KeyError) as e:
-            log.debug("CryptoPanic API v2 Parse-Fehler für %s: %s", currency, e)
-            return []
+
+        if not_found_seen:
+            log.warning(
+                "CryptoPanic: v2 und v1 Endpunkte lieferten 404/410 für %s – keine News verfügbar",
+                currency,
+            )
+        return []
+
+    def _promote_url(self, url: str) -> None:
+        """Setzt die übergebene URL als aktive URL für nachfolgende Requests."""
+        if url != self._active_url:
+            if url == self._fallback_url:
+                log.info("CryptoPanic: v2 Endpoint nicht verfügbar – fallback auf v1 aktiviert")
+            self._active_url = url
 
     def analyze_sentiment(self, posts: list) -> tuple[float, str, int]:
         """

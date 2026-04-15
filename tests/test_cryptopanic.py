@@ -325,6 +325,48 @@ class TestFetchPosts:
         assert "currencies" not in second_params
 
     @patch("services.cryptopanic.httpx.get")
+    def test_fetch_posts_chains_v2_404_to_v1_when_currency_fallback_also_404(self, mock_get):
+        """v2 404 mit currencies + v2 404 ohne currencies → muss auf v1 weiterfallen."""
+        import httpx as hx
+
+        req_v2 = hx.Request("GET", "https://cryptopanic.com/api/developer/v2/posts/")
+        err_404 = hx.HTTPStatusError(
+            "not found", request=req_v2, response=hx.Response(404, request=req_v2)
+        )
+
+        ok_resp = MagicMock()
+        ok_resp.headers = {}
+        ok_resp.raise_for_status = MagicMock()
+        ok_resp.json.return_value = {"results": [{"title": "Legacy v1 news"}]}
+
+        # Erwartete Aufrufreihenfolge:
+        # 1) v2 mit currencies=RENDER → 404
+        # 2) v2 ohne currencies → 404
+        # 3) v1 mit currencies=RENDER → 404
+        # 4) v1 ohne currencies → 200
+        resp_404_a = MagicMock()
+        resp_404_a.raise_for_status.side_effect = err_404
+        resp_404_b = MagicMock()
+        resp_404_b.raise_for_status.side_effect = err_404
+        resp_404_c = MagicMock()
+        resp_404_c.raise_for_status.side_effect = err_404
+
+        mock_get.side_effect = [resp_404_a, resp_404_b, resp_404_c, ok_resp]
+
+        client = CryptoPanicClient(token="test-token", plan="developer")
+        posts = client.fetch_posts("RENDER")
+
+        assert posts
+        assert posts[0]["title"] == "Legacy v1 news"
+        assert mock_get.call_count == 4
+        assert "developer/v2/posts" in mock_get.call_args_list[0][0][0]
+        assert "developer/v2/posts" in mock_get.call_args_list[1][0][0]
+        assert "/api/v1/posts/" in mock_get.call_args_list[2][0][0]
+        assert "/api/v1/posts/" in mock_get.call_args_list[3][0][0]
+        # Nachfolgende Calls sollten direkt auf v1 gehen
+        assert client._active_url.endswith("/api/v1/posts/")
+
+    @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_skips_currency_filter_after_known_404(self, mock_get):
         ok_resp = MagicMock()
         ok_resp.headers = {}
