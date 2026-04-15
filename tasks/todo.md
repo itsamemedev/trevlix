@@ -1,5 +1,57 @@
 # Tasks
 
+## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
+
+### Zweite Bug-Welle
+
+| # | Datei | Bug | Fix |
+|---|-------|-----|-----|
+| 7 | `server.py:api_portfolio_optimize` | Returns-List-Comprehension dividiert durch `closes[i-1]` ohne Guard → ZeroDivisionError bei pathologischen OHLCV-Daten | `if closes[i-1]` Filter in Comprehension + `if rets:` Guard |
+| 8 | `services/cryptopanic.py` | `_cache` Dict wurde aus Bot-Loop und Flask-Routen ohne Lock modifiziert (Check-then-act gegen Eviction) → mögliche KeyError-Race | `threading.Lock` hinzugefügt; alle Read/Write/Eviction atomar unter `self._cache_lock` |
+
+### Verifizierung (Round 2)
+
+- 501 Tests bestanden (1 skipped)
+- `ruff check` clean, `ruff format --check` clean (126 files)
+
+### Lessons (Round 2)
+
+- Lektion 48: Guards bei Division in List-Comprehensions
+- Lektion 49: Cache-Dicts in multi-threaded Services brauchen Locks
+
+---
+
+## Session: fix-bugs-xtf60 (2026-04-15)
+
+### Scope
+Dedizierte Bug-Jagd: parallele Subagent-Scans (Backend, Routes, Frontend),
+verifiziert und gefixt.
+
+### Gefundene & behobene Bugs
+
+| # | Datei | Bug | Fix |
+|---|-------|-----|-----|
+| 1 | `server.py:run_monte_carlo` | `expected_return` dividiert durch `start_value` ohne Guard (nur `var_pct` hatte Guard) → ZeroDivisionError bei Paper-Balance 0 | `if start_value > 0 else 0.0` Branch hinzugefügt |
+| 2 | `server.py:api_multi_exchange_status` | `win_rate` für active-Exchange startete als Prozent (`runtime_win_rate`), wurde dann in der closed_trades-Loop um 1 pro Win erhöht → inkompatible Skalen, Anzeigewert unsinnig | Active-Exchange aus Aggregations-Loop und aus der `wins/tc*100`-Neuberechnung ausgeschlossen |
+| 3 | `server.py:on_virginie_chat` | `int(... or 0)` fiel auf user_id=0 zurück; chat-Historie auf ungültigen User gespeichert | Explizit `auth_error` + early return wenn user_id fehlt |
+| 4 | `server.py:on_add_alert` | `session.get("user_id", 1)` → Default auf Admin (id=1) bei fehlender Session-Variable | `session.get("user_id")` + early return + `auth_error` |
+| 5 | `static/js/dashboard.js:234` | `setInterval(_refreshInstalledKeys, 60000)` ohne Handle → kein Cleanup möglich | `_installedKeysInterval` + `clearInterval` im `beforeunload` |
+| 6 | `static/js/dashboard.js:1712` | `setInterval(refreshTradingInsights, 10000)` ohne Handle → Memory Leak bei Navigation | `_insightsInterval` + `clearInterval` im `beforeunload` |
+
+### Verifizierung
+
+- 501 Tests bestanden (1 skipped, keine neuen Fehler)
+- `ruff check .` clean
+- `ruff format --check .` clean (126 files)
+
+### Lessons geschrieben
+
+Neue Einträge (Lektionen 44–47) in `tasks/lessons.md`: Guard-Wiederholung bei
+Division, Skalen-Konsistenz bei Metrik-Aggregation, Defense-in-Depth bei
+WS-Auth, `setInterval`-Handles immer zuweisen.
+
+---
+
 ## Session: dashboard-stabilization-Kvm4B
 
 ### Phase 1: Stabilisierung (100+ Fixes)

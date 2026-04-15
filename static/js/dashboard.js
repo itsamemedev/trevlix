@@ -231,7 +231,7 @@ function renderHeaderStatus(d){
 }
 // Initial beim Laden holen, dann alle 60s aktualisieren
 _refreshInstalledKeys();
-setInterval(_refreshInstalledKeys, 60000);
+let _installedKeysInterval = setInterval(_refreshInstalledKeys, 60000);
 
 function updateUI(d){
   if(!d || typeof d !== 'object') return;
@@ -1709,7 +1709,7 @@ document.addEventListener('visibilitychange', ()=>{
   if(socket && socket.connected) socket.emit('request_state');
   refreshTradingInsights(true);
 });
-setInterval(()=>{ if(!document.hidden) refreshTradingInsights(); }, 10000);
+let _insightsInterval = setInterval(()=>{ if(!document.hidden) refreshTradingInsights(); }, 10000);
 socket.on('ai_update', ai=>{if(ai) updateAI(ai);});
 socket.on('genetic_update', g=>{
   if(!g) return;
@@ -1914,6 +1914,8 @@ let _gasInterval = setInterval(updateGasFees, 120000);
 window.addEventListener('beforeunload', () => {
   clearInterval(_gasInterval);
   _gasInterval = null;
+  if(_installedKeysInterval){ clearInterval(_installedKeysInterval); _installedKeysInterval = null; }
+  if(_insightsInterval){ clearInterval(_insightsInterval); _insightsInterval = null; }
   if(_virginieEdgeTimer){ clearInterval(_virginieEdgeTimer); _virginieEdgeTimer = null; }
 });
 
