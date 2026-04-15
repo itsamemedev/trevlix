@@ -2661,7 +2661,17 @@ def on_close_position(data):
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
-    sym = data.get("symbol", "")
+    sym = str(data.get("symbol", "") or "").strip()
+    if not sym:
+        emit(
+            "status",
+            {
+                "msg": "❌ Kein Symbol übergeben",
+                "key": "ws_close_no_symbol",
+                "type": "error",
+            },
+        )
+        return
     with state._lock:
         in_long = sym in state.positions
         in_short = sym in state.short_positions
@@ -2682,6 +2692,15 @@ def on_close_position(data):
             "status",
             {"msg": f"✅ Short {sym} geschlossen", "key": "ws_short_closed", "type": "success"},
             broadcast=True,
+        )
+    else:
+        emit(
+            "status",
+            {
+                "msg": f"⚠️ Keine offene Position für {sym}",
+                "key": "ws_close_no_position",
+                "type": "warning",
+            },
         )
 
 
