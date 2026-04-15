@@ -1819,7 +1819,7 @@ def bot_loop():
             # Arbitrage
             if state.iteration % 5 == 1 and CONFIG.get("use_arbitrage"):
                 threading.Thread(
-                    target=lambda m=state.markets[:30]: arb_scanner.scan(m), daemon=True
+                    target=lambda m=list(state.markets): arb_scanner.scan(m), daemon=True
                 ).start()
 
             # Portfolio History

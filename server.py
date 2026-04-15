@@ -2302,6 +2302,8 @@ def on_update_config(data):
         "use_partial_tp",
         "use_shorts",
         "use_arbitrage",
+        "arb_min_spread_pct",
+        "arb_scan_limit",
         "genetic_enabled",
         "rl_enabled",
         "backup_enabled",
@@ -2345,6 +2347,7 @@ def on_update_config(data):
         "break_even_pct",
         "partial_tp_pct",
         "portfolio_goal",
+        "arb_min_spread_pct",
     }
     _int_keys = {
         "max_open_trades",
@@ -2354,6 +2357,7 @@ def on_update_config(data):
         "dca_max_levels",
         "lstm_lookback",
         "discord_report_hour",
+        "arb_scan_limit",
     }
     _valid_exchanges = {
         "cryptocom",
@@ -2421,6 +2425,7 @@ def on_update_config(data):
         CONFIG[k] = v
         updated[k] = v
     # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
+    persist_failed = False
     try:
         uid = getattr(request, "user_id", session.get("user_id"))
         if uid and updated:
@@ -2429,11 +2434,35 @@ def on_update_config(data):
             current["paper_trading"] = CONFIG.get("paper_trading", True)
             db.update_user_settings(uid, current)
     except Exception as e:
-        log.debug(f"update_config persist: {e}")
-    emit(
-        "status",
-        {"msg": "✅ Einstellungen gespeichert", "key": "ws_settings_saved", "type": "success"},
-    )
+        persist_failed = True
+        log.warning(f"update_config persist failed: {e}")
+    if not updated:
+        emit(
+            "status",
+            {
+                "msg": "⚠️ Keine gültigen Einstellungen übermittelt",
+                "key": "ws_settings_none",
+                "type": "warning",
+            },
+        )
+    elif persist_failed:
+        emit(
+            "status",
+            {
+                "msg": "⚠️ Einstellungen aktiv, Persistenz fehlgeschlagen",
+                "key": "ws_settings_persist_failed",
+                "type": "warning",
+            },
+        )
+    else:
+        emit(
+            "status",
+            {
+                "msg": "✅ Einstellungen gespeichert",
+                "key": "ws_settings_saved",
+                "type": "success",
+            },
+        )
     emit("update", state.snapshot(), broadcast=True)
 
 
@@ -2702,7 +2731,7 @@ def on_scan_arb():
         return
 
     def _arb():
-        opps = arb_scanner.scan(state.markets[:30])
+        opps = arb_scanner.scan(list(state.markets))
         emit_event(
             "status",
             {

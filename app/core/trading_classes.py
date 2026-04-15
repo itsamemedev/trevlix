@@ -610,6 +610,7 @@ class BotState:
             "exchange": CONFIG.get("exchange", "cryptocom"),
             "exchange_key_states": _get_exchange_key_states(),
             "paper_trading": CONFIG.get("paper_trading", True),
+            "allow_registration": bool(CONFIG.get("allow_registration", False)),
             "goal": {"target": goal, "current": pv, "pct": goal_pct, "eta": goal_eta},
             "price_alerts": db.get_all_alerts()[:20],
             "use_shorts": CONFIG.get("use_shorts", False),
@@ -657,6 +658,14 @@ class ArbitrageScanner:
         exchanges = CONFIG.get("arb_exchanges", ["binance", "bybit"])
         if len(exchanges) < 2:
             return []
+        # Scan-Limit: 0/negativ = alle Symbole berücksichtigen.
+        try:
+            scan_limit = int(CONFIG.get("arb_scan_limit", 0) or 0)
+        except (TypeError, ValueError):
+            scan_limit = 0
+        syms_to_scan = list(symbols) if scan_limit <= 0 else list(symbols)[:scan_limit]
+        if not syms_to_scan:
+            return []
         opportunities = []
         try:
             # Hole Preise von allen Exchanges
@@ -666,7 +675,7 @@ class ArbitrageScanner:
                 if not ex:
                     continue
                 try:
-                    tickers = safe_fetch_tickers(ex, symbols[:30])
+                    tickers = safe_fetch_tickers(ex, syms_to_scan)
                     prices_by_ex[ex_name] = {
                         s: float(t.get("last") or 0) for s, t in tickers.items() if t.get("last")
                     }
@@ -674,7 +683,7 @@ class ArbitrageScanner:
                     log.debug(f"ARB ticker fetch {ex_name}: {exc}")
 
             ex_names = list(prices_by_ex.keys())
-            for sym in symbols[:30]:
+            for sym in syms_to_scan:
                 sym_prices = {
                     n: prices_by_ex[n][sym] for n in ex_names if sym in prices_by_ex.get(n, {})
                 }
