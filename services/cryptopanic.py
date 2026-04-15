@@ -12,6 +12,7 @@ Unterstützte Plans: free, pro, developer
 """
 
 import logging
+import threading
 import time
 
 import httpx
@@ -105,6 +106,7 @@ class CryptoPanicClient:
         self._active_url = self._base_url
         self._cache: dict = {}
         self._cache_max_size: int = 200
+        self._cache_lock = threading.Lock()
         self._rate_limited_until: float = 0.0
         self._last_fetch_was_rate_limited: bool = False
         self._last_api_call_at: float = 0.0
@@ -385,19 +387,23 @@ class CryptoPanicClient:
                 if stale_db_cached is not None:
                     return stale_db_cached
 
-        # In-Memory-Cache prüfen
-        if self._is_cache_valid(cache_key):
-            c = self._cache[cache_key]
-            return c["score"], c["headline"], c["count"]
+        # In-Memory-Cache prüfen (atomares Read unter Lock – verhindert Race
+        # mit gleichzeitiger Eviction am Ende der Methode).
+        with self._cache_lock:
+            if self._is_cache_valid(cache_key):
+                c = self._cache[cache_key]
+                return c["score"], c["headline"], c["count"]
 
         # Ohne Token: Feature deaktiviert, neutraler Score
         if not self.is_configured:
             score, headline, count = 0.0, "—", 0
         else:
             posts = self.fetch_posts(coin)
-            if self._last_fetch_was_rate_limited and cache_key in self._cache:
-                c = self._cache[cache_key]
-                return c["score"], c["headline"], c["count"]
+            if self._last_fetch_was_rate_limited:
+                with self._cache_lock:
+                    if cache_key in self._cache:
+                        c = self._cache[cache_key]
+                        return c["score"], c["headline"], c["count"]
             score, headline, count = self.analyze_sentiment(posts)
 
             if self._last_fetch_was_rate_limited and count == 0:
@@ -405,17 +411,18 @@ class CryptoPanicClient:
                     return stale_db_cached
                 return 0.0, "—", 0
 
-        # Caches aktualisieren (mit Max-Size-Eviction)
-        self._cache[cache_key] = {
-            "score": score,
-            "headline": headline,
-            "count": count,
-            "ts": time.time(),
-        }
-        if len(self._cache) > self._cache_max_size:
-            oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
-            if oldest != cache_key:
-                del self._cache[oldest]
+        # Caches aktualisieren (mit Max-Size-Eviction) – atomar unter Lock
+        with self._cache_lock:
+            self._cache[cache_key] = {
+                "score": score,
+                "headline": headline,
+                "count": count,
+                "ts": time.time(),
+            }
+            if len(self._cache) > self._cache_max_size:
+                oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
+                if oldest != cache_key:
+                    del self._cache[oldest]
 
         if db:
             db.save_news(symbol, score, headline, count)

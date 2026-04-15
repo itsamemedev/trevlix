@@ -1,5 +1,26 @@
 # Tasks
 
+## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
+
+### Zweite Bug-Welle
+
+| # | Datei | Bug | Fix |
+|---|-------|-----|-----|
+| 7 | `server.py:api_portfolio_optimize` | Returns-List-Comprehension dividiert durch `closes[i-1]` ohne Guard → ZeroDivisionError bei pathologischen OHLCV-Daten | `if closes[i-1]` Filter in Comprehension + `if rets:` Guard |
+| 8 | `services/cryptopanic.py` | `_cache` Dict wurde aus Bot-Loop und Flask-Routen ohne Lock modifiziert (Check-then-act gegen Eviction) → mögliche KeyError-Race | `threading.Lock` hinzugefügt; alle Read/Write/Eviction atomar unter `self._cache_lock` |
+
+### Verifizierung (Round 2)
+
+- 501 Tests bestanden (1 skipped)
+- `ruff check` clean, `ruff format --check` clean (126 files)
+
+### Lessons (Round 2)
+
+- Lektion 48: Guards bei Division in List-Comprehensions
+- Lektion 49: Cache-Dicts in multi-threaded Services brauchen Locks
+
+---
+
 ## Session: fix-bugs-xtf60 (2026-04-15)
 
 ### Scope

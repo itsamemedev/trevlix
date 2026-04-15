@@ -1,5 +1,28 @@
 # Lessons Learned
 
+## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
+
+### Lektion 48: Externe-Preise Division ohne Guard
+**Problem:** `rets = [(closes[i]-closes[i-1]) / closes[i-1] for i in range(1,len)]` in
+`api_portfolio_optimize` konnte bei einem `closes[i-1] == 0` (z.B. bei pathologischen
+OHLCV-Lücken oder Reverse-Split-ähnlichen Events) in ZeroDivisionError laufen, der
+den gesamten Endpoint in einen 500er kippt.
+**Regel:** Bei List-Comprehensions mit Division durch externe Werte IMMER mit einem
+`if divisor` Guard filtern – der pathologische Fall ist selten, aber wenn er auftritt,
+reißt er den ganzen Request mit.
+**Code:** `server.py:api_portfolio_optimize` (Returns-Berechnung)
+
+### Lektion 49: Cache-Dicts in Services brauchen Thread-Safety
+**Problem:** `CryptoPanicService._cache` wurde von `news_fetcher.get_score()` sowohl
+aus Flask-Request-Threads (`server.py:/api/v1/news/...`) als auch aus Bot-Loop-Threads
+(`app/core/trading_ops.scan_symbol`) ohne Lock geändert. Das `_is_cache_valid` →
+`_cache[key]` Muster konnte mit gleichzeitiger `del self._cache[oldest]` Eviction
+kollidieren → KeyError im produktiven Hot-Path.
+**Regel:** Jeder Service mit internem `_cache`-Dict, der von Bot-Loop UND API-Routen
+aufgerufen wird, MUSS einen `threading.Lock` haben und Read-Check-Write-Pattern
+atomar ausführen. Gilt auch, wenn der Service im Konstruktor wie ein Singleton wirkt.
+**Code:** `services/cryptopanic.py:_cache_lock`
+
 ## Session: fix-bugs-xtf60 (2026-04-15)
 
 ### Lektion 44: Guards müssen an jeder Division mit demselben Divisor wiederholt werden

@@ -4632,8 +4632,13 @@ def api_portfolio_optimize():
             ohlcv = opt_ex.fetch_ohlcv(f"{sym}/USDT" if "/" not in sym else sym, "1d", limit=90)
             if ohlcv and len(ohlcv) > 10:
                 closes = [c[4] for c in ohlcv]
-                rets = [(closes[i] - closes[i - 1]) / closes[i - 1] for i in range(1, len(closes))]
-                returns_data[sym] = rets
+                rets = [
+                    (closes[i] - closes[i - 1]) / closes[i - 1]
+                    for i in range(1, len(closes))
+                    if closes[i - 1]
+                ]
+                if rets:
+                    returns_data[sym] = rets
         if len(returns_data) < 2:
             return jsonify({"error": "Nicht genug Preisdaten"})
         # Einfache Equal-Weight als Fallback
