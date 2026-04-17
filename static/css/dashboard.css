@@ -512,16 +512,17 @@ main{position:relative;z-index:1;max-width:640px;margin:0 auto;padding:12px 12px
 
   /* ── Header: collapse for mobile ── */
   header{flex-wrap:wrap;height:auto;padding:8px 10px;gap:6px}
-  .h-logo{flex:1;min-width:0}
+  .h-logo{flex:1 1 auto;min-width:0}
   .h-sub{display:none}
   .h-actions{flex-wrap:wrap;gap:4px;justify-content:flex-end}
   .h-actions .h-link{display:none}
-  .lang-switcher{order:10}
+  .lang-switcher{order:10;flex-basis:100%;justify-content:flex-end}
 }
 @media(max-width:479px){
   .h-title{font-size:13px}
   .h-badge{font-size:9px;padding:2px 6px}
   .role-badge{font-size:8px;padding:1px 5px}
+  .h-actions #pushBtn,.h-actions #themeBtn{display:none}
   .lang-switcher{gap:2px}
   .lang-btn{padding:3px 5px;font-size:9px}
   .theme-btn{font-size:14px;padding:4px}
@@ -1225,14 +1226,7 @@ body.is-admin .admin-stat-card{
 }
 
 /* ── 2. Admin mode indicator ─────────────────────────────────────────────── */
-body.is-admin .h-title::after{
-  content:'ADMIN';display:inline-block;margin-left:8px;
-  font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:1.5px;
-  padding:2px 7px;border-radius:4px;vertical-align:2px;
-  color:var(--jade);background:rgba(212,175,55,.1);
-  border:1px solid rgba(212,175,55,.32);
-  text-shadow:0 0 8px rgba(212,175,55,.35);
-}
+/* Role is indicated by the #roleBadge pill next to the status badge. */
 body.is-admin .h-logo-icon{
   box-shadow:0 0 18px rgba(212,175,55,.55),inset 0 1px 0 rgba(255,255,255,.15);
 }

@@ -950,6 +950,7 @@ def api_state():
     snap = state.snapshot()
     # user_role aus Session oder JWT für Frontend Role-UI
     snap["user_role"] = session.get("user_role", "user")
+    snap["llm"] = _get_llm_header_status()
     return jsonify(snap)
 
 
@@ -1565,7 +1566,7 @@ def api_signal():
         try:
             ex = create_exchange()
             scan = scan_symbol(ex, sym)
-            if scan and action == "buy" and scan["signal"] == 1:
+            if scan and action == "buy" and scan.get("signal") == 1:
                 open_position(ex, scan)
             elif action == "sell" and sym in state.positions:
                 close_position(ex, sym, f"Webhook:{action}")
@@ -2129,6 +2130,7 @@ def on_connect(auth=None):
         snap["user_role"] = u.get("role", "user") if u else "user"
     except Exception:
         snap["user_role"] = "user"
+    snap["llm"] = _get_llm_header_status()
     emit("update", snap)
     log.info(f"📱 Client verbunden: {username}")
 
@@ -2161,6 +2163,7 @@ def on_request_state():
         emit("auth_error", {"msg": "Nicht authentifiziert"})
         return
     snap = build_ws_state_snapshot(uid=uid, state=state, db=db)
+    snap["llm"] = _get_llm_header_status()
     emit("update", snap)
 
 
@@ -2345,7 +2348,8 @@ def on_pause_bot():
 
 
 @socketio.on("update_config")
-def on_update_config(data):
+def on_update_config(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if not _ws_rate_check("update_config", min_interval=2.0):
@@ -2456,6 +2460,7 @@ def on_update_config(data):
         "gateio",
     }
     updated: dict[str, Any] = {}
+    live_blocked = False
     for k, v in data.items():
         if k not in allowed:
             continue
@@ -2464,6 +2469,7 @@ def on_update_config(data):
             if not desired_paper and not safe_bool(
                 os.getenv("LIVE_TRADING_ENABLED", "false"), False
             ):
+                live_blocked = True
                 continue
             CONFIG[k] = desired_paper
             trade_mode.set_mode("paper" if desired_paper else "live")
@@ -2519,7 +2525,17 @@ def on_update_config(data):
     except Exception as e:
         persist_failed = True
         log.warning(f"update_config persist failed: {e}")
-    if not updated:
+    if live_blocked:
+        emit(
+            "status",
+            {
+                "msg": "⛔ Live-Trading serverseitig deaktiviert – "
+                "setze LIVE_TRADING_ENABLED=true in .env und starte neu",
+                "key": "ws_live_blocked",
+                "type": "error",
+            },
+        )
+    if not updated and not live_blocked:
         emit(
             "status",
             {
@@ -2550,7 +2566,8 @@ def on_update_config(data):
 
 
 @socketio.on("save_api_keys")
-def on_save_keys(data):
+def on_save_keys(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
@@ -2574,7 +2591,8 @@ def on_save_keys(data):
 
 
 @socketio.on("update_discord")
-def on_update_discord(data):
+def on_update_discord(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if data.get("webhook"):
@@ -2601,12 +2619,36 @@ def on_update_discord(data):
     )
 
 
+def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
+    """Run an AI background job and broadcast a completion / error status."""
+    try:
+        target()
+        emit_event(
+            "status",
+            {"msg": done_msg, "key": done_key, "type": "success"},
+        )
+    except Exception as e:
+        log.warning(f"{name} failed: {e}")
+        emit_event(
+            "status",
+            {
+                "msg": f"❌ {name} fehlgeschlagen: {e}",
+                "key": f"{done_key}_failed",
+                "type": "error",
+            },
+        )
+
+
 @socketio.on("force_train")
 def on_force_train():
     if not _ws_admin_required():
         return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
-    threading.Thread(target=ai_engine._train, daemon=True).start()
+    threading.Thread(
+        target=_run_ai_job,
+        args=(ai_engine._train, "KI-Training", "ws_ai_training_done", "✅ KI-Training fertig"),
+        daemon=True,
+    ).start()
 
 
 @socketio.on("force_optimize")
@@ -2614,7 +2656,16 @@ def on_force_optimize():
     if not _ws_admin_required():
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
-    threading.Thread(target=ai_engine._optimize, daemon=True).start()
+    threading.Thread(
+        target=_run_ai_job,
+        args=(
+            ai_engine._optimize,
+            "Optimierung",
+            "ws_ai_optimizing_done",
+            "✅ Optimierung fertig",
+        ),
+        daemon=True,
+    ).start()
 
 
 @socketio.on("force_genetic")
@@ -2625,8 +2676,16 @@ def on_force_genetic():
         "status",
         {"msg": "🧬 Genetischer Optimizer gestartet...", "key": "ws_ai_genetic", "type": "info"},
     )
+    trades = list(state.closed_trades)
     threading.Thread(
-        target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
+        target=_run_ai_job,
+        args=(
+            lambda: genetic.evolve(trades),
+            "Genetischer Optimizer",
+            "ws_ai_genetic_done",
+            "✅ Genetischer Optimizer fertig",
+        ),
+        daemon=True,
     ).start()
 
 
@@ -2652,7 +2711,8 @@ def on_reset_ai():
 
 
 @socketio.on("close_position")
-def on_close_position(data):
+def on_close_position(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     if not _ws_rate_check("close_position", min_interval=2.0):
@@ -2705,7 +2765,8 @@ def on_close_position(data):
 
 
 @socketio.on("run_backtest")
-def on_run_backtest(data):
+def on_run_backtest(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
 
@@ -2740,7 +2801,8 @@ def on_run_backtest(data):
 
 
 @socketio.on("add_price_alert")
-def on_add_alert(data):
+def on_add_alert(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     uid = session.get("user_id")
@@ -2765,7 +2827,8 @@ def on_add_alert(data):
 
 
 @socketio.on("delete_price_alert")
-def on_delete_alert(data):
+def on_delete_alert(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     uid = session.get("user_id")
@@ -2858,7 +2921,8 @@ def on_update_dominance():
 
 
 @socketio.on("admin_create_user")
-def on_admin_create_user(data):
+def on_admin_create_user(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     is_valid, payload, error_key, error_message = validate_admin_user_payload(data or {})
@@ -3019,7 +3083,8 @@ def ws_create_grid(data):
 
 # ── Undo Close ────────────────────────────────────────────────────────────────
 @socketio.on("undo_close")
-def on_undo_close(data):
+def on_undo_close(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     sym = data.get("symbol", "")
@@ -3147,7 +3212,8 @@ def on_rollback_update():
 
 # ── Multi-Exchange Handler ──────────────────────────────────────────────────────
 @socketio.on("start_exchange")
-def on_start_exchange(data):
+def on_start_exchange(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3173,7 +3239,8 @@ def on_start_exchange(data):
 
 
 @socketio.on("stop_exchange")
-def on_stop_exchange(data):
+def on_stop_exchange(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3196,7 +3263,8 @@ def on_stop_exchange(data):
 
 
 @socketio.on("save_exchange_keys")
-def on_save_exchange_keys(data):
+def on_save_exchange_keys(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3254,7 +3322,8 @@ def on_save_exchange_keys(data):
 
 
 @socketio.on("close_exchange_position")
-def on_close_exchange_position(data):
+def on_close_exchange_position(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if not _ws_rate_check("close_exchange_position", min_interval=2.0):
@@ -3379,6 +3448,41 @@ def _derive_llm_provider_name(endpoint: str) -> str:
     return "Custom"
 
 
+def _get_llm_header_status() -> dict[str, Any]:
+    """Günstige LLM-Status-Ermittlung für den Header-Chip (keine Netzwerk-Calls)."""
+    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
+    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
+    out: dict[str, Any] = {
+        "endpoint": llm_endpoint or "—",
+        "model": llm_model,
+        "provider": "—",
+        "status": "⚪ Nicht konfiguriert",
+    }
+    if llm_endpoint:
+        out["provider"] = _derive_llm_provider_name(llm_endpoint)
+        out["status"] = "✅ Konfiguriert"
+    try:
+        multi_llm = getattr(knowledge_base, "_multi_llm", None)
+        if multi_llm:
+            provider_stats = multi_llm.status()
+            if provider_stats:
+                active_ok = [p for p in provider_stats if p.get("available")]
+                if not llm_endpoint:
+                    out["endpoint"] = "multi-provider"
+                if out["model"] in ("", "—"):
+                    out["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
+                primary = (active_ok or provider_stats)[0]
+                out["provider"] = str(primary.get("name", "—")).title()
+                out["status"] = (
+                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
+                    if active_ok
+                    else "❌ Alle Provider offline"
+                )
+    except Exception as e:
+        log.debug("LLM header status failed: %s", e)
+    return out
+
+
 def _collect_system_analytics() -> dict[str, Any]:
     """Collect system analytics data (shared by WS and HTTP)."""
     import platform
@@ -3471,9 +3575,7 @@ def _collect_system_analytics() -> dict[str, Any]:
             if provider_stats:
                 total_reqs = sum(int(p.get("requests", 0) or 0) for p in provider_stats)
                 total_tokens = sum(int(p.get("tokens", 0) or 0) for p in provider_stats)
-                active_ok = [
-                    p for p in provider_stats if str(p.get("status", "")).lower() == "healthy"
-                ]
+                active_ok = [p for p in provider_stats if p.get("available")]
                 if not llm_endpoint:
                     data["llm"]["endpoint"] = "multi-provider"
                 if data["llm"]["model"] in ("", "—"):

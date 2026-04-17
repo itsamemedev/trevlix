@@ -237,13 +237,16 @@ class MultiLLMProvider:
             for provider in self._providers:
                 name = provider["name"]
                 health = self._health.get(name, {})
+                available = bool(health.get("available", False))
                 result.append(
                     {
                         "name": name,
                         "model": provider["model"],
-                        "available": health.get("available", False),
+                        "available": available,
+                        "status": "healthy" if available else "offline",
                         "supports_tools": provider["supports_tools"],
                         "requests": health.get("requests", 0),
+                        "tokens": int(health.get("tokens", 0) or 0),
                         "errors": health.get("errors", 0),
                         "cooldown_until": health.get("cooldown_until", 0.0),
                         "last_error": health.get("last_error", ""),
