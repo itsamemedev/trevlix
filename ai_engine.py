@@ -246,8 +246,8 @@ class AIEngine:
                     self._pending_predictions[symbol] = (
                         float(proba[win_idx]) if 0 <= win_idx < len(proba) else 0.5
                     )
-                except Exception:
-                    pass
+                except Exception as exc:
+                    log.debug("AI predict_proba failed for %s: %s", symbol, exc)
 
     def register_trade_close(self, symbol: str, pnl: float, votes: dict):
         """
@@ -748,8 +748,8 @@ class AIEngine:
                             }
                         )
                 importances.sort(key=lambda x: x["importance"], reverse=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Feature importance extraction failed: %s", exc)
 
         # Strategie-Gewichte mit Win-Rates
         weights = []

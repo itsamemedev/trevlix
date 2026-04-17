@@ -196,8 +196,10 @@ function renderHeaderStatus(d){
   _setChip('chipExchange', exCls, exName);
   const dot = document.getElementById('chipExchangeDot');
   if(dot) dot.setAttribute('data-state', exCls.replace('chip--',''));
-  // LLM
-  const llm = d.llm || {};
+  // LLM — merge incoming snapshot with cached status so broadcasts without
+  // llm-field don't revert the chip to "nicht konfiguriert".
+  if(d.llm && typeof d.llm === 'object'){ window._lastLlmStatus = d.llm; }
+  const llm = d.llm || window._lastLlmStatus || {};
   const provider = llm.provider && llm.provider !== '—' ? llm.provider : null;
   let llmCls = 'chip--muted', llmVal = 'nicht konfiguriert';
   let llmTitle = 'Kein LLM-Provider konfiguriert. Setze GROQ_API_KEY, '

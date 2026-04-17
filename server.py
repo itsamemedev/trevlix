@@ -950,6 +950,7 @@ def api_state():
     snap = state.snapshot()
     # user_role aus Session oder JWT für Frontend Role-UI
     snap["user_role"] = session.get("user_role", "user")
+    snap["llm"] = _get_llm_header_status()
     return jsonify(snap)
 
 
@@ -2129,6 +2130,7 @@ def on_connect(auth=None):
         snap["user_role"] = u.get("role", "user") if u else "user"
     except Exception:
         snap["user_role"] = "user"
+    snap["llm"] = _get_llm_header_status()
     emit("update", snap)
     log.info(f"📱 Client verbunden: {username}")
 
@@ -2161,6 +2163,7 @@ def on_request_state():
         emit("auth_error", {"msg": "Nicht authentifiziert"})
         return
     snap = build_ws_state_snapshot(uid=uid, state=state, db=db)
+    snap["llm"] = _get_llm_header_status()
     emit("update", snap)
 
 
@@ -3432,6 +3435,41 @@ def _derive_llm_provider_name(endpoint: str) -> str:
     return "Custom"
 
 
+def _get_llm_header_status() -> dict[str, Any]:
+    """Günstige LLM-Status-Ermittlung für den Header-Chip (keine Netzwerk-Calls)."""
+    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
+    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
+    out: dict[str, Any] = {
+        "endpoint": llm_endpoint or "—",
+        "model": llm_model,
+        "provider": "—",
+        "status": "⚪ Nicht konfiguriert",
+    }
+    if llm_endpoint:
+        out["provider"] = _derive_llm_provider_name(llm_endpoint)
+        out["status"] = "✅ Konfiguriert"
+    try:
+        multi_llm = getattr(knowledge_base, "_multi_llm", None)
+        if multi_llm:
+            provider_stats = multi_llm.status()
+            if provider_stats:
+                active_ok = [p for p in provider_stats if p.get("available")]
+                if not llm_endpoint:
+                    out["endpoint"] = "multi-provider"
+                if out["model"] in ("", "—"):
+                    out["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
+                primary = (active_ok or provider_stats)[0]
+                out["provider"] = str(primary.get("name", "—")).title()
+                out["status"] = (
+                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
+                    if active_ok
+                    else "❌ Alle Provider offline"
+                )
+    except Exception as e:
+        log.debug("LLM header status failed: %s", e)
+    return out
+
+
 def _collect_system_analytics() -> dict[str, Any]:
     """Collect system analytics data (shared by WS and HTTP)."""
     import platform
@@ -3524,9 +3562,7 @@ def _collect_system_analytics() -> dict[str, Any]:
             if provider_stats:
                 total_reqs = sum(int(p.get("requests", 0) or 0) for p in provider_stats)
                 total_tokens = sum(int(p.get("tokens", 0) or 0) for p in provider_stats)
-                active_ok = [
-                    p for p in provider_stats if str(p.get("status", "")).lower() == "healthy"
-                ]
+                active_ok = [p for p in provider_stats if p.get("available")]
                 if not llm_endpoint:
                     data["llm"]["endpoint"] = "multi-provider"
                 if data["llm"]["model"] in ("", "—"):
