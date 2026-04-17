@@ -176,10 +176,11 @@ async function _refreshInstalledKeys(){
     _installedKeysCount = list.filter(x => (x && (x.api_key || x.enabled))).length;
   }catch(_e){}
 }
-function _setChip(id, cls, value){
+function _setChip(id, cls, value, title){
   const el = document.getElementById(id);
   if(!el) return;
   el.className = 'chip '+cls;
+  if(title !== undefined) el.title = title;
   const v = document.getElementById(id+'Val');
   if(v && value !== undefined) v.textContent = value;
 }
@@ -199,14 +200,17 @@ function renderHeaderStatus(d){
   const llm = d.llm || {};
   const provider = llm.provider && llm.provider !== '—' ? llm.provider : null;
   let llmCls = 'chip--muted', llmVal = 'nicht konfiguriert';
+  let llmTitle = 'Kein LLM-Provider konfiguriert. Setze GROQ_API_KEY, '
+    + 'CEREBRAS_API_KEY, OPENROUTER_API_KEY oder HF_API_KEY in .env '
+    + '(optional – nur für Virginie-Chat und News-Analyse nötig)';
   if(provider){
     llmVal = provider;
     const st = String(llm.status||'');
-    if(st.indexOf('✅')>=0) llmCls='chip--ok';
-    else if(st.indexOf('❌')>=0) llmCls='chip--err';
-    else llmCls='chip--warn';
+    if(st.indexOf('✅')>=0){ llmCls='chip--ok'; llmTitle='LLM aktiv: '+provider; }
+    else if(st.indexOf('❌')>=0){ llmCls='chip--err'; llmTitle='LLM-Verbindung fehlgeschlagen: '+provider; }
+    else{ llmCls='chip--warn'; llmTitle='LLM konfiguriert: '+provider; }
   }
-  _setChip('chipLlm', llmCls, llmVal);
+  _setChip('chipLlm', llmCls, llmVal, llmTitle);
   // API-Keys installiert
   if(_installedKeysCount === null){
     _setChip('chipKeys', 'chip--muted', '…');
@@ -223,10 +227,21 @@ function renderHeaderStatus(d){
   if(tAlgo.configured){
     const aBuy = tAlgo.buy_win_rate||0;
     const aTotal = tAlgo.total_trades||0;
-    const aLbl = aTotal>0 ? 'Aktiv ('+aBuy.toFixed(0)+'% WR)' : 'Konfiguriert';
-    _setChip('chipAlgo', aTotal>0?'chip--ok':'chip--warn', aLbl);
+    if(aTotal>0){
+      _setChip('chipAlgo', 'chip--ok', 'Aktiv ('+aBuy.toFixed(0)+'% WR)',
+        'Trading-Algorithmen aktiv – '+aTotal+' Trades, Win-Rate '+aBuy.toFixed(1)+'%');
+    }else if(d.running){
+      _setChip('chipAlgo', 'chip--warn', 'Läuft – wartet auf Signal',
+        'Bot läuft, aber es gab noch keine Trades. '
+        + 'Die Algorithmen scannen die Märkte auf Einstiegssignale.');
+    }else{
+      _setChip('chipAlgo', 'chip--warn', 'Bereit – Bot stoppen/starten',
+        'Algorithmen konfiguriert, aber der Bot ist gestoppt. '
+        + 'Klicke ▶ Start um Trading aufzunehmen.');
+    }
   }else{
-    _setChip('chipAlgo', 'chip--muted', 'nicht konfiguriert');
+    _setChip('chipAlgo', 'chip--muted', 'nicht konfiguriert',
+      'Trading-Algorithmen nicht geladen. Prüfe services/strategies.py');
   }
 }
 // Initial beim Laden holen, dann alle 60s aktualisieren
