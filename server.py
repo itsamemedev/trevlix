@@ -1566,7 +1566,7 @@ def api_signal():
         try:
             ex = create_exchange()
             scan = scan_symbol(ex, sym)
-            if scan and action == "buy" and scan["signal"] == 1:
+            if scan and action == "buy" and scan.get("signal") == 1:
                 open_position(ex, scan)
             elif action == "sell" and sym in state.positions:
                 close_position(ex, sym, f"Webhook:{action}")
@@ -2348,7 +2348,8 @@ def on_pause_bot():
 
 
 @socketio.on("update_config")
-def on_update_config(data):
+def on_update_config(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if not _ws_rate_check("update_config", min_interval=2.0):
@@ -2565,7 +2566,8 @@ def on_update_config(data):
 
 
 @socketio.on("save_api_keys")
-def on_save_keys(data):
+def on_save_keys(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
@@ -2589,7 +2591,8 @@ def on_save_keys(data):
 
 
 @socketio.on("update_discord")
-def on_update_discord(data):
+def on_update_discord(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if data.get("webhook"):
@@ -2620,13 +2623,13 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
     """Run an AI background job and broadcast a completion / error status."""
     try:
         target()
-        socketio.emit(
+        emit_event(
             "status",
             {"msg": done_msg, "key": done_key, "type": "success"},
         )
     except Exception as e:
         log.warning(f"{name} failed: {e}")
-        socketio.emit(
+        emit_event(
             "status",
             {
                 "msg": f"❌ {name} fehlgeschlagen: {e}",
@@ -2708,7 +2711,8 @@ def on_reset_ai():
 
 
 @socketio.on("close_position")
-def on_close_position(data):
+def on_close_position(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     if not _ws_rate_check("close_position", min_interval=2.0):
@@ -2761,7 +2765,8 @@ def on_close_position(data):
 
 
 @socketio.on("run_backtest")
-def on_run_backtest(data):
+def on_run_backtest(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
 
@@ -2796,7 +2801,8 @@ def on_run_backtest(data):
 
 
 @socketio.on("add_price_alert")
-def on_add_alert(data):
+def on_add_alert(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     uid = session.get("user_id")
@@ -2821,7 +2827,8 @@ def on_add_alert(data):
 
 
 @socketio.on("delete_price_alert")
-def on_delete_alert(data):
+def on_delete_alert(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     uid = session.get("user_id")
@@ -2914,7 +2921,8 @@ def on_update_dominance():
 
 
 @socketio.on("admin_create_user")
-def on_admin_create_user(data):
+def on_admin_create_user(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     is_valid, payload, error_key, error_message = validate_admin_user_payload(data or {})
@@ -3075,7 +3083,8 @@ def ws_create_grid(data):
 
 # ── Undo Close ────────────────────────────────────────────────────────────────
 @socketio.on("undo_close")
-def on_undo_close(data):
+def on_undo_close(data: dict | None = None):
+    data = data or {}
     if not _ws_auth_required():
         return
     sym = data.get("symbol", "")
@@ -3203,7 +3212,8 @@ def on_rollback_update():
 
 # ── Multi-Exchange Handler ──────────────────────────────────────────────────────
 @socketio.on("start_exchange")
-def on_start_exchange(data):
+def on_start_exchange(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3229,7 +3239,8 @@ def on_start_exchange(data):
 
 
 @socketio.on("stop_exchange")
-def on_stop_exchange(data):
+def on_stop_exchange(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3252,7 +3263,8 @@ def on_stop_exchange(data):
 
 
 @socketio.on("save_exchange_keys")
-def on_save_exchange_keys(data):
+def on_save_exchange_keys(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
@@ -3310,7 +3322,8 @@ def on_save_exchange_keys(data):
 
 
 @socketio.on("close_exchange_position")
-def on_close_exchange_position(data):
+def on_close_exchange_position(data: dict | None = None):
+    data = data or {}
     if not _ws_admin_required():
         return
     if not _ws_rate_check("close_exchange_position", min_interval=2.0):
