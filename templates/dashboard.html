@@ -613,7 +613,7 @@
       <div id="apiTokenBox" style="display:none;background:var(--bg3);border:1px solid var(--line2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:11px;word-break:break-all;color:var(--green);margin-top:4px">—</div>
       <button onclick="window.open('/api/v1/docs','_blank')" style="width:100%;padding:10px;border-radius:9px;background:var(--bg3);border:1px solid var(--line);color:var(--cyan);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;margin-top:8px"><span data-i18n="btn_api_docs">📚 API-Dokumentation</span></button>
     </div>
-    <div class="s-section"><div class="s-section-title">💾 Backup</div>
+    <div class="s-section admin-only"><div class="s-section-title">💾 Backup</div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="auto_backup">Auto-Backup tägl. 03:00</span></div></div><label class="toggle"><input type="checkbox" id="sBackup" checked><span class="tslider"></span></label></div>
       <button class="btn btn-teal" style="padding:10px;font-size:11px;width:100%;margin-top:8px" onclick="manualBackup()"><span data-i18n="btn_manual_backup">💾 Jetzt Backup erstellen</span></button>
     </div>
@@ -678,12 +678,12 @@
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:8px">
         <button class="btn btn-info"   style="padding:11px;font-size:12px" onclick="checkUpdate()"><span data-i18n="btn_check_update">🔍 Auf Updates prüfen</span></button>
-        <button class="btn btn-teal"   style="padding:11px;font-size:12px" id="btnApplyUpdate" onclick="applyUpdate()" disabled><span data-i18n="btn_apply_update">⬆ Update installieren</span></button>
+        <button class="btn btn-teal admin-only"   style="padding:11px;font-size:12px" id="btnApplyUpdate" onclick="applyUpdate()" disabled><span data-i18n="btn_apply_update">⬆ Update installieren</span></button>
       </div>
-      <button class="btn btn-red" style="padding:9px;font-size:11px;width:100%" onclick="rollbackUpdate()"><span data-i18n="btn_rollback">↩ Rollback (.bak wiederherstellen)</span></button>
+      <button class="btn btn-red admin-only" style="padding:9px;font-size:11px;width:100%" onclick="rollbackUpdate()"><span data-i18n="btn_rollback">↩ Rollback (.bak wiederherstellen)</span></button>
       <div id="updateChangelog" style="display:none;margin-top:10px;background:var(--bg2);border-radius:8px;padding:12px;font-size:11px;font-family:var(--mono);color:var(--sub);max-height:120px;overflow-y:auto;white-space:pre-wrap"></div>
     </div>
-<button class="save-btn" onclick="saveSettings()"><span data-i18n="settings_title">💾 Alle Einstellungen speichern</span></button>
+<button class="save-btn admin-only" onclick="saveSettings()"><span data-i18n="settings_title">💾 Alle Einstellungen speichern</span></button>
     <button onclick="showWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;margin-top:8px"><span data-i18n="btn_wizard">🧙 Einrichtungs-Assistent</span></button>
   </div></div>
 </div>

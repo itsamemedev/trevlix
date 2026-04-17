@@ -1,5 +1,70 @@
 # Tasks
 
+## Session: restore-full-functionality-Oc9Q3 (2026-04-17)
+
+### Scope
+
+User-Report: "Etliche Funktionen im Dashboard funktionieren nicht, z.B.
+Einstellen des Live/Paper-Modus." + Screenshot mit überladenem Header,
+doppeltem ADMIN-Badge, "nicht konfiguriert"-Chip.
+
+### Phase 1: Paper/Live-Toggle & AI-Job-Feedback ✅
+
+- [x] `server.py:on_update_config`: Live-Modus-Blockade emittiert jetzt
+      klare Fehlermeldung (`ws_live_blocked`) statt stillem `continue`.
+- [x] `dashboard.js:updateUI`: Admin-Toggles werden 1,2 s nach
+      User-Interaktion nicht mehr aus Broadcast-Snapshot überschrieben
+      (`data-touchedAt`-Guard in `_chk()`).
+- [x] `dashboard.js:togglePaperMode` + `toggleRegistration`: markieren
+      Toggles via `_markTouched()` vor dem Emit.
+- [x] `server.py:force_train/force_optimize/force_genetic`: Thread-Targets
+      in `_run_ai_job`-Wrapper gepackt, der Completion- und Error-Status
+      emittiert.
+
+Commit: `4ce3098`
+
+### Phase 2: Header-Überladung & Status-Chip-Tooltips ✅
+
+- [x] Doppel-ADMIN-Badge: `body.is-admin .h-title::after`
+      Pseudo-Element entfernt. `#roleBadge` bleibt einzige Rollen-
+      Anzeige.
+- [x] Mobile-Header: `lang-switcher` bricht auf `flex-basis:100%`, Push/
+      Theme-Buttons unter 480px ausgeblendet.
+- [x] `chipLlm`-Tooltip: erklärt nötige .env-Keys (GROQ/CEREBRAS/
+      OPENROUTER/HF) und dass LLM optional ist.
+- [x] `chipAlgo`: drei klare Zustände statt nur "Konfiguriert":
+      `Aktiv (X% WR)` / `Läuft – wartet auf Signal` / `Bereit – Bot
+      starten`.
+- [x] `_setChip`-Helper akzeptiert `title`-Tooltip-Parameter.
+
+Commit: `f411b12`
+
+### Phase 3: Admin-only-Buttons in Shared-Sektionen ✅
+
+Problem: `sec-settings` ist für alle User sichtbar, enthält aber Buttons
+(`manualBackup`, `saveSettings`, `applyUpdate`, `rollbackUpdate`), die
+serverseitig Admin erfordern. Non-Admins sehen Buttons, klicken,
+bekommen nur "Nur Admin"-Toast ⇒ schlechte UX.
+
+- [x] `templates/dashboard.html`: Backup-Sektion (`s-section`),
+      `saveSettings`, `applyUpdate` und `rollbackUpdate` mit
+      `admin-only`-Klasse markiert. `checkUpdate` bleibt sichtbar
+      (Auth-only, kein Admin-Gate).
+- [x] Tests + Lint + Format grün (501 passed, 1 skipped).
+- [x] Commit + Push.
+
+### Weiterhin offen (aus `TODO.md`)
+
+- [ ] REST-Routen in Blueprints aufteilen (~129 Routen, zu groß für eine
+      Session — Refactor-Session mit expliziter Freigabe nötig).
+- [ ] WebSocket-Handler schrittweise nach `routes/websocket.py` migrieren
+      (36 `@socketio.on(...)`-Handler — inkrementelle Migration, Skelett
+      mit `register_handlers()` existiert bereits).
+- [ ] Pydantic Request-/Response-Schemas (`models/schemas.py`) — gekoppelt
+      an Blueprint-Aufteilung.
+
+---
+
 ## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
 
 ### Zweite Bug-Welle
