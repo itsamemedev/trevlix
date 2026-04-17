@@ -2456,6 +2456,7 @@ def on_update_config(data):
         "gateio",
     }
     updated: dict[str, Any] = {}
+    live_blocked = False
     for k, v in data.items():
         if k not in allowed:
             continue
@@ -2464,6 +2465,7 @@ def on_update_config(data):
             if not desired_paper and not safe_bool(
                 os.getenv("LIVE_TRADING_ENABLED", "false"), False
             ):
+                live_blocked = True
                 continue
             CONFIG[k] = desired_paper
             trade_mode.set_mode("paper" if desired_paper else "live")
@@ -2519,7 +2521,17 @@ def on_update_config(data):
     except Exception as e:
         persist_failed = True
         log.warning(f"update_config persist failed: {e}")
-    if not updated:
+    if live_blocked:
+        emit(
+            "status",
+            {
+                "msg": "⛔ Live-Trading serverseitig deaktiviert – "
+                "setze LIVE_TRADING_ENABLED=true in .env und starte neu",
+                "key": "ws_live_blocked",
+                "type": "error",
+            },
+        )
+    if not updated and not live_blocked:
         emit(
             "status",
             {
@@ -2601,12 +2613,36 @@ def on_update_discord(data):
     )
 
 
+def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
+    """Run an AI background job and broadcast a completion / error status."""
+    try:
+        target()
+        socketio.emit(
+            "status",
+            {"msg": done_msg, "key": done_key, "type": "success"},
+        )
+    except Exception as e:
+        log.warning(f"{name} failed: {e}")
+        socketio.emit(
+            "status",
+            {
+                "msg": f"❌ {name} fehlgeschlagen: {e}",
+                "key": f"{done_key}_failed",
+                "type": "error",
+            },
+        )
+
+
 @socketio.on("force_train")
 def on_force_train():
     if not _ws_admin_required():
         return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
-    threading.Thread(target=ai_engine._train, daemon=True).start()
+    threading.Thread(
+        target=_run_ai_job,
+        args=(ai_engine._train, "KI-Training", "ws_ai_training_done", "✅ KI-Training fertig"),
+        daemon=True,
+    ).start()
 
 
 @socketio.on("force_optimize")
@@ -2614,7 +2650,16 @@ def on_force_optimize():
     if not _ws_admin_required():
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
-    threading.Thread(target=ai_engine._optimize, daemon=True).start()
+    threading.Thread(
+        target=_run_ai_job,
+        args=(
+            ai_engine._optimize,
+            "Optimierung",
+            "ws_ai_optimizing_done",
+            "✅ Optimierung fertig",
+        ),
+        daemon=True,
+    ).start()
 
 
 @socketio.on("force_genetic")
@@ -2625,8 +2670,16 @@ def on_force_genetic():
         "status",
         {"msg": "🧬 Genetischer Optimizer gestartet...", "key": "ws_ai_genetic", "type": "info"},
     )
+    trades = list(state.closed_trades)
     threading.Thread(
-        target=lambda trades=list(state.closed_trades): genetic.evolve(trades), daemon=True
+        target=_run_ai_job,
+        args=(
+            lambda: genetic.evolve(trades),
+            "Genetischer Optimizer",
+            "ws_ai_genetic_done",
+            "✅ Genetischer Optimizer fertig",
+        ),
+        daemon=True,
     ).start()
 
 

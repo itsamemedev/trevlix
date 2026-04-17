@@ -329,8 +329,16 @@ function updateUI(d){
   }
   // ARB stat
   _s('sArb', (d.arb_log||[]).length);
-  // Sync admin/settings toggles with current server state
-  const _chk=(id,val)=>{const el=document.getElementById(id); if(el&&typeof val!=='undefined') el.checked=!!val;};
+  // Sync admin/settings toggles with current server state.
+  // Skip resync for ~1.2s after the user interacted with a toggle so the
+  // broadcasted snapshot doesn't visually revert a click whose ack is in flight.
+  const _chk=(id,val)=>{
+    const el=document.getElementById(id);
+    if(!el||typeof val==='undefined') return;
+    const touched=Number(el.dataset.touchedAt||0);
+    if(touched && Date.now()-touched < 1200) return;
+    el.checked=!!val;
+  };
   _chk('allowReg', d.allow_registration);
   _chk('paperMode', d.paper_trading);
   _chk('sPaper', d.paper_trading);
@@ -2405,12 +2413,20 @@ async function createUser() {
   setTimeout(loadUsers, 800);
 }
 
+function _markTouched(id){
+  const el=document.getElementById(id);
+  if(el) el.dataset.touchedAt=String(Date.now());
+}
+
 async function toggleRegistration(enabled) {
+  _markTouched('allowReg');
   if(_emitSafe('update_config', {allow_registration: enabled}))
     toast(enabled ? '✅ '+QI18n.t('msg_reg_enabled') : '🔒 '+QI18n.t('msg_reg_disabled'), 'info');
 }
 
 async function togglePaperMode(enabled) {
+  _markTouched('paperMode');
+  _markTouched('sPaper');
   if(_emitSafe('update_config', {paper_trading: enabled}))
     toast(enabled ? '📄 Paper Trading' : '⚠️ Live Trading', 'info');
 }
