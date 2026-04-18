@@ -1,5 +1,45 @@
 # Lessons Learned
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
+
+### Lektion 50: Observability-Wiring darf Bot-Startup niemals blockieren
+**Problem:** Beim Einfügen von Health-Check-Registrierung, Log-Filtern und
+HTTP-Middleware in `server.py` kann ein Fehler im Observability-Layer
+(fehlender Healer, vertippter Metric-Name, kaputter Flask-Hook) einen
+ansonsten gesunden Bootstrap-Pfad zerreißen. Trading-Bot würde nicht
+starten, nur weil `/metrics` einen Bug hätte.
+**Regel:** Observability-Wiring in `try/except Exception` kapseln und
+Fehler NUR loggen. Die Regel "never break the thing you observe" gilt
+auch für die Initialisierung, nicht nur zur Laufzeit. Auch innerhalb
+der Middleware-Hooks (`before_request`/`after_request`) sollen
+Metrik-Fehler defensiv abgefangen werden.
+**Code:** `server.py:3332-3355`, `app/core/observability_setup.py:124-136`
+
+### Lektion 51: Thundering-Herd-Protection via Per-Key-Producer-Lock
+**Problem:** Gemeinsamer Cache (z.B. für CoinGecko-Calls, LLM-Antworten)
+hat eine einzige "hot key"-Invalidation. Ohne Schutz rufen N gleichzeitige
+Requests den teuren Producer N-mal parallel auf, stauen das Upstream-API
+und verbrennen Rate-Limits.
+**Regel:** `get_or_set(key, producer)` hält einen _per-key_ `Lock` während
+des Producer-Calls. Zweiter Read-Check innerhalb des Locks verhindert
+doppelte Produktion, wenn der Nachfolger das Lock erhält nachdem der
+erste Producer schon geliefert hat. Ein einziges globales Lock würde
+alle Keys blockieren – ein Lock pro Key ist der Kompromiss zwischen
+Korrektheit und Parallelität.
+**Code:** `services/cache.py:TTLCache.get_or_set`
+
+### Lektion 52: Bounded Queues für Backpressure, nie "unendlich submiten"
+**Problem:** Ein `threading.Thread(target=heavy_job)` pro eingehendem
+Event frisst unter Last unbegrenzt Threads (→ OS-Limit, GIL-Contention,
+OOM-Risiko über Stack-Speicher). Eine unbounded `queue.Queue` schiebt
+das Problem nur in den Memory-Bereich.
+**Regel:** `TaskQueue` mit fixem `workers`-Cap UND `max_queue`-Cap.
+`submit()` liefert `None` wenn die Queue voll ist – der Aufrufer soll
+dann laut werden (Log, Metric, 503) statt still Arbeit zu verschlucken.
+**Code:** `services/task_queue.py`
+
+---
+
 ## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
 
 ### Lektion 48: Externe-Preise Division ohne Guard

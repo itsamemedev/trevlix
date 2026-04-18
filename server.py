@@ -3329,6 +3329,31 @@ app.register_blueprint(create_ai_blueprint(_api_deps))
 app.register_blueprint(create_system_blueprint(_api_deps))
 app.register_blueprint(create_market_blueprint(_api_deps))
 
+# ── Observability wiring (request-ID, metrics middleware, health checks) ──
+try:
+    from app.core.observability_setup import (
+        install_http_metrics_middleware,
+        register_default_health_checks,
+        register_default_metrics,
+    )
+    from services.request_context import (
+        install_flask_request_id,
+        install_log_filter,
+    )
+
+    install_log_filter(log)
+    install_flask_request_id(app)
+    register_default_metrics()
+    install_http_metrics_middleware(app)
+    register_default_health_checks(
+        db=db,
+        exchange_manager=None,
+        llm_provider=None,
+        healer=healer,
+    )
+except Exception as _obs_exc:  # noqa: BLE001 - observability must not block startup
+    log.warning("observability wiring failed: %s", _obs_exc)
+
 if __name__ == "__main__":
     run_server(
         startup_banner=startup_banner,

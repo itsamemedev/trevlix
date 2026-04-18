@@ -1,5 +1,57 @@
 # Tasks
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
+
+### Scope
+
+User-Auftrag: "Verbessere und optimiere das gesamte Projekt. Prüfe zusätzlich
+auf Fehler/Probleme/Bugs und behebe diese. Ebenfalls muss die todo.md
+vollständig abgearbeitet werden. Weitere Module zur Verbesserung sind
+erwünscht."
+
+Aufgreifen der in Round 1 als "Weiterhin offen" markierten Punkte sowie
+zusätzliche Module für Observability & Runtime-Qualität.
+
+### Module-Plan (Round 2)
+
+- [x] `services/feature_flags.py` – Runtime-Feature-Toggle-Store (Env-Prefix,
+      User-Scope, Snapshot).
+- [x] `services/cache.py` – Einheitlicher TTL+LRU-Cache (Thundering-Herd-Schutz
+      via Per-Key-Producer-Lock, Stats).
+- [x] `services/request_context.py` – Thread-local Request-IDs + `logging.Filter`
+      + Flask-Hooks (`X-Request-ID` Header-Echo).
+- [x] `services/task_queue.py` – Bounded Thread-Pool mit
+      Queue-Backpressure, optionaler `RetryPolicy`-Integration.
+- [x] `app/core/observability_setup.py` – Registriert Default-Health-Checks,
+      Baseline-Metriken, HTTP-Middleware (`trevlix_http_requests_total`
+      mit `endpoint/status` Labels + Latency-Histogramm).
+- [x] Health-Endpoints: `/api/v1/health/live` (Liveness, no-deps)
+      und `/api/v1/health/ready` (nutzt `health_check`-Registry, 503 bei
+      UNHEALTHY).
+- [x] Wiring in `server.py`: `install_log_filter`,
+      `install_flask_request_id`, `register_default_metrics`,
+      `install_http_metrics_middleware`, `register_default_health_checks`.
+- [x] 4 neue Test-Dateien (60 neue Tests, thread-safety + edge cases).
+
+### Verifizierung
+
+- 593 Tests bestanden (+60 neue vs. Round 1), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen Dateien.
+- `ruff format --check` clean auf allen neuen Dateien.
+- Pre-existierende `server.py`-Lint-Fehler nicht im Scope dieser Session.
+
+### Weiterhin offen
+
+- REST-Routen in Blueprints aufteilen (~129 Routen) – bleibt als
+  Refactor-Session mit expliziter Freigabe.
+- WebSocket-Handler-Migration nach `routes/websocket.py` (inkrementell).
+- Pydantic Request-/Response-Schemas – gekoppelt an Blueprint-Aufteilung.
+- Alternative Cache-Migration (`market_data.py`, `cryptopanic.py`,
+  `knowledge.py` auf `services.cache.TTLCache` umstellen) – bewusst
+  nicht in dieser Session, um Hot-Paths nicht zu berühren.
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18)
 
 ### Scope
