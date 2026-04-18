@@ -2444,8 +2444,16 @@ async function toggleRegistration(enabled) {
 async function togglePaperMode(enabled) {
   _markTouched('paperMode');
   _markTouched('sPaper');
-  if(_emitSafe('update_config', {paper_trading: enabled}))
+  try {
+    const r = await fetch('/api/v1/trading/mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (_jwtToken || '')},
+      body: JSON.stringify({mode: enabled ? 'paper' : 'live'})
+    });
+    const d = await r.json();
+    if (!r.ok) { toast('❌ ' + (d.error || 'Fehler'), 'error'); return; }
     toast(enabled ? '📄 Paper Trading' : '⚠️ Live Trading', 'info');
+  } catch (e) { toast('❌ Netzwerkfehler', 'error'); }
 }
 
 

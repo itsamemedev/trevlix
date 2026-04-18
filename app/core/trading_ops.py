@@ -381,12 +381,17 @@ def _seed_markets_from_cache_on_startup() -> None:
 def fetch_markets(ex) -> list[str]:
     try:
         markets = ex.load_markets()
-        quote = CONFIG.get("quote_currency", "USDT")
+        primary_quote = CONFIG.get("quote_currency", "USDT")
+        supported_quotes = set(CONFIG.get("supported_quote_currencies", [primary_quote]))
+        supported_quotes.add(primary_quote)
         bl = set(CONFIG.get("blacklist", []))
         syms = [
             s
             for s, m in markets.items()
-            if m.get("quote") == quote and m.get("active") and s not in bl and m.get("spot", True)
+            if m.get("quote") in supported_quotes
+            and m.get("active")
+            and s not in bl
+            and m.get("spot", True)
         ]
         if CONFIG.get("use_vol_filter"):
             try:

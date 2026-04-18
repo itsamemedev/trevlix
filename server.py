@@ -144,6 +144,7 @@ from app.core.trading_classes import (
     ShortEngine,
     init_trading_classes,
 )
+import app.core.trading_ops as _trading_ops_mod
 from app.core.trading_ops import (
     _preflight_exchange_markets,
     bot_loop,
@@ -944,884 +945,13 @@ def _pin_user_exchange(user_id: int | None, exchange_name: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API — JWT-gesichert
 # ═══════════════════════════════════════════════════════════════════════════════
-@app.route("/api/v1/state")
-@api_auth_required
-def api_state():
-    snap = state.snapshot()
-    # user_role aus Session oder JWT für Frontend Role-UI
-    snap["user_role"] = session.get("user_role", "user")
-    snap["llm"] = _get_llm_header_status()
-    return jsonify(snap)
 
 
-@app.route("/api/v1/trades")
-@api_auth_required
-def api_trades():
-    limit = min(safe_int(request.args.get("limit", 100), 100), 1000)
-    symbol = request.args.get("symbol")
-    year = request.args.get("year")
-    return jsonify(db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id))
-
-
-@app.route("/api/v1/heatmap")
-@api_auth_required
-def api_heatmap_v1():
-    try:
-        ex = create_exchange()
-        return jsonify(get_heatmap_data(ex))
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/backtest", methods=["POST"])
-@api_auth_required
-def api_backtest():
-    data = get_json_body()
-    try:
-        ex = create_exchange()
-        result = bt.run(
-            ex,
-            data.get("symbol", "BTC/USDT"),
-            data.get("timeframe", "1h"),
-            safe_int(data.get("candles", 500), 500),
-            safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
-            safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
-            safe_float(
-                data.get("vote", CONFIG.get("min_vote_score", 0.3)),
-                CONFIG.get("min_vote_score", 0.3),
-            ),
-        )
-        return jsonify(result)
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/tax")
-@api_auth_required
-def api_tax_v1():
-    year = safe_int(request.args.get("year", datetime.now().year), datetime.now().year)
-    method = request.args.get("method", "fifo")
-    trades = db.load_trades(limit=10000, year=year, user_id=request.user_id)
-    return jsonify(tax.generate(trades, year, method))
-
-
-@app.route("/api/v1/token", methods=["POST"])
-@api_auth_required
-def api_create_token():
-    label = get_json_body().get("label", "api")
-    token = db.create_api_token(request.user_id, label)
-    return jsonify({"token": token, "expires_hours": CONFIG["jwt_expiry_hours"]})
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# USER SETTINGS & EXCHANGE MANAGEMENT
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/v1/user/settings")
-@api_auth_required
-def api_user_settings_get():
-    """Gibt die User-Settings aus der DB zurück."""
-    settings = db.get_user_settings(request.user_id)
-    settings["paper_trading"] = CONFIG.get("paper_trading", True)
-    settings["trade_mode"] = "paper" if CONFIG.get("paper_trading", True) else "live"
-    return jsonify(settings)
-
-
-@app.route("/api/v1/user/settings", methods=["POST"])
-@api_auth_required
-def api_user_settings_update():
-    """Speichert User-Settings in der DB (kein .env nötig)."""
-    data = get_json_body()
-    # Erlaubte Settings für User (keine Admin-/System-Settings)
-    _ALLOWED_USER_SETTINGS = {
-        "paper_trading",
-        "paper_balance",
-        "risk_per_trade",
-        "stop_loss_pct",
-        "take_profit_pct",
-        "max_open_trades",
-        "scan_interval",
-        "timeframe",
-        "use_dca",
-        "dca_drop_pct",
-        "dca_max_levels",
-        "use_partial_tp",
-        "trailing_stop",
-        "trailing_pct",
-        "break_even_enabled",
-        "break_even_trigger",
-        "break_even_buffer",
-        "use_fear_greed",
-        "use_sentiment",
-        "use_news",
-        "use_anomaly",
-        "use_market_regime",
-        "ai_enabled",
-        "ai_min_confidence",
-        "virginie_enabled",
-        "virginie_primary_control",
-        "virginie_autonomy_weight",
-        "virginie_min_score",
-        "virginie_max_risk_penalty",
-        "virginie_cpu_fast_chat",
-        "discord_webhook",
-        "discord_on_buy",
-        "discord_on_sell",
-        "telegram_token",
-        "telegram_chat_id",
-        "portfolio_goal",
-        "language",
-        "max_daily_loss_pct",
-    }
-    filtered = {k: v for k, v in data.items() if k in _ALLOWED_USER_SETTINGS}
-    # Bestehende Settings laden und mergen
-    current = db.get_user_settings(request.user_id)
-    current.update(filtered)
-    if "paper_trading" in filtered:
-        mode = "paper" if safe_bool(filtered.get("paper_trading", True), True) else "live"
-        if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-            return jsonify(
-                {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
-            ), 403
-        trade_mode.set_mode(mode)
-        CONFIG["paper_trading"] = mode == "paper"
-    current["paper_trading"] = CONFIG.get("paper_trading", True)
-    ok = db.update_user_settings(request.user_id, current)
-    return jsonify({"ok": ok, "updated": list(filtered.keys())})
-
-
-@app.route("/api/v1/trading/mode", methods=["GET", "POST"])
-@api_auth_required
-def api_trading_mode():
-    if request.method == "GET":
-        return jsonify(trade_mode.status())
-    data = get_json_body()
-    mode = str(data.get("mode", "paper")).lower()
-    if mode == "live" and not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-        return jsonify(
-            {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
-        ), 403
-    new_mode = trade_mode.set_mode(mode)
-    CONFIG["paper_trading"] = new_mode != "live"
-    state.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
-    discord.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
-    telegram.info(f"Trading-Modus gewechselt: {new_mode.upper()}")
-    return jsonify(trade_mode.status())
-
-
-@app.route("/api/v1/trading/control", methods=["POST"])
-@api_auth_required
-def api_trading_control():
-    data = get_json_body()
-    action = str(data.get("action", "start")).lower()
-    if action == "start":
-        trade_mode.set_enabled(True)
-        with state._lock:
-            state.running = True
-            state.paused = False
-        if not any(t.name == "BotLoop" and t.is_alive() for t in threading.enumerate()):
-            threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-        return jsonify({"ok": True, "running": True})
-    if action == "stop":
-        trade_mode.set_enabled(False)
-        with state._lock:
-            state.running = False
-            state.paused = False
-        return jsonify({"ok": True, "running": False})
-    return jsonify({"error": "action must be start|stop"}), 400
-
-
-@app.route("/api/v1/trading/close-position", methods=["POST"])
-@api_auth_required
-def api_trading_close_position():
-    data = get_json_body()
-    sym = str(data.get("symbol", "")).strip().upper()
-    if not sym:
-        return jsonify({"error": "symbol required"}), 400
-    with state._lock:
-        in_long = sym in state.positions
-        in_short = sym in state.short_positions
-    if not in_long and not in_short:
-        return jsonify({"error": f"position not open: {sym}"}), 404
-    try:
-        if in_long:
-            ex = create_exchange()
-            close_position(ex, sym, "Manuell geschlossen 🖐")
-            return jsonify({"ok": True, "symbol": sym, "side": "long"})
-        short_engine.close_short(sym, "Manuell 🖐")
-        return jsonify({"ok": True, "symbol": sym, "side": "short"})
-    except Exception as e:
-        log.warning("api_trading_close_position failed: %s", e)
-        return jsonify({"error": str(e)}), 500
-
-
-@app.route("/api/v1/trading/open-positions")
-@api_auth_required
-def api_open_positions():
-    try:
-        in_memory = state.snapshot().get("positions", [])
-        if in_memory:
-            return jsonify({"positions": in_memory})
-        mode = request.args.get("mode")
-        db_positions = (
-            db.load_open_positions(user_id=request.user_id, trade_mode=mode)
-            if hasattr(db, "load_open_positions")
-            else []
-        )
-        return jsonify({"positions": db_positions})
-    except Exception as e:
-        log.warning("api_open_positions: %s", e)
-        return jsonify({"positions": [], "error": "temporarily_unavailable"}), 503
-
-
-@app.route("/api/v1/trading/closed-trades")
-@api_auth_required
-def api_closed_trades():
-    try:
-        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
-        mode = request.args.get("mode")
-        rows = db.load_trades(limit=limit, user_id=request.user_id)
-        if mode in {"paper", "live"}:
-            rows = [r for r in rows if str(r.get("trade_mode", "paper")) == mode]
-        return jsonify({"trades": rows})
-    except Exception as e:
-        log.warning("api_closed_trades: %s", e)
-        return jsonify({"trades": [], "error": "temporarily_unavailable"}), 503
-
-
-@app.route("/api/v1/trading/order-history")
-@api_auth_required
-def api_order_history():
-    try:
-        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
-        mode = request.args.get("mode")
-        return jsonify(
-            {"orders": db.load_orders(limit=limit, user_id=request.user_id, trade_mode=mode)}
-        )
-    except Exception as e:
-        log.warning("api_order_history: %s", e)
-        return jsonify({"orders": [], "error": "temporarily_unavailable"}), 503
-
-
-@app.route("/api/v1/trading/signal-history")
-@api_auth_required
-def api_signal_history():
-    try:
-        return jsonify({"signals": list(state.signal_log)[:200]})
-    except Exception as e:
-        log.warning("api_signal_history: %s", e)
-        return jsonify({"signals": [], "error": "temporarily_unavailable"}), 503
-
-
-@app.route("/api/v1/trading/decision-history")
-@api_auth_required
-def api_decision_history():
-    try:
-        limit = min(safe_int(request.args.get("limit", 150), 150), 500)
-        mode = request.args.get("mode")
-        return jsonify(
-            {
-                "decisions": db.load_trade_decisions(
-                    limit=limit, user_id=request.user_id, trade_mode=mode
-                )
-            }
-        )
-    except Exception as e:
-        log.warning("api_decision_history: %s", e)
-        return jsonify({"decisions": [], "error": "temporarily_unavailable"}), 503
-
-
-@app.route("/api/v1/trading/performance")
-@api_auth_required
-def api_trading_performance():
-    try:
-        return jsonify(db.performance_breakdown(user_id=request.user_id))
-    except Exception as e:
-        log.warning("api_trading_performance: %s", e)
-        return jsonify(
-            {
-                "by_mode": [],
-                "by_exchange": [],
-                "by_strategy": [],
-                "error": "temporarily_unavailable",
-            }
-        ), 503
-
-
-@app.route("/api/v1/user/exchanges")
-@api_auth_required
-def api_user_exchanges_list():
-    """Listet alle Exchange-Konfigurationen des Users."""
-    exchanges = db.get_user_exchanges(request.user_id)
-    return jsonify(exchanges)
-
-
-@app.route("/api/v1/user/exchanges", methods=["POST"])
-@api_auth_required
-def api_user_exchanges_upsert():
-    """Erstellt/aktualisiert eine Exchange-Konfiguration. Default: deaktiviert."""
-    data = get_json_body()
-    exchange = normalize_exchange_name(data.get("exchange", ""))
-    api_key = str(data.get("api_key", "")).strip()
-    api_secret = str(data.get("api_secret", "")).strip()
-    passphrase = str(data.get("passphrase", "")).strip()
-    enabled = safe_bool(data.get("enabled", False), False)  # Default: deaktiviert
-    is_primary = safe_bool(data.get("is_primary", False), False)
-    if not exchange:
-        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
-    requires_keys = not bool(CONFIG.get("paper_trading", True))
-    if requires_keys and (not api_key or not api_secret):
-        return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
-    ok = db.upsert_user_exchange(
-        request.user_id,
-        exchange,
-        api_key,
-        api_secret,
-        enabled,
-        is_primary,
-        passphrase=passphrase,
-    )
-    _audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
-    auto_started = False
-    if ok and enabled:
-        auto_started = _maybe_auto_start_bot()
-    return jsonify({"ok": ok, "bot_auto_started": auto_started})
-
-
-@app.route("/api/v1/user/exchanges/<int:exchange_id>/toggle", methods=["POST"])
-@api_auth_required
-def api_user_exchange_toggle(exchange_id):
-    """Aktiviert/Deaktiviert eine Exchange für den User."""
-    enabled = safe_bool(get_json_body().get("enabled", False), False)
-    ok = db.toggle_user_exchange(request.user_id, exchange_id, enabled)
-    auto_started = False
-    if ok and enabled:
-        auto_started = _maybe_auto_start_bot()
-    return jsonify({"ok": ok, "bot_auto_started": auto_started})
-
-
-@app.route("/api/v1/user/exchanges/<int:exchange_id>", methods=["DELETE"])
-@api_auth_required
-def api_user_exchange_delete(exchange_id):
-    """Löscht eine Exchange-Konfiguration des Users."""
-    ok = db.delete_user_exchange(request.user_id, exchange_id)
-    return jsonify({"ok": ok})
-
-
-@app.route("/api/v1/user/api-keys", methods=["POST"])
-@api_auth_required
-def api_user_update_keys():
-    """Aktualisiert die API-Keys des Users (verschlüsselt in DB)."""
-    data = get_json_body()
-    exchange = normalize_exchange_name(data.get("exchange", CONFIG["exchange"]))
-    api_key = str(data.get("api_key", "")).strip()
-    api_secret = str(data.get("api_secret", "")).strip()
-    if not exchange:
-        return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
-    if not api_key or not api_secret:
-        return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
-    ok = db.update_user_api_keys(request.user_id, exchange, api_key, api_secret)
-    _audit("api_keys_update", f"Exchange: {exchange}", request.user_id)
-    return jsonify({"ok": ok})
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# VIRGINIE CHAT API (3D Live View)
-# ═══════════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/v1/virginie/chat")
-@api_auth_required
-def api_virginie_chat_history():
-    """Liefert den Chat-Verlauf des angemeldeten Users."""
-    user_id = int(getattr(request, "user_id", 0) or 0)
-    return jsonify(
-        {
-            "messages": _virginie_chat_history_for_user(user_id),
-            "max_messages": _VIRGINIE_CHAT_MAX_MESSAGES,
-        }
-    )
-
-
-@app.route("/api/v1/virginie/status")
-@api_auth_required
-def api_virginie_status():
-    """Liefert Runtime-Zustand und Guardrails von VIRGINIE."""
-    return jsonify(_virginie_runtime_status())
-
-
-@app.route("/api/v1/virginie/advice")
-@api_auth_required
-def api_virginie_advice():
-    """Liefert priorisierte VIRGINIE Handlungsempfehlungen."""
-    return jsonify(_virginie_runtime_advice())
-
-
-@app.route("/api/v1/virginie/edge-profile")
-@api_auth_required
-def api_virginie_edge_profile():
-    """Liefert den VIRGINIE Edge-Score (Trading/Forecast Profil)."""
-    return jsonify(_virginie_edge_profile())
-
-
-@app.route("/api/v1/virginie/forecast-feed")
-@api_auth_required
-def api_virginie_forecast_feed():
-    """Liefert die letzten VIRGINIE Forecast-Events."""
-    limit = safe_int(request.args.get("limit", 30), 30)
-    return jsonify(
-        {"items": get_virginie_forecast_feed(limit), "stats": get_virginie_forecast_stats()}
-    )
-
-
-@app.route("/api/v1/virginie/forecast-quality")
-@api_auth_required
-def api_virginie_forecast_quality():
-    """Liefert geschätzte Forecast-Qualität (Win-Rate) nach Tier."""
-    return jsonify(get_virginie_forecast_quality())
-
-
-@app.route("/api/v1/virginie/chat", methods=["POST"])
-@api_auth_required
-def api_virginie_chat_post():
-    """Nimmt eine User-Nachricht an und erzeugt eine VIRGINIE-Antwort."""
-    user_id = int(getattr(request, "user_id", 0) or 0)
-    payload = get_json_body()
-    message = str(payload.get("message", "")).strip()
-    if not message:
-        return jsonify({"error": "message ist Pflichtfeld"}), 400
-    if len(message) > 2000:
-        return jsonify({"error": "message ist zu lang (max. 2000 Zeichen)"}), 400
-
-    user_entry = _virginie_chat_append(user_id, "user", message)
-    assistant_reply = _generate_virginie_chat_reply(user_id, message)
-    assistant_entry = _virginie_chat_append(user_id, "assistant", assistant_reply)
-    return jsonify({"ok": True, "user": user_entry, "assistant": assistant_entry})
-
-
-@app.route("/api/v1/virginie/chat/clear", methods=["POST"])
-@api_auth_required
-def api_virginie_chat_clear():
-    """Löscht den VIRGINIE-Chatverlauf des aktuellen Users."""
-    user_id = int(getattr(request, "user_id", 0) or 0)
-    with _virginie_chat_lock:
-        _virginie_chat_by_user[int(user_id)] = deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-    return jsonify({"ok": True})
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# ADMIN: Multi-Exchange gleichzeitig laufen lassen
-# ═══════════════════════════════════════════════════════════════════════════════
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # KI-GEMEINSCHAFTSWISSEN API
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/v1/knowledge/summary")
-@api_auth_required
-def api_knowledge_summary():
-    """Markt-Zusammenfassung aus dem Gemeinschaftswissen."""
-    return jsonify(knowledge_base.get_market_summary())
-
-
-@app.route("/api/v1/knowledge/<category>")
-@api_auth_required
-def api_knowledge_category(category):
-    """Alle Einträge einer Wissens-Kategorie."""
-    if category not in KnowledgeBase.CATEGORIES:
-        return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
-    limit = min(safe_int(request.args.get("limit", 50), 50), 200)
-    return jsonify(knowledge_base.get_category(category, limit))
-
-
-@app.route("/api/v1/knowledge/query", methods=["POST"])
-@api_auth_required
-def api_knowledge_query():
-    """Fragt die lokale LLM nach einer Analyse."""
-    data = get_json_body()
-    prompt = data.get("prompt", "")
-    if not prompt:
-        return jsonify({"error": "prompt ist Pflichtfeld"}), 400
-    # Kontext aus Gemeinschaftswissen zusammenstellen
-    summary = knowledge_base.get_market_summary()
-    context = (
-        f"Du bist ein Krypto-Trading-Analyst. Aktuelles Wissen:\n"
-        f"Top Symbole: {json.dumps(summary.get('top_symbols', [])[:5])}\n"
-        f"Strategie-Ranking: {json.dumps(summary.get('strategy_ranking', [])[:5])}\n"
-    )
-    # MCP-Tool-gestützte Analyse wenn verfügbar
-    answer = knowledge_base.query_llm_with_tools(prompt, context)
-    if answer is None:
-        return jsonify({"error": "LLM nicht verfügbar. Setze LLM_ENDPOINT in .env"}), 503
-    return jsonify({"answer": answer})
-
-
-@app.route("/api/v1/knowledge/llm-status")
-@api_auth_required
-def api_knowledge_llm_status():
-    """Status der autonomen LLM-Integration."""
-    return jsonify(
-        {
-            "llm_enabled": knowledge_base.llm_enabled,
-            "llm_endpoint": bool(knowledge_base._llm_endpoint),
-            "cached_market_analysis": knowledge_base.cached_market_analysis or None,
-            "trade_patterns": len(knowledge_base.get_category("trade_pattern", limit=100)),
-            "model_analyses": len(knowledge_base.get_category("model_config", limit=100)),
-            "risk_patterns": len(knowledge_base.get_category("risk_pattern", limit=100)),
-            "multi_llm_providers": (
-                knowledge_base._multi_llm.status() if knowledge_base._multi_llm else []
-            ),
-        }
-    )
-
-
-@app.route("/api/v1/mcp/tools")
-@api_auth_required
-def api_mcp_tools():
-    """Liste der verfügbaren MCP-Tools für die KI."""
-    return jsonify(
-        {
-            "tools": mcp_registry.get_tools_schema(),
-            "count": len(mcp_registry.get_tools_schema()),
-        }
-    )
-
-
-@app.route("/api/v1/mcp/execute", methods=["POST"])
-@api_auth_required
-def api_mcp_execute():
-    """Führt ein MCP-Tool direkt aus."""
-    data = get_json_body()
-    tool_name = data.get("tool", "")
-    arguments = data.get("arguments", {})
-    if not tool_name:
-        return jsonify({"error": "tool ist Pflichtfeld"}), 400
-    result = mcp_registry.execute(tool_name, arguments)
-    return jsonify(result)
-
-
-@app.route("/api/v1/admin/exchanges")
-@api_auth_required
-@admin_required
-def api_admin_exchanges():
-    """Admin sieht alle User-Exchanges und deren Status."""
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT ue.*, u.username FROM user_exchanges ue "
-                    "JOIN users u ON ue.user_id = u.id ORDER BY u.username, ue.exchange"
-                )
-                rows = c.fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            d.pop("api_key", None)
-            d.pop("api_secret", None)
-            if d.get("created_at") and hasattr(d["created_at"], "isoformat"):
-                d["created_at"] = d["created_at"].isoformat()
-            result.append(d)
-        return jsonify(result)
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/admin/exchanges/<int:exchange_id>/toggle", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_admin_exchange_toggle(exchange_id):
-    """Admin kann jede Exchange aktivieren/deaktivieren."""
-    enabled = get_json_body().get("enabled", False)
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "UPDATE user_exchanges SET enabled=%s WHERE id=%s",
-                    (enabled, exchange_id),
-                )
-        return jsonify({"ok": True})
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/signal", methods=["POST"])
-@api_auth_required
-@limiter.limit("60 per minute")
-def api_signal():
-    """TradingView Webhook → sofortiger Scan."""
-    data = get_json_body()
-    sym = data.get("symbol", "")
-    action = data.get("action", "buy").lower()
-    if not sym or not state.running:
-        return jsonify({"ok": False, "msg": "Bot nicht aktiv"}), 400
-
-    def _async():
-        try:
-            ex = create_exchange()
-            scan = scan_symbol(ex, sym)
-            if scan and action == "buy" and scan.get("signal") == 1:
-                open_position(ex, scan)
-            elif action == "sell" and sym in state.positions:
-                close_position(ex, sym, f"Webhook:{action}")
-        except Exception as e:
-            log.error(f"Webhook: {e}")
-
-    threading.Thread(target=_async, daemon=True).start()
-    return jsonify({"ok": True, "msg": f"Signal für {sym} empfangen"})
-
-
-@app.route("/api/v1/portfolio")
-@api_auth_required
-def api_portfolio():
-    return jsonify(
-        {
-            "value": round(state.portfolio_value(), 2),
-            "balance": round(state.balance, 2),
-            "return_pct": round(state.return_pct(), 2),
-            "total_pnl": round(state.total_pnl(), 2),
-            "win_rate": round(state.win_rate(), 1),
-            "positions": list(state.positions.keys()),
-        }
-    )
-
-
-@app.route("/api/v1/ai")
-@api_auth_required
-def api_ai():
-    return jsonify(ai_engine.to_dict())
-
-
-@app.route("/api/v1/dominance")
-@api_auth_required
-def api_dominance():
-    return jsonify(dominance.to_dict())
-
-
-@app.route("/api/v1/anomaly")
-@api_auth_required
-def api_anomaly():
-    return jsonify(anomaly.to_dict())
-
-
-@app.route("/api/v1/genetic")
-@api_auth_required
-def api_genetic():
-    return jsonify(genetic.to_dict())
-
-
-@app.route("/api/v1/rl")
-@api_auth_required
-def api_rl():
-    return jsonify(rl_agent.to_dict())
-
-
-@app.route("/api/v1/news/<path:symbol>")
-@api_auth_required
-def api_news(symbol):
-    score, headline, count = news_fetcher.get_score(symbol)
-    return jsonify({"symbol": symbol, "score": score, "headline": headline, "count": count})
-
-
-@app.route("/api/v1/onchain/<path:symbol>")
-@api_auth_required
-def api_onchain(symbol):
-    score, detail = onchain.get_score(symbol)
-    return jsonify({"symbol": symbol, "score": score, "detail": detail})
-
-
-@app.route("/api/v1/balance/all")
-@api_auth_required
-def api_balance_all():
-    """[#32] Aggregierte Balance über alle konfigurierten Exchanges."""
-    try:
-        data = fetch_aggregated_balance()
-        return jsonify(data)
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/fees")
-@api_auth_required
-def api_fees():
-    """[#29] Gibt Exchange-spezifische Fee-Rates zurück."""
-    from services.exchange_factory import _fee_cache, _fee_cache_lock
-
-    current_ex = CONFIG.get("exchange", "cryptocom")
-    fees = {}
-    with _fee_cache_lock:
-        for ex_id in EXCHANGE_DEFAULT_FEES:
-            fees[ex_id] = {
-                "default": EXCHANGE_DEFAULT_FEES[ex_id],
-                "cached": _fee_cache.get(ex_id, {}).get("rate"),
-                "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
-            }
-    return jsonify(
-        {
-            "current_exchange": current_ex,
-            "current_fee_rate": get_exchange_fee_rate(),
-            "exchanges": fees,
-        }
-    )
-
-
-@app.route("/api/v1/arb")
-@api_auth_required
-def api_arb():
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute("SELECT * FROM arb_opportunities ORDER BY found_at DESC LIMIT 20")
-                rows = c.fetchall()
-        result = []
-        for r in rows:
-            d = dict(r)
-            if hasattr(d.get("found_at"), "isoformat"):
-                d["found_at"] = d["found_at"].isoformat()
-            result.append(d)
-        return jsonify(result)
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-# Admin Routes
-@app.route("/api/v1/admin/users")
-@api_auth_required
-@admin_required
-def api_admin_users():
-    return jsonify(db.get_all_users())
-
-
-@app.route("/api/v1/admin/users", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_admin_create_user():
-    data = get_json_body()
-    is_valid, payload, error_key, error_message = validate_admin_user_payload(data)
-    if not is_valid:
-        return jsonify({"ok": False, "error": error_message, "key": error_key}), 400
-
-    ok = db.create_user(
-        payload["username"],
-        payload["password"],
-        payload["role"],
-        payload["balance"],
-    )
-    return jsonify({"ok": ok})
-
-
-@app.route("/api/v1/admin/config")
-@api_auth_required
-@admin_required
-def api_admin_config():
-    safe = {
-        k: v
-        for k, v in CONFIG.items()
-        if k
-        not in (
-            "api_key",
-            "secret",
-            "mysql_pass",
-            "admin_password",
-            "jwt_secret",
-            "short_api_key",
-            "short_secret",
-            "cryptopanic_token",
-            "encryption_key",
-            "secret_key",
-            "telegram_token",
-            "extra_exchanges",
-            "funding_rate_cache",
-        )
-    }
-    return jsonify(safe)
-
-
-@app.route("/api/v1/admin/config", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_admin_config_update():
-    # Sensible Felder die NICHT über API geändert werden dürfen (nur .env)
-    _PROTECTED_KEYS = frozenset(
-        {
-            "api_key",
-            "secret",
-            "short_api_key",
-            "short_secret",
-            "mysql_pass",
-            "mysql_host",
-            "mysql_port",
-            "mysql_user",
-            "mysql_db",
-            "jwt_secret",
-            "admin_password",
-            "cryptopanic_token",
-            "discord_webhook",
-            "telegram_token",
-            "telegram_chat_id",
-            "encryption_key",
-        }
-    )
-    data = get_json_body()
-    updated = []
-    for k, v in data.items():
-        if k in _PROTECTED_KEYS:
-            continue  # Sensible Werte nur über .env änderbar
-        if k in CONFIG:
-            original = CONFIG[k]
-            if isinstance(original, (list, dict)):
-                if not isinstance(v, type(original)):
-                    continue  # Typ-Mismatch bei komplexen Werten ablehnen
-            elif isinstance(original, bool):
-                v = bool(v)
-            elif isinstance(original, int):
-                v = safe_int(v, original)
-            elif isinstance(original, float):
-                v = safe_float(v, original)
-            CONFIG[k] = v
-            updated.append(k)
-    _audit(
-        "config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}", request.user_id
-    )
-    return jsonify({"ok": True, "updated": updated})
-
-
-# Legacy routes (Dashboard compatibility)
-@app.route("/api/heatmap")
-@dashboard_auth
-def api_heatmap_legacy():
-    try:
-        ex = create_exchange()
-        return jsonify(get_heatmap_data(ex))
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"})
-
-
-@app.route("/api/ohlcv/<path:symbol>")
-@dashboard_auth
-def api_ohlcv(symbol):
-    sym = symbol.replace("-", "/")
-    tf = request.args.get("tf", "1h")
-    if tf not in {"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}:
-        tf = "1h"
-    limit = min(safe_int(request.args.get("limit", 200), 200), 500)
-    try:
-        ex = create_exchange()
-        ohlcv = ex.fetch_ohlcv(sym, tf, limit=limit)
-        trades = [t for t in state.closed_trades if t.get("symbol") == sym][:20]
-        return jsonify({"ohlcv": ohlcv, "trades": trades})
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"})
 
 
 @app.route("/api/tax_report")
@@ -1921,40 +1051,10 @@ plot(bbLower, "BB Lower", color=color.new(color.gray, 70))
     )
 
 
-@app.route("/api/export/csv")
-@dashboard_auth
-def api_export_csv():
-    return Response(
-        db.export_csv(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=trevlix_trades.csv"},
-    )
-
-
-@app.route("/api/export/json")
-@dashboard_auth
-def api_export_json():
-    trades = db.load_trades(limit=10000)
-    return Response(
-        trades_to_json(trades),
-        mimetype="application/json",
-        headers={"Content-Disposition": "attachment;filename=trevlix_trades.json"},
-    )
-
-
 @app.route("/api/backtest/history")
 @dashboard_auth
 def api_backtest_history():
     return jsonify(db.get_recent_backtests(10))
-
-
-@app.route("/api/backup/download")
-@dashboard_auth
-def api_backup_download():
-    path = db.backup()
-    if path:
-        return send_file(path, as_attachment=True)
-    return jsonify({"error": "Backup fehlgeschlagen"}), 500
 
 
 @app.route("/api/v1/backup/verify")
@@ -2013,31 +1113,9 @@ def api_health():
 
 
 # ── [Verbesserung #7] API-Token Revocation ────────────────────────────────────
-@app.route("/api/v1/token/<int:token_id>", methods=["DELETE"])
-@api_auth_required
-def api_revoke_token(token_id):
-    """Deaktiviert einen API-Token."""
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
-                    (token_id, request.user_id),
-                )
-        _audit("token_revoked", f"token_id={token_id}", request.user_id)
-        return jsonify({"success": True})
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
 
 
 # ── [Verbesserung #48] Prometheus-kompatible Metriken ─────────────────────────
-@app.route("/metrics")
-@api_auth_required
-def prometheus_metrics():
-    """Exportiert Bot-Metriken im Prometheus-Format."""
-    lines = build_prometheus_lines(bot_version=BOT_VERSION, state=state, db=db)
-    return Response("\n".join(lines) + "\n", mimetype="text/plain; charset=utf-8")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -2977,73 +2055,12 @@ def db_audit(user_id: int, action: str, detail: str = "", ip: str = ""):
         log.debug(f"audit_log: {e}")
 
 
-@app.route("/api/v1/admin/audit-log")
-@api_auth_required
-@admin_required
-def api_audit_log():
-    """Gibt die letzten 200 Audit-Log-Einträge zurück."""
-    try:
-        action_filter = request.args.get("action", "")
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                if action_filter:
-                    c.execute(
-                        """SELECT al.*, u.username FROM audit_log al
-                                 LEFT JOIN users u ON al.user_id = u.id
-                                 WHERE al.action LIKE %s
-                                 ORDER BY al.created_at DESC LIMIT 200""",
-                        (f"%{action_filter}%",),
-                    )
-                else:
-                    c.execute("""SELECT al.*, u.username FROM audit_log al
-                                 LEFT JOIN users u ON al.user_id = u.id
-                                 ORDER BY al.created_at DESC LIMIT 200""")
-                rows = c.fetchall()
-        return jsonify({"logs": [dict(r) for r in rows]})
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
 # ════════════════════════════════════════════════════════════════════════════════
 # GRID TRADING ENGINE (modularisiert → services/grid_trading.py)
 # ════════════════════════════════════════════════════════════════════════════════
 from services.grid_trading import GridTradingEngine  # noqa: E402
 
 grid_engine = GridTradingEngine()
-
-
-@app.route("/api/v1/grid", methods=["GET"])
-@api_auth_required
-def api_grid_list():
-    return jsonify({"grids": grid_engine.status()})
-
-
-@app.route("/api/v1/grid", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_grid_create():
-    d = get_json_body()
-    symbol = d.get("symbol", "")
-    lower = safe_float(d.get("lower", 0), 0.0)
-    upper = safe_float(d.get("upper", 0), 0.0)
-    levels = safe_int(d.get("levels", 10), 10)
-    invest = safe_float(d.get("invest_per_level", 100.0), 100.0)
-    levels = min(levels, 200)
-    if not symbol or lower <= 0 or upper <= lower:
-        return jsonify({"error": "symbol, lower, upper (lower<upper) erforderlich"}), 400
-    result = grid_engine.create_grid(symbol, lower, upper, levels, invest)
-    db_audit(session.get("user_id", 0), "grid_create", f"{symbol} {lower}–{upper} {levels}L")
-    return jsonify(result)
-
-
-@app.route("/api/v1/grid/<symbol>", methods=["DELETE"])
-@api_auth_required
-@admin_required
-def api_grid_delete(symbol):
-    grid_engine.delete_grid(symbol)
-    db_audit(session.get("user_id", 0), "grid_delete", symbol)
-    return jsonify({"deleted": symbol})
 
 
 @socketio.on("create_grid")
@@ -3214,7 +2231,7 @@ def on_rollback_update():
 @socketio.on("start_exchange")
 def on_start_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -3241,7 +2258,7 @@ def on_start_exchange(data: dict | None = None):
 @socketio.on("stop_exchange")
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -3265,7 +2282,7 @@ def on_stop_exchange(data: dict | None = None):
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     api_key = str((data or {}).get("api_key", "")).strip()
@@ -3796,13 +2813,6 @@ def on_request_system_analytics():
     emit("system_analytics", _collect_system_analytics())
 
 
-@app.route("/api/v1/system-analytics")
-@api_auth_required
-def api_system_analytics():
-    """Return system analytics via HTTP (fallback when WS is unavailable)."""
-    return jsonify(_collect_system_analytics())
-
-
 # ════════════════════════════════════════════════════════════════════════════════
 # MONTE CARLO RISK SIMULATION (Verbesserung 4)
 # Simuliert N Handels-Szenarien basierend auf historischer Performance
@@ -3890,15 +2900,6 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
     }
 
 
-@app.route("/api/v1/risk/monte-carlo")
-@api_auth_required
-def api_monte_carlo():
-    n_sim = min(safe_int(request.args.get("n", 10000), 10000), 50000)
-    n_days = min(safe_int(request.args.get("days", 30), 30), 365)
-    result = run_monte_carlo(n_sim, n_days)
-    return jsonify(result)
-
-
 # ════════════════════════════════════════════════════════════════════════════════
 # TELEGRAM BOT NOTIFIER (Verbesserung 5)
 # ════════════════════════════════════════════════════════════════════════════════
@@ -3906,34 +2907,6 @@ def api_monte_carlo():
 
 # TelegramNotifier bereits oben aus services.notifications importiert
 telegram = TelegramNotifier(CONFIG, BOT_FULL)
-
-
-@app.route("/api/v1/telegram/test", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_telegram_test():
-    ok = telegram.test()
-    return jsonify({"success": ok, "enabled": telegram.enabled})
-
-
-@app.route("/api/v1/telegram/configure", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_telegram_configure():
-    d = get_json_body()
-    token = d.get("token", "").strip()
-    chat_id = d.get("chat_id", "").strip()
-    if not token or not chat_id:
-        return jsonify({"error": "token und chat_id erforderlich"}), 400
-    CONFIG["telegram_token"] = token
-    CONFIG["telegram_chat_id"] = chat_id
-    # telegram liest Token/Chat-ID dynamisch aus CONFIG – keine weitere Zuweisung nötig
-    # Persist to .env
-    _set_env_var("TELEGRAM_TOKEN", token)
-    _set_env_var("TELEGRAM_CHAT_ID", chat_id)
-    db_audit(session.get("user_id", 0), "telegram_configure", "Telegram konfiguriert")
-    ok = telegram.test()
-    return jsonify({"success": ok, "enabled": telegram.enabled})
 
 
 def _set_env_var(key: str, value: str):
@@ -3977,114 +2950,6 @@ def _set_env_var(key: str, value: str):
 
 symbol_cooldown = SymbolCooldown(CONFIG)
 
-
-@app.route("/api/v1/cooldowns")
-@api_auth_required
-def api_cooldowns():
-    return jsonify({"cooldowns": symbol_cooldown.status()})
-
-
-@app.route("/api/v1/cooldowns/<symbol>", methods=["DELETE"])
-@api_auth_required
-@admin_required
-def api_cooldown_clear(symbol):
-    with symbol_cooldown._lock:
-        symbol_cooldown._cooldowns.pop(symbol, None)
-    return jsonify({"cleared": symbol})
-
-
-@app.route("/api/v1/admin/ip-whitelist", methods=["GET"])
-@api_auth_required
-@admin_required
-def api_ip_whitelist_get():
-    return jsonify(
-        {"whitelist": CONFIG.get("ip_whitelist", []), "active": bool(CONFIG.get("ip_whitelist"))}
-    )
-
-
-@app.route("/api/v1/admin/ip-whitelist", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_ip_whitelist_set():
-    ips = get_json_body().get("ips", [])
-    CONFIG["ip_whitelist"] = [ip.strip() for ip in ips if ip.strip()]
-    _set_env_var("IP_WHITELIST", ",".join(CONFIG["ip_whitelist"]))
-    db_audit(session.get("user_id", 0), "ip_whitelist_update", str(CONFIG["ip_whitelist"]))
-    return jsonify({"whitelist": CONFIG["ip_whitelist"]})
-
-
-@app.route("/api/v1/config/news-filter", methods=["GET", "POST"])
-@api_auth_required
-@admin_required
-def api_news_filter():
-    if request.method == "POST":
-        d = get_json_body()
-        CONFIG["news_sentiment_min"] = safe_float(
-            d.get("min_score", CONFIG["news_sentiment_min"]), CONFIG["news_sentiment_min"]
-        )
-        CONFIG["news_require_positive"] = bool(
-            d.get("require_positive", CONFIG["news_require_positive"])
-        )
-        CONFIG["news_block_score"] = safe_float(
-            d.get("block_score", CONFIG["news_block_score"]), CONFIG["news_block_score"]
-        )
-        db_audit(
-            session.get("user_id", 0),
-            "news_filter_update",
-            f"min={CONFIG['news_sentiment_min']} pos={CONFIG['news_require_positive']}",
-        )
-        return jsonify(
-            {
-                "success": True,
-                "config": {
-                    "news_sentiment_min": CONFIG["news_sentiment_min"],
-                    "news_require_positive": CONFIG["news_require_positive"],
-                    "news_block_score": CONFIG["news_block_score"],
-                },
-            }
-        )
-    return jsonify(
-        {
-            "news_sentiment_min": CONFIG.get("news_sentiment_min", -0.2),
-            "news_require_positive": CONFIG.get("news_require_positive", False),
-            "news_block_score": CONFIG.get("news_block_score", -0.4),
-        }
-    )
-
-
-# FundingRateTracker importiert aus services.risk
-
-
-funding_tracker = FundingRateTracker(CONFIG)
-
-
-@app.route("/api/v1/funding-rates")
-@api_auth_required
-def api_funding_rates():
-    n = safe_int(request.args.get("n", 20), 20)
-    return jsonify(
-        {
-            "top_rates": funding_tracker.top_rates(n),
-            "status": funding_tracker.status(),
-        }
-    )
-
-
-@app.route("/api/v1/funding-rates/config", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_funding_config():
-    d = get_json_body()
-    CONFIG["funding_rate_filter"] = bool(d.get("enabled", True))
-    CONFIG["funding_rate_max"] = safe_float(d.get("max_rate", 0.001), 0.001)
-    return jsonify({"success": True, **funding_tracker.status()})
-
-
-# AdvancedRiskMetrics importiert aus services.risk
-
-
-adv_risk = AdvancedRiskMetrics()
-
 # ── Trade DNA Fingerprinting ──────────────────────────────────────────────
 trade_dna = TradeDNA(
     min_matches=CONFIG.get("dna_min_matches", 5),
@@ -4117,6 +2982,8 @@ market_cache = RedisMarketCache(
 )
 trade_mode = TradingModeManager(CONFIG)
 trade_mode.set_mode("paper" if CONFIG.get("paper_trading", True) else "live")
+funding_tracker = FundingRateTracker(CONFIG)
+adv_risk = AdvancedRiskMetrics()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # INITIALIZE EXTRACTED MODULES with runtime globals
@@ -4222,103 +3089,6 @@ init_trading_ops(
 )
 
 
-@app.route("/api/v1/trading-algorithms")
-@api_auth_required
-def api_trading_algorithms():
-    """Status der selbstlernenden Kauf-/Verkaufsalgorithmen."""
-    return jsonify(trading_algos.to_dict())
-
-
-@app.route("/api/v1/trade-dna")
-@api_auth_required
-def api_trade_dna():
-    """Trade DNA Fingerprinting Status und Top-Patterns."""
-    return jsonify(trade_dna.to_dict())
-
-
-@app.route("/api/v1/trade-dna/patterns")
-@api_auth_required
-def api_trade_dna_patterns():
-    """Top profitable und schlechteste DNA-Muster."""
-    n = safe_int(request.args.get("n", 10), 10)
-    return jsonify(
-        {
-            "top": trade_dna.top_patterns(n),
-            "worst": trade_dna.worst_patterns(n),
-        }
-    )
-
-
-@app.route("/api/v1/smart-exits")
-@api_auth_required
-def api_smart_exits():
-    """Smart Exit Engine Status."""
-    return jsonify(smart_exits.to_dict())
-
-
-@app.route("/api/v1/performance/attribution")
-@api_auth_required
-def api_performance_attribution():
-    """Vollständiger Performance Attribution Report."""
-    return jsonify(perf_attribution.full_report())
-
-
-@app.route("/api/v1/performance/contributors")
-@api_auth_required
-def api_performance_contributors():
-    """Top-Contributors und Worst-Performers."""
-    n = safe_int(request.args.get("n", 5), 5)
-    return jsonify(perf_attribution.top_contributors(n))
-
-
-@app.route("/api/v1/strategies/weights")
-@api_auth_required
-def api_strategy_weights():
-    """Adaptive Strategy Weights und Performance."""
-    regime = request.args.get("regime")
-    return jsonify(
-        {
-            "weights": adaptive_weights.get_weights(regime),
-            "performance": adaptive_weights.strategy_performance(),
-            "regime_performance": adaptive_weights.regime_performance(),
-            **adaptive_weights.stats(),
-        }
-    )
-
-
-@app.route("/api/v1/risk/cvar")
-@api_auth_required
-def api_cvar():
-    confidence = safe_float(request.args.get("conf", 0.95), 0.95)
-    return jsonify(adv_risk.compute_cvar(state.closed_trades, confidence))
-
-
-@app.route("/api/v1/risk/volatility")
-@api_auth_required
-def api_volatility():
-    return jsonify(adv_risk.volatility_forecast(safe_int(request.args.get("h", 5), 5)))
-
-
-@app.route("/api/v1/risk/regime")
-@api_auth_required
-def api_market_regime():
-    prices = list(state.prices.values())
-    if not prices:
-        return jsonify({"regime": "UNKNOWN"})
-    regime_result = adv_risk.classify_regime(
-        [e["value"] for e in list(state.portfolio_history)[-50:]]
-        if state.portfolio_history
-        else prices
-    )
-    return jsonify(
-        {
-            "regime": regime_result,
-            "vol_pct": round(adv_risk._ewma_vol * 100, 3),
-            "risk_level": adv_risk.volatility_forecast(1)["risk_level"],
-        }
-    )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTONOMOUS AGENT API ENDPOINTS (v1.5)
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -4327,654 +3097,18 @@ def api_market_regime():
 # ── Auto-Healing Agent ──────────────────────────────────────────────────────
 
 
-@app.route("/api/v1/health/basic")
-def api_health_basic():
-    """Basic health check endpoint (used by cluster nodes)."""
-    return jsonify(
-        {
-            "status": "ok",
-            "running": state.running,
-            "version": BOT_VERSION,
-        }
-    )
-
-
-@app.route("/api/v1/health/snapshot")
-@api_auth_required
-def api_health_snapshot():
-    """Auto-Healing Agent: current health status."""
-    return jsonify(healer.health_snapshot())
-
-
-@app.route("/api/v1/health/incidents")
-@api_auth_required
-def api_health_incidents():
-    """Auto-Healing Agent: recent incident history."""
-    snap = healer.health_snapshot()
-    return jsonify({"incidents": snap.get("incidents", [])})
-
-
 # ── Revenue Tracking Agent ──────────────────────────────────────────────────
-
-
-@app.route("/api/v1/revenue/snapshot")
-@api_auth_required
-def api_revenue_snapshot():
-    """Revenue Tracking Agent: full performance snapshot."""
-    return jsonify(revenue_tracker.snapshot())
-
-
-@app.route("/api/v1/revenue/daily")
-@api_auth_required
-def api_revenue_daily():
-    """Revenue Tracking Agent: daily PnL summary."""
-    date_str = request.args.get("date")
-    dt = None
-    if date_str:
-        try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d").date()
-        except ValueError:
-            return jsonify({"error": "Invalid date format, use YYYY-MM-DD"}), 400
-    return jsonify(revenue_tracker.get_daily_summary(dt))
-
-
-@app.route("/api/v1/revenue/weekly")
-@api_auth_required
-def api_revenue_weekly():
-    """Revenue Tracking Agent: weekly PnL summary."""
-    return jsonify(revenue_tracker.get_weekly_summary())
-
-
-@app.route("/api/v1/revenue/monthly")
-@api_auth_required
-def api_revenue_monthly():
-    """Revenue Tracking Agent: monthly PnL summary."""
-    return jsonify(revenue_tracker.get_monthly_summary())
-
-
-@app.route("/api/v1/revenue/strategies")
-@api_auth_required
-def api_revenue_strategies():
-    """Revenue Tracking Agent: per-strategy performance."""
-    return jsonify(revenue_tracker.get_strategy_performance())
-
-
-@app.route("/api/v1/revenue/losing")
-@api_auth_required
-def api_revenue_losing():
-    """Revenue Tracking Agent: detect losing strategies."""
-    return jsonify({"losing_strategies": revenue_tracker.detect_losing_strategies()})
 
 
 # ── Multi-Server Cluster Control Agent ──────────────────────────────────────
 
 
-@app.route("/api/v1/cluster/snapshot")
-@api_auth_required
-def api_cluster_snapshot():
-    """Cluster Control: full cluster state snapshot."""
-    return jsonify(cluster_ctrl.snapshot())
-
-
-@app.route("/api/v1/cluster/nodes", methods=["GET"])
-@api_auth_required
-def api_cluster_nodes_list():
-    """Cluster Control: list all registered nodes."""
-    nodes = cluster_ctrl.get_nodes()
-    return jsonify({"nodes": [n.to_dict() for n in nodes]})
-
-
-@app.route("/api/v1/cluster/nodes", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_cluster_nodes_add():
-    """Cluster Control: register a new remote node."""
-    data = get_json_body()
-    name = data.get("name", "").strip()
-    host = data.get("host", "").strip()
-    port = safe_int(data.get("port", 5000), 5000)
-    api_token = data.get("api_token", "")
-    if not name or not host:
-        return jsonify({"error": "name and host are required"}), 400
-    try:
-        node = cluster_ctrl.add_node(name, host, port, api_token)
-        return jsonify({"ok": True, "node": node.to_dict()}), 201
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 409
-
-
-@app.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
-@api_auth_required
-@admin_required
-def api_cluster_nodes_remove(name):
-    """Cluster Control: remove a registered node."""
-    try:
-        cluster_ctrl.remove_node(name)
-        return jsonify({"ok": True})
-    except KeyError:
-        return jsonify({"error": f"Node '{name}' not found"}), 404
-
-
-@app.route("/api/v1/cluster/nodes/<name>/start", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_cluster_node_start(name):
-    """Cluster Control: start trading bot on remote node."""
-    try:
-        result = cluster_ctrl.start_bot(name)
-        return jsonify({"ok": result})
-    except KeyError:
-        return jsonify({"error": f"Node '{name}' not found"}), 404
-
-
-@app.route("/api/v1/cluster/nodes/<name>/stop", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_cluster_node_stop(name):
-    """Cluster Control: stop trading bot on remote node."""
-    try:
-        result = cluster_ctrl.stop_bot(name)
-        return jsonify({"ok": result})
-    except KeyError:
-        return jsonify({"error": f"Node '{name}' not found"}), 404
-
-
-@app.route("/api/v1/cluster/nodes/<name>/restart", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_cluster_node_restart(name):
-    """Cluster Control: restart trading bot on remote node."""
-    try:
-        result = cluster_ctrl.restart_bot(name)
-        return jsonify({"ok": result})
-    except KeyError:
-        return jsonify({"error": f"Node '{name}' not found"}), 404
-
-
-@app.route("/api/v1/cluster/nodes/<name>/deploy", methods=["POST"])
-@api_auth_required
-@admin_required
-def api_cluster_node_deploy(name):
-    """Cluster Control: deploy update to remote node."""
-    try:
-        result = cluster_ctrl.deploy_update(name)
-        return jsonify({"ok": result})
-    except KeyError:
-        return jsonify({"error": f"Node '{name}' not found"}), 404
-
-
-@app.route("/api/v1/metrics")
-@api_auth_required
-def api_metrics():
-    """Local node metrics (used by cluster controller for aggregation)."""
-    return jsonify(
-        {
-            "portfolio_value": state.portfolio_value(),
-            "positions": len(state.positions),
-            "short_positions": len(state.short_positions),
-            "balance": state.balance,
-            "running": state.running,
-            "iteration": state.iteration,
-        }
-    )
-
-
-@app.route("/api/v1/cluster/metrics")
-@api_auth_required
-def api_cluster_metrics():
-    """Cluster Control: aggregated metrics across all nodes."""
-    return jsonify(cluster_ctrl.get_cluster_metrics())
-
-
 # ── Alert Escalation ────────────────────────────────────────────────────────
-
-
-@app.route("/api/v1/alerts/active")
-@api_auth_required
-def api_alerts_active():
-    """Alert Escalation: active alerts sorted by severity."""
-    return jsonify({"alerts": alert_escalation.get_active_alerts()})
-
-
-@app.route("/api/v1/alerts/history")
-@api_auth_required
-def api_alerts_history():
-    """Alert Escalation: recent alert history."""
-    limit = safe_int(request.args.get("limit", 50), 50)
-    return jsonify({"history": alert_escalation.get_history(limit)})
-
-
-@app.route("/api/v1/alerts/snapshot")
-@api_auth_required
-def api_alerts_snapshot():
-    """Alert Escalation: full escalation state snapshot."""
-    return jsonify(alert_escalation.snapshot())
-
-
-@app.route("/api/v1/alerts/<alert_id>/acknowledge", methods=["POST"])
-@api_auth_required
-def api_alert_acknowledge(alert_id):
-    """Alert Escalation: acknowledge an active alert."""
-    ok = alert_escalation.acknowledge(alert_id)
-    if ok:
-        return jsonify({"ok": True})
-    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
-
-
-@app.route("/api/v1/alerts/<alert_id>/resolve", methods=["POST"])
-@api_auth_required
-def api_alert_resolve(alert_id):
-    """Alert Escalation: resolve an active alert."""
-    ok = alert_escalation.resolve(alert_id)
-    if ok:
-        return jsonify({"ok": True})
-    return jsonify({"error": f"Alert '{alert_id}' not found"}), 404
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Fehlende API-Endpunkte (vom Dashboard referenziert)
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
-@app.route("/api/v1/gas")
-def api_gas():
-    """ETH Gas Fees via öffentlicher API."""
-    try:
-        r = requests.get(
-            "https://api.etherscan.io/api?module=gastracker&action=gasoracle", timeout=5
-        )
-        if r.status_code == 200:
-            data = r.json().get("result", {})
-            return jsonify(
-                {
-                    "low": data.get("SafeGasPrice", "0"),
-                    "medium": data.get("ProposeGasPrice", "0"),
-                    "high": data.get("FastGasPrice", "0"),
-                    "source": "etherscan",
-                }
-            )
-        return jsonify({"low": "0", "medium": "0", "high": "0", "source": "unavailable"})
-    except Exception:
-        return jsonify({"low": "0", "medium": "0", "high": "0", "source": "error"})
-
-
-@app.route("/api/v1/exchanges")
-@api_auth_required
-def api_exchanges():
-    """Multi-Exchange Snapshot für das Dashboard des aktuellen Users."""
-    try:
-        uid = getattr(request, "user_id", None) or session.get("user_id")
-        if not uid:
-            return jsonify(
-                {
-                    "exchanges": {},
-                    "combined_pv": 0,
-                    "combined_pnl": 0,
-                    "total_pv": 0,
-                    "total_pnl": 0,
-                }
-            )
-
-        # DB-only Snapshot (schnell, ohne externe API-Calls → keine Dashboard-Timeouts)
-        runtime = state.snapshot() if state else {}
-        active_exchange = str(runtime.get("exchange") or CONFIG.get("exchange", "")).lower()
-        runtime_positions = list(runtime.get("positions") or [])
-        runtime_markets = list(runtime.get("markets") or [])
-        runtime_last_scan = str(runtime.get("last_scan") or "")
-        runtime_running = bool(runtime.get("running", False))
-        runtime_portfolio = float(runtime.get("portfolio_value", 0) or 0)
-        runtime_return = float(runtime.get("return_pct", 0) or 0)
-        runtime_pnl = float(runtime.get("total_pnl", 0) or 0)
-        runtime_win_rate = float(runtime.get("win_rate", 0) or 0)
-        runtime_total_trades = int(runtime.get("total_trades", 0) or 0)
-        runtime_iteration = int(runtime.get("iteration", 0) or 0)
-        runtime_paper = bool(runtime.get("paper_trading", CONFIG.get("paper_trading", True)))
-        pos_by_exchange: dict[str, list[dict[str, Any]]] = {}
-        for pos in runtime_positions:
-            ex_name = str(pos.get("exchange") or active_exchange or "").lower()
-            if not ex_name:
-                continue
-            pos_by_exchange.setdefault(ex_name, []).append(pos)
-
-        user_exchanges = db.get_user_exchanges(uid)
-        enabled_set = {
-            str(e.get("exchange", "")).lower() for e in user_exchanges if e.get("enabled")
-        }
-
-        now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
-        ex_map: dict[str, dict[str, Any]] = {}
-        for ex in user_exchanges:
-            ex_name = str(ex.get("exchange", "")).lower()
-            if not ex_name:
-                continue
-            is_active_exchange = ex_name == active_exchange
-            ex_map[ex_name] = {
-                "enabled": bool(ex.get("enabled")),
-                "running": runtime_running if is_active_exchange else False,
-                "portfolio_value": runtime_portfolio if is_active_exchange else 0.0,
-                "return_pct": runtime_return if is_active_exchange else 0.0,
-                "trade_count": runtime_total_trades if is_active_exchange else 0,
-                "open_trades": len(pos_by_exchange.get(ex_name, [])),
-                "win_rate": runtime_win_rate if is_active_exchange else 0.0,
-                "total_pnl": runtime_pnl if is_active_exchange else 0.0,
-                "markets_count": len(runtime_markets) if is_active_exchange else 0,
-                "symbol_count": len(runtime_markets) if is_active_exchange else 0,
-                "last_scan": runtime_last_scan or now_iso,
-                "positions": pos_by_exchange.get(ex_name, []),
-                "error": "" if ex.get("enabled") else "Nicht aktiviert",
-            }
-
-        # Historische Kennzahlen aus lokalen closed_trades aggregieren (ohne Exchange-API).
-        # Active Exchange wird übersprungen – dort stammen Werte aus Live-Runtime (Zeile ~4416),
-        # sonst würden win_rate (%) und wins-Count inkompatibel vermischt.
-        for t in list(getattr(state, "closed_trades", [])):
-            ex_name = str(t.get("exchange", "")).lower()
-            if ex_name not in ex_map or ex_name == active_exchange:
-                continue
-            ex_map[ex_name]["trade_count"] += 1
-            pnl_val = float(t.get("pnl", 0) or 0)
-            ex_map[ex_name]["total_pnl"] += pnl_val
-            if pnl_val > 0:
-                ex_map[ex_name]["win_rate"] += 1
-
-        for ex_name, meta in ex_map.items():
-            if ex_name != active_exchange:
-                tc = int(meta.get("trade_count", 0) or 0)
-                wins = float(meta.get("win_rate", 0) or 0)
-                if tc > 0:
-                    meta["win_rate"] = round((wins / tc) * 100, 1)
-            if ex_name in enabled_set and not meta.get("error"):
-                # Noch keine laufende Engine – aber ohne Timeout-Fehler anzeigen
-                if ex_name == active_exchange and runtime_running:
-                    meta["error"] = ""
-                else:
-                    meta["error"] = (
-                        "Konfiguriert (Live-Daten folgen bei aktivem Multi-Exchange-Runner)"
-                    )
-            meta["status_detail"] = (
-                "Live-Runtime aktiv"
-                if ex_name == active_exchange and runtime_running
-                else "Snapshot/Fallback"
-            )
-
-        combined_pnl = round(sum(float(v.get("total_pnl", 0) or 0) for v in ex_map.values()), 2)
-        combined_pv = round(
-            sum(float(v.get("portfolio_value", 0) or 0) for v in ex_map.values()), 2
-        )
-        response = {
-            "exchanges": ex_map,
-            "active_exchange": active_exchange,
-            "iteration": runtime_iteration,
-            "paper_trading": runtime_paper,
-            "combined_pv": combined_pv,
-            "combined_pnl": combined_pnl,
-            "total_pv": combined_pv,
-            "total_pnl": combined_pnl,
-        }
-        return jsonify(response)
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/copy-trading/register", methods=["POST"])
-@api_auth_required
-def api_copy_trading_register():
-    """Registriert einen Follower für Copy-Trading."""
-    data = get_json_body()
-    follower_key = data.get("api_key", "")
-    if not follower_key:
-        return jsonify({"error": "API-Key erforderlich"}), 400
-    return jsonify({"status": "registered", "msg": "Copy-Trading Follower registriert"})
-
-
-@app.route("/api/v1/copy-trading/followers")
-@api_auth_required
-def api_copy_trading_followers():
-    """Listet Copy-Trading Follower."""
-    return jsonify({"followers": [], "total": 0})
-
-
-@app.route("/api/v1/copy-trading/test", methods=["POST"])
-@api_auth_required
-def api_copy_trading_test():
-    """Test-Signal an Follower senden."""
-    return jsonify({"status": "ok", "msg": "Test-Signal gesendet"})
-
-
-@app.route("/api/v1/ai/shared/status")
-@api_auth_required
-def api_ai_shared_status():
-    """Status des gemeinsamen KI-Wissenssystems."""
-    summary = knowledge_base.get_market_summary()
-    return jsonify(
-        {
-            "llm_enabled": knowledge_base.llm_enabled,
-            "total_entries": summary.get("total_knowledge_entries", 0),
-            "top_symbols": summary.get("top_symbols", [])[:5],
-            "strategy_ranking": summary.get("strategy_ranking", [])[:5],
-            "cached_analysis": knowledge_base.cached_market_analysis[:200]
-            if knowledge_base.cached_market_analysis
-            else None,
-        }
-    )
-
-
-@app.route("/api/v1/exchanges/combined/trades")
-@api_auth_required
-def api_exchanges_combined_trades():
-    """Kombinierte Trade-History über alle Exchanges."""
-    try:
-        uid = getattr(request, "user_id", None) or session.get("user_id")
-        if not uid:
-            return jsonify({"trades": [], "total": 0})
-
-        configured = {
-            str(e.get("exchange", "")).lower()
-            for e in db.get_user_exchanges(uid)
-            if e.get("exchange")
-        }
-        trades = []
-        for t in list(getattr(state, "closed_trades", [])):
-            ex_name = str(t.get("exchange", "")).lower()
-            if configured and ex_name not in configured:
-                continue
-            if not ex_name:
-                continue
-            trades.append(
-                {
-                    "exchange": ex_name,
-                    "symbol": t.get("symbol", ""),
-                    "pnl": float(t.get("pnl", 0) or 0),
-                    "reason": t.get("reason", ""),
-                    "closed": t.get("closed", ""),
-                }
-            )
-        trades.sort(key=lambda x: str(x.get("closed", "")), reverse=True)
-        return jsonify({"trades": trades[:200], "total": len(trades)})
-    except Exception as e:
-        log.error("combined trades error: %s", e)
-        return jsonify({"trades": [], "total": 0})
-
-
-@app.route("/api/v1/ai/shared/force-sync", methods=["POST"])
-@api_auth_required
-def api_ai_shared_force_sync():
-    """Erzwingt Synchronisation des geteilten KI-Modells."""
-    if not ai_engine.is_trained:
-        return jsonify({"updated": False, "error": "Kein trainiertes Modell vorhanden"})
-    return jsonify(
-        {
-            "updated": True,
-            "version": ai_engine.training_ver,
-            "accuracy": round(ai_engine.wf_accuracy * 100, 1)
-            if hasattr(ai_engine, "wf_accuracy")
-            else 0,
-        }
-    )
-
-
-@app.route("/api/v1/ai/shared/train", methods=["POST"])
-@api_auth_required
-def api_ai_shared_train():
-    """Startet globales KI-Training."""
-    n = len(ai_engine.X_raw)
-    if n < CONFIG.get("ai_min_samples", 50):
-        return jsonify(
-            {
-                "started": False,
-                "error": f"Zu wenig Samples ({n}/{CONFIG.get('ai_min_samples', 50)})",
-            }
-        )
-    threading.Thread(target=ai_engine._train, daemon=True).start()
-    return jsonify({"started": True, "samples_total": n, "new_samples": n})
-
-
-@app.route("/api/v1/ai/feature-importance")
-@api_auth_required
-def api_ai_feature_importance():
-    """Feature-Importance des KI-Modells."""
-    if not ai_engine.is_trained:
-        return jsonify({"error": "KI-Modell nicht trainiert"})
-    weights = ai_engine.weights if hasattr(ai_engine, "weights") else {}
-    names = list(weights.keys()) if weights else []
-    importances = list(weights.values()) if weights else []
-    return jsonify(
-        {
-            "feature_names": names,
-            "importances": importances,
-            "wf_accuracy": round(ai_engine.wf_accuracy * 100, 1)
-            if hasattr(ai_engine, "wf_accuracy")
-            else 0,
-        }
-    )
-
-
-@app.route("/api/v1/portfolio/optimize", methods=["POST"])
-@api_auth_required
-def api_portfolio_optimize():
-    """Markowitz Portfolio-Optimierung."""
-    data = get_json_body()
-    symbols = data.get("symbols", [])
-    if len(symbols) < 2:
-        return jsonify({"error": "Mindestens 2 Symbole erforderlich"}), 400
-    try:
-        opt_ex = create_exchange()
-        returns_data = {}
-        for sym in symbols[:10]:
-            ohlcv = opt_ex.fetch_ohlcv(f"{sym}/USDT" if "/" not in sym else sym, "1d", limit=90)
-            if ohlcv and len(ohlcv) > 10:
-                closes = [c[4] for c in ohlcv]
-                rets = [
-                    (closes[i] - closes[i - 1]) / closes[i - 1]
-                    for i in range(1, len(closes))
-                    if closes[i - 1]
-                ]
-                if rets:
-                    returns_data[sym] = rets
-        if len(returns_data) < 2:
-            return jsonify({"error": "Nicht genug Preisdaten"})
-        # Einfache Equal-Weight als Fallback
-        n = len(returns_data)
-        weight = round(1.0 / n, 4)
-        allocations = {s: round(weight * 100, 1) for s in returns_data}
-        avg_ret = sum(sum(r) / len(r) for r in returns_data.values()) / n * 100
-        return jsonify(
-            {
-                "symbols": list(returns_data.keys()),
-                "weights": [weight] * n,
-                "allocations": allocations,
-                "exp_return": round(avg_ret, 2),
-                "exp_volatility": round(avg_ret * 1.5, 2),
-                "sharpe_ratio": round(avg_ret / max(avg_ret * 1.5, 0.01), 2),
-            }
-        )
-    except Exception as e:
-        log.error("API error: %s", e)
-        return jsonify({"error": "Internal server error"}), 500
-
-
-@app.route("/api/v1/backtest/compare", methods=["POST"])
-@api_auth_required
-def api_backtest_compare():
-    """Vergleichender Backtest über mehrere Symbole."""
-    data = get_json_body()
-    symbols = data.get("symbols", [])
-    tf = data.get("timeframe", "1h")
-    candles = safe_int(data.get("candles", 500), 500)
-    if not symbols:
-        return jsonify({"error": "Keine Symbole angegeben"}), 400
-    results = {}
-    bt_ex = create_exchange()
-    for sym in symbols[:5]:
-        full_sym = f"{sym}/USDT" if "/" not in sym else sym
-        try:
-            result = bt.run(
-                bt_ex,
-                full_sym,
-                tf,
-                candles,
-                CONFIG.get("stop_loss_pct", 0.025),
-                CONFIG.get("take_profit_pct", 0.06),
-                CONFIG.get("min_vote_score", 0.3),
-            )
-            results[sym] = (
-                result
-                if isinstance(result, dict)
-                else {
-                    "return_pct": 0,
-                    "win_rate": 0,
-                    "sharpe_ratio": 0,
-                    "max_drawdown": 0,
-                    "total_trades": 0,
-                }
-            )
-        except Exception:
-            results[sym] = {
-                "return_pct": 0,
-                "win_rate": 0,
-                "sharpe_ratio": 0,
-                "max_drawdown": 0,
-                "total_trades": 0,
-            }
-    return jsonify({"results": results})
-
-
-@app.route("/api/v1/positions/<path:symbol>/sl", methods=["PATCH"])
-@api_auth_required
-def api_position_update_sl(symbol):
-    """Manuelles SL-Update für eine offene Position."""
-    data = get_json_body()
-    sl_pct = data.get("sl_pct")
-    if sl_pct is None or not isinstance(sl_pct, (int, float)) or sl_pct <= 0:
-        return jsonify({"error": "Ungültiger SL-Wert"}), 400
-    if sl_pct > 50:
-        return jsonify({"error": "SL darf maximal 50% betragen"}), 400
-    with state._lock:
-        pos = state.positions.get(symbol)
-        if not pos:
-            return jsonify({"error": f"Position {symbol} nicht gefunden"}), 404
-        entry = pos.get("entry", 0)
-        if entry <= 0:
-            return jsonify({"error": "Kein Einstiegspreis"}), 400
-        new_sl = entry * (1 - sl_pct / 100)
-        pos["sl"] = new_sl
-    log.info("SL manuell: %s → %.4f (-%s%%)", symbol, new_sl, sl_pct)
-    # Persist to DB if trade positions table available
-    try:
-        if hasattr(db, "upsert_trade_position"):
-            db.upsert_trade_position(
-                {
-                    "symbol": symbol,
-                    "side": "long",
-                    "stop_loss": new_sl,
-                    "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                    "exchange": CONFIG.get("exchange", "cryptocom"),
-                }
-            )
-    except Exception as e:
-        log.warning("SL-DB-Persistenz fehlgeschlagen für %s: %s", symbol, e)
-    return jsonify({"new_sl": new_sl, "symbol": symbol})
 
 
 def startup_banner():
@@ -5025,6 +3159,111 @@ register_default_blueprints(
     require_auth_fn=dashboard_auth,
     log=log,
 )
+
+# ── API-Blueprint-Registrierung ────────────────────────────────────────────
+from routes.api.deps import AppDeps
+from routes.api.trading import create_trading_blueprint
+from routes.api.admin import create_admin_blueprint
+from routes.api.ai import create_ai_blueprint
+from routes.api.system import create_system_blueprint
+from routes.api.market import create_market_blueprint
+
+_api_deps = AppDeps(
+    config=CONFIG,
+    state=state,
+    db=db,
+    log=log,
+    api_auth_required=api_auth_required,
+    admin_required=admin_required,
+    get_json_body=get_json_body,
+    safe_int=safe_int,
+    safe_float=safe_float,
+    safe_bool=safe_bool,
+    create_exchange=create_exchange,
+    close_position=close_position,
+    open_position=open_position,
+    fetch_markets=fetch_markets,
+    scan_symbol=scan_symbol,
+    get_exchange_fee_rate=get_exchange_fee_rate,
+    get_heatmap_data=get_heatmap_data,
+    fetch_aggregated_balance=fetch_aggregated_balance,
+    safety_scan=safety_scan,
+    trading_ops_mod=_trading_ops_mod,
+    bot_version=BOT_VERSION,
+    bot_name=BOT_NAME,
+    bot_full=BOT_FULL,
+    ai_engine=ai_engine,
+    backtest=bt,
+    tax_report=tax,
+    trade_mode=trade_mode,
+    knowledge=knowledge_base,
+    mcp_tools=mcp_registry,
+    risk_mgr=risk,
+    adv_risk=adv_risk,
+    revenue=revenue_tracker,
+    cluster_ctrl=cluster_ctrl,
+    alert_escalation=alert_escalation,
+    healer=healer,
+    perf_attribution=perf_attribution,
+    trade_dna=trade_dna,
+    trading_algos=trading_algos,
+    smart_exits=smart_exits,
+    grid_engine=grid_engine,
+    arb_scanner=arb_scanner,
+    short_engine=short_engine,
+    dominance=dominance,
+    anomaly=anomaly,
+    genetic=genetic,
+    rl_agent=rl_agent,
+    news_fetcher=news_fetcher,
+    onchain=onchain,
+    fg_idx=fg_idx,
+    sentiment_f=sentiment_f,
+    funding_tracker=funding_tracker,
+    adaptive_weights=adaptive_weights,
+    symbol_cooldown=symbol_cooldown,
+    liq=liq,
+    ob=ob,
+    discord=discord,
+    telegram=telegram,
+    price_alerts=price_alerts,
+    emit_event=emit_event,
+    limiter=limiter,
+    exchange_default_fees=EXCHANGE_DEFAULT_FEES,
+    exchange_map={},
+    get_virginie_forecast_feed=get_virginie_forecast_feed,
+    get_virginie_forecast_quality=get_virginie_forecast_quality,
+    get_virginie_forecast_stats=get_virginie_forecast_stats,
+    audit_fn=_audit,
+    db_audit_fn=db_audit,
+    build_prometheus_lines=build_prometheus_lines,
+    build_ws_state_snapshot=build_ws_state_snapshot,
+    trades_to_json=trades_to_json,
+    tax_rows_to_csv=tax_rows_to_csv,
+    verify_latest_backup=verify_latest_backup,
+    apply_update=_apply_update,
+    get_update_status=_get_update_status,
+    rollback_update=_rollback_update,
+    reveal_and_decrypt=_reveal_and_decrypt,
+    is_single_exchange_mode=_is_single_exchange_mode,
+    get_admin_exchange_by_name=_get_admin_exchange_by_name,
+    get_admin_primary_exchange=_get_admin_primary_exchange,
+    get_exchange_key_states=_get_exchange_key_states,
+    pin_user_exchange=_pin_user_exchange,
+    normalize_exchange_name=normalize_exchange_name,
+    validate_admin_user_payload=validate_admin_user_payload,
+    is_admin_password_weak=is_admin_password_weak,
+    get_llm_header_status_fn=_get_llm_header_status,
+    maybe_auto_start_bot_fn=_maybe_auto_start_bot,
+    set_env_var_fn=_set_env_var,
+    bot_loop_fn=bot_loop,
+)
+
+app.register_blueprint(create_trading_blueprint(_api_deps))
+app.register_blueprint(create_admin_blueprint(_api_deps))
+app.register_blueprint(create_ai_blueprint(_api_deps))
+app.register_blueprint(create_system_blueprint(_api_deps))
+app.register_blueprint(create_market_blueprint(_api_deps))
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # AUTO-START: Bot startet automatisch ohne Admin-Login
