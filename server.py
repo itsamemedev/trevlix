@@ -2231,7 +2231,7 @@ def on_rollback_update():
 @socketio.on("start_exchange")
 def on_start_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2258,7 +2258,7 @@ def on_start_exchange(data: dict | None = None):
 @socketio.on("stop_exchange")
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2282,7 +2282,7 @@ def on_stop_exchange(data: dict | None = None):
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data: dict | None = None):
     data = data or {}
-    if not _ws_admin_required():
+    if not _ws_auth_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     api_key = str((data or {}).get("api_key", "")).strip()
