@@ -397,6 +397,49 @@ def _security_headers(response):
     return _apply_security_headers(response, is_secure=request.is_secure)
 
 
+@app.errorhandler(404)
+def _handle_404(_e):
+    """JSON-safe 404 response for API, HTML for browser."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "not_found"}), 404
+    return "Not Found", 404
+
+
+@app.errorhandler(405)
+def _handle_405(_e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "method_not_allowed"}), 405
+    return "Method Not Allowed", 405
+
+
+@app.errorhandler(500)
+def _handle_500(e):
+    """Catch-all 500 handler – never leak exception details to clients."""
+    try:
+        log.error("Unhandled 500 on %s: %s", request.path, e)
+    except Exception:
+        pass
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_server_error"}), 500
+    return "Internal Server Error", 500
+
+
+@app.errorhandler(Exception)
+def _handle_unexpected(e):
+    """Fallback for uncaught exceptions – prevents stack-trace leakage."""
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(e, HTTPException):
+        return e
+    try:
+        log.exception("Unhandled exception on %s", request.path)
+    except Exception:
+        pass
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_server_error"}), 500
+    return "Internal Server Error", 500
+
+
 def normalize_exchange_name(raw: Any) -> str:
     """Normalisiert und validiert einen Exchange-Namen."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
@@ -945,8 +988,6 @@ def _pin_user_exchange(user_id: int | None, exchange_name: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 # REST API — JWT-gesichert
 # ═══════════════════════════════════════════════════════════════════════════════
-
-
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

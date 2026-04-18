@@ -1,5 +1,64 @@
 # Lessons Learned
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
+
+### Lektion 56: Größen-Cap vor `json.loads` auf Untrusted Input
+**Problem:** `_parse_llm_tool_call` scannte Modell-Output nach dem ersten
+`{"tool"` und suchte dann das passende `}` – ohne Längen-Limit. Ein
+LLM, das in einen Loop gerät, produziert schnell mehrere MB Output;
+`json.loads` auf so einen String kann den Process-Heap sprengen.
+**Regel:** Jeder Parser, der Untrusted-Input konsumiert (LLM-Ausgabe,
+User-Input, Webhook-Body), braucht einen Hard-Byte-Cap VOR dem Parse.
+64 KiB ist ein sinnvoller Default für strukturierte JSON-Steuerung.
+**Code:** `services/knowledge.py:588` (`_MAX_TOOL_JSON_BYTES = 65_536`).
+
+### Lektion 57: Dict-Caches unter Parallelität IMMER hinter einen Lock
+**Problem:** `MCPToolRegistry._call_cache` war ein plain `dict`. Unter
+parallelen Tool-Calls löste die periodische Eviction (`sorted(...)`
++ `pop`) `RuntimeError: dictionary changed size during iteration` aus.
+Der Cache ist eine Hot-Path-Optimierung – ein RuntimeError dort killt
+den Tool-Call und damit die ganze Agent-Turn-Ausführung.
+**Regel:** Jeder shared mutable Container in einer Klasse, deren
+Methoden von mehreren Threads/Greenlets aufgerufen werden können,
+braucht einen `threading.Lock`. "Nur Lesen" reicht nicht – Eviction
+und Updates laufen nebenher.
+**Code:** `services/mcp_tools.py` (added `self._cache_lock`).
+
+### Lektion 58: API-Error-Responses – niemals `str(e)` an den Client
+**Problem:** Mehrere Endpoints (`manual_buy`, `manual_sell`,
+`close_position`, `grid_create`, `portfolio_optimize`) hatten
+`return jsonify({"error": str(e)})`. Das exponiert Interna:
+Exchange-SDK-Pfade, DB-Fehler mit Tabellen-Namen, File-Paths,
+Stack-Trace-Fragmente. Ein API-Consumer kann daraus Internals
+reconstructen.
+**Regel:** Error-Responses = generischer Fehler-Code (z.B.
+`"manual_buy_failed"`) + `log.error` der Diagnose-Details.
+Niemals beides in einem Response-Body mischen.
+**Code:** `routes/api/trading.py` (4 Stellen), `routes/api/market.py` (1).
+
+### Lektion 59: Prod-Hartfehler > Silent-Weak-Default
+**Problem:** `build_default_config` hatte
+`os.getenv("ADMIN_PASSWORD", "trevlix")`. Deployer, der `.env` vergisst,
+startet mit dem **öffentlich bekannten Default-Passwort**. Das ist
+keine Konfigurations-Lücke, das ist eine Lieferkette-Backdoor.
+**Regel:** In `TREVLIX_ENV=production` / `FLASK_ENV=production`
+MUSS das Fehlen eines sicherheitsrelevanten Secrets zum RuntimeError
+führen. In Dev darf ein zufällig generiertes Einmal-Passwort
+erzeugt werden – aber NIEMALS ein statischer String.
+**Code:** `app/core/default_config.py` (`_resolve_admin_password`).
+
+### Lektion 60: Flask-Errorhandler gehören in die App, nicht in die Route
+**Problem:** Jede einzelne Route hatte `try/except Exception`-Blocks,
+aber die App selbst hatte keinen `@app.errorhandler(500)` oder
+`@app.errorhandler(Exception)`. Bedeutet: Werkzeug-Exception ⇒
+HTML-Traceback-Page an den Client. In Prod ⇒ Debug-Banner
+in Production-Response.
+**Regel:** Globale `errorhandler(404/405/500/Exception)` in
+der App-Factory; JSON für `/api/`-Pfade, HTML sonst.
+**Code:** `server.py` (4 Handler nach `@after_request`).
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
 
 ### Lektion 53: Silent `return` im Trading-Hot-Path ist ein UX-Bug

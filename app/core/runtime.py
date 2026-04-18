@@ -22,6 +22,39 @@ def _db_ping(db) -> bool:
         return False
 
 
+def _run_env_validation(log) -> None:
+    """Runs ``validate_env.validate`` at startup and logs any findings.
+
+    In production (``TREVLIX_ENV=production`` or ``FLASK_ENV=production``)
+    critical issues abort startup. In dev, they are logged as errors but
+    do not block the server.
+    """
+    try:
+        import validate_env  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        log.debug(f"validate_env nicht importierbar: {exc}")
+        return
+
+    try:
+        issues = validate_env.validate()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"Env-Validierung übersprungen: {exc}")
+        return
+
+    criticals = [i for i in issues if i.severity == "critical"]
+    warnings = [i for i in issues if i.severity == "warning"]
+    for i in warnings:
+        log.warning(f"⚠️  ENV {i.var}: {i.msg}")
+    for i in criticals:
+        log.error(f"✖ ENV {i.var}: {i.msg}")
+
+    env = (os.getenv("TREVLIX_ENV") or os.getenv("FLASK_ENV") or "").strip().lower()
+    if criticals and env == "production":
+        raise RuntimeError(
+            f"{len(criticals)} kritische ENV-Fehler in Produktion – Start abgebrochen."
+        )
+
+
 def _ollama_ping() -> bool | None:
     """Liefert True/False bei konfiguriertem Ollama, sonst None (nicht angezeigt)."""
     host = os.getenv("OLLAMA_HOST", "").strip()
@@ -60,6 +93,8 @@ def run_server(
 ) -> None:
     """Startet Hintergrunddienste und den SocketIO-Server."""
     startup_banner()
+
+    _run_env_validation(log)
 
     cfg_errors = validate_config(config)
     if cfg_errors:

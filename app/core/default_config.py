@@ -27,6 +27,28 @@ def _env_int(key: str, default: int) -> int:
         return default
 
 
+def _resolve_admin_password() -> str:
+    """Resolve ADMIN_PASSWORD with a production safety net.
+
+    In production (``FLASK_ENV=production`` or ``TREVLIX_ENV=production``),
+    a missing/empty ``ADMIN_PASSWORD`` raises ``RuntimeError`` instead of
+    silently falling back to a weak default. In dev, a random password is
+    generated and written to the logger so developers never ship "trevlix".
+    """
+    value = os.getenv("ADMIN_PASSWORD", "").strip()
+    if value:
+        return value
+
+    env = (os.getenv("TREVLIX_ENV") or os.getenv("FLASK_ENV") or "").strip().lower()
+    if env == "production":
+        raise RuntimeError(
+            "ADMIN_PASSWORD is not set. Refusing to start in production with a "
+            "default password. Set ADMIN_PASSWORD in your environment."
+        )
+
+    return secrets.token_urlsafe(24)
+
+
 def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]:
     """Build the default runtime config map.
 
@@ -177,7 +199,7 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "smart_exit_min_tp_pct": 0.02,
         "smart_exit_max_tp_pct": 0.15,
         "smart_exit_squeeze_threshold": 0.03,
-        "admin_password": secret_factory(os.getenv("ADMIN_PASSWORD", "trevlix")),
+        "admin_password": secret_factory(_resolve_admin_password()),
         "jwt_secret": secret_factory(os.getenv("JWT_SECRET", secrets.token_hex(32))),
         "jwt_expiry_hours": 24,
         "multi_user": True,

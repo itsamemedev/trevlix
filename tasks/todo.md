@@ -1,5 +1,53 @@
 # Tasks
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
+
+### Scope
+
+User-Auftrag: "Suche nach Fehlern, Problemen und Bugs und behebe diese.
+Arbeite zusätzlich die todo.md ab. Verbessere das Projekt so, dass wir
+produktionsfähig starten können."
+
+Fokus: Produktionsreife, Härtung von API-Error-Oberflächen und
+Startup-Validierung.
+
+### Bug-Fixes (Round 4)
+
+| # | Datei | Schweregrad | Problem | Fix |
+|---|-------|-------------|---------|-----|
+| 1 | `services/knowledge.py` | HIGH | `json.loads` über LLM-Output ohne Größen-Cap → Speicher-Exhaustion bei extrem langen Bracket-Sequenzen | `_MAX_TOOL_JSON_BYTES = 65_536` als Hard-Cap vor Parser-Invocation |
+| 2 | `services/mcp_tools.py` | HIGH | `self._call_cache` (dict) ohne Lock → RuntimeError "dictionary changed size during iteration" unter parallelen Tool-Calls | `threading.Lock` um Read/Write/Eviction; `%s`-Logging statt f-string |
+| 3 | `routes/api/trading.py` ×4 + `routes/api/market.py` ×1 | MEDIUM | API-Fehler-Responses leckten `str(e)` (Stack-Trace-Fragmente, internen Aufbau) | Generische Fehler-Codes + `log.error` der Diagnose |
+| 4 | `routes/api/trading.py:76` | MEDIUM | `si(data.get("candles", 500), 500)` unbegrenzt → Backtest-DoS via `candles=10_000_000` | Hard-Cap `min(..., 5000)` |
+| 5 | `app/core/default_config.py:180` | BLOCKER | Hard-coded Fallback-Passwort `"trevlix"` wenn `ADMIN_PASSWORD` fehlt | `_resolve_admin_password()`: Prod ⇒ RuntimeError, Dev ⇒ `secrets.token_urlsafe(24)` |
+| 6 | `server.py` | BLOCKER | Keine `@app.errorhandler(500)` / `errorhandler(Exception)` → Werkzeug-Debug-Traces an Clients möglich | Globale 404/405/500/Exception-Handler mit JSON/HTML-Split via `request.path.startswith("/api/")` |
+| 7 | `app/core/runtime.py` | HIGH | `validate_env.py` existierte, wurde aber nie beim Serverstart aufgerufen | `_run_env_validation(log)` vor `validate_config()`; Prod-Modus ⇒ abort bei critical |
+
+### BackupScheduler Graceful-Shutdown – Verifiziert
+
+Keine Änderung nötig: `BackupScheduler.run` prüft bereits
+`_SHUTDOWN_EVENT.is_set()` und `wait(60)`; der zentrale
+`build_graceful_shutdown_handler` ruft `shutdown_event.set()`.
+Korrekt verdrahtet — kein Leaking-Thread bei SIGTERM.
+
+### Verifizierung (Round 4)
+
+- **613 Tests bestanden**, 42 skipped (env-bedingt). Keine neuen Failures.
+- `ruff check` clean auf allen geänderten Dateien (pre-existierende
+  `server.py` E402-Meldungen unangetastet, bereits 11 Stück in Round 3).
+- `ruff format` angewendet auf `server.py`, `routes/api/trading.py`,
+  `routes/api/market.py`.
+
+### Lessons (Round 4)
+
+Siehe `tasks/lessons.md`, Lektionen 56–59 für Details zu:
+- Größen-Caps vor `json.loads` auf Untrusted-Input
+- Dict-Caches unter Parallelität IMMER hinter einen Lock
+- API-Error-Responses: niemals `str(e)` an den Client
+- Prod-Hartfehler bei fehlenden Secrets > Silent-Weak-Default
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
 
 ### Scope
