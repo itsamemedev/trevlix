@@ -1,5 +1,71 @@
 # Tasks
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18)
+
+### Scope
+
+User-Auftrag: "Implementiere Module die das ganze maximal verbessern".
+Ziel: non-invasive, in-process Verbesserungs-Module für Observability &
+Reliability. Kein Refactor bestehender Hot-Paths, keine neuen externen
+Abhängigkeiten.
+
+### Gap-Analyse
+
+- `app/core/prometheus_metrics.py` hat nur hardcoded state-basierte Zeilen,
+  keinen Metric-Registry für Timing/Counter aus dem Code heraus.
+- HTTP-Endpoints haben kein Rate-Limiting (nur WS via `WsRateLimiter`).
+- Retry/Backoff-Logik ist ad-hoc in Exchange-Calls verstreut, kein
+  wiederverwendbarer Circuit-Breaker.
+- Keine strukturierten Dependency-Health-Checks (DB, Exchange, LLM).
+
+### Module-Plan
+
+- [ ] `services/metrics_collector.py` – Thread-safe Counter/Gauge/Histogram
+      Registry mit Snapshot für Prometheus-Export.
+- [ ] `services/rate_limiter.py` – Token-Bucket Rate-Limiter (generisch,
+      kein WS-Kopplung).
+- [ ] `services/circuit_breaker.py` – Closed/Open/Half-Open State-Machine
+      mit Decorator + Retry-Policy (Exponential Backoff + Jitter).
+- [ ] `services/health_check.py` – Dependency-Check-Registry mit
+      strukturiertem Report (status, latency_ms, detail).
+- [ ] Integration: `prometheus_metrics.py` liest zusätzlich aus Registry.
+- [ ] Tests für alle 4 Module (thread-safety, edge-cases).
+
+### Grundsätze (aus CLAUDE.md + lessons.md)
+
+- Lektion 15/19/24/49: Locks bei allen internen Dicts.
+- Lektion 12: Non-invasiv, keine Änderung an Trading-Hot-Paths.
+- Lektion 38: Keine bestehenden Module ersetzen, nur ergänzen.
+
+### Umgesetzt
+
+- [x] `services/metrics_collector.py` – Counter/Gauge/Histogram mit
+      Prometheus-Export, Thread-safe, Label-Escaping.
+- [x] `services/rate_limiter.py` – Token-Bucket mit injizierbarer Clock,
+      LRU-Eviction bei `max_keys`-Overflow.
+- [x] `services/circuit_breaker.py` – Closed/Open/Half-Open mit
+      `RetryPolicy` (Exponential Backoff + Full Jitter).
+- [x] `services/health_check.py` – Registry mit Timeout pro Check plus
+      Ready-made Factories für DB/Exchange/LLM.
+- [x] `app/core/prometheus_metrics.py` rendert zusätzlich die Registry.
+- [x] 4 Test-Dateien (74 neue Tests, thread-safety + edge cases).
+
+### Verifizierung
+
+- 533 Tests bestanden (74 neue + 459 bestehende), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen Dateien.
+- `ruff format --check` clean auf allen neuen Dateien.
+- Pre-existierende Server-Lint-Fehler (`server.py:52-3233`) nicht im Scope.
+
+### Weiterhin offen
+
+- Integration in Routes (z.B. `@metrics.time()` auf API-Handlers). Bewusst
+  nicht in dieser Session, damit keine Hot-Paths berührt werden.
+- Health-Endpoints (`/health`, `/ready`, `/live`) im API-Blueprint
+  registrieren – gehört in eine Blueprint-Refactor-Session.
+
+---
+
 ## Session: restore-full-functionality-Oc9Q3 (2026-04-17)
 
 ### Scope
