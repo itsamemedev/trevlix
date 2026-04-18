@@ -1,5 +1,152 @@
 # Lessons Learned
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
+
+### Lektion 56: Größen-Cap vor `json.loads` auf Untrusted Input
+**Problem:** `_parse_llm_tool_call` scannte Modell-Output nach dem ersten
+`{"tool"` und suchte dann das passende `}` – ohne Längen-Limit. Ein
+LLM, das in einen Loop gerät, produziert schnell mehrere MB Output;
+`json.loads` auf so einen String kann den Process-Heap sprengen.
+**Regel:** Jeder Parser, der Untrusted-Input konsumiert (LLM-Ausgabe,
+User-Input, Webhook-Body), braucht einen Hard-Byte-Cap VOR dem Parse.
+64 KiB ist ein sinnvoller Default für strukturierte JSON-Steuerung.
+**Code:** `services/knowledge.py:588` (`_MAX_TOOL_JSON_BYTES = 65_536`).
+
+### Lektion 57: Dict-Caches unter Parallelität IMMER hinter einen Lock
+**Problem:** `MCPToolRegistry._call_cache` war ein plain `dict`. Unter
+parallelen Tool-Calls löste die periodische Eviction (`sorted(...)`
++ `pop`) `RuntimeError: dictionary changed size during iteration` aus.
+Der Cache ist eine Hot-Path-Optimierung – ein RuntimeError dort killt
+den Tool-Call und damit die ganze Agent-Turn-Ausführung.
+**Regel:** Jeder shared mutable Container in einer Klasse, deren
+Methoden von mehreren Threads/Greenlets aufgerufen werden können,
+braucht einen `threading.Lock`. "Nur Lesen" reicht nicht – Eviction
+und Updates laufen nebenher.
+**Code:** `services/mcp_tools.py` (added `self._cache_lock`).
+
+### Lektion 58: API-Error-Responses – niemals `str(e)` an den Client
+**Problem:** Mehrere Endpoints (`manual_buy`, `manual_sell`,
+`close_position`, `grid_create`, `portfolio_optimize`) hatten
+`return jsonify({"error": str(e)})`. Das exponiert Interna:
+Exchange-SDK-Pfade, DB-Fehler mit Tabellen-Namen, File-Paths,
+Stack-Trace-Fragmente. Ein API-Consumer kann daraus Internals
+reconstructen.
+**Regel:** Error-Responses = generischer Fehler-Code (z.B.
+`"manual_buy_failed"`) + `log.error` der Diagnose-Details.
+Niemals beides in einem Response-Body mischen.
+**Code:** `routes/api/trading.py` (4 Stellen), `routes/api/market.py` (1).
+
+### Lektion 59: Prod-Hartfehler > Silent-Weak-Default
+**Problem:** `build_default_config` hatte
+`os.getenv("ADMIN_PASSWORD", "trevlix")`. Deployer, der `.env` vergisst,
+startet mit dem **öffentlich bekannten Default-Passwort**. Das ist
+keine Konfigurations-Lücke, das ist eine Lieferkette-Backdoor.
+**Regel:** In `TREVLIX_ENV=production` / `FLASK_ENV=production`
+MUSS das Fehlen eines sicherheitsrelevanten Secrets zum RuntimeError
+führen. In Dev darf ein zufällig generiertes Einmal-Passwort
+erzeugt werden – aber NIEMALS ein statischer String.
+**Code:** `app/core/default_config.py` (`_resolve_admin_password`).
+
+### Lektion 60: Flask-Errorhandler gehören in die App, nicht in die Route
+**Problem:** Jede einzelne Route hatte `try/except Exception`-Blocks,
+aber die App selbst hatte keinen `@app.errorhandler(500)` oder
+`@app.errorhandler(Exception)`. Bedeutet: Werkzeug-Exception ⇒
+HTML-Traceback-Page an den Client. In Prod ⇒ Debug-Banner
+in Production-Response.
+**Regel:** Globale `errorhandler(404/405/500/Exception)` in
+der App-Factory; JSON für `/api/`-Pfade, HTML sonst.
+**Code:** `server.py` (4 Handler nach `@after_request`).
+
+---
+
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
+
+### Lektion 53: Silent `return` im Trading-Hot-Path ist ein UX-Bug
+**Problem:** `open_position()` blockierte alle Trades in Bear-Markt-Regime
+mit einem nackten `return` – keine Log-Zeile, kein `_record_decision`.
+User meldete "Handeln nicht möglich" ohne jede Information _warum_ der
+Bot nichts tut. Debug-Zeit: stundenlang, weil der Fehler _nicht_ auftrat
+– das war das Problem.
+**Regel:** Jeder `return` im Trading-Hot-Path, der eine legitime
+Entscheidung abbildet (blocked by filter, risk, regime, news), MUSS:
+1. via `_record_decision(symbol, "blocked", reason, scan)` sichtbar sein
+   (landet im Dashboard),
+2. mindestens auf DEBUG/INFO-Level loggen,
+3. die Dashboard-Statistik "wieso-keine-Trades" mitfüttern.
+"Performance-Optimierung durch Skip" ist kein Grund, einen Grund zu
+verschweigen.
+**Code:** `app/core/trading_ops.py:742` (regime filter now logs + records).
+
+### Lektion 54: UI-Controls mit zwei Datenpfaden müssen BEIDE funktionieren
+**Problem:** Paper/Live-Modus hatte zwei Toggles im Dashboard:
+`paperMode` (Admin-Bereich, feuerte REST `/api/v1/trading/mode`) und
+`sPaper` (User-Bereich, wurde per `saveSettings` → `update_config`-WS
+persistiert, der aber admin-gated ist). Non-Admin-User sahen `sPaper`,
+klickten, speicherten – und der Server rejecte die gesamte
+update_config silent (nur der Flag landete im Void). Symptom: "Live-Mode
+lässt sich nicht einstellen".
+**Regel:** Bei einer UI-Kontrolle, die in zwei Sektionen auftaucht
+(Admin + User), MUSS jede Sektion einen vollständigen _eigenen_ Save-Pfad
+haben. Entweder teilen sich beide den REST-Endpoint, oder der WS-Event
+hat einen feineren Permission-Check ("Admin für alles außer
+paper_trading, das darf jeder seinen eigenen Account setzen"). Mit der
+`onchange="togglePaperMode(...)"` Ergänzung wurde der direkte REST-Pfad
+auch für `sPaper` aktiv.
+**Code:** `templates/dashboard.html:562` (sPaper onchange hook).
+
+### Lektion 55: Graceful Shutdown braucht Per-Hook-Deadlines
+**Problem:** Ein blockender Shutdown-Hook (z.B. `db.close()` mit hängender
+TCP-Verbindung) kann ein ganzes `SIGTERM`-Drain verhindern – K8s killt
+den Pod nach 30s hart, in-flight Trades bleiben halbfertig.
+**Regel:** Shutdown-Hooks laufen in einem Thread mit `join(timeout=deadline)`.
+Überschreitet der Hook sein Budget, wird er _übersprungen_, nicht
+gewartet. Zweites Signal während Shutdown ⇒ `os._exit(2)` statt
+stecken zu bleiben. LIFO-Order, damit High-Level-Systeme (Bot-Loop) vor
+ihren Dependencies (DB-Pool) heruntergefahren werden.
+**Code:** `services/shutdown.py`
+
+---
+
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
+
+### Lektion 50: Observability-Wiring darf Bot-Startup niemals blockieren
+**Problem:** Beim Einfügen von Health-Check-Registrierung, Log-Filtern und
+HTTP-Middleware in `server.py` kann ein Fehler im Observability-Layer
+(fehlender Healer, vertippter Metric-Name, kaputter Flask-Hook) einen
+ansonsten gesunden Bootstrap-Pfad zerreißen. Trading-Bot würde nicht
+starten, nur weil `/metrics` einen Bug hätte.
+**Regel:** Observability-Wiring in `try/except Exception` kapseln und
+Fehler NUR loggen. Die Regel "never break the thing you observe" gilt
+auch für die Initialisierung, nicht nur zur Laufzeit. Auch innerhalb
+der Middleware-Hooks (`before_request`/`after_request`) sollen
+Metrik-Fehler defensiv abgefangen werden.
+**Code:** `server.py:3332-3355`, `app/core/observability_setup.py:124-136`
+
+### Lektion 51: Thundering-Herd-Protection via Per-Key-Producer-Lock
+**Problem:** Gemeinsamer Cache (z.B. für CoinGecko-Calls, LLM-Antworten)
+hat eine einzige "hot key"-Invalidation. Ohne Schutz rufen N gleichzeitige
+Requests den teuren Producer N-mal parallel auf, stauen das Upstream-API
+und verbrennen Rate-Limits.
+**Regel:** `get_or_set(key, producer)` hält einen _per-key_ `Lock` während
+des Producer-Calls. Zweiter Read-Check innerhalb des Locks verhindert
+doppelte Produktion, wenn der Nachfolger das Lock erhält nachdem der
+erste Producer schon geliefert hat. Ein einziges globales Lock würde
+alle Keys blockieren – ein Lock pro Key ist der Kompromiss zwischen
+Korrektheit und Parallelität.
+**Code:** `services/cache.py:TTLCache.get_or_set`
+
+### Lektion 52: Bounded Queues für Backpressure, nie "unendlich submiten"
+**Problem:** Ein `threading.Thread(target=heavy_job)` pro eingehendem
+Event frisst unter Last unbegrenzt Threads (→ OS-Limit, GIL-Contention,
+OOM-Risiko über Stack-Speicher). Eine unbounded `queue.Queue` schiebt
+das Problem nur in den Memory-Bereich.
+**Regel:** `TaskQueue` mit fixem `workers`-Cap UND `max_queue`-Cap.
+`submit()` liefert `None` wenn die Queue voll ist – der Aufrufer soll
+dann laut werden (Log, Metric, 503) statt still Arbeit zu verschlucken.
+**Code:** `services/task_queue.py`
+
+---
+
 ## Session: fix-bugs-xtf60 (2026-04-15) – Round 2
 
 ### Lektion 48: Externe-Preise Division ohne Guard

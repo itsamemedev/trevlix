@@ -397,6 +397,49 @@ def _security_headers(response):
     return _apply_security_headers(response, is_secure=request.is_secure)
 
 
+@app.errorhandler(404)
+def _handle_404(_e):
+    """JSON-safe 404 response for API, HTML for browser."""
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "not_found"}), 404
+    return "Not Found", 404
+
+
+@app.errorhandler(405)
+def _handle_405(_e):
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "method_not_allowed"}), 405
+    return "Method Not Allowed", 405
+
+
+@app.errorhandler(500)
+def _handle_500(e):
+    """Catch-all 500 handler – never leak exception details to clients."""
+    try:
+        log.error("Unhandled 500 on %s: %s", request.path, e)
+    except Exception:
+        pass
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_server_error"}), 500
+    return "Internal Server Error", 500
+
+
+@app.errorhandler(Exception)
+def _handle_unexpected(e):
+    """Fallback for uncaught exceptions – prevents stack-trace leakage."""
+    from werkzeug.exceptions import HTTPException
+
+    if isinstance(e, HTTPException):
+        return e
+    try:
+        log.exception("Unhandled exception on %s", request.path)
+    except Exception:
+        pass
+    if request.path.startswith("/api/"):
+        return jsonify({"error": "internal_server_error"}), 500
+    return "Internal Server Error", 500
+
+
 def normalize_exchange_name(raw: Any) -> str:
     """Normalisiert und validiert einen Exchange-Namen."""
     return _normalize_exchange_name(raw, EXCHANGE_MAP)
@@ -947,8 +990,6 @@ def _pin_user_exchange(user_id: int | None, exchange_name: str) -> bool:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # KI-GEMEINSCHAFTSWISSEN API
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1465,6 +1506,7 @@ def on_update_config(data: dict | None = None):
         "use_partial_tp",
         "use_shorts",
         "use_arbitrage",
+        "use_market_regime",
         "arb_min_spread_pct",
         "arb_scan_limit",
         "genetic_enabled",
@@ -3328,6 +3370,31 @@ app.register_blueprint(create_admin_blueprint(_api_deps))
 app.register_blueprint(create_ai_blueprint(_api_deps))
 app.register_blueprint(create_system_blueprint(_api_deps))
 app.register_blueprint(create_market_blueprint(_api_deps))
+
+# ── Observability wiring (request-ID, metrics middleware, health checks) ──
+try:
+    from app.core.observability_setup import (
+        install_http_metrics_middleware,
+        register_default_health_checks,
+        register_default_metrics,
+    )
+    from services.request_context import (
+        install_flask_request_id,
+        install_log_filter,
+    )
+
+    install_log_filter(log)
+    install_flask_request_id(app)
+    register_default_metrics()
+    install_http_metrics_middleware(app)
+    register_default_health_checks(
+        db=db,
+        exchange_manager=None,
+        llm_provider=None,
+        healer=healer,
+    )
+except Exception as _obs_exc:  # noqa: BLE001 - observability must not block startup
+    log.warning("observability wiring failed: %s", _obs_exc)
 
 if __name__ == "__main__":
     run_server(

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import time
+
+log = logging.getLogger(__name__)
 
 
 def build_prometheus_lines(*, bot_version: str, state, db) -> list[str]:
@@ -21,4 +24,14 @@ def build_prometheus_lines(*, bot_version: str, state, db) -> list[str]:
     if db._pool:
         lines.append(f"trevlix_db_pool_available {db._pool.available}")
         lines.append(f"trevlix_db_pool_size {db._pool.pool_size}")
+
+    # Append runtime metrics registered via services.metrics_collector. Kept
+    # behind a best-effort import so the core helper remains usable even if
+    # the registry module has not been loaded yet.
+    try:
+        from services.metrics_collector import get_registry
+
+        lines.extend(get_registry().render_prometheus())
+    except Exception as exc:  # noqa: BLE001 - registry must never break /metrics
+        log.debug("metrics registry render failed: %s", exc)
     return lines

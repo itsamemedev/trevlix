@@ -559,7 +559,7 @@
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="timeframe_label">Zeitrahmen</span></div></div><select class="s-select" id="sTf"><option value="5m">5m</option><option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option></select></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="max_positions">Max. Positionen</span></div></div><input type="number" class="s-input" id="sMaxTrades" value="5" min="1" max="20"></div>
       <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="scan_interval">Scan-Intervall (s)</span></div></div><input type="number" class="s-input" id="sInterval" value="60" min="30" step="10"></div>
-      <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="paper_trading">Paper Trading</span></div><div class="s-help">Simulation – kein echtes Geld</div></div><label class="toggle"><input type="checkbox" id="sPaper" checked><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name"><span data-i18n="paper_trading">Paper Trading</span></div><div class="s-help">Simulation – kein echtes Geld</div></div><label class="toggle"><input type="checkbox" id="sPaper" onchange="togglePaperMode(this.checked)" checked><span class="tslider"></span></label></div>
     </div>
     <div class="s-section"><div class="s-section-title"><span data-i18n="sec_risk">🛡️ Risiko & Stop</span></div>
       <div class="s-row"><div class="s-label"><div class="s-name" data-i18n="stop_loss_pct">Stop-Loss %</div></div><input type="number" class="s-input" id="sSL" value="2.5" min="0.5" max="20" step="0.5"></div>

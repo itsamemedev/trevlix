@@ -1,5 +1,230 @@
 # Tasks
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
+
+### Scope
+
+User-Auftrag: "Suche nach Fehlern, Problemen und Bugs und behebe diese.
+Arbeite zusätzlich die todo.md ab. Verbessere das Projekt so, dass wir
+produktionsfähig starten können."
+
+Fokus: Produktionsreife, Härtung von API-Error-Oberflächen und
+Startup-Validierung.
+
+### Bug-Fixes (Round 4)
+
+| # | Datei | Schweregrad | Problem | Fix |
+|---|-------|-------------|---------|-----|
+| 1 | `services/knowledge.py` | HIGH | `json.loads` über LLM-Output ohne Größen-Cap → Speicher-Exhaustion bei extrem langen Bracket-Sequenzen | `_MAX_TOOL_JSON_BYTES = 65_536` als Hard-Cap vor Parser-Invocation |
+| 2 | `services/mcp_tools.py` | HIGH | `self._call_cache` (dict) ohne Lock → RuntimeError "dictionary changed size during iteration" unter parallelen Tool-Calls | `threading.Lock` um Read/Write/Eviction; `%s`-Logging statt f-string |
+| 3 | `routes/api/trading.py` ×4 + `routes/api/market.py` ×1 | MEDIUM | API-Fehler-Responses leckten `str(e)` (Stack-Trace-Fragmente, internen Aufbau) | Generische Fehler-Codes + `log.error` der Diagnose |
+| 4 | `routes/api/trading.py:76` | MEDIUM | `si(data.get("candles", 500), 500)` unbegrenzt → Backtest-DoS via `candles=10_000_000` | Hard-Cap `min(..., 5000)` |
+| 5 | `app/core/default_config.py:180` | BLOCKER | Hard-coded Fallback-Passwort `"trevlix"` wenn `ADMIN_PASSWORD` fehlt | `_resolve_admin_password()`: Prod ⇒ RuntimeError, Dev ⇒ `secrets.token_urlsafe(24)` |
+| 6 | `server.py` | BLOCKER | Keine `@app.errorhandler(500)` / `errorhandler(Exception)` → Werkzeug-Debug-Traces an Clients möglich | Globale 404/405/500/Exception-Handler mit JSON/HTML-Split via `request.path.startswith("/api/")` |
+| 7 | `app/core/runtime.py` | HIGH | `validate_env.py` existierte, wurde aber nie beim Serverstart aufgerufen | `_run_env_validation(log)` vor `validate_config()`; Prod-Modus ⇒ abort bei critical |
+
+### BackupScheduler Graceful-Shutdown – Verifiziert
+
+Keine Änderung nötig: `BackupScheduler.run` prüft bereits
+`_SHUTDOWN_EVENT.is_set()` und `wait(60)`; der zentrale
+`build_graceful_shutdown_handler` ruft `shutdown_event.set()`.
+Korrekt verdrahtet — kein Leaking-Thread bei SIGTERM.
+
+### Verifizierung (Round 4)
+
+- **613 Tests bestanden**, 42 skipped (env-bedingt). Keine neuen Failures.
+- `ruff check` clean auf allen geänderten Dateien (pre-existierende
+  `server.py` E402-Meldungen unangetastet, bereits 11 Stück in Round 3).
+- `ruff format` angewendet auf `server.py`, `routes/api/trading.py`,
+  `routes/api/market.py`.
+
+### Lessons (Round 4)
+
+Siehe `tasks/lessons.md`, Lektionen 56–59 für Details zu:
+- Größen-Caps vor `json.loads` auf Untrusted-Input
+- Dict-Caches unter Parallelität IMMER hinter einen Lock
+- API-Error-Responses: niemals `str(e)` an den Client
+- Prod-Hartfehler bei fehlenden Secrets > Silent-Weak-Default
+
+---
+
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
+
+### Scope
+
+User-Report: "Handeln nicht möglich, das Einstellen des Live-Mode im User-
+Dashboard nicht möglich." + Auftrag: "Starte eine zweite Runde, arbeite aber
+zusätzlich die todo.md ab."
+
+### Bug-Fixes
+
+| # | Datei | Bug | Fix |
+|---|-------|-----|-----|
+| 1 | `templates/dashboard.html:562` | `sPaper` Toggle (im User-sichtbaren "Handel"-Bereich) speicherte nur via `update_config`-WebSocket, der admin-gated ist → Non-Admin-User konnten Paper/Live-Modus nicht umschalten | `onchange="togglePaperMode(this.checked)"` hinzugefügt — triggert den user-accessible `/api/v1/trading/mode` REST-Endpoint direkt |
+| 2 | `app/core/trading_ops.py:742` | `if not regime.is_bull and CONFIG["use_market_regime"]: return` blockierte **alle** Trades in Bear-Phasen **ohne** Log, **ohne** `_record_decision` → User sah "nichts passiert", keine Info warum | `_record_decision(symbol, "blocked", "market_regime_bear", scan)` + Info-Log; `CONFIG.get(...)` statt Subscript |
+| 3 | `server.py:1439` | `use_market_regime` fehlte im `allowed`-Set in `on_update_config` → Admins konnten den Regime-Filter nicht per UI deaktivieren | Key zur allow-list hinzugefügt |
+
+### Neue Module (Round 3)
+
+- [x] `services/structured_logger.py` – JSON-Log-Formatter mit
+      automatischer Request-ID-Einbindung (integriert `request_context`).
+      `install_json_logging(logger, level)` als Drop-in-Replacement.
+- [x] `services/shutdown.py` – Graceful Shutdown Coordinator: LIFO-Hook-
+      Registry, Per-Hook-Deadline, Signal-Handler-Installation (SIGTERM/
+      SIGINT), Re-Entrance-Safe (zweites Signal ⇒ `os._exit(2)`).
+
+### todo.md aufgearbeitet
+
+- [x] Beide Round-1-"Weiterhin offen"-Punkte (Routes-Integration und Health-
+      Endpoints) waren bereits in Round 2 erledigt.
+- [x] Live-Mode-Toggle-Regression behoben (hatte Vorläufer in
+      `restore-full-functionality-Oc9Q3` und `bec4bb8`, aber den
+      `sPaper`-Pfad ausgelassen).
+- [ ] REST-Routen in Blueprints aufteilen (~129 Routen): bewusst offen,
+      nur mit expliziter Freigabe für eine Refactor-Session.
+- [ ] WebSocket-Handler-Migration nach `routes/websocket.py`:
+      Skelett existiert, Migration inkrementell bei künftigem Handler-Touch.
+- [ ] Pydantic Request-/Response-Schemas: gekoppelt an Blueprint-Refactor.
+- [ ] Cache-Migration (`market_data.py`, `cryptopanic.py`, `knowledge.py`
+      auf `services.cache.TTLCache`): bewusst offen, um Hot-Paths nicht zu
+      berühren ohne Monitoring in Prod.
+
+### Verifizierung
+
+- 613 Tests bestanden (+20 neue vs. Round 2), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen/geänderten Dateien.
+- `ruff format --check` clean auf allen neuen/geänderten Dateien.
+- Pre-existierende `server.py`-Lint-Fehler unangetastet (nicht in Scope).
+
+### Lessons
+
+Siehe `tasks/lessons.md`, Lektionen 53–55:
+- Silent `return` im Trading-Hot-Path ist ein UX-Bug, kein Optimierungs-Skip.
+- Wenn eine UI-Kontrolle zwei Datenpfade hat (User-Form + Admin-Direct),
+  müssen beide funktionieren — sonst sieht der User ein Toggle, das für
+  ihn nicht greift.
+- Shutdown-Hooks laufen LIFO und mit Per-Hook-Deadline, niemals blockierend.
+
+---
+
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
+
+### Scope
+
+User-Auftrag: "Verbessere und optimiere das gesamte Projekt. Prüfe zusätzlich
+auf Fehler/Probleme/Bugs und behebe diese. Ebenfalls muss die todo.md
+vollständig abgearbeitet werden. Weitere Module zur Verbesserung sind
+erwünscht."
+
+Aufgreifen der in Round 1 als "Weiterhin offen" markierten Punkte sowie
+zusätzliche Module für Observability & Runtime-Qualität.
+
+### Module-Plan (Round 2)
+
+- [x] `services/feature_flags.py` – Runtime-Feature-Toggle-Store (Env-Prefix,
+      User-Scope, Snapshot).
+- [x] `services/cache.py` – Einheitlicher TTL+LRU-Cache (Thundering-Herd-Schutz
+      via Per-Key-Producer-Lock, Stats).
+- [x] `services/request_context.py` – Thread-local Request-IDs + `logging.Filter`
+      + Flask-Hooks (`X-Request-ID` Header-Echo).
+- [x] `services/task_queue.py` – Bounded Thread-Pool mit
+      Queue-Backpressure, optionaler `RetryPolicy`-Integration.
+- [x] `app/core/observability_setup.py` – Registriert Default-Health-Checks,
+      Baseline-Metriken, HTTP-Middleware (`trevlix_http_requests_total`
+      mit `endpoint/status` Labels + Latency-Histogramm).
+- [x] Health-Endpoints: `/api/v1/health/live` (Liveness, no-deps)
+      und `/api/v1/health/ready` (nutzt `health_check`-Registry, 503 bei
+      UNHEALTHY).
+- [x] Wiring in `server.py`: `install_log_filter`,
+      `install_flask_request_id`, `register_default_metrics`,
+      `install_http_metrics_middleware`, `register_default_health_checks`.
+- [x] 4 neue Test-Dateien (60 neue Tests, thread-safety + edge cases).
+
+### Verifizierung
+
+- 593 Tests bestanden (+60 neue vs. Round 1), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen Dateien.
+- `ruff format --check` clean auf allen neuen Dateien.
+- Pre-existierende `server.py`-Lint-Fehler nicht im Scope dieser Session.
+
+### Weiterhin offen
+
+- REST-Routen in Blueprints aufteilen (~129 Routen) – bleibt als
+  Refactor-Session mit expliziter Freigabe.
+- WebSocket-Handler-Migration nach `routes/websocket.py` (inkrementell).
+- Pydantic Request-/Response-Schemas – gekoppelt an Blueprint-Aufteilung.
+- Alternative Cache-Migration (`market_data.py`, `cryptopanic.py`,
+  `knowledge.py` auf `services.cache.TTLCache` umstellen) – bewusst
+  nicht in dieser Session, um Hot-Paths nicht zu berühren.
+
+---
+
+## Session: implement-improvement-modules-2Dkqu (2026-04-18)
+
+### Scope
+
+User-Auftrag: "Implementiere Module die das ganze maximal verbessern".
+Ziel: non-invasive, in-process Verbesserungs-Module für Observability &
+Reliability. Kein Refactor bestehender Hot-Paths, keine neuen externen
+Abhängigkeiten.
+
+### Gap-Analyse
+
+- `app/core/prometheus_metrics.py` hat nur hardcoded state-basierte Zeilen,
+  keinen Metric-Registry für Timing/Counter aus dem Code heraus.
+- HTTP-Endpoints haben kein Rate-Limiting (nur WS via `WsRateLimiter`).
+- Retry/Backoff-Logik ist ad-hoc in Exchange-Calls verstreut, kein
+  wiederverwendbarer Circuit-Breaker.
+- Keine strukturierten Dependency-Health-Checks (DB, Exchange, LLM).
+
+### Module-Plan
+
+- [ ] `services/metrics_collector.py` – Thread-safe Counter/Gauge/Histogram
+      Registry mit Snapshot für Prometheus-Export.
+- [ ] `services/rate_limiter.py` – Token-Bucket Rate-Limiter (generisch,
+      kein WS-Kopplung).
+- [ ] `services/circuit_breaker.py` – Closed/Open/Half-Open State-Machine
+      mit Decorator + Retry-Policy (Exponential Backoff + Jitter).
+- [ ] `services/health_check.py` – Dependency-Check-Registry mit
+      strukturiertem Report (status, latency_ms, detail).
+- [ ] Integration: `prometheus_metrics.py` liest zusätzlich aus Registry.
+- [ ] Tests für alle 4 Module (thread-safety, edge-cases).
+
+### Grundsätze (aus CLAUDE.md + lessons.md)
+
+- Lektion 15/19/24/49: Locks bei allen internen Dicts.
+- Lektion 12: Non-invasiv, keine Änderung an Trading-Hot-Paths.
+- Lektion 38: Keine bestehenden Module ersetzen, nur ergänzen.
+
+### Umgesetzt
+
+- [x] `services/metrics_collector.py` – Counter/Gauge/Histogram mit
+      Prometheus-Export, Thread-safe, Label-Escaping.
+- [x] `services/rate_limiter.py` – Token-Bucket mit injizierbarer Clock,
+      LRU-Eviction bei `max_keys`-Overflow.
+- [x] `services/circuit_breaker.py` – Closed/Open/Half-Open mit
+      `RetryPolicy` (Exponential Backoff + Full Jitter).
+- [x] `services/health_check.py` – Registry mit Timeout pro Check plus
+      Ready-made Factories für DB/Exchange/LLM.
+- [x] `app/core/prometheus_metrics.py` rendert zusätzlich die Registry.
+- [x] 4 Test-Dateien (74 neue Tests, thread-safety + edge cases).
+
+### Verifizierung
+
+- 533 Tests bestanden (74 neue + 459 bestehende), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen Dateien.
+- `ruff format --check` clean auf allen neuen Dateien.
+- Pre-existierende Server-Lint-Fehler (`server.py:52-3233`) nicht im Scope.
+
+### Weiterhin offen
+
+- Integration in Routes (z.B. `@metrics.time()` auf API-Handlers). Bewusst
+  nicht in dieser Session, damit keine Hot-Paths berührt werden.
+- Health-Endpoints (`/health`, `/ready`, `/live`) im API-Blueprint
+  registrieren – gehört in eine Blueprint-Refactor-Session.
+
+---
+
 ## Session: restore-full-functionality-Oc9Q3 (2026-04-17)
 
 ### Scope

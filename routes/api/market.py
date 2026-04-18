@@ -50,6 +50,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     def api_fees():
         try:
             from services.exchange_factory import _fee_cache, _fee_cache_lock
+
             current_ex = cfg.get("exchange", "cryptocom")
             fees = {}
             with _fee_cache_lock:
@@ -59,11 +60,13 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                         "cached": _fee_cache.get(ex_id, {}).get("rate"),
                         "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
                     }
-            return jsonify({
-                "current_exchange": current_ex,
-                "current_fee_rate": deps.get_exchange_fee_rate(),
-                "exchanges": fees,
-            })
+            return jsonify(
+                {
+                    "current_exchange": current_ex,
+                    "current_fee_rate": deps.get_exchange_fee_rate(),
+                    "exchanges": fees,
+                }
+            )
         except Exception as e:
             log.error("API error: %s", e)
             return jsonify({"error": "Internal server error"}), 500
@@ -153,12 +156,14 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             )
             if r.status_code == 200:
                 data = r.json().get("result", {})
-                return jsonify({
-                    "low": data.get("SafeGasPrice", "0"),
-                    "medium": data.get("ProposeGasPrice", "0"),
-                    "high": data.get("FastGasPrice", "0"),
-                    "source": "etherscan",
-                })
+                return jsonify(
+                    {
+                        "low": data.get("SafeGasPrice", "0"),
+                        "medium": data.get("ProposeGasPrice", "0"),
+                        "high": data.get("FastGasPrice", "0"),
+                        "source": "etherscan",
+                    }
+                )
             return jsonify({"low": "0", "medium": "0", "high": "0", "source": "unavailable"})
         except Exception:
             return jsonify({"low": "0", "medium": "0", "high": "0", "source": "error"})
@@ -171,7 +176,15 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
         try:
             uid = getattr(request, "user_id", None) or session.get("user_id")
             if not uid:
-                return jsonify({"exchanges": {}, "combined_pv": 0, "combined_pnl": 0, "total_pv": 0, "total_pnl": 0})
+                return jsonify(
+                    {
+                        "exchanges": {},
+                        "combined_pv": 0,
+                        "combined_pnl": 0,
+                        "total_pv": 0,
+                        "total_pnl": 0,
+                    }
+                )
             runtime = st.snapshot() if st else {}
             active_exchange = str(runtime.get("exchange") or cfg.get("exchange", "")).lower()
             runtime_positions = list(runtime.get("positions") or [])
@@ -192,7 +205,9 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 ex_map[ex_name] = {
                     "enabled": bool(ex.get("enabled")),
                     "running": bool(runtime.get("running", False)) if is_active else False,
-                    "portfolio_value": float(runtime.get("portfolio_value", 0) or 0) if is_active else 0.0,
+                    "portfolio_value": float(runtime.get("portfolio_value", 0) or 0)
+                    if is_active
+                    else 0.0,
                     "return_pct": float(runtime.get("return_pct", 0) or 0) if is_active else 0.0,
                     "trade_count": int(runtime.get("total_trades", 0) or 0) if is_active else 0,
                     "open_trades": len(pos_by_exchange.get(ex_name, [])),
@@ -205,13 +220,15 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 }
             combined_pv = sum(v["portfolio_value"] for v in ex_map.values())
             combined_pnl = sum(v["total_pnl"] for v in ex_map.values())
-            return jsonify({
-                "exchanges": ex_map,
-                "combined_pv": combined_pv,
-                "combined_pnl": combined_pnl,
-                "total_pv": combined_pv,
-                "total_pnl": combined_pnl,
-            })
+            return jsonify(
+                {
+                    "exchanges": ex_map,
+                    "combined_pv": combined_pv,
+                    "combined_pnl": combined_pnl,
+                    "total_pv": combined_pv,
+                    "total_pnl": combined_pnl,
+                }
+            )
         except Exception as e:
             log.error("api_exchanges: %s", e)
             return jsonify({"error": "Internal server error"}), 500
@@ -282,20 +299,23 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             if len(returns_data) < 2:
                 return jsonify({"error": "Nicht genügend Daten"}), 400
             import numpy as np
+
             ret_matrix = np.array(list(returns_data.values()))
             np.cov(ret_matrix)  # covariance computed but equal-weight used
             mu = np.mean(ret_matrix, axis=1)
             n = len(mu)
             weights = np.ones(n) / n
-            return jsonify({
-                "symbols": list(returns_data.keys()),
-                "equal_weights": weights.tolist(),
-                "expected_returns": mu.tolist(),
-                "note": "Gleichgewichtete Allokation (Markowitz erfordert mehr Daten)",
-            })
+            return jsonify(
+                {
+                    "symbols": list(returns_data.keys()),
+                    "equal_weights": weights.tolist(),
+                    "expected_returns": mu.tolist(),
+                    "note": "Gleichgewichtete Allokation (Markowitz erfordert mehr Daten)",
+                }
+            )
         except Exception as e:
             log.error("Portfolio-Optimierung: %s", e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "portfolio_optimization_failed"}), 500
 
     # ── Backtest Vergleich ────────────────────────────────────────────────────
 
@@ -314,7 +334,10 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             for sym in symbols[:5]:
                 try:
                     results[sym] = deps.backtest.run(
-                        ex, sym, tf, candles,
+                        ex,
+                        sym,
+                        tf,
+                        candles,
                         deps.config.get("stop_loss_pct", 0.025),
                         deps.config.get("take_profit_pct", 0.060),
                         deps.config.get("min_vote_score", 0.3),

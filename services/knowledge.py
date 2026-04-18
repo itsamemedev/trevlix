@@ -585,15 +585,18 @@ class KnowledgeBase:
         Returns:
             Dict mit 'tool' und 'args' oder None.
         """
+        _MAX_TOOL_JSON_BYTES = 65_536
         try:
             # Suche nach JSON-Block im Text
             start = text.find('{"tool"')
             if start == -1:
                 return None
+            # Hard cap to prevent OOM on pathological LLM output.
+            scan_end = min(len(text), start + _MAX_TOOL_JSON_BYTES)
             # Finde das Ende des JSON-Blocks
             depth = 0
             end = start
-            for i in range(start, len(text)):
+            for i in range(start, scan_end):
                 if text[i] == "{":
                     depth += 1
                 elif text[i] == "}":
@@ -601,7 +604,7 @@ class KnowledgeBase:
                     if depth == 0:
                         end = i + 1
                         break
-            if end > start:
+            if end > start and (end - start) <= _MAX_TOOL_JSON_BYTES:
                 parsed = json.loads(text[start:end])
                 if "tool" in parsed:
                     return parsed

@@ -96,6 +96,24 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
     def api_health_basic():
         return jsonify({"status": "ok", "running": st.running, "version": deps.bot_version})
 
+    @bp.route("/api/v1/health/live")
+    def api_health_live():
+        # K8s-style liveness probe: the process is up and responding. We
+        # intentionally do not touch dependencies here so a degraded DB does
+        # not trigger a pod restart loop.
+        return jsonify({"status": "alive", "version": deps.bot_version}), 200
+
+    @bp.route("/api/v1/health/ready")
+    def api_health_ready():
+        # K8s-style readiness probe: runs the registered dependency checks
+        # and returns 503 on aggregate UNHEALTHY so upstream load balancers
+        # stop sending traffic.
+        from services.health_check import get_registry
+
+        report = get_registry().check()
+        status = 503 if report.get("status") == "unhealthy" else 200
+        return jsonify(report), status
+
     @bp.route("/api/v1/health/snapshot")
     @auth
     def api_health_snapshot():

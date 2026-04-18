@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from datetime import datetime
@@ -100,6 +101,7 @@ class MCPToolRegistry:
         self._tools: dict[str, MCPTool] = {}
         self._call_cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl = 60  # 1 Minute Cache für Tool-Ergebnisse
+        self._cache_lock = threading.Lock()
 
         # Agent-Referenzen werden nachträglich via set_agent_refs() gesetzt,
         # da orchestrator/healer/alert/cluster erst nach der Registry entstehen.
@@ -414,29 +416,31 @@ class MCPToolRegistry:
 
         arguments = arguments or {}
 
-        # Cache-Check
+        # Cache-Check (read/check/act atomar unter Lock, vgl. Lektion 49)
         cache_key = f"{tool_name}:{json.dumps(arguments, sort_keys=True)}"
         now = time.time()
-        if cache_key in self._call_cache:
-            ts, cached_result = self._call_cache[cache_key]
-            if now - ts < self._cache_ttl:
-                return cached_result
+        with self._cache_lock:
+            entry = self._call_cache.get(cache_key)
+            if entry is not None:
+                ts, cached_result = entry
+                if now - ts < self._cache_ttl:
+                    return cached_result
 
         try:
             result = self._tools[tool_name].handler(arguments)
-            # Cache speichern
-            self._call_cache[cache_key] = (now, result)
-            # Cache-Eviction (max 200 Einträge)
-            if len(self._call_cache) > 200:
-                oldest = sorted(
-                    self._call_cache.items(),
-                    key=lambda x: x[1][0],
-                )
-                for k, _ in oldest[: len(self._call_cache) - 200]:
-                    self._call_cache.pop(k, None)
+            # Cache speichern + Eviction atomar
+            with self._cache_lock:
+                self._call_cache[cache_key] = (now, result)
+                if len(self._call_cache) > 200:
+                    oldest = sorted(
+                        self._call_cache.items(),
+                        key=lambda x: x[1][0],
+                    )
+                    for k, _ in oldest[: len(self._call_cache) - 200]:
+                        self._call_cache.pop(k, None)
             return result
         except Exception as e:
-            log.debug(f"MCP Tool {tool_name} Fehler: {e}")
+            log.debug("MCP Tool %s Fehler: %s", tool_name, e)
             return {"error": str(e)}
 
     def process_tool_calls(

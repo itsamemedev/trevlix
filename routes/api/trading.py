@@ -51,7 +51,9 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         limit = min(si(request.args.get("limit", 100), 100), 1000)
         symbol = request.args.get("symbol")
         year = request.args.get("year")
-        return jsonify(db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id))
+        return jsonify(
+            db.load_trades(limit=limit, symbol=symbol, year=year, user_id=request.user_id)
+        )
 
     @bp.route("/api/v1/heatmap")
     @auth
@@ -73,10 +75,12 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                 ex,
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
-                si(data.get("candles", 500), 500),
+                min(si(data.get("candles", 500), 500), 5000),
                 sf(data.get("sl", cfg["stop_loss_pct"]), cfg["stop_loss_pct"]),
                 sf(data.get("tp", cfg["take_profit_pct"]), cfg["take_profit_pct"]),
-                sf(data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)),
+                sf(
+                    data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
+                ),
             )
             return jsonify(result)
         except Exception as e:
@@ -130,17 +134,44 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     def api_user_settings_update():
         data = body()
         _ALLOWED = {
-            "paper_trading", "paper_balance", "risk_per_trade", "stop_loss_pct",
-            "take_profit_pct", "max_open_trades", "scan_interval", "timeframe",
-            "use_dca", "dca_drop_pct", "dca_max_levels", "use_partial_tp",
-            "trailing_stop", "trailing_pct", "break_even_enabled", "break_even_trigger",
-            "break_even_buffer", "use_fear_greed", "use_sentiment", "use_news",
-            "use_anomaly", "use_market_regime", "ai_enabled", "ai_min_confidence",
-            "virginie_enabled", "virginie_primary_control", "virginie_autonomy_weight",
-            "virginie_min_score", "virginie_max_risk_penalty", "virginie_cpu_fast_chat",
-            "discord_webhook", "discord_on_buy", "discord_on_sell",
-            "telegram_token", "telegram_chat_id", "portfolio_goal",
-            "language", "max_daily_loss_pct",
+            "paper_trading",
+            "paper_balance",
+            "risk_per_trade",
+            "stop_loss_pct",
+            "take_profit_pct",
+            "max_open_trades",
+            "scan_interval",
+            "timeframe",
+            "use_dca",
+            "dca_drop_pct",
+            "dca_max_levels",
+            "use_partial_tp",
+            "trailing_stop",
+            "trailing_pct",
+            "break_even_enabled",
+            "break_even_trigger",
+            "break_even_buffer",
+            "use_fear_greed",
+            "use_sentiment",
+            "use_news",
+            "use_anomaly",
+            "use_market_regime",
+            "ai_enabled",
+            "ai_min_confidence",
+            "virginie_enabled",
+            "virginie_primary_control",
+            "virginie_autonomy_weight",
+            "virginie_min_score",
+            "virginie_max_risk_penalty",
+            "virginie_cpu_fast_chat",
+            "discord_webhook",
+            "discord_on_buy",
+            "discord_on_sell",
+            "telegram_token",
+            "telegram_chat_id",
+            "portfolio_goal",
+            "language",
+            "max_daily_loss_pct",
         }
         filtered = {k: v for k, v in data.items() if k in _ALLOWED}
         current = db.get_user_settings(request.user_id)
@@ -149,7 +180,9 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             mode = "paper" if sb(filtered.get("paper_trading", True), True) else "live"
             if mode == "live" and not sb(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
                 return jsonify(
-                    {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
+                    {
+                        "error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"
+                    }
                 ), 403
             if deps.trade_mode:
                 deps.trade_mode.set_mode(mode)
@@ -228,7 +261,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"ok": True, "symbol": sym, "side": "short"})
         except Exception as e:
             log.warning("api_trading_close_position failed: %s", e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "close_position_failed"}), 500
 
     @bp.route("/api/v1/trading/buy", methods=["POST"])
     @auth
@@ -270,7 +303,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"ok": False, "error": result.reason}), 400
         except Exception as e:
             log.warning("api_trading_manual_buy: %s", e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "manual_buy_failed"}), 500
 
     @bp.route("/api/v1/trading/sell", methods=["POST"])
     @auth
@@ -291,7 +324,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"ok": True, "symbol": sym})
         except Exception as e:
             log.warning("api_trading_manual_sell: %s", e)
-            return jsonify({"error": str(e)}), 500
+            return jsonify({"error": "manual_sell_failed"}), 500
 
     # ── Offene & Geschlossene Positionen ─────────────────────────────────────
 
@@ -374,7 +407,12 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         except Exception as e:
             log.warning("api_trading_performance: %s", e)
             return jsonify(
-                {"by_mode": [], "by_exchange": [], "by_strategy": [], "error": "temporarily_unavailable"}
+                {
+                    "by_mode": [],
+                    "by_exchange": [],
+                    "by_strategy": [],
+                    "error": "temporarily_unavailable",
+                }
             ), 503
 
     # ── User Exchange Management ──────────────────────────────────────────────
@@ -400,7 +438,13 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         if requires_keys and (not api_key or not api_secret):
             return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
         ok = db.upsert_user_exchange(
-            request.user_id, exchange, api_key, api_secret, enabled, is_primary, passphrase=passphrase
+            request.user_id,
+            exchange,
+            api_key,
+            api_secret,
+            enabled,
+            is_primary,
+            passphrase=passphrase,
         )
         if audit:
             audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
@@ -428,7 +472,11 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_user_update_keys():
         data = body()
-        exchange = norm_ex(data.get("exchange", cfg["exchange"])) if norm_ex else str(data.get("exchange", ""))
+        exchange = (
+            norm_ex(data.get("exchange", cfg["exchange"]))
+            if norm_ex
+            else str(data.get("exchange", ""))
+        )
         api_key = str(data.get("api_key", "")).strip()
         api_secret = str(data.get("api_secret", "")).strip()
         if not exchange:
@@ -542,7 +590,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             grid = deps.grid_engine.create_grid(ex, symbol, lower, upper, levels, invest)
             return jsonify({"ok": True, "grid": grid})
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            log.error("API error: %s", e)
+            return jsonify({"error": "grid_create_failed"}), 500
 
     @bp.route("/api/v1/grid/<symbol>", methods=["DELETE"])
     @auth
