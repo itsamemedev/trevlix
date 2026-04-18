@@ -1465,6 +1465,7 @@ def on_update_config(data: dict | None = None):
         "use_partial_tp",
         "use_shorts",
         "use_arbitrage",
+        "use_market_regime",
         "arb_min_spread_pct",
         "arb_scan_limit",
         "genetic_enabled",

@@ -739,7 +739,12 @@ def open_position(ex, scan: dict):
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert")
         return
-    if not regime.is_bull and CONFIG["use_market_regime"]:
+    if not regime.is_bull and CONFIG.get("use_market_regime", True):
+        _record_decision(symbol, "blocked", "market_regime_bear", scan)
+        log.info(
+            "[REGIME-FILTER] %s blockiert: Bear-Markt (use_market_regime=true)",
+            symbol,
+        )
         return
     if risk.daily_loss_exceeded(state.balance):
         _record_decision(symbol, "blocked", "daily_loss_limit", scan)

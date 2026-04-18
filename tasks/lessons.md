@@ -1,5 +1,53 @@
 # Lessons Learned
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
+
+### Lektion 53: Silent `return` im Trading-Hot-Path ist ein UX-Bug
+**Problem:** `open_position()` blockierte alle Trades in Bear-Markt-Regime
+mit einem nackten `return` – keine Log-Zeile, kein `_record_decision`.
+User meldete "Handeln nicht möglich" ohne jede Information _warum_ der
+Bot nichts tut. Debug-Zeit: stundenlang, weil der Fehler _nicht_ auftrat
+– das war das Problem.
+**Regel:** Jeder `return` im Trading-Hot-Path, der eine legitime
+Entscheidung abbildet (blocked by filter, risk, regime, news), MUSS:
+1. via `_record_decision(symbol, "blocked", reason, scan)` sichtbar sein
+   (landet im Dashboard),
+2. mindestens auf DEBUG/INFO-Level loggen,
+3. die Dashboard-Statistik "wieso-keine-Trades" mitfüttern.
+"Performance-Optimierung durch Skip" ist kein Grund, einen Grund zu
+verschweigen.
+**Code:** `app/core/trading_ops.py:742` (regime filter now logs + records).
+
+### Lektion 54: UI-Controls mit zwei Datenpfaden müssen BEIDE funktionieren
+**Problem:** Paper/Live-Modus hatte zwei Toggles im Dashboard:
+`paperMode` (Admin-Bereich, feuerte REST `/api/v1/trading/mode`) und
+`sPaper` (User-Bereich, wurde per `saveSettings` → `update_config`-WS
+persistiert, der aber admin-gated ist). Non-Admin-User sahen `sPaper`,
+klickten, speicherten – und der Server rejecte die gesamte
+update_config silent (nur der Flag landete im Void). Symptom: "Live-Mode
+lässt sich nicht einstellen".
+**Regel:** Bei einer UI-Kontrolle, die in zwei Sektionen auftaucht
+(Admin + User), MUSS jede Sektion einen vollständigen _eigenen_ Save-Pfad
+haben. Entweder teilen sich beide den REST-Endpoint, oder der WS-Event
+hat einen feineren Permission-Check ("Admin für alles außer
+paper_trading, das darf jeder seinen eigenen Account setzen"). Mit der
+`onchange="togglePaperMode(...)"` Ergänzung wurde der direkte REST-Pfad
+auch für `sPaper` aktiv.
+**Code:** `templates/dashboard.html:562` (sPaper onchange hook).
+
+### Lektion 55: Graceful Shutdown braucht Per-Hook-Deadlines
+**Problem:** Ein blockender Shutdown-Hook (z.B. `db.close()` mit hängender
+TCP-Verbindung) kann ein ganzes `SIGTERM`-Drain verhindern – K8s killt
+den Pod nach 30s hart, in-flight Trades bleiben halbfertig.
+**Regel:** Shutdown-Hooks laufen in einem Thread mit `join(timeout=deadline)`.
+Überschreitet der Hook sein Budget, wird er _übersprungen_, nicht
+gewartet. Zweites Signal während Shutdown ⇒ `os._exit(2)` statt
+stecken zu bleiben. LIFO-Order, damit High-Level-Systeme (Bot-Loop) vor
+ihren Dependencies (DB-Pool) heruntergefahren werden.
+**Code:** `services/shutdown.py`
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
 
 ### Lektion 50: Observability-Wiring darf Bot-Startup niemals blockieren

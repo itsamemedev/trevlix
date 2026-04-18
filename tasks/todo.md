@@ -1,5 +1,64 @@
 # Tasks
 
+## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 3
+
+### Scope
+
+User-Report: "Handeln nicht möglich, das Einstellen des Live-Mode im User-
+Dashboard nicht möglich." + Auftrag: "Starte eine zweite Runde, arbeite aber
+zusätzlich die todo.md ab."
+
+### Bug-Fixes
+
+| # | Datei | Bug | Fix |
+|---|-------|-----|-----|
+| 1 | `templates/dashboard.html:562` | `sPaper` Toggle (im User-sichtbaren "Handel"-Bereich) speicherte nur via `update_config`-WebSocket, der admin-gated ist → Non-Admin-User konnten Paper/Live-Modus nicht umschalten | `onchange="togglePaperMode(this.checked)"` hinzugefügt — triggert den user-accessible `/api/v1/trading/mode` REST-Endpoint direkt |
+| 2 | `app/core/trading_ops.py:742` | `if not regime.is_bull and CONFIG["use_market_regime"]: return` blockierte **alle** Trades in Bear-Phasen **ohne** Log, **ohne** `_record_decision` → User sah "nichts passiert", keine Info warum | `_record_decision(symbol, "blocked", "market_regime_bear", scan)` + Info-Log; `CONFIG.get(...)` statt Subscript |
+| 3 | `server.py:1439` | `use_market_regime` fehlte im `allowed`-Set in `on_update_config` → Admins konnten den Regime-Filter nicht per UI deaktivieren | Key zur allow-list hinzugefügt |
+
+### Neue Module (Round 3)
+
+- [x] `services/structured_logger.py` – JSON-Log-Formatter mit
+      automatischer Request-ID-Einbindung (integriert `request_context`).
+      `install_json_logging(logger, level)` als Drop-in-Replacement.
+- [x] `services/shutdown.py` – Graceful Shutdown Coordinator: LIFO-Hook-
+      Registry, Per-Hook-Deadline, Signal-Handler-Installation (SIGTERM/
+      SIGINT), Re-Entrance-Safe (zweites Signal ⇒ `os._exit(2)`).
+
+### todo.md aufgearbeitet
+
+- [x] Beide Round-1-"Weiterhin offen"-Punkte (Routes-Integration und Health-
+      Endpoints) waren bereits in Round 2 erledigt.
+- [x] Live-Mode-Toggle-Regression behoben (hatte Vorläufer in
+      `restore-full-functionality-Oc9Q3` und `bec4bb8`, aber den
+      `sPaper`-Pfad ausgelassen).
+- [ ] REST-Routen in Blueprints aufteilen (~129 Routen): bewusst offen,
+      nur mit expliziter Freigabe für eine Refactor-Session.
+- [ ] WebSocket-Handler-Migration nach `routes/websocket.py`:
+      Skelett existiert, Migration inkrementell bei künftigem Handler-Touch.
+- [ ] Pydantic Request-/Response-Schemas: gekoppelt an Blueprint-Refactor.
+- [ ] Cache-Migration (`market_data.py`, `cryptopanic.py`, `knowledge.py`
+      auf `services.cache.TTLCache`): bewusst offen, um Hot-Paths nicht zu
+      berühren ohne Monitoring in Prod.
+
+### Verifizierung
+
+- 613 Tests bestanden (+20 neue vs. Round 2), 42 skipped (env-bedingt).
+- `ruff check` clean auf allen neuen/geänderten Dateien.
+- `ruff format --check` clean auf allen neuen/geänderten Dateien.
+- Pre-existierende `server.py`-Lint-Fehler unangetastet (nicht in Scope).
+
+### Lessons
+
+Siehe `tasks/lessons.md`, Lektionen 53–55:
+- Silent `return` im Trading-Hot-Path ist ein UX-Bug, kein Optimierungs-Skip.
+- Wenn eine UI-Kontrolle zwei Datenpfade hat (User-Form + Admin-Direct),
+  müssen beide funktionieren — sonst sieht der User ein Toggle, das für
+  ihn nicht greift.
+- Shutdown-Hooks laufen LIFO und mit Per-Hook-Deadline, niemals blockierend.
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 2
 
 ### Scope
