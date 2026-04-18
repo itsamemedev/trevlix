@@ -3160,6 +3160,70 @@ register_default_blueprints(
     log=log,
 )
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# AUTO-START: Bot startet automatisch ohne Admin-Login
+# (Muss vor der AppDeps-Konstruktion definiert sein, da AppDeps
+#  ``_maybe_auto_start_bot`` als Callback übergibt.)
+# ═══════════════════════════════════════════════════════════════════════════════
+_AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
+
+
+def _has_any_configured_exchange() -> bool:
+    """Prüft, ob mindestens ein aktivierter Exchange mit API-Keys vorhanden ist.
+
+    Im Paper-Trading-Modus ist keine Exchange-Konfiguration erforderlich –
+    dann immer True. Im Live-Modus: mindestens ein User-Exchange in der DB
+    mit ``enabled=1`` und vorhandenem ``api_key``, oder Legacy-ENV-Keys.
+    """
+    if CONFIG.get("paper_trading", True):
+        return True
+    # Legacy Single-Exchange-ENV (API_KEY/API_SECRET) – zählt als konfiguriert.
+    legacy_key = (os.getenv("API_KEY") or "").strip()
+    legacy_secret = (os.getenv("API_SECRET") or "").strip()
+    if legacy_key and legacy_secret:
+        return True
+    try:
+        with db._get_conn() as conn:
+            with conn.cursor() as c:
+                c.execute(
+                    "SELECT COUNT(*) AS n FROM user_exchanges "
+                    "WHERE enabled=1 AND api_key IS NOT NULL AND api_key!=''"
+                )
+                row = c.fetchone() or {}
+                return int(row.get("n", 0) or 0) > 0
+    except Exception as e:  # noqa: BLE001
+        log.debug(f"_has_any_configured_exchange: {e}")
+        return False
+
+
+def _maybe_auto_start_bot() -> bool:
+    """Startet den Bot-Loop, wenn AUTO_START aktiv ist, der Bot noch nicht
+    läuft und mindestens eine Exchange konfiguriert ist.
+
+    Gibt True zurück, wenn der Bot in diesem Aufruf gestartet wurde.
+    """
+    if not _AUTO_START:
+        return False
+    if not _has_any_configured_exchange():
+        return False
+    # Start atomar unter state._lock prüfen und setzen, damit parallele
+    # HTTP-Calls nicht zwei Bot-Loops gleichzeitig starten.
+    with state._lock:
+        if getattr(state, "running", False):
+            return False
+        state.running = True
+        state.paused = False
+    threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
+    log.info("🚀 Bot auto-gestartet (Exchange konfiguriert)")
+    state.add_activity(
+        "🚀",
+        "Auto-Start",
+        f"v{BOT_VERSION} · {CONFIG.get('exchange', '—').upper()}",
+        "success",
+    )
+    return True
+
+
 # ── API-Blueprint-Registrierung ────────────────────────────────────────────
 from routes.api.deps import AppDeps
 from routes.api.trading import create_trading_blueprint
@@ -3264,68 +3328,6 @@ app.register_blueprint(create_admin_blueprint(_api_deps))
 app.register_blueprint(create_ai_blueprint(_api_deps))
 app.register_blueprint(create_system_blueprint(_api_deps))
 app.register_blueprint(create_market_blueprint(_api_deps))
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# AUTO-START: Bot startet automatisch ohne Admin-Login
-# ═══════════════════════════════════════════════════════════════════════════════
-_AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
-
-
-def _has_any_configured_exchange() -> bool:
-    """Prüft, ob mindestens ein aktivierter Exchange mit API-Keys vorhanden ist.
-
-    Im Paper-Trading-Modus ist keine Exchange-Konfiguration erforderlich –
-    dann immer True. Im Live-Modus: mindestens ein User-Exchange in der DB
-    mit ``enabled=1`` und vorhandenem ``api_key``, oder Legacy-ENV-Keys.
-    """
-    if CONFIG.get("paper_trading", True):
-        return True
-    # Legacy Single-Exchange-ENV (API_KEY/API_SECRET) – zählt als konfiguriert.
-    legacy_key = (os.getenv("API_KEY") or "").strip()
-    legacy_secret = (os.getenv("API_SECRET") or "").strip()
-    if legacy_key and legacy_secret:
-        return True
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT COUNT(*) AS n FROM user_exchanges "
-                    "WHERE enabled=1 AND api_key IS NOT NULL AND api_key!=''"
-                )
-                row = c.fetchone() or {}
-                return int(row.get("n", 0) or 0) > 0
-    except Exception as e:  # noqa: BLE001
-        log.debug(f"_has_any_configured_exchange: {e}")
-        return False
-
-
-def _maybe_auto_start_bot() -> bool:
-    """Startet den Bot-Loop, wenn AUTO_START aktiv ist, der Bot noch nicht
-    läuft und mindestens eine Exchange konfiguriert ist.
-
-    Gibt True zurück, wenn der Bot in diesem Aufruf gestartet wurde.
-    """
-    if not _AUTO_START:
-        return False
-    if not _has_any_configured_exchange():
-        return False
-    # Start atomar unter state._lock prüfen und setzen, damit parallele
-    # HTTP-Calls nicht zwei Bot-Loops gleichzeitig starten.
-    with state._lock:
-        if getattr(state, "running", False):
-            return False
-        state.running = True
-        state.paused = False
-    threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-    log.info("🚀 Bot auto-gestartet (Exchange konfiguriert)")
-    state.add_activity(
-        "🚀",
-        "Auto-Start",
-        f"v{BOT_VERSION} · {CONFIG.get('exchange', '—').upper()}",
-        "success",
-    )
-    return True
-
 
 if __name__ == "__main__":
     run_server(
