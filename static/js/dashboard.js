@@ -1499,6 +1499,8 @@ function selectExchange(ex, el) {
   const lbl = document.getElementById('exStartLabel');
   const running = document.getElementById('statusBadge')?.classList.contains('run');
   if (lbl) lbl.textContent = running ? 'Exchange wechseln & neu starten' : 'Bot mit ' + ex.toUpperCase() + ' starten';
+  // Open API-key config form for this exchange immediately
+  mexSetupKeys(ex);
 }
 
 function startBotWithExchange() {

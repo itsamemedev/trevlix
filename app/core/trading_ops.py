@@ -18,6 +18,7 @@ import traceback
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
+from typing import Any
 
 import ccxt
 import pandas as pd
@@ -1690,24 +1691,29 @@ def _maybe_generate_market_context() -> None:
         log.warning(f"Market context generation failed: {exc}")
 
 
-def _sync_live_balance(ex) -> bool:
+def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
     """Fetch free quote-currency balance from exchange and update state.balance.
 
+    Tracks balance per exchange in state.exchange_balances and keeps
+    state.balance as the aggregate across all configured exchanges.
     Only active in live mode. Returns True on successful sync.
     """
     if CONFIG.get("paper_trading", True) or ex is None:
         return False
+    # Read exchange name from instance attribute set during creation, fall back to "_default"
+    name = exchange_name or getattr(ex, "_trevlix_name", "_default")
     quote = CONFIG.get("quote_currency", "USDT")
     try:
         bal = ex.fetch_balance()
         live_free = float((bal.get("free") or {}).get(quote, 0) or 0)
         if live_free >= 0:
             with state._lock:
-                state.balance = live_free
-            log.debug("Live-Balance sync: %.2f %s", live_free, quote)
+                state.exchange_balances[name] = live_free
+                state.balance = max(sum(state.exchange_balances.values()), 0)
+            log.debug("Live-Balance sync [%s]: %.2f %s", name, live_free, quote)
             return True
     except Exception as exc:
-        log.warning("Live-Balance-Sync fehlgeschlagen: %s", exc)
+        log.warning("Live-Balance-Sync [%s] fehlgeschlagen: %s", name, exc)
         emit_event(
             "status",
             {
@@ -1719,51 +1725,189 @@ def _sync_live_balance(ex) -> bool:
     return False
 
 
+def _get_all_admin_exchanges() -> list[dict]:
+    """Return all enabled user_exchanges rows for the admin user."""
+    if db is None:
+        return []
+    try:
+        from app.core.admin_exchange import _get_admin_id
+
+        admin_id = _get_admin_id(db)
+        if not admin_id:
+            return []
+        return db.get_enabled_exchanges(admin_id) or []
+    except Exception as exc:
+        log.debug("_get_all_admin_exchanges: %s", exc)
+        return []
+
+
+def _create_exchange_from_db_config(cfg: dict):
+    """Create a CCXT exchange instance from a user_exchanges DB row."""
+    name = cfg["exchange"]
+    if CONFIG.get("paper_trading", True):
+        api_key = api_secret = passphrase = ""
+    else:
+        api_key = cfg.get("api_key", "") or ""
+        api_secret = cfg.get("api_secret", "") or ""
+        passphrase = cfg.get("passphrase", "") or ""
+    inst = create_ccxt_exchange(
+        name,
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        default_type="spot",
+    )
+    if inst is None:
+        raise ValueError(f"Exchange '{name}' konnte nicht erstellt werden")
+    inst._trevlix_name = name  # type: ignore[attr-defined]
+    return inst
+
+
+def _build_exchange_update() -> dict:
+    """Build multi-exchange status payload for the exchange_update WebSocket event."""
+    with state._lock:
+        ex_bals = dict(state.exchange_balances)
+    exs: dict = {}
+    for name, bal in ex_bals.items():
+        exs[name] = {
+            "enabled": True,
+            "running": state.running,
+            "portfolio_value": round(bal, 2),
+            "return_pct": 0.0,
+            "trade_count": 0,
+            "open_trades": 0,
+            "win_rate": 0.0,
+            "total_pnl": 0.0,
+            "markets_count": len(state.markets),
+            "last_scan": state.last_scan,
+            "positions": [],
+        }
+    combined_pv = sum(ex_bals.values()) if ex_bals else state.balance
+    return {
+        "exchanges": exs,
+        "combined_pv": round(combined_pv, 2),
+        "combined_pnl": round(state.total_pnl(), 2),
+        "total_pv": round(combined_pv, 2),
+        "total_pnl": round(state.total_pnl(), 2),
+    }
+
+
 def bot_loop():
-    ex = None
+    exchanges: dict[str, Any] = {}  # exchange_name → ccxt instance
+    primary_name: str | None = None
     last_error_emit_ts = 0.0
+
     while state.running:
         if state.paused:
             _heartbeat_sleep(5)
             continue
-        # Auto-Healing: Signal that bot loop is alive
         _maybe_healer_heartbeat()
-        # Exchange-Wechsel erkannt → alte Instanz verwerfen
+
         if state._exchange_reset:
             log.info("🔄 Exchange-Wechsel erkannt – erstelle neue Verbindung")
-            ex = None
+            exchanges.clear()
+            primary_name = None
             state._exchange_reset = False
 
+        primary_ex = None
         try:
-            if ex is None:
-                try:
-                    ex = create_exchange()
-                except Exception as exc_err:
-                    log.error(f"Exchange-Verbindung fehlgeschlagen: {exc_err}")
-                    now_ts = time.time()
-                    if now_ts - last_error_emit_ts > 15:
-                        emit_event(
-                            "status",
-                            {
-                                "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
-                                "key": "ws_exchange_connect_failed",
-                                "type": "warning",
-                            },
+            # ── Exchange reconciliation ──────────────────────────────────────
+            admin_ex_configs = _get_all_admin_exchanges()
+
+            if admin_ex_configs:
+                target_names = {c["exchange"] for c in admin_ex_configs}
+                # Drop exchanges no longer active in DB
+                for name in [n for n in list(exchanges) if n not in target_names]:
+                    log.info("Exchange %s deaktiviert – entfernt", name)
+                    state.exchange_balances.pop(name, None)
+                    exchanges.pop(name)
+                    if primary_name == name:
+                        primary_name = None
+                # Connect newly enabled exchanges
+                for cfg in admin_ex_configs:
+                    name = cfg["exchange"]
+                    if name in exchanges:
+                        continue
+                    try:
+                        inst = _create_exchange_from_db_config(cfg)
+                        exchanges[name] = inst
+                        if _sync_live_balance(inst, name):
+                            with state._lock:
+                                if not state.initial_balance or state.initial_balance <= 0:
+                                    state.initial_balance = state.balance
+                            risk.force_reset_daily(state.balance)
+                        log.info(
+                            "Exchange %s verbunden (Balance: %.2f %s)",
+                            name,
+                            state.exchange_balances.get(name, 0),
+                            CONFIG.get("quote_currency", "USDT"),
                         )
-                        state.add_activity(
-                            "⚠️",
-                            "Exchange-Verbindung fehlgeschlagen",
-                            str(exc_err)[:120],
-                            "warning",
-                        )
-                        last_error_emit_ts = now_ts
-                    _heartbeat_sleep(30)
-                    continue
-                # Initialise live balance on fresh exchange connection
-                if _sync_live_balance(ex):
-                    with state._lock:
-                        state.initial_balance = state.balance
-                    risk.force_reset_daily(state.balance)
+                    except Exception as exc:
+                        log.error("Exchange %s Verbindung fehlgeschlagen: %s", name, exc)
+                        now_ts = time.time()
+                        if now_ts - last_error_emit_ts > 15:
+                            emit_event(
+                                "status",
+                                {
+                                    "msg": f"⚠️ Exchange {name.upper()} Verbindung fehlgeschlagen",
+                                    "key": f"ws_exchange_connect_failed_{name}",
+                                    "type": "warning",
+                                },
+                            )
+                            last_error_emit_ts = now_ts
+                # Determine primary exchange (is_primary=1, else first available)
+                primary_name = next(
+                    (
+                        c["exchange"]
+                        for c in admin_ex_configs
+                        if c.get("is_primary") and c["exchange"] in exchanges
+                    ),
+                    next(iter(exchanges), None),
+                )
+                primary_ex = exchanges.get(primary_name) if primary_name else None
+            else:
+                # Fall back to single CONFIG exchange when no DB exchanges configured
+                if "_default" not in exchanges:
+                    try:
+                        inst = create_exchange()
+                        inst._trevlix_name = "_default"  # type: ignore[attr-defined]
+                        exchanges["_default"] = inst
+                        primary_name = "_default"
+                        if _sync_live_balance(inst, "_default"):
+                            with state._lock:
+                                state.initial_balance = state.balance
+                            risk.force_reset_daily(state.balance)
+                    except Exception as exc_err:
+                        log.error("Exchange-Verbindung fehlgeschlagen: %s", exc_err)
+                        now_ts = time.time()
+                        if now_ts - last_error_emit_ts > 15:
+                            emit_event(
+                                "status",
+                                {
+                                    "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
+                                    "key": "ws_exchange_connect_failed",
+                                    "type": "warning",
+                                },
+                            )
+                            state.add_activity(
+                                "⚠️",
+                                "Exchange-Verbindung fehlgeschlagen",
+                                str(exc_err)[:120],
+                                "warning",
+                            )
+                            last_error_emit_ts = now_ts
+                        _heartbeat_sleep(30)
+                        continue
+                if not primary_name or primary_name not in exchanges:
+                    primary_name = "_default"
+                primary_ex = exchanges.get("_default")
+
+            if primary_ex is None:
+                log.warning("Keine aktive Exchange verfügbar – warte 30s")
+                _heartbeat_sleep(30)
+                continue
+
+            # ── Iteration tracking ───────────────────────────────────────────
             with state._lock:
                 state.iteration += 1
                 state.last_scan = datetime.now().strftime("%H:%M:%S")
@@ -1772,7 +1916,7 @@ def bot_loop():
                 ).strftime("%H:%M:%S")
 
             risk.reset_daily(state.balance)
-            regime.update(ex)
+            regime.update(primary_ex)
 
             # DB-Pool Health Check (alle 10 Iterationen)
             if state.iteration % 10 == 0:
@@ -1784,15 +1928,19 @@ def bot_loop():
             if state.iteration % 60 == 1:
                 threading.Thread(target=dominance.update, daemon=True).start()
                 threading.Thread(
-                    target=lambda ex=ex: funding_tracker.update(ex), daemon=True
+                    target=lambda ex=primary_ex: funding_tracker.update(ex), daemon=True
                 ).start()
-                # Periodische Balance-Synchronisierung in Live-Modus
-                threading.Thread(target=lambda ex=ex: _sync_live_balance(ex), daemon=True).start()
-                # Autonome LLM-Analyse: Periodische Marktanalyse
+                # Sync balance for ALL active exchanges in parallel
+                for ex_name, ex_inst in list(exchanges.items()):
+                    threading.Thread(
+                        target=lambda n=ex_name, e=ex_inst: _sync_live_balance(e, n), daemon=True
+                    ).start()
+                # Emit multi-exchange status to dashboard
+                emit_event("exchange_update", _build_exchange_update())
                 _maybe_generate_market_context()
 
-            # Positionen verwalten (Long + Short)
-            manage_positions(ex)
+            # ── Position management & trading (primary exchange) ─────────────
+            manage_positions(primary_ex)
             short_engine.update_shorts()
             # Grid Trading: update active grids with current prices
             if grid_engine.grids:
@@ -1826,7 +1974,7 @@ def bot_loop():
 
             # Märkte laden
             if state.iteration % 10 == 1 or not state.markets:
-                new_markets = fetch_markets(ex)
+                new_markets = fetch_markets(primary_ex)
                 if new_markets:
                     with state._lock:
                         state.markets = new_markets
@@ -1849,7 +1997,6 @@ def bot_loop():
                                 "warning",
                             )
                         else:
-                            # Letzter Fallback: persistenten Disk-Cache prüfen
                             disk_fb = _load_market_cache()
                             if disk_fb:
                                 with state._lock:
@@ -1913,7 +2060,8 @@ def bot_loop():
                 if short_candidates:
                     with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as short_pool:
                         short_futures = {
-                            short_pool.submit(scan_symbol, ex, sym): sym for sym in short_candidates
+                            short_pool.submit(scan_symbol, primary_ex, sym): sym
+                            for sym in short_candidates
                         }
                         for fut in as_completed(short_futures):
                             try:
@@ -1945,7 +2093,7 @@ def bot_loop():
             ):
                 with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
                     futures = {
-                        pool.submit(scan_symbol, ex, s): s
+                        pool.submit(scan_symbol, primary_ex, s): s
                         for s in state.markets
                         if s not in state.positions
                     }
@@ -1964,7 +2112,6 @@ def bot_loop():
                                 news_score=float(res.get("news_score", 0.0)),
                                 note=res.get("mtf_desc", "") or "Long-Kandidat erkannt (Signal +1)",
                             )
-                            # Re-check max_open_trades to prevent exceeding limit
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
                             state.add_signal(
@@ -1982,7 +2129,7 @@ def bot_loop():
                                     "onchain_detail": res.get("onchain_detail", ""),
                                 }
                             )
-                            open_position(ex, res)
+                            open_position(primary_ex, res)
 
             emit_event("update", state.snapshot())
 
@@ -2000,24 +2147,23 @@ def bot_loop():
                     emit_event("cluster_update", cluster_ctrl.snapshot())
                 except Exception:
                     pass
-                # Auto-resolve stale alerts
                 try:
                     alert_escalation.auto_resolve_stale()
                 except Exception:
                     pass
 
-        # [Verbesserung #5] Differenzierte ccxt-Fehlerbehandlung
+        # Differenzierte ccxt-Fehlerbehandlung
         except ccxt.RateLimitExceeded as e:
             log.warning(f"Rate-Limit: {e} – warte 60s")
             _heartbeat_sleep(60)
         except ccxt.ExchangeNotAvailable as e:
             log.warning(f"Exchange nicht verfügbar: {e} – warte 120s, Circuit Breaker")
-            ex = None
-            risk.record_result(False)  # Zählt als Verlust für Circuit Breaker
+            exchanges.pop(primary_name, None)
+            risk.record_result(False)
             _heartbeat_sleep(120)
         except ccxt.NetworkError as e:
             log.warning(f"Netzwerkfehler: {e} – reconnect in 15s")
-            ex = None
+            exchanges.pop(primary_name, None)
             _heartbeat_sleep(15)
         except ccxt.ExchangeError as e:
             log.error(f"Exchange-Fehler: {e}")

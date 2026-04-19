@@ -369,6 +369,7 @@ class BotState:
         self.next_scan = "—"
         self._start_time = time.time()  # für Uptime-Berechnung in /api/v1/status
         self._exchange_reset = False  # Signal: Exchange-Instanz neu erstellen
+        self.exchange_balances: dict[str, float] = {}  # exchange_name → live balance
         self._load_trades()
 
     def _load_trades(self):
@@ -623,6 +624,7 @@ class BotState:
             "markets": list(self.markets),
             "iteration": self.iteration,
             "prices": {s: round(p, 4) for s, p in prices_snap.items()},
+            "exchange_balances": dict(self.exchange_balances),
         }
 
 

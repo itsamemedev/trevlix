@@ -1232,6 +1232,20 @@ def on_connect(auth=None):
     if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
+
+    # Apply user's stored paper_trading preference — overrides global default so
+    # individual users can switch to live mode even when admin set paper globally.
+    try:
+        user_settings = db.get_user_settings(user_id) or {}
+        if "paper_trading" in user_settings:
+            desired_paper = bool(user_settings["paper_trading"])
+            if CONFIG.get("paper_trading") != desired_paper:
+                CONFIG["paper_trading"] = desired_paper
+                trade_mode.set_mode("paper" if desired_paper else "live")
+                log.debug("User %s paper_trading=%s aus Settings geladen", user_id, desired_paper)
+    except Exception as _pt_exc:
+        log.debug("paper_trading aus Settings laden fehlgeschlagen: %s", _pt_exc)
+
     # On-demand: Märkte laden falls noch leer (Bot nicht gestartet)
     if not state.markets:
         try:
