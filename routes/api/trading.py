@@ -6,7 +6,6 @@ User-Settings, Exchange-Verwaltung, Signale, Grid, Kühlzeiten.
 
 from __future__ import annotations
 
-import os
 import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -178,12 +177,6 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         current.update(filtered)
         if "paper_trading" in filtered:
             mode = "paper" if sb(filtered.get("paper_trading", True), True) else "live"
-            if mode == "live" and not sb(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-                return jsonify(
-                    {
-                        "error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"
-                    }
-                ), 403
             if deps.trade_mode:
                 deps.trade_mode.set_mode(mode)
             cfg["paper_trading"] = mode == "paper"
@@ -200,10 +193,6 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify(deps.trade_mode.status())
         data = body()
         mode = str(data.get("mode", "paper")).lower()
-        if mode == "live" and not sb(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
-            return jsonify(
-                {"error": "Live-Trading ist serverseitig deaktiviert (LIVE_TRADING_ENABLED=false)"}
-            ), 403
         new_mode = deps.trade_mode.set_mode(mode)
         cfg["paper_trading"] = new_mode != "live"
         st.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
