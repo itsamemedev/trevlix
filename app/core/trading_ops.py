@@ -914,6 +914,17 @@ def open_position(ex, scan: dict):
             discord.error(f"{symbol}: {exec_result.reason}")
             telegram.error(f"{symbol}: {exec_result.reason}")
             _record_decision(symbol, "error", exec_result.reason, scan)
+            state.add_activity(
+                "❌", f"Buy {symbol} fehlgeschlagen", exec_result.reason[:120], "error"
+            )
+            emit_event(
+                "status",
+                {
+                    "msg": f"❌ Buy {symbol} fehlgeschlagen: {exec_result.reason[:120]}",
+                    "key": f"buy_failed_{symbol}",
+                    "type": "error",
+                },
+            )
             return
         fee = exec_result.fee
         qty = float((exec_result.meta or {}).get("qty", qty))
@@ -1103,7 +1114,20 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 with state._lock:
                     if symbol not in state.positions:
                         state.positions[symbol] = pos
+            discord.error(f"Sell {symbol} fehlgeschlagen: {exec_result.reason}")
+            telegram.error(f"Sell {symbol} fehlgeschlagen: {exec_result.reason}")
             _record_decision(symbol, "error", exec_result.reason, {"symbol": symbol})
+            state.add_activity(
+                "❌", f"Sell {symbol} fehlgeschlagen", exec_result.reason[:120], "error"
+            )
+            emit_event(
+                "status",
+                {
+                    "msg": f"❌ Sell {symbol} fehlgeschlagen: {exec_result.reason[:120]}",
+                    "key": f"sell_failed_{symbol}",
+                    "type": "error",
+                },
+            )
             return
         order_resp = (exec_result.meta or {}).get("order") or {}
     if CONFIG.get("paper_trading", True):
@@ -1684,6 +1708,14 @@ def _sync_live_balance(ex) -> bool:
             return True
     except Exception as exc:
         log.warning("Live-Balance-Sync fehlgeschlagen: %s", exc)
+        emit_event(
+            "status",
+            {
+                "msg": f"⚠️ Balance-Sync fehlgeschlagen: {str(exc)[:100]}",
+                "key": "balance_sync_failed",
+                "type": "warning",
+            },
+        )
     return False
 
 
@@ -1731,7 +1763,7 @@ def bot_loop():
                 if _sync_live_balance(ex):
                     with state._lock:
                         state.initial_balance = state.balance
-                    risk.reset_daily(state.balance)
+                    risk.force_reset_daily(state.balance)
             with state._lock:
                 state.iteration += 1
                 state.last_scan = datetime.now().strftime("%H:%M:%S")
