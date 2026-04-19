@@ -55,10 +55,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             fees = {}
             with _fee_cache_lock:
                 for ex_id in deps.exchange_default_fees:
+                    cached_rate = _fee_cache.get(ex_id)
                     fees[ex_id] = {
                         "default": deps.exchange_default_fees[ex_id],
-                        "cached": _fee_cache.get(ex_id, {}).get("rate"),
-                        "cached_at": _fee_cache.get(ex_id, {}).get("ts"),
+                        "cached": cached_rate,
+                        "cached_at": None,
                     }
             return jsonify(
                 {
@@ -214,8 +215,12 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                     "win_rate": float(runtime.get("win_rate", 0) or 0) if is_active else 0.0,
                     "total_pnl": float(runtime.get("total_pnl", 0) or 0) if is_active else 0.0,
                     "markets_count": len(runtime_markets) if is_active else 0,
+                    "symbol_count": len(runtime_markets) if is_active else 0,
                     "last_scan": str(runtime.get("last_scan") or now_iso),
                     "positions": pos_by_exchange.get(ex_name, []),
+                    "status_detail": "Live-Runtime aktiv"
+                    if is_active and runtime.get("running")
+                    else "Inaktiv",
                     "error": "" if ex.get("enabled") else "Nicht aktiviert",
                 }
             combined_pv = sum(v["portfolio_value"] for v in ex_map.values())
@@ -227,6 +232,8 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                     "combined_pnl": combined_pnl,
                     "total_pv": combined_pv,
                     "total_pnl": combined_pnl,
+                    "active_exchange": active_exchange,
+                    "iteration": int(runtime.get("iteration", 0) or 0),
                 }
             )
         except Exception as e:

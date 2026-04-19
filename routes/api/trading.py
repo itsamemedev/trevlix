@@ -11,9 +11,66 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from flask import Blueprint, jsonify, request, session
+from pydantic import BaseModel, ValidationError, field_validator
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
+
+# ── Pydantic validation models ────────────────────────────────────────────────
+
+_VALID_EXCHANGES: frozenset[str] = frozenset(
+    {
+        "cryptocom",
+        "binance",
+        "bybit",
+        "okx",
+        "kucoin",
+        "kraken",
+        "huobi",
+        "coinbase",
+        "bitget",
+        "mexc",
+        "gateio",
+    }
+)
+
+
+class ExchangeUpsertRequest(BaseModel):
+    """Validated request body for POST /api/v1/user/exchanges."""
+
+    exchange: str
+    api_key: str = ""
+    api_secret: str = ""
+    passphrase: str = ""
+    enabled: bool = False
+    is_primary: bool = False
+
+    @field_validator("exchange")
+    @classmethod
+    def validate_exchange(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in _VALID_EXCHANGES:
+            raise ValueError(f"Nicht unterstützte Exchange: '{v}'")
+        return v
+
+    @field_validator("api_key", "api_secret", "passphrase")
+    @classmethod
+    def strip_str(cls, v: str) -> str:
+        return v.strip()
+
+
+class TradingModeRequest(BaseModel):
+    """Validated request body for POST /api/v1/trading/mode."""
+
+    mode: str
+
+    @field_validator("mode")
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
+        v = v.strip().lower()
+        if v not in ("paper", "live"):
+            raise ValueError("mode muss 'paper' oder 'live' sein")
+        return v
 
 
 def create_trading_blueprint(deps: AppDeps) -> Blueprint:
@@ -195,9 +252,11 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         user = db.get_user_by_id(uid) if uid else None
         if not user or user.get("role") != "admin":
             return jsonify({"error": "Nur Admin darf den Trading-Modus wechseln"}), 403
-        data = body()
-        mode = str(data.get("mode", "paper")).lower()
-        new_mode = deps.trade_mode.set_mode(mode)
+        try:
+            req = TradingModeRequest.model_validate(body())
+        except ValidationError as ve:
+            return jsonify({"error": ve.errors()[0]["msg"]}), 400
+        new_mode = deps.trade_mode.set_mode(req.mode)
         cfg["paper_trading"] = new_mode != "live"
         st.add_activity("🧭", "Trading-Modus", new_mode.upper(), "info")
         if deps.discord:
@@ -418,31 +477,30 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/user/exchanges", methods=["POST"])
     @auth
     def api_user_exchanges_upsert():
-        data = body()
-        exchange = norm_ex(data.get("exchange", "")) if norm_ex else str(data.get("exchange", ""))
-        api_key = str(data.get("api_key", "")).strip()
-        api_secret = str(data.get("api_secret", "")).strip()
-        passphrase = str(data.get("passphrase", "")).strip()
-        enabled = sb(data.get("enabled", False), False)
-        is_primary = sb(data.get("is_primary", False), False)
-        if not exchange:
-            return jsonify({"error": "Ungültige oder nicht unterstützte Exchange"}), 400
+        try:
+            req = ExchangeUpsertRequest.model_validate(body())
+        except ValidationError as ve:
+            return jsonify({"error": ve.errors()[0]["msg"]}), 400
         requires_keys = not bool(cfg.get("paper_trading", True))
-        if requires_keys and (not api_key or not api_secret):
+        if requires_keys and (not req.api_key or not req.api_secret):
             return jsonify({"error": "api_key und api_secret sind Pflichtfelder"}), 400
         ok = db.upsert_user_exchange(
             request.user_id,
-            exchange,
-            api_key,
-            api_secret,
-            enabled,
-            is_primary,
-            passphrase=passphrase,
+            req.exchange,
+            req.api_key,
+            req.api_secret,
+            req.enabled,
+            req.is_primary,
+            passphrase=req.passphrase,
         )
         if audit:
-            audit("exchange_upsert", f"Exchange: {exchange}, enabled: {enabled}", request.user_id)
+            audit(
+                "exchange_upsert",
+                f"Exchange: {req.exchange}, enabled: {req.enabled}",
+                request.user_id,
+            )
         auto_started = False
-        if ok and enabled and deps.maybe_auto_start_bot_fn:
+        if ok and req.enabled and deps.maybe_auto_start_bot_fn:
             auto_started = deps.maybe_auto_start_bot_fn()
         return jsonify({"ok": ok, "bot_auto_started": auto_started})
 

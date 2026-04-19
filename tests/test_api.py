@@ -515,6 +515,9 @@ class TestPaperModeBuild:
         alive_loop = SimpleNamespace(name="BotLoop", is_alive=lambda: True)
         monkeypatch.setattr(server.threading, "enumerate", lambda: [alive_loop])
 
+        # Stub DB so admin-check passes without MySQL
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "admin"})
+
         # 1) explizit Paper-Mode setzen
         mode_resp = app_client.post("/api/v1/trading/mode", json={"mode": "paper"})
         assert mode_resp.status_code == 200

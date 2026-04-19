@@ -7,17 +7,18 @@ Cacht berechnete Indikatoren pro Symbol + letztem Timestamp.
 Wird die letzte Kerze nicht aktualisiert, wird das Cache-Ergebnis
 zurückgegeben statt neu zu berechnen.
 
-LRU eviction via collections.OrderedDict: O(1) move-to-end on hit,
-O(1) popitem(last=False) on size overflow — previously O(n) min() scan.
+TTL + LRU-Eviction via cachetools.TTLCache — O(1) inserts and lookups,
+automatic expiry after CACHE_TTL_SECONDS without manual timestamp checks.
 """
+
+from __future__ import annotations
 
 import logging
 import threading
-import time
-from collections import OrderedDict
 from typing import Any
 
 import pandas as pd
+from cachetools import TTLCache
 
 log = logging.getLogger("trevlix.indicator_cache")
 
@@ -27,16 +28,16 @@ CACHE_TTL_SECONDS = 55
 # Maximum number of symbols kept in cache at once
 MAX_CACHE_SIZE = 200
 
-# Cache entry type:  {"df": pd.DataFrame, "last_ts": str, "created": float}
-_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
+# TTLCache handles both LRU eviction (maxsize) and TTL expiry automatically
+_cache: TTLCache[str, dict[str, Any]] = TTLCache(maxsize=MAX_CACHE_SIZE, ttl=CACHE_TTL_SECONDS)
 _lock = threading.Lock()
 
 
 def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
     """Gibt gecachte Indikatoren zurück, falls vorhanden und noch aktuell.
 
-    Cache-Treffer nur wenn Timestamp identisch UND Eintrag innerhalb TTL.
-    Moves the entry to the end of the OrderedDict (LRU access tracking).
+    Cache-Treffer nur wenn Timestamp identisch. TTLCache übernimmt die
+    zeitbasierte Expiry automatisch — kein manuelles time.monotonic() nötig.
 
     Args:
         symbol: Handelspaar, z.B. 'BTC/USDT'.
@@ -46,26 +47,18 @@ def get_cached(symbol: str, last_timestamp: Any) -> pd.DataFrame | None:
         pd.DataFrame mit berechneten Indikatoren bei Cache-Hit, None sonst.
     """
     ts_str = str(last_timestamp)
-
     with _lock:
         entry = _cache.get(symbol)
-        if entry is None:
-            return None
-
-        age = time.monotonic() - entry["created"]
-        if entry["last_ts"] == ts_str and age < CACHE_TTL_SECONDS:
-            # Move to end to mark as recently used
-            _cache.move_to_end(symbol)
+        if entry is not None and entry["last_ts"] == ts_str:
             return entry["df"].copy()
-
     return None
 
 
 def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
     """Speichert berechnete Indikatoren im Cache.
 
-    Überschreibt bestehende Einträge für dasselbe Symbol.
-    LRU eviction via OrderedDict.popitem(last=False) — O(1), no scan.
+    TTLCache übernimmt LRU-Eviction bei maxsize und automatische Expiry
+    nach CACHE_TTL_SECONDS — kein manuelles OrderedDict-Management nötig.
 
     Args:
         symbol: Handelspaar, z.B. 'BTC/USDT'.
@@ -73,19 +66,8 @@ def set_cached(symbol: str, last_timestamp: Any, df: pd.DataFrame) -> None:
         df: DataFrame mit allen berechneten technischen Indikatoren.
     """
     ts_str = str(last_timestamp)
-
     with _lock:
-        _cache[symbol] = {
-            "df": df.copy(),
-            "last_ts": ts_str,
-            "created": time.monotonic(),
-        }
-        # Move to end (most recently used)
-        _cache.move_to_end(symbol)
-
-        # Evict oldest entry (front of OrderedDict) if over limit — O(1)
-        while len(_cache) > MAX_CACHE_SIZE:
-            _cache.popitem(last=False)
+        _cache[symbol] = {"df": df.copy(), "last_ts": ts_str}
 
 
 def invalidate(symbol: str | None = None) -> None:
@@ -109,13 +91,11 @@ def cache_stats() -> dict[str, Any]:
         ``stale_entries``, ``ttl_seconds`` und ``max_size``.
     """
     with _lock:
-        now = time.monotonic()
-        entries = len(_cache)
-        fresh = sum(1 for e in _cache.values() if (now - e["created"]) < CACHE_TTL_SECONDS)
+        total = len(_cache)
         return {
-            "total_entries": entries,
-            "fresh_entries": fresh,
-            "stale_entries": entries - fresh,
+            "total_entries": total,
+            "fresh_entries": total,  # TTLCache auto-expires stale entries on access
+            "stale_entries": 0,
             "ttl_seconds": CACHE_TTL_SECONDS,
             "max_size": MAX_CACHE_SIZE,
         }

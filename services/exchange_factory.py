@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from typing import Any
 
 try:
@@ -28,6 +27,15 @@ try:
     CCXT_AVAILABLE = True
 except ImportError:
     CCXT_AVAILABLE = False
+
+from cachetools import TTLCache
+from tenacity import (
+    RetryError,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
 
 from services.utils import EXCHANGE_MAP
 
@@ -76,10 +84,15 @@ _DEFAULT_TIMEOUT_MS = 15000
 _TICKER_RETRY_ATTEMPTS = 3
 _TICKER_RETRY_BACKOFF_S = 0.5
 
-# Cache für CCXT-Fee-Abfragen: {exchange_id: {"rate": 0.001, "ts": ...}}
-_fee_cache: dict[str, dict] = {}
-_fee_cache_lock = threading.Lock()
+# Transient exceptions to retry on — extended with ccxt types after import guard
+_TRANSIENT_EXC: tuple[type[Exception], ...] = (OSError, TimeoutError)
+if CCXT_AVAILABLE:
+    _TRANSIENT_EXC = (*_TRANSIENT_EXC, ccxt.RequestTimeout, ccxt.NetworkError)
+
+# Fee-Cache: TTLCache auto-expires after 1 hour, no manual timestamp tracking needed
 _FEE_CACHE_TTL = 3600  # 1 Stunde
+_fee_cache: TTLCache[str, float] = TTLCache(maxsize=50, ttl=_FEE_CACHE_TTL)
+_fee_cache_lock = threading.Lock()
 
 
 def get_exchange_class(exchange_name: str) -> Any | None:
@@ -193,36 +206,30 @@ def safe_fetch_tickers(ex: Any, symbols: list[str]) -> dict[str, Any]:
 
 
 def _with_retry(fn: Any, ex_id: str, op: str) -> Any:
-    """Führt einen Exchange-Call mit exponentiellem Backoff aus.
+    """Führt einen Exchange-Call mit exponentiellem Backoff via tenacity aus.
 
-    Gibt bei Erfolg das Ergebnis zurück, bei endgültigem Scheitern ``None``.
-    Retries nur bei transienten Netzwerk-/Timeout-Fehlern.
+    Retries nur bei transienten Netzwerk-/Timeout-Fehlern. Gibt None zurück
+    wenn alle Versuche scheitern oder ein nicht-transienter Fehler auftritt.
     """
-    backoff = _TICKER_RETRY_BACKOFF_S
-    for attempt in range(1, _TICKER_RETRY_ATTEMPTS + 1):
-        try:
-            return fn()
-        except Exception as exc:
-            msg = str(exc).lower()
-            is_transient = "timeout" in msg or "timed out" in msg or "network" in msg
-            if CCXT_AVAILABLE:
-                is_transient = is_transient or isinstance(
-                    exc, (ccxt.RequestTimeout, ccxt.NetworkError)
-                )
-            if not is_transient or attempt == _TICKER_RETRY_ATTEMPTS:
-                log.warning("%s fehlgeschlagen bei %s (Versuch %d): %s", op, ex_id, attempt, exc)
-                return None
-            log.warning(
-                "%s Timeout bei %s (Versuch %d/%d) – retry in %.1fs",
-                op,
-                ex_id,
-                attempt,
-                _TICKER_RETRY_ATTEMPTS,
-                backoff,
-            )
-            time.sleep(backoff)
-            backoff *= 2
-    return None
+
+    @retry(
+        stop=stop_after_attempt(_TICKER_RETRY_ATTEMPTS),
+        wait=wait_exponential(
+            multiplier=_TICKER_RETRY_BACKOFF_S,
+            min=_TICKER_RETRY_BACKOFF_S,
+            max=30,
+        ),
+        retry=retry_if_exception_type(_TRANSIENT_EXC),
+        reraise=True,
+    )
+    def _call() -> Any:
+        return fn()
+
+    try:
+        return _call()
+    except (RetryError, Exception) as exc:
+        log.warning("%s endgültig fehlgeschlagen bei %s: %s", op, ex_id, exc)
+        return None
 
 
 def _fetch_tickers_filtered(ex: Any, sym_set: set[str], symbols: list[str]) -> dict[str, Any]:
@@ -262,11 +269,10 @@ def get_fee_rate(
     Returns:
         Fee-Rate als Dezimalzahl (z.B. 0.001 = 0.1%).
     """
-    now = time.time()
     with _fee_cache_lock:
         cached = _fee_cache.get(exchange_id)
-        if cached and now - cached.get("ts", 0) < _FEE_CACHE_TTL:
-            return cached["rate"]
+        if cached is not None:
+            return cached  # TTLCache handles expiry automatically
 
     # Versuche CCXT-Fee-Abfrage (public endpoint, kein API-Key nötig)
     try:
@@ -277,14 +283,14 @@ def get_fee_rate(
             default_rate = EXCHANGE_DEFAULT_FEES.get(exchange_id, fallback)
             rate = float(fee_info.get("taker", default_rate))
             with _fee_cache_lock:
-                _fee_cache[exchange_id] = {"rate": rate, "ts": now}
+                _fee_cache[exchange_id] = rate
             return rate
     except Exception as e:
         log.debug("Live-Fee-Abfrage für %s fehlgeschlagen: %s", exchange_id, e)
 
     rate = EXCHANGE_DEFAULT_FEES.get(exchange_id, fallback)
     with _fee_cache_lock:
-        _fee_cache[exchange_id] = {"rate": rate, "ts": now}
+        _fee_cache[exchange_id] = rate
     return rate
 
 
@@ -298,7 +304,7 @@ def invalidate_fee_cache(exchange_id: str | None = None) -> None:
         if exchange_id:
             _fee_cache.pop(exchange_id, None)
         else:
-            _fee_cache.clear()
+            _fee_cache.clear()  # TTLCache.clear() is supported
 
 
 def requires_passphrase(exchange_name: str) -> bool:

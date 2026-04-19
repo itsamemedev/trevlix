@@ -41,6 +41,12 @@ bcrypt>=4.1.0,<5.0.0
 pyotp>=2.9.0,<3.0.0           # 2FA TOTP
 python-dotenv>=1.0.0,<2.0.0
 
+# ── Robustness & Validation ────────────────────────────────────
+tenacity>=9.0.0,<10.0.0       # Retry-Decorator mit exponentiellem Backoff
+cachetools>=5.3.0,<8.0.0      # TTLCache + LRUCache für sauberes Caching
+orjson>=3.9.0,<4.0.0          # 2-10× schnellere JSON-Serialisierung
+pydantic>=2.5.0,<3.0.0        # Typsichere Request-Validierung
+
 # ── Deep Learning (optional – LSTM + Transformer) ─────────────
 # Installieren mit: pip install tensorflow
 # tensorflow>=2.15.0
