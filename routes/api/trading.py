@@ -191,6 +191,10 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     def api_trading_mode():
         if request.method == "GET":
             return jsonify(deps.trade_mode.status())
+        uid = getattr(request, "user_id", None)
+        user = db.get_user_by_id(uid) if uid else None
+        if not user or user.get("role") != "admin":
+            return jsonify({"error": "Nur Admin darf den Trading-Modus wechseln"}), 403
         data = body()
         mode = str(data.get("mode", "paper")).lower()
         new_mode = deps.trade_mode.set_mode(mode)
