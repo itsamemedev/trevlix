@@ -102,7 +102,9 @@ class CryptoPanicClient:
         self.token = token
         self.plan = plan if plan else "free"
         self._base_url = _API_V2_URL.format(plan=self.plan)
-        self._fallback_url = _API_V1_FALLBACK_URL
+        # Non-free plans fall back to free/v2/ before legacy v1 (v1 is deprecated and returns 404)
+        _free_v2_url = _API_V2_URL.format(plan="free")
+        self._fallback_url = _free_v2_url if self.plan != "free" else _API_V1_FALLBACK_URL
         self._active_url = self._base_url
         self._cache: dict = {}
         self._cache_max_size: int = 200

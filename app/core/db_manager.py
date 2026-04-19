@@ -10,16 +10,37 @@ import hashlib
 import hmac
 import io
 import json
+import logging as _stdlib_logging
 import os
 import secrets
 import threading
-import time
 import zipfile
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
+try:
+    import orjson as _orjson
+
+    def _jdumps(obj: Any) -> str:
+        """Fast JSON serialiser using orjson (falls back to stdlib json)."""
+        return _orjson.dumps(obj).decode()
+
+    def _jloads(s: str | bytes) -> Any:
+        """Fast JSON deserialiser using orjson (falls back to stdlib json)."""
+        return _orjson.loads(s)
+
+except ImportError:
+
+    def _jdumps(obj: Any) -> str:  # type: ignore[misc]
+        return json.dumps(obj, ensure_ascii=False)
+
+    def _jloads(s: str | bytes) -> Any:  # type: ignore[misc]
+        return json.loads(s)
+
+
 import numpy as np
+from tenacity import RetryError, before_sleep_log, retry, stop_after_attempt, wait_exponential
 
 from app.core.time_compat import UTC
 from services.encryption import decrypt_value, encrypt_value
@@ -182,22 +203,25 @@ class MySQLManager:
         return decrypt_value(value) if value else value
 
     def _init_db(self):
-        """[Verbesserung #3] DB-Init mit exponentiellem Backoff (bis zu 5 Versuche)."""
+        """DB-Init mit exponentiellem Backoff via tenacity (bis zu 5 Versuche)."""
         if not MYSQL_AVAILABLE:
             log.error("PyMySQL fehlt – pip install PyMySQL")
             return
-        _delays = [2, 4, 8, 16, 32]
-        for attempt, delay in enumerate(_delays, 1):
-            try:
-                self._init_db_once()
-                self.db_available = True
-                return
-            except Exception as e:
-                log.warning(f"MySQL Init (Versuch {attempt}/5): {e}")
-                if attempt < len(_delays):
-                    log.info(f"Retry in {delay}s...")
-                    time.sleep(delay)
-        log.error("MySQL Init fehlgeschlagen – starte im Degraded-Mode (Paper-Trading only)")
+
+        @retry(
+            stop=stop_after_attempt(5),
+            wait=wait_exponential(multiplier=2, min=2, max=32),
+            before_sleep=before_sleep_log(log, _stdlib_logging.WARNING),
+            reraise=True,
+        )
+        def _try() -> None:
+            self._init_db_once()
+            self.db_available = True
+
+        try:
+            _try()
+        except (RetryError, Exception):
+            log.error("MySQL Init fehlgeschlagen – starte im Degraded-Mode (Paper-Trading only)")
 
     def _init_db_once(self):
         """Einmalige DB-Initialisierung – wird von _init_db() mit Retry aufgerufen."""
@@ -1111,7 +1135,7 @@ class MySQLManager:
                 with conn.cursor() as c:
                     c.execute(
                         "UPDATE users SET settings_json=%s WHERE id=%s",
-                        (json.dumps(settings, ensure_ascii=False), user_id),
+                        (_jdumps(settings), user_id),
                     )
             return True
         except Exception as e:
@@ -1127,7 +1151,7 @@ class MySQLManager:
                     row = c.fetchone()
             if row and row.get("settings_json"):
                 try:
-                    settings = json.loads(row["settings_json"])
+                    settings = _jloads(row["settings_json"])
                     return settings if isinstance(settings, dict) else {}
                 except (json.JSONDecodeError, TypeError):
                     log.warning(f"get_user_settings({user_id}): invalid JSON in settings_json")

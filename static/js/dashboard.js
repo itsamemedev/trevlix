@@ -1499,6 +1499,8 @@ function selectExchange(ex, el) {
   const lbl = document.getElementById('exStartLabel');
   const running = document.getElementById('statusBadge')?.classList.contains('run');
   if (lbl) lbl.textContent = running ? 'Exchange wechseln & neu starten' : 'Bot mit ' + ex.toUpperCase() + ' starten';
+  // Open API-key config form for this exchange immediately
+  mexSetupKeys(ex);
 }
 
 function startBotWithExchange() {
@@ -2445,15 +2447,9 @@ async function togglePaperMode(enabled) {
   _markTouched('paperMode');
   _markTouched('sPaper');
   try {
-    const r = await fetch('/api/v1/trading/mode', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (_jwtToken || '')},
-      body: JSON.stringify({mode: enabled ? 'paper' : 'live'})
-    });
-    const d = await r.json();
-    if (!r.ok) { toast('❌ ' + (d.error || 'Fehler'), 'error'); return; }
+    await _postTradingEndpoint('/api/v1/trading/mode', {mode: enabled ? 'paper' : 'live'});
     toast(enabled ? '📄 Paper Trading' : '⚠️ Live Trading', 'info');
-  } catch (e) { toast('❌ Netzwerkfehler', 'error'); }
+  } catch (e) { toast('❌ ' + (e.message || 'Mode-Wechsel fehlgeschlagen'), 'error'); }
 }
 
 

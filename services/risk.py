@@ -48,6 +48,22 @@ class RiskManager:
                 self.daily_pnl = 0.0
                 self._day = today
 
+    def force_reset_daily(self, balance: float) -> None:
+        """Setzt daily_start und peak sofort auf den angegebenen Wert.
+
+        Wird nach einem Live-Balance-Sync aufgerufen, damit der
+        Tages-Drawdown-Check mit dem echten Kontostand rechnet statt
+        mit dem paper_balance-Startwert.
+
+        Args:
+            balance: Aktueller Kontostand vom Exchange.
+        """
+        with self._lock:
+            self.daily_start = balance
+            self.peak = max(self.peak, balance)
+            self.daily_pnl = 0.0
+            self._day = datetime.now().date()
+
     def update_peak(self, pv: float) -> None:
         """Aktualisiert den Portfolio-Höchststand und Drawdown.
 

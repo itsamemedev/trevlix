@@ -280,8 +280,8 @@ CONFIG: dict[str, Any] = build_default_config(_secret)
 
 
 def _enforce_paper_trading(source: str = "system") -> None:
-    """Legacy helper: nur aktiv wenn LIVE_TRADING_ENABLED nicht gesetzt ist."""
-    if not safe_bool(os.getenv("LIVE_TRADING_ENABLED", "false"), False):
+    """Force paper-trading mode if PAPER_TRADING=true is explicitly set."""
+    if safe_bool(os.getenv("PAPER_TRADING", "false"), False):
         enforce_paper_trading(CONFIG, log, source)
 
 
@@ -1232,6 +1232,20 @@ def on_connect(auth=None):
     if not user_id:
         emit("auth_error", {"msg": "Nicht authentifiziert – bitte einloggen"})
         return False
+
+    # Apply user's stored paper_trading preference — overrides global default so
+    # individual users can switch to live mode even when admin set paper globally.
+    try:
+        user_settings = db.get_user_settings(user_id) or {}
+        if "paper_trading" in user_settings:
+            desired_paper = bool(user_settings["paper_trading"])
+            if CONFIG.get("paper_trading") != desired_paper:
+                CONFIG["paper_trading"] = desired_paper
+                trade_mode.set_mode("paper" if desired_paper else "live")
+                log.debug("User %s paper_trading=%s aus Settings geladen", user_id, desired_paper)
+    except Exception as _pt_exc:
+        log.debug("paper_trading aus Settings laden fehlgeschlagen: %s", _pt_exc)
+
     # On-demand: Märkte laden falls noch leer (Bot nicht gestartet)
     if not state.markets:
         try:
@@ -1580,17 +1594,11 @@ def on_update_config(data: dict | None = None):
         "gateio",
     }
     updated: dict[str, Any] = {}
-    live_blocked = False
     for k, v in data.items():
         if k not in allowed:
             continue
         if k == "paper_trading":
             desired_paper = bool(v)
-            if not desired_paper and not safe_bool(
-                os.getenv("LIVE_TRADING_ENABLED", "false"), False
-            ):
-                live_blocked = True
-                continue
             CONFIG[k] = desired_paper
             trade_mode.set_mode("paper" if desired_paper else "live")
             updated[k] = desired_paper
@@ -1645,17 +1653,7 @@ def on_update_config(data: dict | None = None):
     except Exception as e:
         persist_failed = True
         log.warning(f"update_config persist failed: {e}")
-    if live_blocked:
-        emit(
-            "status",
-            {
-                "msg": "⛔ Live-Trading serverseitig deaktiviert – "
-                "setze LIVE_TRADING_ENABLED=true in .env und starte neu",
-                "key": "ws_live_blocked",
-                "type": "error",
-            },
-        )
-    if not updated and not live_blocked:
+    if not updated:
         emit(
             "status",
             {

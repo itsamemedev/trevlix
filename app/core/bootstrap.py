@@ -44,7 +44,8 @@ def create_flask_app(template_dir: str, static_dir: str) -> Flask:
     app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", secrets.token_hex(32))
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-    if os.getenv("ALLOWED_ORIGINS", "").startswith("https"):
+    _env = (os.getenv("TREVLIX_ENV") or os.getenv("FLASK_ENV") or "").lower()
+    if os.getenv("ALLOWED_ORIGINS", "").startswith("https") or _env == "production":
         app.config["SESSION_COOKIE_SECURE"] = True
     return app
 
