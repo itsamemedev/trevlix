@@ -1109,6 +1109,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     if CONFIG.get("paper_trading", True):
         with state._lock:
             state.balance += close_invest + pnl
+    else:
+        _sync_live_balance(ex)
 
     if is_partial:
         # Teilverkauf → Position aktualisieren
@@ -1664,6 +1666,27 @@ def _maybe_generate_market_context() -> None:
         log.warning(f"Market context generation failed: {exc}")
 
 
+def _sync_live_balance(ex) -> bool:
+    """Fetch free quote-currency balance from exchange and update state.balance.
+
+    Only active in live mode. Returns True on successful sync.
+    """
+    if CONFIG.get("paper_trading", True) or ex is None:
+        return False
+    quote = CONFIG.get("quote_currency", "USDT")
+    try:
+        bal = ex.fetch_balance()
+        live_free = float((bal.get("free") or {}).get(quote, 0) or 0)
+        if live_free >= 0:
+            with state._lock:
+                state.balance = live_free
+            log.debug("Live-Balance sync: %.2f %s", live_free, quote)
+            return True
+    except Exception as exc:
+        log.warning("Live-Balance-Sync fehlgeschlagen: %s", exc)
+    return False
+
+
 def bot_loop():
     ex = None
     last_error_emit_ts = 0.0
@@ -1704,6 +1727,11 @@ def bot_loop():
                         last_error_emit_ts = now_ts
                     _heartbeat_sleep(30)
                     continue
+                # Initialise live balance on fresh exchange connection
+                if _sync_live_balance(ex):
+                    with state._lock:
+                        state.initial_balance = state.balance
+                    risk.reset_daily(state.balance)
             with state._lock:
                 state.iteration += 1
                 state.last_scan = datetime.now().strftime("%H:%M:%S")
@@ -1726,6 +1754,8 @@ def bot_loop():
                 threading.Thread(
                     target=lambda ex=ex: funding_tracker.update(ex), daemon=True
                 ).start()
+                # Periodische Balance-Synchronisierung in Live-Modus
+                threading.Thread(target=lambda ex=ex: _sync_live_balance(ex), daemon=True).start()
                 # Autonome LLM-Analyse: Periodische Marktanalyse
                 _maybe_generate_market_context()
 
