@@ -2324,25 +2324,82 @@ def on_stop_exchange(data: dict | None = None):
     emit("exchange_update", {"exchange": ex_name, "status": "stopped"}, broadcast=True)
 
 
+_API_KEY_MAX_LEN = 256
+_API_SECRET_MAX_LEN = 512
+_PASSPHRASE_MAX_LEN = 128
+# Erlaubt: Base64/Hex/URL-safe Zeichen wie sie alle großen Exchanges nutzen.
+_API_KEY_ALLOWED = set(
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=+/."
+)
+
+
+def _validate_key_field(value: str, max_len: int, *, allow_empty: bool = False) -> tuple[bool, str]:
+    """Strenge Validierung für Exchange-Credentials.
+
+    Verhindert Injection von Steuer-Zeichen (Newlines, NULLs) und übergroße
+    Payloads, die ressourcen-intensive Encrypt-/DB-Aufrufe verursachen.
+    """
+    if not value:
+        return (allow_empty, "" if allow_empty else "Wert ist leer")
+    if len(value) > max_len:
+        return False, f"Wert zu lang ({len(value)} > {max_len})"
+    bad = [c for c in value if not (c.isprintable() and c not in {" ", "\t"})]
+    if bad:
+        return False, "Wert enthält ungültige Zeichen (Whitespace/Steuer-Zeichen)"
+    if not all(c in _API_KEY_ALLOWED for c in value):
+        return False, "Wert enthält unerlaubte Sonderzeichen"
+    return True, ""
+
+
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data: dict | None = None):
     data = data or {}
     if not _ws_auth_required():
         return
-    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
-    api_key = str((data or {}).get("api_key", "")).strip()
-    secret = str((data or {}).get("secret", "")).strip()
-    if not ex_name or not api_key or not secret:
+    # Rate-Limit: Brute-Force-Stuffing von Key-Material verhindern
+    # (z.B. wenn ein Angreifer hunderte Keys pro Minute durchprobiert).
+    if not _ws_rate_check("save_exchange_keys", min_interval=2.0):
         emit(
             "status",
             {
-                "msg": "❌ Exchange, API-Key und Secret erforderlich",
-                "key": "err_exchange_keys_required",
+                "msg": "⏳ Zu viele Speicher-Versuche – bitte kurz warten",
+                "key": "err_rate_limit_keys",
+                "type": "warning",
+            },
+        )
+        return
+
+    ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
+    api_key = str((data or {}).get("api_key", "")).strip()
+    secret = str((data or {}).get("secret", "")).strip()
+    passphrase = str((data or {}).get("passphrase", "")).strip()
+    if not ex_name:
+        emit(
+            "status",
+            {
+                "msg": "❌ Unbekannte Exchange",
+                "key": "err_unknown_exchange",
                 "type": "error",
             },
         )
         return
-    passphrase = str((data or {}).get("passphrase", "")).strip()
+    # Strenge Validierung der Key-Felder
+    for label, value, max_len, allow_empty in (
+        ("api_key", api_key, _API_KEY_MAX_LEN, False),
+        ("secret", secret, _API_SECRET_MAX_LEN, False),
+        ("passphrase", passphrase, _PASSPHRASE_MAX_LEN, True),
+    ):
+        ok_v, reason = _validate_key_field(value, max_len, allow_empty=allow_empty)
+        if not ok_v:
+            emit(
+                "status",
+                {
+                    "msg": f"❌ Ungültiges Feld {label}: {reason}",
+                    "key": "err_invalid_key_field",
+                    "type": "error",
+                },
+            )
+            return
     is_primary = safe_bool((data or {}).get("is_primary", False), False)
     enabled = safe_bool((data or {}).get("enabled", True), True)
     # Persistent in user_exchanges speichern
@@ -2378,6 +2435,18 @@ def on_save_exchange_keys(data: dict | None = None):
             invalidate_balance_cache(uid, ex_name)
         except Exception:  # pragma: no cover – Cache-Invalidierung ist best-effort
             pass
+        # Audit-Log – nur Metadaten, niemals Key-Material!
+        try:
+            client_ip = request.remote_addr or "unknown"
+            write_audit_entry(
+                db,
+                uid,
+                "exchange_keys_saved",
+                f"exchange={ex_name} primary={is_primary} enabled={enabled}",
+                client_ip,
+            )
+        except Exception:  # pragma: no cover – Audit ist best-effort
+            log.debug("Audit-Log für save_exchange_keys fehlgeschlagen")
     emit(
         "status",
         {

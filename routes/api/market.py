@@ -120,14 +120,24 @@ def _fetch_exchange_snapshot(
     try:
         bal = inst.fetch_balance() or {}
     except Exception as exc:
-        msg = str(exc) or "fetch_balance fehlgeschlagen"
-        if "timeout" in msg.lower():
-            msg = "Exchange-Antwort dauerte zu lange"
+        # Vollständige Exception nur ins Server-Log, nicht zum Client –
+        # CCXT-Fehler enthalten teils Header, IPs oder API-Keys-Fragmente.
         log.warning("fetch_balance[%s] fehlgeschlagen: %s", name, exc)
+        raw = str(exc).lower()
+        if "timeout" in raw or "timed out" in raw:
+            sanitized = "Exchange-Antwort dauerte zu lange"
+        elif any(t in raw for t in ("invalid", "signature", "auth", "permission", "forbidden")):
+            sanitized = "Authentifizierung fehlgeschlagen – API-Keys prüfen"
+        elif "rate" in raw and "limit" in raw:
+            sanitized = "Rate-Limit erreicht – kurz warten"
+        elif "network" in raw or "connection" in raw:
+            sanitized = "Netzwerk-Fehler – Exchange nicht erreichbar"
+        else:
+            sanitized = "fetch_balance fehlgeschlagen"
         return {
             "portfolio_value": 0.0,
             "balances": {},
-            "error": msg[:200],
+            "error": sanitized,
             "stale": False,
             "fetched_at": datetime.now(UTC).isoformat(),
         }

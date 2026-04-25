@@ -3191,24 +3191,23 @@ function _mexRenderCards(data) {
     badge.style.background = active > 0 ? 'var(--jade)' : '#f59e0b';
   }
 
-  // Exchange-Karten (nur konfigurierte oder als aktiv markierte anzeigen –
-  // spart Platz und macht Unterschied zu "alle 11 Optionen" deutlich).
+  // Alle 11 Exchanges immer als Karten anzeigen, sodass User jede einzeln
+  // konfigurieren und starten kann. Sortierung: konfigurierte zuerst (primary
+  // → running → enabled → has_key), dann unkonfigurierte alphabetisch.
   const container = document.getElementById('mex-cards');
   if (!container) return;
 
-  const ordered = Object.entries(MEX_NAMES)
-    .filter(([id]) => exs[id]) // nur konfigurierte Exchanges rendern
-    .sort(([a], [b]) => {
-      const ea = exs[a] || {}, eb = exs[b] || {};
-      // Primary zuerst, dann laufende, dann enabled, dann alphabetisch
-      const rank = e => (e.is_primary ? 0 : e.running ? 1 : e.enabled ? 2 : 3);
-      return rank(ea) - rank(eb) || a.localeCompare(b);
-    });
-
-  if (ordered.length === 0) {
-    container.innerHTML = `<div class="empty"><div class="empty-ico">🔑</div><span>${esc(QI18n.t('mex_setup_keys'))}</span></div>`;
-    return;
-  }
+  const ordered = Object.entries(MEX_NAMES).sort(([a], [b]) => {
+    const ea = exs[a] || {}, eb = exs[b] || {};
+    const rank = e => (
+      e.is_primary ? 0
+      : e.running ? 1
+      : e.enabled ? 2
+      : e.has_key ? 3
+      : 4
+    );
+    return rank(ea) - rank(eb) || a.localeCompare(b);
+  });
 
   // Erhalte die Scroll-Position des Window-Scrollers, damit das innerHTML-
   // Re-Render nicht den User aus der aktuell betrachteten Sektion wirft.
@@ -3286,7 +3285,16 @@ function _mexRenderCard(id, label, ex, activeEx) {
     return `<div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">${header}${errBanner}</div>`;
   }
 
-  // Erweiterte Details: Balance-Breakdown + Positionen + Actions
+  // Aufgeklappt: Wenn KEINE Keys hinterlegt → Inline-Setup-Form,
+  // sonst Stats + Balance + Positions + Actions.
+  const errBanner = err
+    ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(err)}</div>`
+    : '';
+
+  if (!hasKey) {
+    return _mexRenderSetupCard(id, label, running, enabled, header, errBanner);
+  }
+
   const posHtml = positions.length ? positions.map(p => `
     <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px;align-items:center;gap:6px">
       <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
@@ -3310,31 +3318,22 @@ function _mexRenderCard(id, label, ex, activeEx) {
   const freshLabel = stale ? QI18n.t('mex_balance_stale') : QI18n.t('mex_balance_fresh');
 
   // Action-Buttons-Zeile
-  const canToggle = hasKey; // Ohne Keys kann man nicht aktivieren
-  const toggleBtn = canToggle
-    ? (enabled
-        ? `<button class="btn" style="flex:1;padding:8px;font-size:11px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b" onclick="mexToggleEnabled('${escJS(id)}',false)">⏸ ${esc(QI18n.t('mex_toggle_off'))}</button>`
-        : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexToggleEnabled('${escJS(id)}',true)">✓ ${esc(QI18n.t('mex_toggle_on'))}</button>`)
-    : '';
+  const toggleBtn = enabled
+    ? `<button class="btn" style="flex:1;padding:8px;font-size:11px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b" onclick="mexToggleEnabled('${escJS(id)}',false)">⏸ ${esc(QI18n.t('mex_toggle_off'))}</button>`
+    : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexToggleEnabled('${escJS(id)}',true)">✓ ${esc(QI18n.t('mex_toggle_on'))}</button>`;
   const primaryBtn = (enabled && !isPrimary)
     ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexSetPrimary('${escJS(id)}')">★ ${esc(QI18n.t('mex_set_primary'))}</button>`
     : '';
-  const runBtn = (enabled && hasKey)
+  const runBtn = enabled
     ? (running
         ? `<button class="btn btn-red" style="flex:1;padding:8px;font-size:11px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>`
         : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>`)
     : '';
-  const keysBtn = `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`;
-  const refreshBtn = (enabled && hasKey)
+  const keysBtn = `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexShowInlineKeys('${escJS(id)}')">🔑 Keys ändern</button>`;
+  const refreshBtn = enabled
     ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)" onclick="mexRefreshBalance('${escJS(id)}')" title="${esc(QI18n.t('mex_refresh_balance'))}">⟳</button>`
     : '';
-  const deleteBtn = hasKey
-    ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444" onclick="mexDelete('${escJS(id)}')" title="${esc(QI18n.t('mex_delete_config'))}">🗑</button>`
-    : '';
-
-  const errBanner = err
-    ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(err)}</div>`
-    : '';
+  const deleteBtn = `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444" onclick="mexDelete('${escJS(id)}')" title="${esc(QI18n.t('mex_delete_config'))}">🗑</button>`;
 
   return `
     <div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
@@ -3370,6 +3369,8 @@ function _mexRenderCard(id, label, ex, activeEx) {
         <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} ${QI18n.t('open_positions').toUpperCase()}</div>
         ${posHtml}` : ''}
 
+        <div id="mex-inline-keys-${escJS(id)}" style="display:none;margin-bottom:12px"></div>
+
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
           ${runBtn}
           ${toggleBtn}
@@ -3380,6 +3381,80 @@ function _mexRenderCard(id, label, ex, activeEx) {
         </div>
       </div>
     </div>`;
+}
+
+function _mexRenderSetupCard(id, label, running, enabled, header, errBanner) {
+  // Setup-Karte: API-Key / Secret (+ optional Passphrase) inline.
+  const needsPP = ['okx','kucoin'].includes(id);
+  const ppFieldId = `mex-ic-pp-${escJS(id)}`;
+  const apiFieldId = `mex-ic-api-${escJS(id)}`;
+  const secFieldId = `mex-ic-sec-${escJS(id)}`;
+  const ppHtml = needsPP
+    ? `<div class="s-label" style="margin-top:8px">Passphrase</div>
+       <input id="${ppFieldId}" class="s-input s-input-full" type="password" placeholder="Passphrase (${id.toUpperCase()})" autocomplete="off" style="font-family:var(--mono);font-size:12px">`
+    : '';
+  return `
+    <div class="card" data-exchange="${escJS(id)}" style="border-color:rgba(255,255,255,.05)">
+      ${header}
+      ${errBanner}
+      <div class="card-body" style="padding-top:0">
+        <div style="font-size:11px;color:var(--sub);line-height:1.5;margin-bottom:10px">
+          Hinterlege API-Key &amp; Secret für <strong style="color:#e8f4ff">${esc(label)}</strong> – nur <strong style="color:#e8f4ff">Spot-Read &amp; Spot-Trade</strong>, niemals <strong>Withdraw</strong>!
+        </div>
+        <div class="s-label">API Key</div>
+        <input id="${apiFieldId}" class="s-input s-input-full" type="text" placeholder="API Key" style="font-family:var(--mono);font-size:12px">
+        <div class="s-label" style="margin-top:8px">Secret</div>
+        <input id="${secFieldId}" class="s-input s-input-full" type="password" placeholder="Secret" autocomplete="off" style="font-family:var(--mono);font-size:12px">
+        ${ppHtml}
+        <button class="btn btn-jade" style="width:100%;padding:10px;font-size:12px;margin-top:10px" onclick="mexSubmitInlineKeys('${escJS(id)}')">${esc(QI18n.t('mex_save_keys'))}</button>
+      </div>
+    </div>`;
+}
+
+function mexShowInlineKeys(id) {
+  const wrap = document.getElementById('mex-inline-keys-' + id);
+  if (!wrap) return;
+  const visible = wrap.style.display !== 'none' && wrap.innerHTML.trim() !== '';
+  if (visible) {
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+    return;
+  }
+  const needsPP = ['okx','kucoin'].includes(id);
+  const ppHtml = needsPP
+    ? `<div class="s-label" style="margin-top:8px">Passphrase</div>
+       <input id="mex-ic-pp-${escJS(id)}" class="s-input s-input-full" type="password" placeholder="Passphrase" autocomplete="off" style="font-family:var(--mono);font-size:12px">`
+    : '';
+  wrap.innerHTML = `
+    <div style="padding:10px;background:rgba(0,255,136,.04);border:1px solid var(--line);border-radius:6px">
+      <div class="s-label">Neuer API Key</div>
+      <input id="mex-ic-api-${escJS(id)}" class="s-input s-input-full" type="text" placeholder="API Key" style="font-family:var(--mono);font-size:12px">
+      <div class="s-label" style="margin-top:8px">Neues Secret</div>
+      <input id="mex-ic-sec-${escJS(id)}" class="s-input s-input-full" type="password" placeholder="Secret" autocomplete="off" style="font-family:var(--mono);font-size:12px">
+      ${ppHtml}
+      <button class="btn btn-jade" style="width:100%;padding:8px;font-size:12px;margin-top:10px" onclick="mexSubmitInlineKeys('${escJS(id)}')">${esc(QI18n.t('mex_save_keys'))}</button>
+    </div>`;
+  wrap.style.display = 'block';
+}
+
+function mexSubmitInlineKeys(id) {
+  const apiEl = document.getElementById('mex-ic-api-' + id);
+  const secEl = document.getElementById('mex-ic-sec-' + id);
+  const ppEl  = document.getElementById('mex-ic-pp-' + id);
+  const api_key = (apiEl?.value || '').trim();
+  const secret  = (secEl?.value || '').trim();
+  const passphrase = (ppEl?.value || '').trim();
+  if (!api_key || !secret) {
+    toast(QI18n.t('err_apikey_secret'), 'warning');
+    return;
+  }
+  if (!_emitSafe('save_exchange_keys', {exchange: id, api_key, secret, passphrase})) return;
+  // Felder sofort leeren – die Snapshot-Reload-Funktion ersetzt das Card.
+  if (apiEl) apiEl.value = '';
+  if (secEl) secEl.value = '';
+  if (ppEl)  ppEl.value  = '';
+  _mexExpanded.add(id);
+  setTimeout(mexReloadSnapshot, 600);
 }
 
 function mexToggleCard(id) {
@@ -3404,12 +3479,23 @@ async function mexRefreshBalance(id) {
   }
 }
 
+function _mexAuthHeaders(extra) {
+  // CSRF-Token + Bearer (falls vorhanden) – beide bewusst gesetzt:
+  // X-CSRFToken schützt session-cookie-basierte Aufrufe, der Bearer
+  // erlaubt token-basierte Clients (PWA, externe Tools).
+  const h = {'Content-Type':'application/json'};
+  if (_csrfToken) h['X-CSRFToken'] = _csrfToken;
+  if (_jwtToken) h.Authorization = 'Bearer ' + _jwtToken;
+  return Object.assign(h, extra || {});
+}
+
 async function mexToggleEnabled(id, enabled) {
   try{
     const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/toggle', {
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
-      body: JSON.stringify({enabled: !!enabled})
+      credentials:'same-origin',
+      headers: _mexAuthHeaders(),
+      body: JSON.stringify({enabled: !!enabled, _csrf: _csrfToken})
     });
     const j = await r.json().catch(()=>({}));
     if(!r.ok || !j.ok){
@@ -3427,8 +3513,9 @@ async function mexSetPrimary(id) {
   try{
     const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/primary', {
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
-      body: JSON.stringify({})
+      credentials:'same-origin',
+      headers: _mexAuthHeaders(),
+      body: JSON.stringify({_csrf: _csrfToken})
     });
     const j = await r.json().catch(()=>({}));
     if(!r.ok || !j.ok){
@@ -3448,7 +3535,8 @@ async function mexDelete(id) {
   try{
     const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id), {
       method:'DELETE',
-      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+      credentials:'same-origin',
+      headers: _mexAuthHeaders()
     });
     const j = await r.json().catch(()=>({}));
     if(!r.ok || !j.ok){

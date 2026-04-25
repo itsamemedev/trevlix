@@ -69,10 +69,22 @@ def handle_session_and_csrf(
                 or request_obj.path.startswith("/static/")
                 or request_obj.path in ("/favicon.ico", "/robots.txt", "/sitemap.xml")
             ):
-                try:
-                    token = request_obj.form.get("_csrf") or (request_obj.json or {}).get("_csrf")
-                except Exception:
-                    token = None
+                # Token-Quellen (in Reihenfolge): X-CSRFToken-Header → JSON-Body → Form-Body
+                token = request_obj.headers.get("X-CSRFToken") or request_obj.headers.get(
+                    "X-CSRF-Token"
+                )
+                if not token:
+                    try:
+                        token = (
+                            (request_obj.json or {}).get("_csrf") if request_obj.is_json else None
+                        )
+                    except Exception:
+                        token = None
+                if not token:
+                    try:
+                        token = request_obj.form.get("_csrf")
+                    except Exception:
+                        token = None
                 expected = session_obj.get("_csrf_token")
                 if expected and (not token or not hmac.compare_digest(str(token), str(expected))):
                     audit_fn("csrf_violation", request_obj.path, session_obj.get("user_id", 0))

@@ -689,6 +689,60 @@ class TestExchangeManagementByName:
         assert resp.status_code == 400
 
 
+class TestKeyFieldValidation:
+    """Tests für strenge Validierung der API-Key-Felder im save_exchange_keys-Handler."""
+
+    def test_validate_key_field_empty_required(self):
+        from server import _validate_key_field
+
+        ok, reason = _validate_key_field("", 256, allow_empty=False)
+        assert not ok
+        assert "leer" in reason.lower()
+
+    def test_validate_key_field_empty_allowed(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("", 256, allow_empty=True)
+        assert ok
+
+    def test_validate_key_field_too_long(self):
+        from server import _validate_key_field
+
+        ok, reason = _validate_key_field("a" * 300, 256, allow_empty=False)
+        assert not ok
+        assert "lang" in reason.lower()
+
+    def test_validate_key_field_rejects_newlines(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc\ndef", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_rejects_nulls(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc\x00def", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_rejects_special_chars(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc<script>", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_accepts_normal_keys(self):
+        from server import _validate_key_field
+
+        # Typische Crypto-Exchange-Key-Formate
+        for sample in (
+            "AKIAIOSFODNN7EXAMPLE",
+            "abc123-def_456=ghi789",
+            "SK+lwE/+abcDEF12.34/567=",
+        ):
+            ok, _ = _validate_key_field(sample, 256, allow_empty=False)
+            assert ok, f"sollte {sample!r} akzeptieren"
+
+
 class TestPaperModeBuild:
     """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""
 
