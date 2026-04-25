@@ -689,6 +689,100 @@ class TestExchangeManagementByName:
         assert resp.status_code == 400
 
 
+class TestSetupState:
+    """Wizard-State (geräteübergreifend) wird server-seitig gespeichert."""
+
+    def test_setup_state_get_unconfigured_user(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["wizard_completed"] is False
+        assert data["wizard_completed_at"] is None
+        assert data["has_configured_exchange"] is False
+
+    def test_setup_state_get_completed_user(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(
+            server.db,
+            "get_user_settings",
+            lambda _uid: {
+                "wizard_completed": True,
+                "wizard_completed_at": "2026-04-25T10:00:00",
+            },
+        )
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["wizard_completed"] is True
+        assert data["wizard_completed_at"] == "2026-04-25T10:00:00"
+
+    def test_setup_state_get_backfill_via_configured_exchange(self, app_client, monkeypatch):
+        """User der den Wizard nie sah, aber bereits eine Exchange hat,
+        wird über `has_configured_exchange` als 'fertig' angezeigt."""
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"exchange": "cryptocom", "has_key": True, "enabled": True}],
+        )
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["has_configured_exchange"] is True
+
+    def test_setup_state_post_persists_completed_flag(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        captured = {}
+
+        def _update(uid, settings):
+            captured["uid"] = uid
+            captured["settings"] = dict(settings)
+            return True
+
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(server.db, "update_user_settings", _update)
+
+        resp = app_client.post(
+            "/api/v1/user/setup-state",
+            json={"wizard_completed": True},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["wizard_completed"] is True
+        assert captured["uid"] == 1
+        assert captured["settings"]["wizard_completed"] is True
+        assert captured["settings"].get("wizard_completed_at")
+
+    def test_setup_state_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 401
+        resp_post = app_client.post("/api/v1/user/setup-state", json={"wizard_completed": True})
+        assert resp_post.status_code == 401
+
+
 class TestKeyFieldValidation:
     """Tests für strenge Validierung der API-Key-Felder im save_exchange_keys-Handler."""
 

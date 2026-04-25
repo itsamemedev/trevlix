@@ -185,6 +185,54 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         settings["trade_mode"] = "paper" if cfg.get("paper_trading", True) else "live"
         return jsonify(settings)
 
+    # ── Onboarding / Setup-State (per User, geräteübergreifend) ───────────────
+
+    @bp.route("/api/v1/user/setup-state")
+    @auth
+    def api_user_setup_state_get():
+        """Liefert Onboarding-Flags pro User.
+
+        Wird beim Dashboard-Load aufgerufen, um zu entscheiden ob der
+        Wizard angezeigt werden muss. Antwortet auch dann definiert,
+        wenn der User noch keine Settings hat.
+        """
+        settings = db.get_user_settings(request.user_id) or {}
+        return jsonify(
+            {
+                "wizard_completed": bool(settings.get("wizard_completed", False)),
+                "wizard_completed_at": settings.get("wizard_completed_at") or None,
+                "has_configured_exchange": any(
+                    bool(ex.get("has_key")) for ex in (db.get_user_exchanges(request.user_id) or [])
+                ),
+            }
+        )
+
+    @bp.route("/api/v1/user/setup-state", methods=["POST"])
+    @auth
+    def api_user_setup_state_update():
+        """Persistiert Onboarding-Flags pro User (aktuell nur wizard_completed).
+
+        Server-seitige Speicherung, damit das Setup nur einmal pro Account
+        durchlaufen werden muss – auch wenn der User auf einem neuen Gerät
+        einloggt (vorher in localStorage gespeichert → pro Browser).
+        """
+        from datetime import datetime as _dt
+
+        data = body() or {}
+        completed = sb(data.get("wizard_completed", False), False)
+        current = db.get_user_settings(request.user_id) or {}
+        current["wizard_completed"] = bool(completed)
+        if completed:
+            current["wizard_completed_at"] = _dt.now().isoformat()
+        ok = db.update_user_settings(request.user_id, current)
+        if audit:
+            audit(
+                "setup_state_updated",
+                f"wizard_completed={completed}",
+                request.user_id,
+            )
+        return jsonify({"ok": ok, "wizard_completed": bool(completed)})
+
     @bp.route("/api/v1/user/settings", methods=["POST"])
     @auth
     def api_user_settings_update():

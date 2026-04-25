@@ -1676,7 +1676,14 @@ function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).cl
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>{b.style.borderColor='rgba(212,175,55,.15)';b.style.background='';});el.style.borderColor='var(--jade)';el.style.background='rgba(212,175,55,.08)';wizEx=ex;document.getElementById('sExchange').value=ex;selectExchange(ex,document.getElementById('ex-btn-'+ex));}
 function wizSaveKeys(){_emitSafe('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
-function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
+function wizFinish(){
+  document.getElementById('wizardOverlay').style.display='none';
+  saveSettings();
+  // Wizard-Status server-seitig persistieren – damit er pro Account und nicht
+  // pro Gerät gilt; localStorage ist nur noch der lokale Cache.
+  setupMarkWizardCompleted();
+  toast(QI18n.t('wiz_ready'),'success');
+}
 
 // ── Socket events (with listener cleanup to prevent duplicates on reconnect) ──
 // Remove all previous listeners before registering to prevent accumulation
@@ -3670,5 +3677,59 @@ document.addEventListener('DOMContentLoaded',()=>{
   loadFollowers();
   updateGasFees();
   const sLang=document.getElementById('sLang');if(sLang)sLang.value=QI18n.lang;
-  if(!_storage.get('trevlix_wiz')) setTimeout(showWizard,800);
+  // Setup-State server-seitig prüfen, damit der Wizard auf JEDEM Gerät
+  // exakt einmal pro Account läuft. localStorage dient nur noch als
+  // schneller Cache, der Server ist die Source-Of-Truth.
+  setupCheckWizard();
 });
+
+async function setupCheckWizard() {
+  const localFlag = _storage.get('trevlix_wiz') === '1';
+  try {
+    const r = await fetch('/api/v1/user/setup-state', {
+      credentials: 'same-origin',
+      headers: _jwtToken ? {'Authorization': 'Bearer ' + _jwtToken} : {}
+    });
+    if (r.ok) {
+      const j = await r.json();
+      // 1) Server sagt "fertig" → localStorage cachen + Wizard skippen.
+      if (j.wizard_completed) {
+        _storage.set('trevlix_wiz', '1');
+        return;
+      }
+      // 2) Server sagt "nicht fertig", aber User hat schon eine Exchange
+      //    eingerichtet ODER lokales Flag ist gesetzt → Backfill aufs Backend
+      //    schieben, damit alle weiteren Geräte den Wizard überspringen.
+      if (j.has_configured_exchange || localFlag) {
+        await setupMarkWizardCompleted({silent: true});
+        return;
+      }
+    } else if (localFlag) {
+      // 3) Endpoint nicht erreichbar (z.B. Migration läuft) – wenn lokal
+      //    schon "fertig" markiert, NICHT erneut zeigen.
+      return;
+    }
+  } catch (e) {
+    console.warn('setup-state-check fehlgeschlagen:', e);
+    if (localFlag) return;
+  }
+  setTimeout(showWizard, 800);
+}
+
+async function setupMarkWizardCompleted(opts) {
+  const silent = !!(opts && opts.silent);
+  try {
+    const headers = {'Content-Type': 'application/json'};
+    if (_csrfToken) headers['X-CSRFToken'] = _csrfToken;
+    if (_jwtToken) headers['Authorization'] = 'Bearer ' + _jwtToken;
+    await fetch('/api/v1/user/setup-state', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({wizard_completed: true, _csrf: _csrfToken})
+    });
+  } catch (e) {
+    if (!silent) console.warn('setup-state speichern fehlgeschlagen:', e);
+  }
+  _storage.set('trevlix_wiz', '1');
+}
