@@ -9,7 +9,7 @@
 <meta property="og:url" content="https://trevlix.dev/changelog">
 <meta name="twitter:card" content="summary">
 <meta name="theme-color" content="#020507">
-<title>TREVLIX v1.5.2 — Changelog</title>
+<title>TREVLIX v1.7.1 — Changelog</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@300;400;600;700&family=Barlow+Condensed:wght@700;800;900&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/shared-nav.css">
@@ -79,13 +79,46 @@ body::after{content:'';position:fixed;inset:0;pointer-events:none;z-index:500;op
 
 <div class="timeline">
 
-  <!-- v1.5.3 -->
+  <!-- v1.7.1 -->
   <div class="release">
     <div class="release-dot latest"></div>
     <div class="release-header">
+      <span class="release-version">v1.7.1</span>
+      <span class="release-date">2026-04-25</span>
+      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
+    </div>
+    <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
+      <ul>
+        <li><strong>Kritisch:</strong> Multi-Exchange-Portfolio lud die Crypto.com-Balance nicht (und alle anderen nicht-aktiven Exchanges zeigten 0 USDT). <code>/api/v1/exchanges</code> ruft jetzt <code>fetch_balance()</code> pro aktivierter Exchange auf, bewertet Coin-Bestände in USDT via Ticker-Cache und nutzt einen 60s-Snapshot-Cache gegen Rate-Limits.</li>
+        <li>Dashboard-Scroll-Sprung beim Daten-Refresh: <code>_initExchangeSelector()</code> rief bei jedem WebSocket-Update <code>scrollIntoView()</code> auf. Auto-Scroll passiert jetzt nur noch bei explizitem Klick.</li>
+        <li><code>fetch_aggregated_balance()</code> nutzte die veraltete <code>arb_exchanges</code>-Config statt der <code>user_exchanges</code>-DB.</li>
+        <li>Race Condition in <code>db.set_primary_exchange()</code>: alle Statements laufen jetzt in einer Transaktion mit <code>FOR UPDATE</code>-Lock.</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="added" data-i18n="changelog_added">Hinzugefügt</h4>
+      <ul>
+        <li>Interaktive Multi-Exchange-Karten: Klick zum Aufklappen, Per-Coin-Balance-Breakdown, Aktionen für Aktivieren/Deaktivieren, Primary setzen, Refresh, Löschen.</li>
+        <li>Neue Endpunkte (per Exchange-Name): <code>POST /api/v1/user/exchanges/&lt;name&gt;/toggle</code>, <code>/primary</code>, <code>DELETE</code>, <code>GET /balance?refresh=1</code>.</li>
+        <li>Öffentliche Landing-Page: <code>/</code> serviert <code>index.html</code> statt Redirect zu <code>/login</code>.</li>
+        <li>"Alle Balances neu laden"-Button im Multi-Exchange-Header.</li>
+      </ul>
+    </div>
+    <div class="change-group"><h4 class="changed" data-i18n="changelog_changed">Sicherheit</h4>
+      <ul>
+        <li><code>@auth</code>-Decorator auf <code>/api/export/csv</code>, <code>/api/export/json</code>, <code>/api/backup/download</code> (Backup zusätzlich admin-only), <code>/api/ohlcv/&lt;sym&gt;</code>, <code>/api/heatmap</code>, <code>/api/v1/gas</code>.</li>
+        <li>JWT-Cookie ist nun <code>HttpOnly</code> und <code>Secure</code> (bei HTTPS) – Socket.io fällt server-seitig auf <code>request.cookies</code> zurück, Bearer-Tokens werden für API-Auth wieder über <code>verify_api_token()</code> mit explizitem Expiry-Check validiert.</li>
+        <li><code>ALLOWED_ORIGINS</code>-Default ist nun "leer" statt <code>*</code> – Wildcard nur noch nach expliziter Konfiguration.</li>
+        <li>Trade-Export liefert nur noch Trades des aktuell eingeloggten Users statt aller User.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- v1.5.3 -->
+  <div class="release">
+    <div class="release-dot"></div>
+    <div class="release-header">
       <span class="release-version">v1.5.3</span>
       <span class="release-date">2026-04-05</span>
-      <span class="release-tag tag-latest" data-i18n="changelog_tag_latest">Latest</span>
     </div>
     <div class="change-group"><h4 class="fixed" data-i18n="changelog_fixed">Behoben</h4>
       <ul>

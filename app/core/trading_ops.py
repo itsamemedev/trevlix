@@ -2193,10 +2193,12 @@ def bot_loop():
 
 
 def fetch_aggregated_balance() -> dict:
-    """[#32] Aggregiert Balance über alle konfigurierten Exchanges.
+    """Aggregiert Balance über alle konfigurierten Exchanges eines Admin-Users.
 
-    Verbindet sich mit der Haupt-Exchange sowie allen in ``arb_exchanges``
-    konfigurierten Exchanges und summiert USDT-Guthaben und Coin-Bestände.
+    Nutzt die `user_exchanges`-DB-Tabelle (nicht die veraltete `arb_exchanges`-
+    Config). Summiert USDT-Guthaben der Haupt-Exchange sowie aller weiteren
+    aktivierten Exchanges und bewertet Coin-Bestände mit dem letzten Ticker-
+    Preis. Fehler pro Exchange werden gesammelt und nicht propagiert.
 
     Returns:
         Dict mit ``total_usdt``, ``by_exchange`` und ``errors``.
@@ -2207,36 +2209,57 @@ def fetch_aggregated_balance() -> dict:
         result["by_exchange"]["paper"] = {"USDT": state.balance}
         return result
 
-    exchanges_to_check = {CONFIG.get("exchange", "cryptocom"): create_exchange()}
-    for ex_id in CONFIG.get("arb_exchanges", []):
+    quote = CONFIG.get("quote_currency", "USDT")
+
+    # Admin/primary Exchange aus CONFIG – das ist der Fallback, falls keine
+    # DB-Einträge vorliegen.
+    exchanges_to_check: dict[str, Any] = {}
+    primary_ex_id = CONFIG.get("exchange", "cryptocom")
+    try:
+        primary_inst = create_exchange()
+        if primary_inst is not None:
+            exchanges_to_check[primary_ex_id] = primary_inst
+    except Exception as exc:
+        result["errors"].append(f"{primary_ex_id}: {exc}")
+
+    # Alle aktivierten User-Exchanges via DB (korrekt entschlüsselt)
+    admin_rows = _get_all_admin_exchanges() or []
+    for row in admin_rows:
+        ex_id = str(row.get("exchange") or "").lower()
+        if not ex_id or ex_id in exchanges_to_check:
+            continue
         try:
-            keys = CONFIG.get("arb_api_keys", {}).get(ex_id, {})
-            ex_cls = getattr(ccxt, EXCHANGE_MAP.get(ex_id, ex_id), None)
-            if ex_cls is None:
-                result["errors"].append(f"{ex_id}: Exchange class not found")
-                continue
-            exchanges_to_check[ex_id] = ex_cls(
-                {
-                    "apiKey": keys.get("apiKey", ""),
-                    "secret": keys.get("secret", ""),
-                    "enableRateLimit": True,
-                }
-            )
-        except Exception as e:
-            result["errors"].append(f"{ex_id}: {e}")
+            inst = _create_exchange_from_db_config(row)
+            if inst is not None:
+                exchanges_to_check[ex_id] = inst
+        except Exception as exc:
+            result["errors"].append(f"{ex_id}: {exc}")
 
     for ex_id, ex in exchanges_to_check.items():
         try:
             bal = ex.fetch_balance()
-            totals = {}
-            for k, v in bal.get("total", {}).items():
+            totals: dict[str, float] = {}
+            for k, v in (bal.get("total") or {}).items():
                 fv = safe_float(v, 0.0)
                 if fv > 0:
-                    totals[k] = fv
+                    totals[k.upper()] = fv
             result["by_exchange"][ex_id] = totals
-            # USDT direkt + Schätzung via last price für andere Coins
-            usdt = totals.get(CONFIG.get("quote_currency", "USDT"), 0.0)
-            result["total_usdt"] += usdt
+            # Bestände in Quote-Währung bewerten (Ticker-basiert).
+            ex_usdt = 0.0
+            for coin, amt in totals.items():
+                if coin == quote:
+                    ex_usdt += amt
+                    continue
+                symbol = f"{coin}/{quote}"
+                try:
+                    t = ex.fetch_ticker(symbol)
+                    last = safe_float(t.get("last") or t.get("close"), 0.0)
+                    if last > 0:
+                        ex_usdt += amt * last
+                except Exception:
+                    # Dust-Coins ohne Paar werden ignoriert.
+                    continue
+            result["total_usdt"] += ex_usdt
         except Exception as e:
             result["errors"].append(f"{ex_id}: {e}")
 

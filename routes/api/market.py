@@ -8,16 +8,206 @@ OHLCV, Portfolio-Optimierung, Backtest-Vergleich, Copy-Trading.
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import requests
+from cachetools import TTLCache
 from flask import Blueprint, Response, jsonify, request, send_file, session
 
 from app.core.time_compat import UTC
+from services.encryption import decrypt_value
+from services.exchange_factory import create_ccxt_exchange
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
+
+# Per-user per-exchange balance cache (60s TTL) – schützt vor Rate-Limits
+# und Endpoint-Thrash, wenn das Dashboard alle paar Sekunden pollt.
+_BALANCE_CACHE_TTL_S = 60
+_balance_cache: TTLCache = TTLCache(maxsize=256, ttl=_BALANCE_CACHE_TTL_S)
+_balance_cache_lock = threading.Lock()
+
+# Separater Cache für "letzter Preis pro Coin" um Balances in USDT zu
+# bewerten (5 Min TTL, gemeinsam für alle User).
+_PRICE_CACHE_TTL_S = 300
+_price_cache: TTLCache = TTLCache(maxsize=512, ttl=_PRICE_CACHE_TTL_S)
+_price_cache_lock = threading.Lock()
+
+
+def _usd_value(coin: str, amount: float, quote: str, ex: Any, log) -> float:
+    """Konvertiert einen Coin-Betrag in Quote-Währung (USDT).
+
+    Nutzt den `_price_cache` um fetch_ticker-Calls zu reduzieren. Fällt auf 0
+    zurück, falls kein Preis ermittelbar ist (z.B. Dust-Coin ohne Paar).
+    """
+    if not amount or amount <= 0:
+        return 0.0
+    coin = coin.upper()
+    if coin == quote:
+        return float(amount)
+    symbol = f"{coin}/{quote}"
+    with _price_cache_lock:
+        cached = _price_cache.get(symbol)
+    if cached is not None:
+        return float(amount) * float(cached)
+    try:
+        t = ex.fetch_ticker(symbol)
+        last = float(t.get("last") or t.get("close") or 0)
+        if last > 0:
+            with _price_cache_lock:
+                _price_cache[symbol] = last
+            return float(amount) * last
+    except Exception as exc:
+        log.debug("Preis für %s nicht verfügbar: %s", symbol, exc)
+    return 0.0
+
+
+def _fetch_exchange_snapshot(
+    ex_row: dict,
+    quote: str,
+    paper: bool,
+    log,
+) -> dict:
+    """Lädt Balance + USDT-Wert für eine einzelne Exchange-Konfiguration.
+
+    Das Ergebnis wird pro (user_id, exchange) gecached, damit die UI ohne
+    Rate-Limit-Druck alle paar Sekunden pollen kann.
+    """
+    name = str(ex_row.get("exchange", "")).lower()
+    if not name:
+        return {"error": "invalid_exchange"}
+
+    if paper:
+        return {
+            "portfolio_value": 0.0,
+            "balances": {},
+            "error": "",
+            "stale": False,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
+    # Instanz aus entschlüsselten Keys erstellen
+    api_key = decrypt_value(ex_row.get("api_key", "")) or ""
+    api_secret = decrypt_value(ex_row.get("api_secret", "")) or ""
+    passphrase = decrypt_value(ex_row.get("passphrase", "")) or ""
+    if not api_key or not api_secret:
+        return {
+            "portfolio_value": 0.0,
+            "balances": {},
+            "error": "Keys fehlen oder konnten nicht entschlüsselt werden",
+            "stale": False,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
+    inst = create_ccxt_exchange(
+        name,
+        api_key=api_key,
+        api_secret=api_secret,
+        passphrase=passphrase,
+        default_type="spot",
+    )
+    if inst is None:
+        return {
+            "portfolio_value": 0.0,
+            "balances": {},
+            "error": "Exchange-Client konnte nicht erstellt werden",
+            "stale": False,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
+    try:
+        bal = inst.fetch_balance() or {}
+    except Exception as exc:
+        # Vollständige Exception nur ins Server-Log, nicht zum Client –
+        # CCXT-Fehler enthalten teils Header, IPs oder API-Keys-Fragmente.
+        log.warning("fetch_balance[%s] fehlgeschlagen: %s", name, exc)
+        raw = str(exc).lower()
+        if "timeout" in raw or "timed out" in raw:
+            sanitized = "Exchange-Antwort dauerte zu lange"
+        elif any(t in raw for t in ("invalid", "signature", "auth", "permission", "forbidden")):
+            sanitized = "Authentifizierung fehlgeschlagen – API-Keys prüfen"
+        elif "rate" in raw and "limit" in raw:
+            sanitized = "Rate-Limit erreicht – kurz warten"
+        elif "network" in raw or "connection" in raw:
+            sanitized = "Netzwerk-Fehler – Exchange nicht erreichbar"
+        else:
+            sanitized = "fetch_balance fehlgeschlagen"
+        return {
+            "portfolio_value": 0.0,
+            "balances": {},
+            "error": sanitized,
+            "stale": False,
+            "fetched_at": datetime.now(UTC).isoformat(),
+        }
+
+    totals = {
+        k.upper(): float(v)
+        for k, v in (bal.get("total") or {}).items()
+        if isinstance(v, (int, float)) and float(v) > 0
+    }
+    free = {
+        k.upper(): float(v)
+        for k, v in (bal.get("free") or {}).items()
+        if isinstance(v, (int, float)) and float(v) > 0
+    }
+
+    portfolio_value = 0.0
+    breakdown: dict[str, dict[str, float]] = {}
+    for coin, total_amt in totals.items():
+        usd = _usd_value(coin, total_amt, quote, inst, log)
+        portfolio_value += usd
+        breakdown[coin] = {
+            "total": round(total_amt, 8),
+            "free": round(free.get(coin, 0.0), 8),
+            "usdt_value": round(usd, 2),
+        }
+
+    return {
+        "portfolio_value": round(portfolio_value, 2),
+        "balances": breakdown,
+        "error": "",
+        "stale": False,
+        "fetched_at": datetime.now(UTC).isoformat(),
+    }
+
+
+def _get_balance_snapshot(
+    user_id: int,
+    ex_row: dict,
+    quote: str,
+    paper: bool,
+    log,
+    force_refresh: bool = False,
+) -> dict:
+    """Cache-Wrapper um `_fetch_exchange_snapshot`."""
+    name = str(ex_row.get("exchange", "")).lower()
+    cache_key = f"{user_id}:{name}"
+    if not force_refresh:
+        with _balance_cache_lock:
+            cached = _balance_cache.get(cache_key)
+        if cached is not None:
+            cached = dict(cached)
+            cached["stale"] = True
+            return cached
+    snap = _fetch_exchange_snapshot(ex_row, quote, paper, log)
+    # Nur erfolgreiche Snapshots cachen (Fehler sollen sofort erneut versuchen)
+    if not snap.get("error"):
+        with _balance_cache_lock:
+            _balance_cache[cache_key] = dict(snap)
+    return snap
+
+
+def invalidate_balance_cache(user_id: int, exchange: str | None = None) -> None:
+    """Invalidiert den Balance-Cache für einen User."""
+    with _balance_cache_lock:
+        if exchange:
+            _balance_cache.pop(f"{user_id}:{exchange.lower()}", None)
+        else:
+            keys = [k for k in _balance_cache if k.startswith(f"{user_id}:")]
+            for k in keys:
+                _balance_cache.pop(k, None)
 
 
 def create_market_blueprint(deps: AppDeps) -> Blueprint:
@@ -150,6 +340,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Gas ───────────────────────────────────────────────────────────────────
 
     @bp.route("/api/v1/gas")
+    @auth
     def api_gas():
         try:
             r = requests.get(
@@ -195,7 +386,18 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 ex_name = str(pos.get("exchange") or active_exchange or "").lower()
                 if ex_name:
                     pos_by_exchange.setdefault(ex_name, []).append(pos)
+
+            paper = bool(cfg.get("paper_trading", True))
+            quote = str(cfg.get("quote_currency", "USDT")).upper()
+            force = str(request.args.get("refresh", "")).lower() in ("1", "true", "yes")
+
+            # Für Balance-Fetch benötigen wir die entschlüsselten Keys –
+            # `get_user_exchanges` liefert nur Flags. Deshalb zusätzlich
+            # `get_enabled_exchanges` für die aktivierten Konfigurationen.
             user_exchanges = db.get_user_exchanges(uid)
+            enabled_rows = {
+                str(r.get("exchange", "")).lower(): r for r in db.get_enabled_exchanges(uid) or []
+            }
             now_iso = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S")
             ex_map: dict[str, Any] = {}
             for ex in user_exchanges:
@@ -203,12 +405,61 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 if not ex_name:
                     continue
                 is_active = ex_name == active_exchange
+                enabled = bool(ex.get("enabled"))
+                is_primary = bool(ex.get("is_primary"))
+                has_key = bool(ex.get("has_key"))
+
+                # Portfolio-Wert aus Live-Balance (nur für aktivierte Exchanges
+                # mit konfigurierten Keys). Für die aktive Exchange wird
+                # zusätzlich der Bot-Portfolio-Wert verwendet, da offene
+                # Positionen nicht zwingend im fetch_balance() stehen.
+                pv_live = 0.0
+                balances: dict[str, Any] = {}
+                fetch_error = ""
+                stale = False
+                fetched_at = now_iso
+                snap_row = enabled_rows.get(ex_name)
+                if enabled and has_key and snap_row and not paper:
+                    snap = _get_balance_snapshot(
+                        uid, snap_row, quote, paper, log, force_refresh=force
+                    )
+                    pv_live = float(snap.get("portfolio_value", 0) or 0)
+                    balances = snap.get("balances") or {}
+                    fetch_error = str(snap.get("error") or "")
+                    stale = bool(snap.get("stale"))
+                    fetched_at = str(snap.get("fetched_at") or now_iso)
+
+                pv_runtime = float(runtime.get("portfolio_value", 0) or 0) if is_active else 0.0
+                portfolio_value = max(pv_live, pv_runtime)
+
+                if is_active and runtime.get("running"):
+                    status_detail = "Live-Runtime aktiv"
+                elif paper:
+                    status_detail = "Paper-Trading aktiv"
+                elif not enabled:
+                    status_detail = "Nicht aktiviert"
+                elif not has_key:
+                    status_detail = "Keine API-Keys"
+                elif fetch_error:
+                    status_detail = "Balance-Fehler"
+                elif stale:
+                    status_detail = "Live-Balance (Cache)"
+                else:
+                    status_detail = "Live-Balance aktuell"
+
+                error_msg = fetch_error
+                if not error_msg and not enabled:
+                    error_msg = "Nicht aktiviert"
+                elif not error_msg and not has_key and not paper:
+                    error_msg = "API-Keys erforderlich"
+
                 ex_map[ex_name] = {
-                    "enabled": bool(ex.get("enabled")),
+                    "enabled": enabled,
+                    "is_primary": is_primary,
+                    "has_key": has_key,
+                    "has_passphrase": bool(ex.get("has_passphrase")),
                     "running": bool(runtime.get("running", False)) if is_active else False,
-                    "portfolio_value": float(runtime.get("portfolio_value", 0) or 0)
-                    if is_active
-                    else 0.0,
+                    "portfolio_value": round(portfolio_value, 2),
                     "return_pct": float(runtime.get("return_pct", 0) or 0) if is_active else 0.0,
                     "trade_count": int(runtime.get("total_trades", 0) or 0) if is_active else 0,
                     "open_trades": len(pos_by_exchange.get(ex_name, [])),
@@ -218,10 +469,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                     "symbol_count": len(runtime_markets) if is_active else 0,
                     "last_scan": str(runtime.get("last_scan") or now_iso),
                     "positions": pos_by_exchange.get(ex_name, []),
-                    "status_detail": "Live-Runtime aktiv"
-                    if is_active and runtime.get("running")
-                    else "Inaktiv",
-                    "error": "" if ex.get("enabled") else "Nicht aktiviert",
+                    "balances": balances,
+                    "balance_fetched_at": fetched_at,
+                    "balance_stale": stale,
+                    "status_detail": status_detail,
+                    "error": error_msg,
                 }
             combined_pv = sum(v["portfolio_value"] for v in ex_map.values())
             combined_pnl = sum(v["total_pnl"] for v in ex_map.values())
@@ -234,6 +486,8 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                     "total_pnl": combined_pnl,
                     "active_exchange": active_exchange,
                     "iteration": int(runtime.get("iteration", 0) or 0),
+                    "quote_currency": quote,
+                    "paper_trading": paper,
                 }
             )
         except Exception as e:
@@ -254,6 +508,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── OHLCV ─────────────────────────────────────────────────────────────────
 
     @bp.route("/api/ohlcv/<path:symbol>")
+    @auth
     def api_ohlcv(symbol):
         sym = symbol.replace("-", "/")
         tf = request.args.get("tf", "1h")
@@ -272,6 +527,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Heatmap (Legacy) ──────────────────────────────────────────────────────
 
     @bp.route("/api/heatmap")
+    @auth
     def api_heatmap_legacy():
         try:
             ex = deps.create_exchange()
@@ -376,16 +632,23 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Export ────────────────────────────────────────────────────────────────
 
     @bp.route("/api/export/csv")
+    @auth
     def api_export_csv():
+        # Pro-User Export: db.export_csv() liest sonst ungefiltert alle Trades.
+        try:
+            csv_payload = db.export_csv(user_id=request.user_id)
+        except TypeError:  # pragma: no cover – ältere Signatur ohne user_id
+            csv_payload = db.export_csv()
         return Response(
-            db.export_csv(),
+            csv_payload,
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment;filename=trevlix_trades.csv"},
         )
 
     @bp.route("/api/export/json")
+    @auth
     def api_export_json():
-        trades = db.load_trades(limit=10000)
+        trades = db.load_trades(limit=10000, user_id=request.user_id)
         if deps.trades_to_json:
             content = deps.trades_to_json(trades)
         else:
@@ -397,7 +660,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
         )
 
     @bp.route("/api/backup/download")
+    @auth
+    @deps.admin_required
     def api_backup_download():
+        # Backups enthalten ALLE User-Daten inkl. verschlüsselter Exchange-Keys
+        # → ausschließlich Admins erlauben.
         path = db.backup()
         if path:
             return send_file(path, as_attachment=True)

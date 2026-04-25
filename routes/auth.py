@@ -67,14 +67,17 @@ def create_auth_blueprint(
 
     @bp.route("/")
     def index():
-        """Hauptseite - leitet zu Login um wenn nicht eingeloggt.
+        """Hauptseite - öffentliche Landing-Page (index.html).
+
+        Authentifizierte User werden direkt aufs Dashboard geleitet, alle
+        anderen sehen die Marketing-/Produkt-Seite mit Login-Link.
 
         Returns:
-            Dashboard HTML oder Redirect zu /login.
+            Dashboard-Redirect für eingeloggte User, sonst index.html.
         """
-        if not session.get("user_id"):
-            return redirect("/login")
-        return render_template("dashboard.html")
+        if session.get("user_id"):
+            return redirect("/dashboard")
+        return render_template("index.html")
 
     @bp.route("/login", methods=["GET", "POST"])
     @limiter.limit("10 per minute")
@@ -158,10 +161,20 @@ def create_auth_blueprint(
                         jwt_secret,
                         algorithm="HS256",
                     )
+                    # Cookie ist HttpOnly: WebSocket-Auth läuft über die
+                    # Session, API-Auth akzeptiert ebenfalls die Session –
+                    # der JS-Client braucht den Token also nicht im Klartext.
+                    # `secure=True` wenn HTTPS aktiv ist (Reverse-Proxy
+                    # setzt X-Forwarded-Proto entsprechend).
+                    secure_cookie = bool(
+                        request.is_secure
+                        or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+                    )
                     resp.set_cookie(
                         "token",
                         token,
-                        httponly=False,  # JS muss lesen können
+                        httponly=True,
+                        secure=secure_cookie,
                         samesite="Lax",
                         max_age=8 * 3600,
                         path="/",

@@ -302,7 +302,12 @@ function updateUI(d){
     portChart.data.datasets[0].data=vals;
     portChart.data.datasets[0].borderColor=cc;
     portChart.data.datasets[0].backgroundColor=cc==='#00ff88'?'rgba(0,255,136,0.06)':'rgba(255,61,113,0.06)';
-    portChart.update('none');
+    try { portChart.update('none'); }
+    catch(e) {
+      // Chart.js kann nach DOM-Replacement broken sein – sauber neu rendern beim nächsten Update.
+      try { portChart.destroy(); } catch(_e) {}
+      portChart = null;
+    }
   }
   // Sub-components
   if(d.fear_greed) updateFG(d.fear_greed);
@@ -1483,7 +1488,7 @@ function pauseBot(){_emitSafe('pause_bot');}
 // ── Exchange Selector ─────────────────────────────────────────────────
 let _selectedExchange = '';
 
-function selectExchange(ex, el) {
+function selectExchange(ex, el, opts) {
   if (!ex) return;
   _selectedExchange = ex;
   // Highlight active button
@@ -1499,8 +1504,10 @@ function selectExchange(ex, el) {
   const lbl = document.getElementById('exStartLabel');
   const running = document.getElementById('statusBadge')?.classList.contains('run');
   if (lbl) lbl.textContent = running ? 'Exchange wechseln & neu starten' : 'Bot mit ' + ex.toUpperCase() + ' starten';
-  // Open API-key config form for this exchange immediately
-  mexSetupKeys(ex);
+  // Open API-key config form. Auto-scroll only on explicit user clicks –
+  // periodic state updates must NOT yank the page back to the top.
+  const userInitiated = !opts || opts.userInitiated !== false;
+  mexSetupKeys(ex, {scroll: userInitiated});
 }
 
 function startBotWithExchange() {
@@ -1521,7 +1528,9 @@ function _initExchangeSelector(activeEx, keyStates) {
     if (keyStates && keyStates[ex]) btn.classList.add('has-keys');
     else btn.classList.remove('has-keys');
   });
-  if (activeEx) selectExchange(activeEx, document.getElementById('ex-btn-' + activeEx));
+  // Programmatic init must not auto-scroll (otherwise every WebSocket
+  // state update yanks the dashboard back to the top of the page).
+  if (activeEx) selectExchange(activeEx, document.getElementById('ex-btn-' + activeEx), {userInitiated: false});
 }
 const _closeHistory = [];
 let _undoTimeout = null;
@@ -1667,7 +1676,14 @@ function updateWizDots(){for(let i=0;i<5;i++) document.getElementById('wd'+i).cl
 function wizSelEx(ex,el){document.querySelectorAll('#wz1 .btn').forEach(b=>{b.style.borderColor='rgba(212,175,55,.15)';b.style.background='';});el.style.borderColor='var(--jade)';el.style.background='rgba(212,175,55,.08)';wizEx=ex;document.getElementById('sExchange').value=ex;selectExchange(ex,document.getElementById('ex-btn-'+ex));}
 function wizSaveKeys(){_emitSafe('save_api_keys',{api_key:document.getElementById('wzKey').value,secret:document.getElementById('wzSecret').value,exchange:wizEx});wizNext();}
 function wizPreset(name,el){document.querySelectorAll('#wz3 .btn').forEach(b=>b.style.opacity='.5');el.style.opacity='1';applyPreset(name);}
-function wizFinish(){document.getElementById('wizardOverlay').style.display='none';saveSettings();_storage.set('trevlix_wiz','1');toast(QI18n.t('wiz_ready'),'success');}
+function wizFinish(){
+  document.getElementById('wizardOverlay').style.display='none';
+  saveSettings();
+  // Wizard-Status server-seitig persistieren – damit er pro Account und nicht
+  // pro Gerät gilt; localStorage ist nur noch der lokale Cache.
+  setupMarkWizardCompleted();
+  toast(QI18n.t('wiz_ready'),'success');
+}
 
 // ── Socket events (with listener cleanup to prevent duplicates on reconnect) ──
 // Remove all previous listeners before registering to prevent accumulation
@@ -3116,6 +3132,11 @@ const MEX_LOGOS = {
 // Socket-Handler für Exchange-Updates
 socket.on('exchange_update', mexUpdate);
 
+// Welche Exchange-Karten sind gerade aufgeklappt (persistent pro Session)
+const _mexExpanded = new Set();
+// Letzter Snapshot für Re-Rendering bei Expand/Collapse ohne neuen Fetch
+let _mexLastData = null;
+
 function mexUpdate(data) {
   if (!data) return;
   // Legacy WS payload ({exchange, status}) -> Snapshot reload
@@ -3131,6 +3152,7 @@ function mexUpdate(data) {
       if (!name) return;
       mapped[name] = {
         enabled: !!ex.enabled,
+        has_key: !!ex.has_key,
         running: false,
         portfolio_value: 0,
         return_pct: 0,
@@ -3141,13 +3163,20 @@ function mexUpdate(data) {
         markets_count: 0,
         last_scan: '—',
         positions: [],
+        balances: {},
         error: ex.enabled ? 'Konfiguriert' : 'Nicht aktiviert',
       };
     });
     data = { exchanges: mapped, combined_pv: 0, combined_pnl: 0, total_pv: 0, total_pnl: 0 };
   }
+  _mexLastData = data;
+  _mexRenderCards(data);
+}
+
+function _mexRenderCards(data) {
   const exs = data.exchanges || {};
   const active = Object.values(exs).filter(e => e.running).length;
+  const activeEx = String(data.active_exchange || '').toLowerCase();
 
   // Gesamt-Header
   const pv = data.combined_pv || data.total_pv || 0;
@@ -3169,68 +3198,166 @@ function mexUpdate(data) {
     badge.style.background = active > 0 ? 'var(--jade)' : '#f59e0b';
   }
 
-  // Exchange-Karten
+  // Alle 11 Exchanges immer als Karten anzeigen, sodass User jede einzeln
+  // konfigurieren und starten kann. Sortierung: konfigurierte zuerst (primary
+  // → running → enabled → has_key), dann unkonfigurierte alphabetisch.
   const container = document.getElementById('mex-cards');
   if (!container) return;
-  container.innerHTML = Object.entries(MEX_NAMES).map(([id, label]) => {
-    const ex = exs[id] || {};
-    const running = ex.running || false;
-    const enabled = ex.enabled || false;
-    const pv = ex.portfolio_value || 0;
-    const ret = ex.return_pct || 0;
-    const trades = ex.trade_count || 0;
-    const open = ex.open_trades || 0;
-    const wr = ex.win_rate || 0;
-    const pnl = ex.total_pnl || 0;
-    const err = ex.error || '';
-    const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
-    const statusDetail = String(ex.status_detail || '');
-    const positions = ex.positions || [];
 
-    const statusDot = running
-      ? '<span style="width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;box-shadow:0 0 6px #00ff88"></span>'
-      : (enabled
-          ? '<span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>'
-          : '<span style="width:8px;height:8px;border-radius:50%;background:#374151;display:inline-block"></span>');
+  const ordered = Object.entries(MEX_NAMES).sort(([a], [b]) => {
+    const ea = exs[a] || {}, eb = exs[b] || {};
+    const rank = e => (
+      e.is_primary ? 0
+      : e.running ? 1
+      : e.enabled ? 2
+      : e.has_key ? 3
+      : 4
+    );
+    return rank(ea) - rank(eb) || a.localeCompare(b);
+  });
 
-    const posHtml = positions.length ? positions.map(p => `
-      <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px">
-        <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
-        <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
-        <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${p.pnl?.toFixed(2)} USDT</span>
-        <button onclick="mexClosePos('${escJS(id)}','${escJS(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
-      </div>`).join('') : '';
+  // Erhalte die Scroll-Position des Window-Scrollers, damit das innerHTML-
+  // Re-Render nicht den User aus der aktuell betrachteten Sektion wirft.
+  const scrollY = window.scrollY;
+  container.innerHTML = ordered.map(([id, label]) => _mexRenderCard(id, label, exs[id] || {}, activeEx)).join('');
+  if (Math.abs(window.scrollY - scrollY) > 1) {
+    window.scrollTo({top: scrollY, left: window.scrollX, behavior: 'instant'});
+  }
+}
 
-    return `
-    <div class="card" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
-      <div class="card-hd" style="padding-bottom:10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">${MEX_LOGOS[id]}</span>
-          <div>
-            <div style="font-weight:800;font-size:14px;color:#e8f4ff">${label}</div>
-            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${marketCount} Märkte · ${ex.last_scan||'—'}${statusDetail ? ` · ${esc(statusDetail)}` : ''}</div>
+function _mexRenderCard(id, label, ex, activeEx) {
+  const running = !!ex.running;
+  const enabled = !!ex.enabled;
+  const hasKey = !!ex.has_key;
+  const isPrimary = !!ex.is_primary;
+  const expanded = _mexExpanded.has(id);
+  const pv = Number(ex.portfolio_value || 0);
+  const ret = Number(ex.return_pct || 0);
+  const trades = Number(ex.trade_count || 0);
+  const open = Number(ex.open_trades || 0);
+  const wr = Number(ex.win_rate || 0);
+  const pnl = Number(ex.total_pnl || 0);
+  const err = String(ex.error || '');
+  const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
+  const statusDetail = String(ex.status_detail || '');
+  const positions = Array.isArray(ex.positions) ? ex.positions : [];
+  const balances = ex.balances && typeof ex.balances === 'object' ? ex.balances : {};
+  const stale = !!ex.balance_stale;
+  const fetchedAt = ex.balance_fetched_at ? String(ex.balance_fetched_at).replace('T',' ').slice(0,19) : '';
+
+  const statusDot = running
+    ? '<span style="width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;box-shadow:0 0 6px #00ff88"></span>'
+    : (enabled && hasKey
+        ? '<span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>'
+        : '<span style="width:8px;height:8px;border-radius:50%;background:#374151;display:inline-block"></span>');
+
+  const statusLabel = running
+    ? QI18n.t('mex_active_label')
+    : (enabled && hasKey ? QI18n.t('mex_configured') : QI18n.t('mex_inactive'));
+  const statusColor = running ? 'var(--jade)' : (enabled && hasKey ? '#f59e0b' : 'var(--muted)');
+
+  const primaryBadge = isPrimary
+    ? `<span class="pill" style="padding:2px 6px;font-size:9px;background:rgba(212,175,55,.15);color:var(--yellow);border:1px solid rgba(212,175,55,.3)">${QI18n.t('mex_primary_badge')}</span>`
+    : '';
+
+  const chevron = expanded ? '▼' : '▶';
+
+  // Header ist immer klickbar – öffnet Details
+  const header = `
+    <div class="card-hd" style="padding-bottom:10px;cursor:pointer" onclick="mexToggleCard('${escJS(id)}')">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <span style="font-size:20px">${MEX_LOGOS[id] || '🔹'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-weight:800;font-size:14px;color:#e8f4ff">${esc(label)}</span>
+            ${primaryBadge}
+          </div>
+          <div style="font-size:10px;color:var(--sub);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${fmt(pv)} USDT · ${marketCount} Märkte${statusDetail ? ` · ${esc(statusDetail)}` : ''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          ${statusDot}
-          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?QI18n.t('mex_active_label'):enabled?QI18n.t('mex_configured'):QI18n.t('mex_inactive')}</span>
-        </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${statusDot}
+        <span style="font-size:10px;font-family:var(--mono);color:${statusColor}">${statusLabel}</span>
+        <span style="font-size:10px;color:var(--sub);width:10px;text-align:center">${chevron}</span>
+      </div>
+    </div>`;
 
-      ${err ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(String(err))}</div>` : ''}
+  if (!expanded) {
+    // Zusammengeklappter Zustand – kompakte Karte mit Fehler-Hinweis
+    const errBanner = err
+      ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444">${esc(err)}</div>`
+      : '';
+    return `<div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">${header}${errBanner}</div>`;
+  }
 
+  // Aufgeklappt: Wenn KEINE Keys hinterlegt → Inline-Setup-Form,
+  // sonst Stats + Balance + Positions + Actions.
+  const errBanner = err
+    ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(err)}</div>`
+    : '';
+
+  if (!hasKey) {
+    return _mexRenderSetupCard(id, label, running, enabled, header, errBanner);
+  }
+
+  const posHtml = positions.length ? positions.map(p => `
+    <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px;align-items:center;gap:6px">
+      <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
+      <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
+      <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${Number(p.pnl||0).toFixed(2)} USDT</span>
+      <button onclick="mexClosePos('${escJS(id)}','${escJS(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
+    </div>`).join('') : '';
+
+  const balEntries = Object.entries(balances)
+    .filter(([, v]) => v && (Number(v.total)||0) > 0)
+    .sort((a, b) => (Number(b[1].usdt_value)||0) - (Number(a[1].usdt_value)||0));
+  const balHtml = balEntries.length
+    ? balEntries.map(([coin, v]) => `
+        <div style="display:grid;grid-template-columns:60px 1fr auto;gap:8px;padding:4px 0;border-top:1px solid var(--muted);font-size:11px;align-items:center">
+          <span style="font-weight:700;color:#e8f4ff">${esc(coin)}</span>
+          <span style="font-family:var(--mono);color:var(--sub)">${Number(v.total||0).toFixed(6)}${Number(v.free||0)<Number(v.total||0)?` <span style="opacity:.6">(frei: ${Number(v.free||0).toFixed(4)})</span>`:''}</span>
+          <span style="font-family:var(--mono);color:var(--txt)">${fmt(Number(v.usdt_value||0))} USDT</span>
+        </div>`).join('')
+    : `<div style="padding:10px;color:var(--sub);font-size:11px;text-align:center">${esc(QI18n.t('mex_no_balance'))}</div>`;
+
+  const freshLabel = stale ? QI18n.t('mex_balance_stale') : QI18n.t('mex_balance_fresh');
+
+  // Action-Buttons-Zeile
+  const toggleBtn = enabled
+    ? `<button class="btn" style="flex:1;padding:8px;font-size:11px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b" onclick="mexToggleEnabled('${escJS(id)}',false)">⏸ ${esc(QI18n.t('mex_toggle_off'))}</button>`
+    : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexToggleEnabled('${escJS(id)}',true)">✓ ${esc(QI18n.t('mex_toggle_on'))}</button>`;
+  const primaryBtn = (enabled && !isPrimary)
+    ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexSetPrimary('${escJS(id)}')">★ ${esc(QI18n.t('mex_set_primary'))}</button>`
+    : '';
+  const runBtn = enabled
+    ? (running
+        ? `<button class="btn btn-red" style="flex:1;padding:8px;font-size:11px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>`
+        : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>`)
+    : '';
+  const keysBtn = `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexShowInlineKeys('${escJS(id)}')">🔑 Keys ändern</button>`;
+  const refreshBtn = enabled
+    ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)" onclick="mexRefreshBalance('${escJS(id)}')" title="${esc(QI18n.t('mex_refresh_balance'))}">⟳</button>`
+    : '';
+  const deleteBtn = `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444" onclick="mexDelete('${escJS(id)}')" title="${esc(QI18n.t('mex_delete_config'))}">🗑</button>`;
+
+  return `
+    <div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
+      ${header}
+      ${errBanner}
       <div class="card-body" style="padding-top:0">
         <div class="sg" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${(ret??0).toFixed(2)}%</div>
+            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${ret.toFixed(2)}%</div>
             <div class="sl">Return</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${(pnl??0).toFixed(2)}</div>
+            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${pnl.toFixed(2)}</div>
             <div class="sl">PnL (USDT)</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px">${(wr??0).toFixed(1)}%</div>
+            <div class="sv" style="font-size:14px">${wr.toFixed(1)}%</div>
             <div class="sl">Win-Rate</div>
           </div>
           <div class="sc">
@@ -3239,28 +3366,202 @@ function mexUpdate(data) {
           </div>
         </div>
 
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase">${esc(QI18n.t('mex_balance_heading'))}</div>
+          <div style="font-size:9px;font-family:var(--mono);color:${stale?'#f59e0b':'var(--jade)'}">${esc(freshLabel)}${fetchedAt?` · ${esc(fetchedAt)}`:''}</div>
+        </div>
+        <div style="margin-bottom:12px">${balHtml}</div>
+
         ${positions.length ? `
         <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} ${QI18n.t('open_positions').toUpperCase()}</div>
         ${posHtml}` : ''}
 
-        <div style="display:flex;gap:8px;margin-top:12px">
-          ${!enabled
-            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">${esc(QI18n.t('mex_setup_keys'))}</button>`
-            : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-          }
+        <div id="mex-inline-keys-${escJS(id)}" style="display:none;margin-bottom:12px"></div>
+
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+          ${runBtn}
+          ${toggleBtn}
+          ${primaryBtn}
+          ${keysBtn}
+          ${refreshBtn}
+          ${deleteBtn}
         </div>
       </div>
     </div>`;
-  }).join('');
 }
 
-async function mexReloadSnapshot() {
+function _mexRenderSetupCard(id, label, running, enabled, header, errBanner) {
+  // Setup-Karte: API-Key / Secret (+ optional Passphrase) inline.
+  const needsPP = ['okx','kucoin'].includes(id);
+  const ppFieldId = `mex-ic-pp-${escJS(id)}`;
+  const apiFieldId = `mex-ic-api-${escJS(id)}`;
+  const secFieldId = `mex-ic-sec-${escJS(id)}`;
+  const ppHtml = needsPP
+    ? `<div class="s-label" style="margin-top:8px">Passphrase</div>
+       <input id="${ppFieldId}" class="s-input s-input-full" type="password" placeholder="Passphrase (${id.toUpperCase()})" autocomplete="off" style="font-family:var(--mono);font-size:12px">`
+    : '';
+  return `
+    <div class="card" data-exchange="${escJS(id)}" style="border-color:rgba(255,255,255,.05)">
+      ${header}
+      ${errBanner}
+      <div class="card-body" style="padding-top:0">
+        <div style="font-size:11px;color:var(--sub);line-height:1.5;margin-bottom:10px">
+          Hinterlege API-Key &amp; Secret für <strong style="color:#e8f4ff">${esc(label)}</strong> – nur <strong style="color:#e8f4ff">Spot-Read &amp; Spot-Trade</strong>, niemals <strong>Withdraw</strong>!
+        </div>
+        <div class="s-label">API Key</div>
+        <input id="${apiFieldId}" class="s-input s-input-full" type="text" placeholder="API Key" style="font-family:var(--mono);font-size:12px">
+        <div class="s-label" style="margin-top:8px">Secret</div>
+        <input id="${secFieldId}" class="s-input s-input-full" type="password" placeholder="Secret" autocomplete="off" style="font-family:var(--mono);font-size:12px">
+        ${ppHtml}
+        <button class="btn btn-jade" style="width:100%;padding:10px;font-size:12px;margin-top:10px" onclick="mexSubmitInlineKeys('${escJS(id)}')">${esc(QI18n.t('mex_save_keys'))}</button>
+      </div>
+    </div>`;
+}
+
+function mexShowInlineKeys(id) {
+  const wrap = document.getElementById('mex-inline-keys-' + id);
+  if (!wrap) return;
+  const visible = wrap.style.display !== 'none' && wrap.innerHTML.trim() !== '';
+  if (visible) {
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+    return;
+  }
+  const needsPP = ['okx','kucoin'].includes(id);
+  const ppHtml = needsPP
+    ? `<div class="s-label" style="margin-top:8px">Passphrase</div>
+       <input id="mex-ic-pp-${escJS(id)}" class="s-input s-input-full" type="password" placeholder="Passphrase" autocomplete="off" style="font-family:var(--mono);font-size:12px">`
+    : '';
+  wrap.innerHTML = `
+    <div style="padding:10px;background:rgba(0,255,136,.04);border:1px solid var(--line);border-radius:6px">
+      <div class="s-label">Neuer API Key</div>
+      <input id="mex-ic-api-${escJS(id)}" class="s-input s-input-full" type="text" placeholder="API Key" style="font-family:var(--mono);font-size:12px">
+      <div class="s-label" style="margin-top:8px">Neues Secret</div>
+      <input id="mex-ic-sec-${escJS(id)}" class="s-input s-input-full" type="password" placeholder="Secret" autocomplete="off" style="font-family:var(--mono);font-size:12px">
+      ${ppHtml}
+      <button class="btn btn-jade" style="width:100%;padding:8px;font-size:12px;margin-top:10px" onclick="mexSubmitInlineKeys('${escJS(id)}')">${esc(QI18n.t('mex_save_keys'))}</button>
+    </div>`;
+  wrap.style.display = 'block';
+}
+
+function mexSubmitInlineKeys(id) {
+  const apiEl = document.getElementById('mex-ic-api-' + id);
+  const secEl = document.getElementById('mex-ic-sec-' + id);
+  const ppEl  = document.getElementById('mex-ic-pp-' + id);
+  const api_key = (apiEl?.value || '').trim();
+  const secret  = (secEl?.value || '').trim();
+  const passphrase = (ppEl?.value || '').trim();
+  if (!api_key || !secret) {
+    toast(QI18n.t('err_apikey_secret'), 'warning');
+    return;
+  }
+  if (!_emitSafe('save_exchange_keys', {exchange: id, api_key, secret, passphrase})) return;
+  // Felder sofort leeren – die Snapshot-Reload-Funktion ersetzt das Card.
+  if (apiEl) apiEl.value = '';
+  if (secEl) secEl.value = '';
+  if (ppEl)  ppEl.value  = '';
+  _mexExpanded.add(id);
+  setTimeout(mexReloadSnapshot, 600);
+}
+
+function mexToggleCard(id) {
+  if (_mexExpanded.has(id)) _mexExpanded.delete(id); else _mexExpanded.add(id);
+  if (_mexLastData) _mexRenderCards(_mexLastData);
+}
+
+async function mexRefreshBalance(id) {
   try{
-    const r = await fetch('/api/v1/exchanges', {
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/balance?refresh=1', {
+      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      toast('⚠️ ' + (j.error || 'Balance-Refresh fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast('⟳ Balance aktualisiert: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+function _mexAuthHeaders(extra) {
+  // CSRF-Token + Bearer (falls vorhanden) – beide bewusst gesetzt:
+  // X-CSRFToken schützt session-cookie-basierte Aufrufe, der Bearer
+  // erlaubt token-basierte Clients (PWA, externe Tools).
+  const h = {'Content-Type':'application/json'};
+  if (_csrfToken) h['X-CSRFToken'] = _csrfToken;
+  if (_jwtToken) h.Authorization = 'Bearer ' + _jwtToken;
+  return Object.assign(h, extra || {});
+}
+
+async function mexToggleEnabled(id, enabled) {
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/toggle', {
+      method:'POST',
+      credentials:'same-origin',
+      headers: _mexAuthHeaders(),
+      body: JSON.stringify({enabled: !!enabled, _csrf: _csrfToken})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Toggle fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast((enabled?'✓ Aktiviert: ':'⏸ Deaktiviert: ') + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexSetPrimary(id) {
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/primary', {
+      method:'POST',
+      credentials:'same-origin',
+      headers: _mexAuthHeaders(),
+      body: JSON.stringify({_csrf: _csrfToken})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Primary-Wechsel fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast('★ Primary: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexDelete(id) {
+  const confirmMsg = QI18n.t('mex_confirm_delete').replace('{exc}', id.toUpperCase());
+  if (!confirm(confirmMsg)) return;
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id), {
+      method:'DELETE',
+      credentials:'same-origin',
+      headers: _mexAuthHeaders()
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Löschen fehlgeschlagen'), 'warning');
+      return;
+    }
+    _mexExpanded.delete(id);
+    toast('🗑 Entfernt: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexReloadSnapshot(forceRefresh) {
+  try{
+    const url = '/api/v1/exchanges' + (forceRefresh ? '?refresh=1' : '');
+    const r = await fetch(url, {
       headers:{'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok) return;
@@ -3271,14 +3572,22 @@ async function mexReloadSnapshot() {
   }
 }
 
+async function mexRefreshAll() {
+  toast('⟳ Lade Live-Balances …', 'info');
+  await mexReloadSnapshot(true);
+  toast('✓ Multi-Exchange aktualisiert', 'success');
+}
+
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
 function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
 
-function mexSetupKeys(name) {
+function mexSetupKeys(name, opts) {
   document.getElementById('mex-key-exchange').value = name;
   mexOnExchangeSelect(name);
-  // Scroll to key form
-  document.querySelector('#mex-key-exchange')?.scrollIntoView({behavior:'smooth', block:'center'});
+  // Only scroll on explicit user action – never on background re-renders.
+  if (!opts || opts.scroll !== false) {
+    document.querySelector('#mex-key-exchange')?.scrollIntoView({behavior:'smooth', block:'center'});
+  }
 }
 
 function mexOnExchangeSelect(name) {
@@ -3291,11 +3600,17 @@ function mexSaveKeys() {
   const exchange   = document.getElementById('mex-key-exchange').value;
   const api_key    = document.getElementById('mex-key-apikey').value.trim();
   const secret     = document.getElementById('mex-key-secret').value.trim();
-  const passphrase = document.getElementById('mex-key-passphrase')?.value?.trim() || '';
+  const pEl = document.getElementById('mex-key-passphrase');
+  const passphrase = pEl?.value?.trim() || '';
   if (!api_key || !secret) { toast(QI18n.t('err_apikey_secret'), 'warning'); return; }
   if(!_emitSafe('save_exchange_keys', {exchange, api_key, secret, passphrase})) return;
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
+  if (pEl) pEl.value = '';
+  // Neue Konfiguration sofort aufklappen + Karten neu laden, damit der User
+  // direkt sieht, dass sein Exchange jetzt in der Liste erscheint.
+  _mexExpanded.add(exchange);
+  setTimeout(mexReloadSnapshot, 500);
 }
 
 function mexClosePos(exchange, symbol) {
@@ -3362,5 +3677,59 @@ document.addEventListener('DOMContentLoaded',()=>{
   loadFollowers();
   updateGasFees();
   const sLang=document.getElementById('sLang');if(sLang)sLang.value=QI18n.lang;
-  if(!_storage.get('trevlix_wiz')) setTimeout(showWizard,800);
+  // Setup-State server-seitig prüfen, damit der Wizard auf JEDEM Gerät
+  // exakt einmal pro Account läuft. localStorage dient nur noch als
+  // schneller Cache, der Server ist die Source-Of-Truth.
+  setupCheckWizard();
 });
+
+async function setupCheckWizard() {
+  const localFlag = _storage.get('trevlix_wiz') === '1';
+  try {
+    const r = await fetch('/api/v1/user/setup-state', {
+      credentials: 'same-origin',
+      headers: _jwtToken ? {'Authorization': 'Bearer ' + _jwtToken} : {}
+    });
+    if (r.ok) {
+      const j = await r.json();
+      // 1) Server sagt "fertig" → localStorage cachen + Wizard skippen.
+      if (j.wizard_completed) {
+        _storage.set('trevlix_wiz', '1');
+        return;
+      }
+      // 2) Server sagt "nicht fertig", aber User hat schon eine Exchange
+      //    eingerichtet ODER lokales Flag ist gesetzt → Backfill aufs Backend
+      //    schieben, damit alle weiteren Geräte den Wizard überspringen.
+      if (j.has_configured_exchange || localFlag) {
+        await setupMarkWizardCompleted({silent: true});
+        return;
+      }
+    } else if (localFlag) {
+      // 3) Endpoint nicht erreichbar (z.B. Migration läuft) – wenn lokal
+      //    schon "fertig" markiert, NICHT erneut zeigen.
+      return;
+    }
+  } catch (e) {
+    console.warn('setup-state-check fehlgeschlagen:', e);
+    if (localFlag) return;
+  }
+  setTimeout(showWizard, 800);
+}
+
+async function setupMarkWizardCompleted(opts) {
+  const silent = !!(opts && opts.silent);
+  try {
+    const headers = {'Content-Type': 'application/json'};
+    if (_csrfToken) headers['X-CSRFToken'] = _csrfToken;
+    if (_jwtToken) headers['Authorization'] = 'Bearer ' + _jwtToken;
+    await fetch('/api/v1/user/setup-state', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers,
+      body: JSON.stringify({wizard_completed: true, _csrf: _csrfToken})
+    });
+  } catch (e) {
+    if (!silent) console.warn('setup-state speichern fehlgeschlagen:', e);
+  }
+  _storage.set('trevlix_wiz', '1');
+}

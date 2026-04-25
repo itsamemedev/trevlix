@@ -1319,31 +1319,52 @@ class MySQLManager:
             return []
 
     def set_primary_exchange(self, user_id: int, exchange: str, enable: bool = True) -> bool:
-        """Setzt eine vorhandene User-Exchange als primär (optional inkl. Aktivierung)."""
+        """Setzt eine vorhandene User-Exchange als primär (optional inkl. Aktivierung).
+
+        Alle Statements laufen in einer Transaktion mit ``FOR UPDATE``-Lock
+        auf der Ziel-Zeile, damit konkurrierende Calls (z.B. paralleler
+        Toggle + Primary-Wechsel) nicht zu zwei `is_primary=1`-Zeilen oder
+        verwaisten Flags führen können.
+        """
+        conn = None
         try:
             with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "SELECT id FROM user_exchanges WHERE user_id=%s AND exchange=%s LIMIT 1",
-                        (user_id, exchange),
-                    )
-                    row = c.fetchone()
-                    if not row:
-                        return False
-                    if enable:
+                # Innerhalb der Transaktion autocommit aus, damit ROLLBACK
+                # bei Fehlern alle Updates rückgängig macht.
+                conn.autocommit(False)
+                try:
+                    with conn.cursor() as c:
                         c.execute(
-                            "UPDATE user_exchanges SET enabled=1 WHERE user_id=%s AND exchange=%s",
+                            "SELECT id FROM user_exchanges "
+                            "WHERE user_id=%s AND exchange=%s LIMIT 1 FOR UPDATE",
                             (user_id, exchange),
                         )
-                    c.execute(
-                        "UPDATE user_exchanges SET is_primary=0 WHERE user_id=%s",
-                        (user_id,),
-                    )
-                    c.execute(
-                        "UPDATE user_exchanges SET is_primary=1 WHERE user_id=%s AND exchange=%s",
-                        (user_id, exchange),
-                    )
-            return True
+                        row = c.fetchone()
+                        if not row:
+                            conn.rollback()
+                            return False
+                        if enable:
+                            c.execute(
+                                "UPDATE user_exchanges SET enabled=1 "
+                                "WHERE user_id=%s AND exchange=%s",
+                                (user_id, exchange),
+                            )
+                        c.execute(
+                            "UPDATE user_exchanges SET is_primary=0 WHERE user_id=%s",
+                            (user_id,),
+                        )
+                        c.execute(
+                            "UPDATE user_exchanges SET is_primary=1 "
+                            "WHERE user_id=%s AND exchange=%s",
+                            (user_id, exchange),
+                        )
+                    conn.commit()
+                    return True
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    conn.autocommit(True)
         except Exception as e:
             log.error(f"set_primary_exchange({user_id}, {exchange}): {e}")
             return False
@@ -1390,13 +1411,25 @@ class MySQLManager:
         return token
 
     def verify_api_token(self, token: str) -> int | None:
-        if not JWT_AVAILABLE:
+        if not JWT_AVAILABLE or not token:
             return None
         try:
-            payload = pyjwt.decode(token, CONFIG["jwt_secret"], algorithms=["HS256"])
+            payload = pyjwt.decode(
+                token,
+                CONFIG["jwt_secret"],
+                algorithms=["HS256"],
+                options={"require": ["exp"]},
+            )
             sub = payload.get("sub")
             return int(sub) if sub is not None else None
-        except Exception:
+        except pyjwt.ExpiredSignatureError:
+            log.info("verify_api_token: Token abgelaufen")
+            return None
+        except pyjwt.InvalidTokenError as exc:
+            log.debug("verify_api_token: ungültig (%s)", exc)
+            return None
+        except Exception as exc:
+            log.warning("verify_api_token: %s", exc)
             return None
 
     # ── Misc ────────────────────────────────────────────────────────────────

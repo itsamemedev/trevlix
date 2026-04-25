@@ -57,7 +57,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <h1 data-i18n="faq_h1">Häufig gestellte Fragen</h1>
 <p class="subtitle" data-i18n="faq_subtitle">Antworten auf die wichtigsten Fragen rund um TREVLIX</p>
-<div class="faq-count" data-i18n-html="faq_count">29 Fragen &middot; Klicke auf eine Frage zum Aufklappen &middot; Zuletzt aktualisiert: Mär 2026</div>
+<div class="faq-count" data-i18n-html="faq_count">29 Fragen &middot; Klicke auf eine Frage zum Aufklappen &middot; Zuletzt aktualisiert: Apr 2026</div>
 
 <h2 data-i18n="faq_cat_general">Allgemein</h2>
 
@@ -73,7 +73,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <div class="faq-item">
   <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span data-i18n="faq_q3">Welche Exchanges werden unterstützt?</span> <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p data-i18n-html="faq_a3">Aktuell werden 8 Exchanges unterstützt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong>, <strong>KuCoin</strong>, <strong>Kraken</strong>, <strong>Huobi</strong> und <strong>Coinbase</strong>. Die Integration erfolgt über die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefügt werden können.</p></div>
+  <div class="faq-a"><p data-i18n-html="faq_a3">Aktuell werden 11 Exchanges unterstützt: <strong>Crypto.com</strong>, <strong>Binance</strong>, <strong>Bybit</strong>, <strong>OKX</strong>, <strong>KuCoin</strong>, <strong>Kraken</strong>, <strong>Huobi/HTX</strong>, <strong>Coinbase</strong>, <strong>Bitget</strong>, <strong>MEXC</strong> und <strong>Gate.io</strong>. Die Integration erfolgt über die CCXT-Bibliothek, sodass weitere Exchanges leicht hinzugefügt werden können.</p></div>
 </div>
 
 <div class="faq-item">
@@ -264,7 +264,7 @@ h2::after{content:'';position:absolute;bottom:0;left:0;width:48px;height:2px;bac
 
 <div class="faq-item">
   <div class="faq-q" onclick="this.parentElement.classList.toggle('open')"><span>Welche Exchanges werden unterstützt?</span> <span class="arrow">&#9660;</span></div>
-  <div class="faq-a"><p>TREVLIX unterstützt 8 Exchanges über CCXT: <strong>Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi/HTX und Coinbase Advanced Trade</strong>. Seit v1.7.1 funktionieren OKX, KuCoin und Crypto.com auch als Primary Exchange korrekt &mdash; vorher wurde die API-Passphrase nicht übergeben, was zu Authentifizierungsfehlern führte. Für diese drei Exchanges muss zusätzlich <code>API_PASSPHRASE</code> in der <code>.env</code> gesetzt werden.</p></div>
+  <div class="faq-a"><p>TREVLIX unterstützt 11 Exchanges über CCXT: <strong>Crypto.com, Binance, Bybit, OKX, KuCoin, Kraken, Huobi/HTX, Coinbase Advanced Trade, Bitget, MEXC und Gate.io</strong>. Seit v1.7.1 wird das Portfolio pro Exchange live geladen (60s Snapshot-Cache, Coin-Bewertung in USDT) und OKX/KuCoin sowie Crypto.com authentifizieren sich auch als Primary Exchange korrekt &mdash; OKX und KuCoin benötigen zusätzlich <code>API_PASSPHRASE</code> in der <code>.env</code>, Crypto.com nicht.</p></div>
 </div>
 
 <div class="faq-item">

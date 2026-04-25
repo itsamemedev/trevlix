@@ -76,6 +76,24 @@ class TestAuthEndpoints:
         # Wenn ALLOW_REGISTRATION=false, sollte 403 kommen
         assert resp.status_code in (200, 403)
 
+    def test_root_serves_landing_for_anonymous(self, app_client):
+        """Homepage `/` muss die öffentliche Landing-Page liefern,
+        nicht zum Login redirecten."""
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/", follow_redirects=False)
+        assert resp.status_code == 200
+        # Landing-Page enthält Marketing-Texte aus index.html
+        assert b"TREVLIX" in resp.data
+
+    def test_root_redirects_logged_in_user_to_dashboard(self, app_client):
+        """Eingeloggte User landen direkt auf /dashboard, nicht auf der Landing-Page."""
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        resp = app_client.get("/", follow_redirects=False)
+        assert resp.status_code in (301, 302, 303)
+        assert resp.headers["Location"].endswith("/dashboard")
+
 
 class TestAPIAuth:
     """Tests für API-Auth-Decorator."""
@@ -499,6 +517,324 @@ class TestExchangesSnapshotAPI:
         assert data["combined_pv"] == 12345.67
         assert data["active_exchange"] == "binance"
         assert data["iteration"] == 77
+
+    def test_exchanges_snapshot_exposes_management_flags(self, app_client, monkeypatch):
+        """Die Snapshot-Antwort muss has_key/is_primary für Card-Actions liefern."""
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [
+                {
+                    "exchange": "cryptocom",
+                    "enabled": True,
+                    "is_primary": True,
+                    "has_key": True,
+                    "has_passphrase": False,
+                },
+                {
+                    "exchange": "binance",
+                    "enabled": False,
+                    "is_primary": False,
+                    "has_key": False,
+                },
+            ],
+        )
+        monkeypatch.setattr(server.db, "get_enabled_exchanges", lambda _uid: [])
+        monkeypatch.setattr(server.state, "snapshot", lambda: {"running": False})
+
+        resp = app_client.get("/api/v1/exchanges")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        cc = data["exchanges"]["cryptocom"]
+        assert cc["is_primary"] is True
+        assert cc["has_key"] is True
+        assert "balances" in cc
+        # Paper-Modus → Paper-Trading aktiv Status
+        assert cc["status_detail"] in ("Paper-Trading aktiv", "Live-Runtime aktiv")
+        bn = data["exchanges"]["binance"]
+        assert bn["has_key"] is False
+        assert bn["is_primary"] is False
+
+
+class TestExportEndpointAuth:
+    """Sicherstellen, dass Export-/Backup-/Heatmap-Endpunkte authentifiziert sind."""
+
+    def test_export_csv_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/export/csv")
+        assert resp.status_code == 401
+
+    def test_export_json_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/export/json")
+        assert resp.status_code == 401
+
+    def test_backup_download_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/backup/download")
+        assert resp.status_code == 401
+
+    def test_ohlcv_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/ohlcv/BTC-USDT")
+        assert resp.status_code == 401
+
+    def test_heatmap_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/heatmap")
+        assert resp.status_code == 401
+
+    def test_gas_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/v1/gas")
+        assert resp.status_code == 401
+
+
+class TestExchangeManagementByName:
+    """Tests für Toggle/Primary/Delete-Endpoints per Exchange-Namen."""
+
+    def test_toggle_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"id": 42, "exchange": "cryptocom", "enabled": False}],
+        )
+        called = {}
+
+        def _toggle(user_id, ex_id, enabled):
+            called.update({"user_id": user_id, "ex_id": ex_id, "enabled": enabled})
+            return True
+
+        monkeypatch.setattr(server.db, "toggle_user_exchange", _toggle)
+
+        resp = app_client.post("/api/v1/user/exchanges/cryptocom/toggle", json={"enabled": True})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["enabled"] is True
+        assert called == {"user_id": 1, "ex_id": 42, "enabled": True}
+
+    def test_toggle_unknown_exchange_returns_404(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.post("/api/v1/user/exchanges/cryptocom/toggle", json={"enabled": True})
+        assert resp.status_code == 404
+
+    def test_set_primary_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(server.db, "set_primary_exchange", lambda _uid, name, enable=True: True)
+
+        resp = app_client.post("/api/v1/user/exchanges/bybit/primary", json={})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["primary"] == "bybit"
+
+    def test_delete_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"id": 7, "exchange": "bybit", "enabled": True}],
+        )
+        deleted = {}
+
+        def _delete(user_id, ex_id):
+            deleted.update({"user_id": user_id, "ex_id": ex_id})
+            return True
+
+        monkeypatch.setattr(server.db, "delete_user_exchange", _delete)
+
+        resp = app_client.delete("/api/v1/user/exchanges/bybit")
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        assert deleted == {"user_id": 1, "ex_id": 7}
+
+    def test_invalid_exchange_name_rejected(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post(
+            "/api/v1/user/exchanges/not-a-real-ex/toggle", json={"enabled": True}
+        )
+        assert resp.status_code == 400
+
+
+class TestSetupState:
+    """Wizard-State (geräteübergreifend) wird server-seitig gespeichert."""
+
+    def test_setup_state_get_unconfigured_user(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["wizard_completed"] is False
+        assert data["wizard_completed_at"] is None
+        assert data["has_configured_exchange"] is False
+
+    def test_setup_state_get_completed_user(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(
+            server.db,
+            "get_user_settings",
+            lambda _uid: {
+                "wizard_completed": True,
+                "wizard_completed_at": "2026-04-25T10:00:00",
+            },
+        )
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["wizard_completed"] is True
+        assert data["wizard_completed_at"] == "2026-04-25T10:00:00"
+
+    def test_setup_state_get_backfill_via_configured_exchange(self, app_client, monkeypatch):
+        """User der den Wizard nie sah, aber bereits eine Exchange hat,
+        wird über `has_configured_exchange` als 'fertig' angezeigt."""
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"exchange": "cryptocom", "has_key": True, "enabled": True}],
+        )
+
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["has_configured_exchange"] is True
+
+    def test_setup_state_post_persists_completed_flag(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        captured = {}
+
+        def _update(uid, settings):
+            captured["uid"] = uid
+            captured["settings"] = dict(settings)
+            return True
+
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(server.db, "update_user_settings", _update)
+
+        resp = app_client.post(
+            "/api/v1/user/setup-state",
+            json={"wizard_completed": True},
+        )
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["wizard_completed"] is True
+        assert captured["uid"] == 1
+        assert captured["settings"]["wizard_completed"] is True
+        assert captured["settings"].get("wizard_completed_at")
+
+    def test_setup_state_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/v1/user/setup-state")
+        assert resp.status_code == 401
+        resp_post = app_client.post("/api/v1/user/setup-state", json={"wizard_completed": True})
+        assert resp_post.status_code == 401
+
+
+class TestKeyFieldValidation:
+    """Tests für strenge Validierung der API-Key-Felder im save_exchange_keys-Handler."""
+
+    def test_validate_key_field_empty_required(self):
+        from server import _validate_key_field
+
+        ok, reason = _validate_key_field("", 256, allow_empty=False)
+        assert not ok
+        assert "leer" in reason.lower()
+
+    def test_validate_key_field_empty_allowed(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("", 256, allow_empty=True)
+        assert ok
+
+    def test_validate_key_field_too_long(self):
+        from server import _validate_key_field
+
+        ok, reason = _validate_key_field("a" * 300, 256, allow_empty=False)
+        assert not ok
+        assert "lang" in reason.lower()
+
+    def test_validate_key_field_rejects_newlines(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc\ndef", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_rejects_nulls(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc\x00def", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_rejects_special_chars(self):
+        from server import _validate_key_field
+
+        ok, _ = _validate_key_field("abc<script>", 256, allow_empty=False)
+        assert not ok
+
+    def test_validate_key_field_accepts_normal_keys(self):
+        from server import _validate_key_field
+
+        # Typische Crypto-Exchange-Key-Formate
+        for sample in (
+            "AKIAIOSFODNN7EXAMPLE",
+            "abc123-def_456=ghi789",
+            "SK+lwE/+abcDEF12.34/567=",
+        ):
+            ok, _ = _validate_key_field(sample, 256, allow_empty=False)
+            assert ok, f"sollte {sample!r} akzeptieren"
 
 
 class TestPaperModeBuild:

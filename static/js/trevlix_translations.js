@@ -377,6 +377,18 @@ const QT = {
   mex_inactive:       {de:'INAKTIV',en:'INACTIVE',es:'INACTIVO',ru:'НЕАКТИВНА',pt:'INATIVA'},
   mex_configured:     {de:'KONFIGURIERT',en:'CONFIGURED',es:'CONFIGURADA',ru:'НАСТРОЕНА',pt:'CONFIGURADA'},
   mex_active_label:   {de:'AKTIV',en:'ACTIVE',es:'ACTIVA',ru:'АКТИВНА',pt:'ATIVA'},
+  mex_toggle_on:      {de:'Aktivieren',en:'Enable',es:'Activar',ru:'Включить',pt:'Ativar'},
+  mex_toggle_off:     {de:'Deaktivieren',en:'Disable',es:'Desactivar',ru:'Отключить',pt:'Desativar'},
+  mex_set_primary:    {de:'Als Primary setzen',en:'Set as Primary',es:'Marcar como principal',ru:'Сделать основной',pt:'Definir como principal'},
+  mex_primary_badge:  {de:'PRIMARY',en:'PRIMARY',es:'PRINCIPAL',ru:'ОСНОВНАЯ',pt:'PRINCIPAL'},
+  mex_delete_config:  {de:'Konfiguration löschen',en:'Delete configuration',es:'Eliminar configuración',ru:'Удалить конфигурацию',pt:'Excluir configuração'},
+  mex_confirm_delete: {de:'Exchange {exc} wirklich entfernen?',en:'Really remove exchange {exc}?',es:'¿Eliminar realmente el exchange {exc}?',ru:'Удалить биржу {exc}?',pt:'Remover realmente a exchange {exc}?'},
+  mex_refresh_balance:{de:'Balance aktualisieren',en:'Refresh balance',es:'Actualizar saldo',ru:'Обновить баланс',pt:'Atualizar saldo'},
+  mex_details:        {de:'Details',en:'Details',es:'Detalles',ru:'Детали',pt:'Detalhes'},
+  mex_balance_heading:{de:'Guthaben-Aufschlüsselung',en:'Balance breakdown',es:'Desglose del saldo',ru:'Разбивка баланса',pt:'Detalhamento do saldo'},
+  mex_no_balance:     {de:'Keine Guthaben gefunden',en:'No balances found',es:'Sin saldos',ru:'Нет балансов',pt:'Sem saldos'},
+  mex_balance_fresh:  {de:'Aktualisiert',en:'Updated',es:'Actualizado',ru:'Обновлено',pt:'Atualizado'},
+  mex_balance_stale:  {de:'Aus Cache (60s)',en:'Cached (60s)',es:'En caché (60s)',ru:'Из кэша (60с)',pt:'Em cache (60s)'},
 
 
   /* ── SHARED AI ── */
