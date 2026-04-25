@@ -51,9 +51,16 @@ def create_flask_app(template_dir: str, static_dir: str) -> Flask:
 
 
 def parse_origins_from_env() -> tuple[Any, Any]:
-    """Parst ALLOWED_ORIGINS und ergänzt APP_DOMAIN falls gesetzt."""
-    raw_origins = os.getenv("ALLOWED_ORIGINS", "*")
-    if raw_origins.strip() == "*":
+    """Parst ALLOWED_ORIGINS und ergänzt APP_DOMAIN falls gesetzt.
+
+    Sicherheits-Default: Wenn weder ALLOWED_ORIGINS noch APP_DOMAIN gesetzt
+    sind, wird CORS auf same-origin (leere Liste) beschränkt – Wildcard
+    ``*`` ist nur erlaubt, wenn der Operator das ausdrücklich konfiguriert.
+    Das verhindert ungewollte cross-origin POSTs auf Trade-/Admin-Endpunkte
+    bei einer Default-Installation.
+    """
+    raw_origins = os.getenv("ALLOWED_ORIGINS", "").strip()
+    if raw_origins == "*":
         return "*", "*"
 
     allowed_origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]

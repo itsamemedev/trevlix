@@ -302,7 +302,12 @@ function updateUI(d){
     portChart.data.datasets[0].data=vals;
     portChart.data.datasets[0].borderColor=cc;
     portChart.data.datasets[0].backgroundColor=cc==='#00ff88'?'rgba(0,255,136,0.06)':'rgba(255,61,113,0.06)';
-    portChart.update('none');
+    try { portChart.update('none'); }
+    catch(e) {
+      // Chart.js kann nach DOM-Replacement broken sein – sauber neu rendern beim nächsten Update.
+      try { portChart.destroy(); } catch(_e) {}
+      portChart = null;
+    }
   }
   // Sub-components
   if(d.fear_greed) updateFG(d.fear_greed);
@@ -1483,7 +1488,7 @@ function pauseBot(){_emitSafe('pause_bot');}
 // ── Exchange Selector ─────────────────────────────────────────────────
 let _selectedExchange = '';
 
-function selectExchange(ex, el) {
+function selectExchange(ex, el, opts) {
   if (!ex) return;
   _selectedExchange = ex;
   // Highlight active button
@@ -1499,8 +1504,10 @@ function selectExchange(ex, el) {
   const lbl = document.getElementById('exStartLabel');
   const running = document.getElementById('statusBadge')?.classList.contains('run');
   if (lbl) lbl.textContent = running ? 'Exchange wechseln & neu starten' : 'Bot mit ' + ex.toUpperCase() + ' starten';
-  // Open API-key config form for this exchange immediately
-  mexSetupKeys(ex);
+  // Open API-key config form. Auto-scroll only on explicit user clicks –
+  // periodic state updates must NOT yank the page back to the top.
+  const userInitiated = !opts || opts.userInitiated !== false;
+  mexSetupKeys(ex, {scroll: userInitiated});
 }
 
 function startBotWithExchange() {
@@ -1521,7 +1528,9 @@ function _initExchangeSelector(activeEx, keyStates) {
     if (keyStates && keyStates[ex]) btn.classList.add('has-keys');
     else btn.classList.remove('has-keys');
   });
-  if (activeEx) selectExchange(activeEx, document.getElementById('ex-btn-' + activeEx));
+  // Programmatic init must not auto-scroll (otherwise every WebSocket
+  // state update yanks the dashboard back to the top of the page).
+  if (activeEx) selectExchange(activeEx, document.getElementById('ex-btn-' + activeEx), {userInitiated: false});
 }
 const _closeHistory = [];
 let _undoTimeout = null;
@@ -3201,7 +3210,13 @@ function _mexRenderCards(data) {
     return;
   }
 
+  // Erhalte die Scroll-Position des Window-Scrollers, damit das innerHTML-
+  // Re-Render nicht den User aus der aktuell betrachteten Sektion wirft.
+  const scrollY = window.scrollY;
   container.innerHTML = ordered.map(([id, label]) => _mexRenderCard(id, label, exs[id] || {}, activeEx)).join('');
+  if (Math.abs(window.scrollY - scrollY) > 1) {
+    window.scrollTo({top: scrollY, left: window.scrollX, behavior: 'instant'});
+  }
 }
 
 function _mexRenderCard(id, label, ex, activeEx) {
@@ -3471,11 +3486,13 @@ async function mexRefreshAll() {
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
 function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
 
-function mexSetupKeys(name) {
+function mexSetupKeys(name, opts) {
   document.getElementById('mex-key-exchange').value = name;
   mexOnExchangeSelect(name);
-  // Scroll to key form
-  document.querySelector('#mex-key-exchange')?.scrollIntoView({behavior:'smooth', block:'center'});
+  // Only scroll on explicit user action – never on background re-renders.
+  if (!opts || opts.scroll !== false) {
+    document.querySelector('#mex-key-exchange')?.scrollIntoView({behavior:'smooth', block:'center'});
+  }
 }
 
 function mexOnExchangeSelect(name) {

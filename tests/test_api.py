@@ -76,6 +76,24 @@ class TestAuthEndpoints:
         # Wenn ALLOW_REGISTRATION=false, sollte 403 kommen
         assert resp.status_code in (200, 403)
 
+    def test_root_serves_landing_for_anonymous(self, app_client):
+        """Homepage `/` muss die öffentliche Landing-Page liefern,
+        nicht zum Login redirecten."""
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/", follow_redirects=False)
+        assert resp.status_code == 200
+        # Landing-Page enthält Marketing-Texte aus index.html
+        assert b"TREVLIX" in resp.data
+
+    def test_root_redirects_logged_in_user_to_dashboard(self, app_client):
+        """Eingeloggte User landen direkt auf /dashboard, nicht auf der Landing-Page."""
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        resp = app_client.get("/", follow_redirects=False)
+        assert resp.status_code in (301, 302, 303)
+        assert resp.headers["Location"].endswith("/dashboard")
+
 
 class TestAPIAuth:
     """Tests für API-Auth-Decorator."""
@@ -541,6 +559,46 @@ class TestExchangesSnapshotAPI:
         bn = data["exchanges"]["binance"]
         assert bn["has_key"] is False
         assert bn["is_primary"] is False
+
+
+class TestExportEndpointAuth:
+    """Sicherstellen, dass Export-/Backup-/Heatmap-Endpunkte authentifiziert sind."""
+
+    def test_export_csv_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/export/csv")
+        assert resp.status_code == 401
+
+    def test_export_json_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/export/json")
+        assert resp.status_code == 401
+
+    def test_backup_download_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/backup/download")
+        assert resp.status_code == 401
+
+    def test_ohlcv_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/ohlcv/BTC-USDT")
+        assert resp.status_code == 401
+
+    def test_heatmap_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/heatmap")
+        assert resp.status_code == 401
+
+    def test_gas_requires_auth(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess.clear()
+        resp = app_client.get("/api/v1/gas")
+        assert resp.status_code == 401
 
 
 class TestExchangeManagementByName:

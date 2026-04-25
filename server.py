@@ -1206,8 +1206,14 @@ def on_connect(auth=None):
     username = session.get("username", "?")
 
     # JWT-Fallback: Falls Session-Cookie nicht verfügbar (z.B. hinter Proxy)
-    if not user_id and auth and isinstance(auth, dict):
-        token = auth.get("token", "")
+    # ODER der HttpOnly-Cookie nicht in die Session aufgelöst werden konnte.
+    # Token-Quellen in Reihenfolge: explizites auth-Dict > HttpOnly-Cookie.
+    if not user_id:
+        token = ""
+        if auth and isinstance(auth, dict):
+            token = str(auth.get("token", "") or "")
+        if not token:
+            token = str(request.cookies.get("token", "") or "")
         if token:
             uid = db.verify_api_token(token)
             if uid:
@@ -1215,7 +1221,6 @@ def on_connect(auth=None):
                 session["user_id"] = uid
                 username = "jwt-user"
             else:
-                # JWT im Cookie versuchen
                 try:
                     payload = pyjwt.decode(
                         token,

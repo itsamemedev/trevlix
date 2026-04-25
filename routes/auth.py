@@ -161,10 +161,20 @@ def create_auth_blueprint(
                         jwt_secret,
                         algorithm="HS256",
                     )
+                    # Cookie ist HttpOnly: WebSocket-Auth läuft über die
+                    # Session, API-Auth akzeptiert ebenfalls die Session –
+                    # der JS-Client braucht den Token also nicht im Klartext.
+                    # `secure=True` wenn HTTPS aktiv ist (Reverse-Proxy
+                    # setzt X-Forwarded-Proto entsprechend).
+                    secure_cookie = bool(
+                        request.is_secure
+                        or request.headers.get("X-Forwarded-Proto", "").lower() == "https"
+                    )
                     resp.set_cookie(
                         "token",
                         token,
-                        httponly=False,  # JS muss lesen können
+                        httponly=True,
+                        secure=secure_cookie,
                         samesite="Lax",
                         max_age=8 * 3600,
                         path="/",

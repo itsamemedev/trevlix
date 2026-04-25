@@ -330,6 +330,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Gas ───────────────────────────────────────────────────────────────────
 
     @bp.route("/api/v1/gas")
+    @auth
     def api_gas():
         try:
             r = requests.get(
@@ -497,6 +498,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── OHLCV ─────────────────────────────────────────────────────────────────
 
     @bp.route("/api/ohlcv/<path:symbol>")
+    @auth
     def api_ohlcv(symbol):
         sym = symbol.replace("-", "/")
         tf = request.args.get("tf", "1h")
@@ -515,6 +517,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Heatmap (Legacy) ──────────────────────────────────────────────────────
 
     @bp.route("/api/heatmap")
+    @auth
     def api_heatmap_legacy():
         try:
             ex = deps.create_exchange()
@@ -619,16 +622,23 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     # ── Export ────────────────────────────────────────────────────────────────
 
     @bp.route("/api/export/csv")
+    @auth
     def api_export_csv():
+        # Pro-User Export: db.export_csv() liest sonst ungefiltert alle Trades.
+        try:
+            csv_payload = db.export_csv(user_id=request.user_id)
+        except TypeError:  # pragma: no cover – ältere Signatur ohne user_id
+            csv_payload = db.export_csv()
         return Response(
-            db.export_csv(),
+            csv_payload,
             mimetype="text/csv",
             headers={"Content-Disposition": "attachment;filename=trevlix_trades.csv"},
         )
 
     @bp.route("/api/export/json")
+    @auth
     def api_export_json():
-        trades = db.load_trades(limit=10000)
+        trades = db.load_trades(limit=10000, user_id=request.user_id)
         if deps.trades_to_json:
             content = deps.trades_to_json(trades)
         else:
@@ -640,7 +650,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
         )
 
     @bp.route("/api/backup/download")
+    @auth
+    @deps.admin_required
     def api_backup_download():
+        # Backups enthalten ALLE User-Daten inkl. verschlüsselter Exchange-Keys
+        # → ausschließlich Admins erlauben.
         path = db.backup()
         if path:
             return send_file(path, as_attachment=True)
