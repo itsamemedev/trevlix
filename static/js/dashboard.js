@@ -3116,6 +3116,11 @@ const MEX_LOGOS = {
 // Socket-Handler für Exchange-Updates
 socket.on('exchange_update', mexUpdate);
 
+// Welche Exchange-Karten sind gerade aufgeklappt (persistent pro Session)
+const _mexExpanded = new Set();
+// Letzter Snapshot für Re-Rendering bei Expand/Collapse ohne neuen Fetch
+let _mexLastData = null;
+
 function mexUpdate(data) {
   if (!data) return;
   // Legacy WS payload ({exchange, status}) -> Snapshot reload
@@ -3131,6 +3136,7 @@ function mexUpdate(data) {
       if (!name) return;
       mapped[name] = {
         enabled: !!ex.enabled,
+        has_key: !!ex.has_key,
         running: false,
         portfolio_value: 0,
         return_pct: 0,
@@ -3141,13 +3147,20 @@ function mexUpdate(data) {
         markets_count: 0,
         last_scan: '—',
         positions: [],
+        balances: {},
         error: ex.enabled ? 'Konfiguriert' : 'Nicht aktiviert',
       };
     });
     data = { exchanges: mapped, combined_pv: 0, combined_pnl: 0, total_pv: 0, total_pnl: 0 };
   }
+  _mexLastData = data;
+  _mexRenderCards(data);
+}
+
+function _mexRenderCards(data) {
   const exs = data.exchanges || {};
   const active = Object.values(exs).filter(e => e.running).length;
+  const activeEx = String(data.active_exchange || '').toLowerCase();
 
   // Gesamt-Header
   const pv = data.combined_pv || data.total_pv || 0;
@@ -3169,68 +3182,161 @@ function mexUpdate(data) {
     badge.style.background = active > 0 ? 'var(--jade)' : '#f59e0b';
   }
 
-  // Exchange-Karten
+  // Exchange-Karten (nur konfigurierte oder als aktiv markierte anzeigen –
+  // spart Platz und macht Unterschied zu "alle 11 Optionen" deutlich).
   const container = document.getElementById('mex-cards');
   if (!container) return;
-  container.innerHTML = Object.entries(MEX_NAMES).map(([id, label]) => {
-    const ex = exs[id] || {};
-    const running = ex.running || false;
-    const enabled = ex.enabled || false;
-    const pv = ex.portfolio_value || 0;
-    const ret = ex.return_pct || 0;
-    const trades = ex.trade_count || 0;
-    const open = ex.open_trades || 0;
-    const wr = ex.win_rate || 0;
-    const pnl = ex.total_pnl || 0;
-    const err = ex.error || '';
-    const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
-    const statusDetail = String(ex.status_detail || '');
-    const positions = ex.positions || [];
 
-    const statusDot = running
-      ? '<span style="width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;box-shadow:0 0 6px #00ff88"></span>'
-      : (enabled
-          ? '<span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>'
-          : '<span style="width:8px;height:8px;border-radius:50%;background:#374151;display:inline-block"></span>');
+  const ordered = Object.entries(MEX_NAMES)
+    .filter(([id]) => exs[id]) // nur konfigurierte Exchanges rendern
+    .sort(([a], [b]) => {
+      const ea = exs[a] || {}, eb = exs[b] || {};
+      // Primary zuerst, dann laufende, dann enabled, dann alphabetisch
+      const rank = e => (e.is_primary ? 0 : e.running ? 1 : e.enabled ? 2 : 3);
+      return rank(ea) - rank(eb) || a.localeCompare(b);
+    });
 
-    const posHtml = positions.length ? positions.map(p => `
-      <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px">
-        <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
-        <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
-        <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${p.pnl?.toFixed(2)} USDT</span>
-        <button onclick="mexClosePos('${escJS(id)}','${escJS(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
-      </div>`).join('') : '';
+  if (ordered.length === 0) {
+    container.innerHTML = `<div class="empty"><div class="empty-ico">🔑</div><span>${esc(QI18n.t('mex_setup_keys'))}</span></div>`;
+    return;
+  }
 
-    return `
-    <div class="card" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
-      <div class="card-hd" style="padding-bottom:10px">
-        <div style="display:flex;align-items:center;gap:8px">
-          <span style="font-size:20px">${MEX_LOGOS[id]}</span>
-          <div>
-            <div style="font-weight:800;font-size:14px;color:#e8f4ff">${label}</div>
-            <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${marketCount} Märkte · ${ex.last_scan||'—'}${statusDetail ? ` · ${esc(statusDetail)}` : ''}</div>
+  container.innerHTML = ordered.map(([id, label]) => _mexRenderCard(id, label, exs[id] || {}, activeEx)).join('');
+}
+
+function _mexRenderCard(id, label, ex, activeEx) {
+  const running = !!ex.running;
+  const enabled = !!ex.enabled;
+  const hasKey = !!ex.has_key;
+  const isPrimary = !!ex.is_primary;
+  const expanded = _mexExpanded.has(id);
+  const pv = Number(ex.portfolio_value || 0);
+  const ret = Number(ex.return_pct || 0);
+  const trades = Number(ex.trade_count || 0);
+  const open = Number(ex.open_trades || 0);
+  const wr = Number(ex.win_rate || 0);
+  const pnl = Number(ex.total_pnl || 0);
+  const err = String(ex.error || '');
+  const marketCount = Number(ex.markets_count ?? ex.symbol_count ?? 0);
+  const statusDetail = String(ex.status_detail || '');
+  const positions = Array.isArray(ex.positions) ? ex.positions : [];
+  const balances = ex.balances && typeof ex.balances === 'object' ? ex.balances : {};
+  const stale = !!ex.balance_stale;
+  const fetchedAt = ex.balance_fetched_at ? String(ex.balance_fetched_at).replace('T',' ').slice(0,19) : '';
+
+  const statusDot = running
+    ? '<span style="width:8px;height:8px;border-radius:50%;background:#00ff88;display:inline-block;box-shadow:0 0 6px #00ff88"></span>'
+    : (enabled && hasKey
+        ? '<span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block"></span>'
+        : '<span style="width:8px;height:8px;border-radius:50%;background:#374151;display:inline-block"></span>');
+
+  const statusLabel = running
+    ? QI18n.t('mex_active_label')
+    : (enabled && hasKey ? QI18n.t('mex_configured') : QI18n.t('mex_inactive'));
+  const statusColor = running ? 'var(--jade)' : (enabled && hasKey ? '#f59e0b' : 'var(--muted)');
+
+  const primaryBadge = isPrimary
+    ? `<span class="pill" style="padding:2px 6px;font-size:9px;background:rgba(212,175,55,.15);color:var(--yellow);border:1px solid rgba(212,175,55,.3)">${QI18n.t('mex_primary_badge')}</span>`
+    : '';
+
+  const chevron = expanded ? '▼' : '▶';
+
+  // Header ist immer klickbar – öffnet Details
+  const header = `
+    <div class="card-hd" style="padding-bottom:10px;cursor:pointer" onclick="mexToggleCard('${escJS(id)}')">
+      <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+        <span style="font-size:20px">${MEX_LOGOS[id] || '🔹'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+            <span style="font-weight:800;font-size:14px;color:#e8f4ff">${esc(label)}</span>
+            ${primaryBadge}
+          </div>
+          <div style="font-size:10px;color:var(--sub);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+            ${fmt(pv)} USDT · ${marketCount} Märkte${statusDetail ? ` · ${esc(statusDetail)}` : ''}
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:6px">
-          ${statusDot}
-          <span style="font-size:10px;font-family:var(--mono);color:${running?'var(--jade)':enabled?'#f59e0b':'var(--muted)'}">${running?QI18n.t('mex_active_label'):enabled?QI18n.t('mex_configured'):QI18n.t('mex_inactive')}</span>
-        </div>
       </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        ${statusDot}
+        <span style="font-size:10px;font-family:var(--mono);color:${statusColor}">${statusLabel}</span>
+        <span style="font-size:10px;color:var(--sub);width:10px;text-align:center">${chevron}</span>
+      </div>
+    </div>`;
 
-      ${err ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(String(err))}</div>` : ''}
+  if (!expanded) {
+    // Zusammengeklappter Zustand – kompakte Karte mit Fehler-Hinweis
+    const errBanner = err
+      ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444">${esc(err)}</div>`
+      : '';
+    return `<div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">${header}${errBanner}</div>`;
+  }
 
+  // Erweiterte Details: Balance-Breakdown + Positionen + Actions
+  const posHtml = positions.length ? positions.map(p => `
+    <div style="display:flex;justify-content:space-between;padding:4px 0;border-top:1px solid var(--muted);font-size:11px;align-items:center;gap:6px">
+      <span style="color:var(--txt);font-weight:600">${esc(String(p.symbol||''))}</span>
+      <span style="font-family:var(--mono);color:var(--sub)">@ ${p.entry}</span>
+      <span style="font-family:var(--mono);color:${p.pnl>=0?'var(--jade)':'var(--red)'}">${p.pnl>=0?'+':''}${Number(p.pnl||0).toFixed(2)} USDT</span>
+      <button onclick="mexClosePos('${escJS(id)}','${escJS(p.symbol)}')" style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.2);border-radius:4px;color:#ef4444;cursor:pointer;font-size:9px;padding:2px 6px">✕</button>
+    </div>`).join('') : '';
+
+  const balEntries = Object.entries(balances)
+    .filter(([, v]) => v && (Number(v.total)||0) > 0)
+    .sort((a, b) => (Number(b[1].usdt_value)||0) - (Number(a[1].usdt_value)||0));
+  const balHtml = balEntries.length
+    ? balEntries.map(([coin, v]) => `
+        <div style="display:grid;grid-template-columns:60px 1fr auto;gap:8px;padding:4px 0;border-top:1px solid var(--muted);font-size:11px;align-items:center">
+          <span style="font-weight:700;color:#e8f4ff">${esc(coin)}</span>
+          <span style="font-family:var(--mono);color:var(--sub)">${Number(v.total||0).toFixed(6)}${Number(v.free||0)<Number(v.total||0)?` <span style="opacity:.6">(frei: ${Number(v.free||0).toFixed(4)})</span>`:''}</span>
+          <span style="font-family:var(--mono);color:var(--txt)">${fmt(Number(v.usdt_value||0))} USDT</span>
+        </div>`).join('')
+    : `<div style="padding:10px;color:var(--sub);font-size:11px;text-align:center">${esc(QI18n.t('mex_no_balance'))}</div>`;
+
+  const freshLabel = stale ? QI18n.t('mex_balance_stale') : QI18n.t('mex_balance_fresh');
+
+  // Action-Buttons-Zeile
+  const canToggle = hasKey; // Ohne Keys kann man nicht aktivieren
+  const toggleBtn = canToggle
+    ? (enabled
+        ? `<button class="btn" style="flex:1;padding:8px;font-size:11px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);color:#f59e0b" onclick="mexToggleEnabled('${escJS(id)}',false)">⏸ ${esc(QI18n.t('mex_toggle_off'))}</button>`
+        : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexToggleEnabled('${escJS(id)}',true)">✓ ${esc(QI18n.t('mex_toggle_on'))}</button>`)
+    : '';
+  const primaryBtn = (enabled && !isPrimary)
+    ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexSetPrimary('${escJS(id)}')">★ ${esc(QI18n.t('mex_set_primary'))}</button>`
+    : '';
+  const runBtn = (enabled && hasKey)
+    ? (running
+        ? `<button class="btn btn-red" style="flex:1;padding:8px;font-size:11px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>`
+        : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:11px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>`)
+    : '';
+  const keysBtn = `<button class="btn btn-info" style="flex:1;padding:8px;font-size:11px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`;
+  const refreshBtn = (enabled && hasKey)
+    ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)" onclick="mexRefreshBalance('${escJS(id)}')" title="${esc(QI18n.t('mex_refresh_balance'))}">⟳</button>`
+    : '';
+  const deleteBtn = hasKey
+    ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444" onclick="mexDelete('${escJS(id)}')" title="${esc(QI18n.t('mex_delete_config'))}">🗑</button>`
+    : '';
+
+  const errBanner = err
+    ? `<div style="padding:6px 16px;background:rgba(239,68,68,.08);border-left:3px solid #ef4444;font-size:11px;color:#ef4444;margin-bottom:8px">${esc(err)}</div>`
+    : '';
+
+  return `
+    <div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
+      ${header}
+      ${errBanner}
       <div class="card-body" style="padding-top:0">
         <div class="sg" style="grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px">
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${(ret??0).toFixed(2)}%</div>
+            <div class="sv" style="font-size:14px;color:${ret>=0?'var(--jade)':'var(--red)'}">${ret>=0?'+':''}${ret.toFixed(2)}%</div>
             <div class="sl">Return</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${(pnl??0).toFixed(2)}</div>
+            <div class="sv" style="font-size:14px;color:${pnl>=0?'var(--jade)':'var(--red)'}">${pnl>=0?'+':''}${pnl.toFixed(2)}</div>
             <div class="sl">PnL (USDT)</div>
           </div>
           <div class="sc">
-            <div class="sv" style="font-size:14px">${(wr??0).toFixed(1)}%</div>
+            <div class="sv" style="font-size:14px">${wr.toFixed(1)}%</div>
             <div class="sl">Win-Rate</div>
           </div>
           <div class="sc">
@@ -3239,28 +3345,113 @@ function mexUpdate(data) {
           </div>
         </div>
 
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase">${esc(QI18n.t('mex_balance_heading'))}</div>
+          <div style="font-size:9px;font-family:var(--mono);color:${stale?'#f59e0b':'var(--jade)'}">${esc(freshLabel)}${fetchedAt?` · ${esc(fetchedAt)}`:''}</div>
+        </div>
+        <div style="margin-bottom:12px">${balHtml}</div>
+
         ${positions.length ? `
         <div style="font-size:9px;font-family:var(--mono);color:var(--sub);letter-spacing:2px;text-transform:uppercase;margin-bottom:6px">${open} ${QI18n.t('open_positions').toUpperCase()}</div>
         ${posHtml}` : ''}
 
-        <div style="display:flex;gap:8px;margin-top:12px">
-          ${!enabled
-            ? `<button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">${esc(QI18n.t('mex_setup_keys'))}</button>`
-            : running
-              ? `<button class="btn btn-red"  style="flex:1;padding:8px;font-size:12px" onclick="mexStop('${escJS(id)}')">⏹ ${QI18n.t('btn_stop')}</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-              : `<button class="btn btn-jade" style="flex:1;padding:8px;font-size:12px" onclick="mexStart('${escJS(id)}')">▶ ${QI18n.t('btn_start')}</button>
-                 <button class="btn btn-info" style="flex:1;padding:8px;font-size:12px" onclick="mexSetupKeys('${escJS(id)}')">🔑 Keys</button>`
-          }
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
+          ${runBtn}
+          ${toggleBtn}
+          ${primaryBtn}
+          ${keysBtn}
+          ${refreshBtn}
+          ${deleteBtn}
         </div>
       </div>
     </div>`;
-  }).join('');
 }
 
-async function mexReloadSnapshot() {
+function mexToggleCard(id) {
+  if (_mexExpanded.has(id)) _mexExpanded.delete(id); else _mexExpanded.add(id);
+  if (_mexLastData) _mexRenderCards(_mexLastData);
+}
+
+async function mexRefreshBalance(id) {
   try{
-    const r = await fetch('/api/v1/exchanges', {
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/balance?refresh=1', {
+      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+    });
+    if(!r.ok){
+      const j = await r.json().catch(()=>({}));
+      toast('⚠️ ' + (j.error || 'Balance-Refresh fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast('⟳ Balance aktualisiert: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexToggleEnabled(id, enabled) {
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/toggle', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      body: JSON.stringify({enabled: !!enabled})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Toggle fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast((enabled?'✓ Aktiviert: ':'⏸ Deaktiviert: ') + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexSetPrimary(id) {
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/primary', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      body: JSON.stringify({})
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Primary-Wechsel fehlgeschlagen'), 'warning');
+      return;
+    }
+    toast('★ Primary: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexDelete(id) {
+  const confirmMsg = QI18n.t('mex_confirm_delete').replace('{exc}', id.toUpperCase());
+  if (!confirm(confirmMsg)) return;
+  try{
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id), {
+      method:'DELETE',
+      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok || !j.ok){
+      toast('⚠️ ' + (j.error || 'Löschen fehlgeschlagen'), 'warning');
+      return;
+    }
+    _mexExpanded.delete(id);
+    toast('🗑 Entfernt: ' + id.toUpperCase(), 'success');
+    mexReloadSnapshot();
+  }catch(e){
+    toast('⚠️ Netzwerk-Fehler: ' + e.message, 'error');
+  }
+}
+
+async function mexReloadSnapshot(forceRefresh) {
+  try{
+    const url = '/api/v1/exchanges' + (forceRefresh ? '?refresh=1' : '');
+    const r = await fetch(url, {
       headers:{'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok) return;
@@ -3269,6 +3460,12 @@ async function mexReloadSnapshot() {
   }catch(e){
     console.warn('Exchange-Status laden fehlgeschlagen:', e);
   }
+}
+
+async function mexRefreshAll() {
+  toast('⟳ Lade Live-Balances …', 'info');
+  await mexReloadSnapshot(true);
+  toast('✓ Multi-Exchange aktualisiert', 'success');
 }
 
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
@@ -3291,11 +3488,17 @@ function mexSaveKeys() {
   const exchange   = document.getElementById('mex-key-exchange').value;
   const api_key    = document.getElementById('mex-key-apikey').value.trim();
   const secret     = document.getElementById('mex-key-secret').value.trim();
-  const passphrase = document.getElementById('mex-key-passphrase')?.value?.trim() || '';
+  const pEl = document.getElementById('mex-key-passphrase');
+  const passphrase = pEl?.value?.trim() || '';
   if (!api_key || !secret) { toast(QI18n.t('err_apikey_secret'), 'warning'); return; }
   if(!_emitSafe('save_exchange_keys', {exchange, api_key, secret, passphrase})) return;
   document.getElementById('mex-key-apikey').value = '';
   document.getElementById('mex-key-secret').value = '';
+  if (pEl) pEl.value = '';
+  // Neue Konfiguration sofort aufklappen + Karten neu laden, damit der User
+  // direkt sieht, dass sein Exchange jetzt in der Liste erscheint.
+  _mexExpanded.add(exchange);
+  setTimeout(mexReloadSnapshot, 500);
 }
 
 function mexClosePos(exchange, symbol) {

@@ -500,6 +500,136 @@ class TestExchangesSnapshotAPI:
         assert data["active_exchange"] == "binance"
         assert data["iteration"] == 77
 
+    def test_exchanges_snapshot_exposes_management_flags(self, app_client, monkeypatch):
+        """Die Snapshot-Antwort muss has_key/is_primary für Card-Actions liefern."""
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [
+                {
+                    "exchange": "cryptocom",
+                    "enabled": True,
+                    "is_primary": True,
+                    "has_key": True,
+                    "has_passphrase": False,
+                },
+                {
+                    "exchange": "binance",
+                    "enabled": False,
+                    "is_primary": False,
+                    "has_key": False,
+                },
+            ],
+        )
+        monkeypatch.setattr(server.db, "get_enabled_exchanges", lambda _uid: [])
+        monkeypatch.setattr(server.state, "snapshot", lambda: {"running": False})
+
+        resp = app_client.get("/api/v1/exchanges")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        cc = data["exchanges"]["cryptocom"]
+        assert cc["is_primary"] is True
+        assert cc["has_key"] is True
+        assert "balances" in cc
+        # Paper-Modus → Paper-Trading aktiv Status
+        assert cc["status_detail"] in ("Paper-Trading aktiv", "Live-Runtime aktiv")
+        bn = data["exchanges"]["binance"]
+        assert bn["has_key"] is False
+        assert bn["is_primary"] is False
+
+
+class TestExchangeManagementByName:
+    """Tests für Toggle/Primary/Delete-Endpoints per Exchange-Namen."""
+
+    def test_toggle_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"id": 42, "exchange": "cryptocom", "enabled": False}],
+        )
+        called = {}
+
+        def _toggle(user_id, ex_id, enabled):
+            called.update({"user_id": user_id, "ex_id": ex_id, "enabled": enabled})
+            return True
+
+        monkeypatch.setattr(server.db, "toggle_user_exchange", _toggle)
+
+        resp = app_client.post("/api/v1/user/exchanges/cryptocom/toggle", json={"enabled": True})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["enabled"] is True
+        assert called == {"user_id": 1, "ex_id": 42, "enabled": True}
+
+    def test_toggle_unknown_exchange_returns_404(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(server.db, "get_user_exchanges", lambda _uid: [])
+
+        resp = app_client.post("/api/v1/user/exchanges/cryptocom/toggle", json={"enabled": True})
+        assert resp.status_code == 404
+
+    def test_set_primary_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(server.db, "set_primary_exchange", lambda _uid, name, enable=True: True)
+
+        resp = app_client.post("/api/v1/user/exchanges/bybit/primary", json={})
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ok"] is True
+        assert body["primary"] == "bybit"
+
+    def test_delete_exchange_by_name(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        monkeypatch.setattr(
+            server.db,
+            "get_user_exchanges",
+            lambda _uid: [{"id": 7, "exchange": "bybit", "enabled": True}],
+        )
+        deleted = {}
+
+        def _delete(user_id, ex_id):
+            deleted.update({"user_id": user_id, "ex_id": ex_id})
+            return True
+
+        monkeypatch.setattr(server.db, "delete_user_exchange", _delete)
+
+        resp = app_client.delete("/api/v1/user/exchanges/bybit")
+        assert resp.status_code == 200
+        assert resp.get_json()["ok"] is True
+        assert deleted == {"user_id": 1, "ex_id": 7}
+
+    def test_invalid_exchange_name_rejected(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post(
+            "/api/v1/user/exchanges/not-a-real-ex/toggle", json={"enabled": True}
+        )
+        assert resp.status_code == 400
+
 
 class TestPaperModeBuild:
     """Smoke-Test für 'Paper-Mode trading build' über API-Kette."""

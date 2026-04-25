@@ -512,12 +512,137 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         auto_started = False
         if ok and enabled and deps.maybe_auto_start_bot_fn:
             auto_started = deps.maybe_auto_start_bot_fn()
+        # Balance-Cache invalidieren, damit UI frische Daten liefert.
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id)
+        except Exception:  # pragma: no cover – Cache-Invalidierung ist best-effort
+            pass
         return jsonify({"ok": ok, "bot_auto_started": auto_started})
 
     @bp.route("/api/v1/user/exchanges/<int:exchange_id>", methods=["DELETE"])
     @auth
     def api_user_exchange_delete(exchange_id):
-        return jsonify({"ok": db.delete_user_exchange(request.user_id, exchange_id)})
+        ok = db.delete_user_exchange(request.user_id, exchange_id)
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id)
+        except Exception:  # pragma: no cover
+            pass
+        return jsonify({"ok": ok})
+
+    def _resolve_exchange_id(user_id: int, name: str) -> int | None:
+        """Findet die user_exchanges.id anhand des Exchange-Namens."""
+        for row in db.get_user_exchanges(user_id) or []:
+            if str(row.get("exchange", "")).lower() == name:
+                try:
+                    return int(row.get("id") or 0) or None
+                except (TypeError, ValueError):
+                    return None
+        return None
+
+    @bp.route("/api/v1/user/exchanges/<exchange>/toggle", methods=["POST"])
+    @auth
+    def api_user_exchange_toggle_by_name(exchange):
+        """Enable/disable eine Exchange per Name (für die Dashboard-UI)."""
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"error": "Ungültige Exchange"}), 400
+        ex_id = _resolve_exchange_id(request.user_id, name)
+        if ex_id is None:
+            return jsonify({"error": "Exchange nicht konfiguriert"}), 404
+        enabled = sb(body().get("enabled", False), False)
+        ok = db.toggle_user_exchange(request.user_id, ex_id, enabled)
+        auto_started = False
+        if ok and enabled and deps.maybe_auto_start_bot_fn:
+            auto_started = deps.maybe_auto_start_bot_fn()
+        if audit:
+            audit(
+                "exchange_toggle",
+                f"Exchange: {name}, enabled: {enabled}",
+                request.user_id,
+            )
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id, name)
+        except Exception:  # pragma: no cover
+            pass
+        return jsonify({"ok": ok, "enabled": enabled, "bot_auto_started": auto_started})
+
+    @bp.route("/api/v1/user/exchanges/<exchange>/primary", methods=["POST"])
+    @auth
+    def api_user_exchange_set_primary(exchange):
+        """Setzt eine Exchange als primary – diese wird vom Bot als Main-Exchange genutzt."""
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"error": "Ungültige Exchange"}), 400
+        ok = db.set_primary_exchange(request.user_id, name, enable=True)
+        if not ok:
+            return jsonify({"error": "Exchange nicht konfiguriert"}), 404
+        if audit:
+            audit("exchange_set_primary", f"Exchange: {name}", request.user_id)
+        # Primary-Wechsel kann neue Bot-Runtime erfordern → CONFIG updaten
+        try:
+            if deps.pin_user_exchange:
+                deps.pin_user_exchange(request.user_id, name)
+        except Exception as exc:  # pragma: no cover
+            log.debug("pin_user_exchange nach primary-Wechsel: %s", exc)
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id)
+        except Exception:  # pragma: no cover
+            pass
+        return jsonify({"ok": True, "primary": name})
+
+    @bp.route("/api/v1/user/exchanges/<exchange>", methods=["DELETE"])
+    @auth
+    def api_user_exchange_delete_by_name(exchange):
+        """Entfernt eine Exchange-Konfiguration per Name."""
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"error": "Ungültige Exchange"}), 400
+        ex_id = _resolve_exchange_id(request.user_id, name)
+        if ex_id is None:
+            return jsonify({"error": "Exchange nicht konfiguriert"}), 404
+        ok = db.delete_user_exchange(request.user_id, ex_id)
+        if audit:
+            audit("exchange_delete", f"Exchange: {name}", request.user_id)
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id, name)
+        except Exception:  # pragma: no cover
+            pass
+        return jsonify({"ok": ok})
+
+    @bp.route("/api/v1/user/exchanges/<exchange>/balance")
+    @auth
+    def api_user_exchange_balance(exchange):
+        """Liefert eine frisch aktualisierte Balance für eine einzelne Exchange."""
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"error": "Ungültige Exchange"}), 400
+        enabled_rows = {
+            str(r.get("exchange", "")).lower(): r
+            for r in db.get_enabled_exchanges(request.user_id) or []
+        }
+        ex_row = enabled_rows.get(name)
+        if not ex_row:
+            return jsonify({"error": "Exchange nicht aktiviert"}), 404
+        from routes.api.market import _get_balance_snapshot
+
+        force = str(request.args.get("refresh", "1")).lower() in ("1", "true", "yes")
+        paper = bool(cfg.get("paper_trading", True))
+        quote = str(cfg.get("quote_currency", "USDT")).upper()
+        snap = _get_balance_snapshot(
+            request.user_id, ex_row, quote, paper, log, force_refresh=force
+        )
+        snap["exchange"] = name
+        return jsonify(snap)
 
     @bp.route("/api/v1/user/api-keys", methods=["POST"])
     @auth

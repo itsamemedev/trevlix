@@ -384,7 +384,10 @@
   <div class="card">
     <div class="card-hd">
       <span class="card-title">Multi-Exchange Status</span>
-      <span class="card-badge" id="mex-active-count">0 aktiv</span>
+      <span style="display:flex;gap:6px;align-items:center">
+        <button class="btn" style="padding:4px 10px;font-size:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt);cursor:pointer" onclick="mexRefreshAll()" title="Alle Balances neu laden">⟳</button>
+        <span class="card-badge" id="mex-active-count">0 aktiv</span>
+      </span>
     </div>
     <div class="card-body" style="padding-top:10px">
       <div id="mex-cards" style="display:flex;flex-direction:column;gap:8px">

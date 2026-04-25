@@ -67,14 +67,17 @@ def create_auth_blueprint(
 
     @bp.route("/")
     def index():
-        """Hauptseite - leitet zu Login um wenn nicht eingeloggt.
+        """Hauptseite - öffentliche Landing-Page (index.html).
+
+        Authentifizierte User werden direkt aufs Dashboard geleitet, alle
+        anderen sehen die Marketing-/Produkt-Seite mit Login-Link.
 
         Returns:
-            Dashboard HTML oder Redirect zu /login.
+            Dashboard-Redirect für eingeloggte User, sonst index.html.
         """
-        if not session.get("user_id"):
-            return redirect("/login")
-        return render_template("dashboard.html")
+        if session.get("user_id"):
+            return redirect("/dashboard")
+        return render_template("index.html")
 
     @bp.route("/login", methods=["GET", "POST"])
     @limiter.limit("10 per minute")

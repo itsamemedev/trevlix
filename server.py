@@ -2364,6 +2364,15 @@ def on_save_exchange_keys(data: dict | None = None):
         "secret": encrypt_value(secret),
         "passphrase": encrypt_value(passphrase) if passphrase else "",
     }
+    # Balance-Cache invalidieren, damit der nächste /api/v1/exchanges-Aufruf
+    # die frisch hinterlegten Keys verwendet statt einen veralteten Snapshot.
+    if uid:
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(uid, ex_name)
+        except Exception:  # pragma: no cover – Cache-Invalidierung ist best-effort
+            pass
     emit(
         "status",
         {
