@@ -692,6 +692,65 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         snap["exchange"] = name
         return jsonify(snap)
 
+    @bp.route("/api/v1/user/exchanges/<exchange>/test", methods=["POST"])
+    @auth
+    def api_user_exchange_test(exchange):
+        """Testet die Konnektivität einer Exchange unabhängig vom laufenden Bot."""
+        import time as _time
+
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"ok": False, "error": "Ungültige Exchange"}), 400
+        enabled_rows = {
+            str(r.get("exchange", "")).lower(): r
+            for r in db.get_enabled_exchanges(request.user_id) or []
+        }
+        ex_row = enabled_rows.get(name)
+        if not ex_row:
+            return jsonify(
+                {"ok": False, "error": "Exchange nicht konfiguriert oder deaktiviert"}
+            ), 404
+        from services.exchange_factory import create_ccxt_exchange
+
+        paper = bool(cfg.get("paper_trading", True))
+        api_key = ex_row.get("api_key", "") if not paper else ""
+        api_secret = ex_row.get("api_secret", "") if not paper else ""
+        passphrase = ex_row.get("passphrase", "") if not paper else ""
+        t0 = _time.monotonic()
+        try:
+            inst = create_ccxt_exchange(
+                name, api_key=api_key, api_secret=api_secret, passphrase=passphrase
+            )
+            if inst is None:
+                return jsonify(
+                    {
+                        "ok": False,
+                        "exchange": name,
+                        "error": "Exchange konnte nicht erstellt werden",
+                    }
+                )
+            markets = inst.fetch_markets()
+            latency_ms = round((_time.monotonic() - t0) * 1000)
+            return jsonify(
+                {
+                    "ok": True,
+                    "exchange": name,
+                    "markets": len(markets),
+                    "latency_ms": latency_ms,
+                    "paper": paper,
+                }
+            )
+        except Exception as exc:
+            latency_ms = round((_time.monotonic() - t0) * 1000)
+            return jsonify(
+                {
+                    "ok": False,
+                    "exchange": name,
+                    "error": str(exc)[:200],
+                    "latency_ms": latency_ms,
+                }
+            )
+
     @bp.route("/api/v1/user/api-keys", methods=["POST"])
     @auth
     def api_user_update_keys():
