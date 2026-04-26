@@ -138,6 +138,78 @@ def build_startup_examples() -> list[LearningExample]:
             ),
             quality_score=0.72,
         ),
+        LearningExample(
+            example_id="startup-bear-market",
+            task_type="trading_max_profit",
+            content=(
+                "Im Bärenmarkt (EMA50 < EMA200, RSI < 45): Positionsgrößen um 50% reduzieren, "
+                "Stop-Loss enger setzen (1.5%), nur Signale mit mindestens 6/9 Strategie-Stimmen "
+                "handeln. Gewinne schneller realisieren (TP bei 2-3% statt 6%)."
+            ),
+            quality_score=0.78,
+        ),
+        LearningExample(
+            example_id="startup-bull-market",
+            task_type="trading_max_profit",
+            content=(
+                "Im Bullenmarkt (EMA8 > EMA21 > EMA50, vol_ratio > 1.5): Normale Positionsgröße, "
+                "Trend-Strategien (EMA, MACD, VWAP) höher gewichten. DCA bei Rücksetzern erlaubt. "
+                "Take-Profit kann auf 8-10% erhöht werden wenn Momentum stark."
+            ),
+            quality_score=0.76,
+        ),
+        LearningExample(
+            example_id="startup-risk-management",
+            task_type="risk_management",
+            content=(
+                "Circuit Breaker sofort aktivieren wenn: daily_loss > 3% oder 3 Verluste in Folge. "
+                "Max 5 offene Positionen gleichzeitig. Nie mehr als 2% des Portfolios pro Trade riskieren. "
+                "Bei ATR > 3% Positionsgröße halbieren. Drawdown > 10%: Bot pausieren."
+            ),
+            quality_score=0.82,
+        ),
+        LearningExample(
+            example_id="startup-signal-quality",
+            task_type="trading_max_profit",
+            content=(
+                "Hochqualitative Kauf-Signale: RSI 35-55 (nicht überkauft), OBV steigend, "
+                "MACD-Histogramm positiv und wachsend, Volumen 20% über MA, MTF-Bestätigung aktiv. "
+                "Schwache Signale (< 4 Stimmen, bb_pct > 0.9, news_score < -0.3) immer ablehnen."
+            ),
+            quality_score=0.80,
+        ),
+        LearningExample(
+            example_id="startup-exit-strategy",
+            task_type="trading_max_profit",
+            content=(
+                "Exit-Regeln: Stop-Loss bei 2.5% unter Einstieg. Take-Profit gestaffelt: "
+                "25% bei 3%, 50% bei 5%, Rest bei 8% oder Trailing-Stop. "
+                "Sofortiger Ausstieg bei: RSI > 80, MACD-Kreuzung nach unten, Volumen-Einbruch > 40%. "
+                "Gewinnende Trades nie unter Break-Even fallen lassen."
+            ),
+            quality_score=0.79,
+        ),
+        LearningExample(
+            example_id="startup-multi-exchange",
+            task_type="agent_orchestration",
+            content=(
+                "Multi-Exchange-Betrieb: Primary Exchange für alle Trades nutzen. "
+                "Sekundäre Exchanges nur für Arbitrage oder wenn Primary nicht erreichbar. "
+                "Balance über alle Exchanges aggregieren für korrekte Positionsgrößen-Berechnung. "
+                "Exchange-Fehler eskalieren an Notifications-Agent, nicht ignorieren."
+            ),
+            quality_score=0.71,
+        ),
+        LearningExample(
+            example_id="startup-dca-strategy",
+            task_type="trading_max_profit",
+            content=(
+                "DCA (Dollar-Cost-Averaging): Nur bei bestehender Position mit unrealisiertem Verlust < 4%. "
+                "Max 2 DCA-Levels pro Position. Jedes Level verdoppelt die ursprüngliche Positionsgröße. "
+                "DCA-Einstieg bei RSI < 40 und Volumen-Bestätigung. Gesamt-Exposure max 6% des Portfolios."
+            ),
+            quality_score=0.74,
+        ),
     ]
 
 

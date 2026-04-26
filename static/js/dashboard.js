@@ -2147,15 +2147,25 @@ function renderAIDiagnosePanel(diag){
   const riskLosses = Number(diag.circuit_losses||0);
   const riskLimit = Number(diag.circuit_limit||0);
   const riskPressure = riskLimit>0 ? (riskLosses/riskLimit)*100 : 0;
+  // Readiness: agents + coverage contribute even when idle/untrained
+  const agentReadiness = agentCount >= 7 ? 30 : agentCount >= 4 ? 20 : agentCount > 0 ? 12 : 0;
+  const coverageBonus = coveragePct >= 90 ? 20 : coveragePct >= 75 ? 14 : coveragePct >= 50 ? 8 : 0;
+  const readiness = Math.min(50, agentReadiness + coverageBonus);
+  // Agreement and decisionQ only meaningful when there are actual predictions
+  const agreementScore = pred > 0 ? agree * 0.10 : 0;
+  const decisionScore = pred > 0 ? decisionQ * 0.15 : 0;
+  // LLM latency bonus only when LLM is active
+  const llmBonus = latencyMs > 0 ? Math.max(0, 10 - Math.min(10, latencyMs / 100)) : 0;
   const healthScore = Math.max(
     0,
     Math.min(
       100,
-      (trained ? 20 : 0) +
-      (acc * 0.35) +
-      (decisionQ * 0.25) +
-      (agree * 0.15) +
-      (latencyMs > 0 ? Math.max(0, 20 - Math.min(20, latencyMs / 50)) : 10) -
+      readiness +
+      (trained ? 15 : 0) +
+      (acc * 0.20) +
+      decisionScore +
+      agreementScore +
+      llmBonus -
       (riskPressure * 0.15)
     )
   );

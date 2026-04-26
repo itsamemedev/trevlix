@@ -597,9 +597,6 @@ def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None 
 
 def _notify_virginie_decision(symbol: str, allowed: bool, ai_reason: str, ai_score: float) -> None:
     """Bridge VIRGINIE decisions to notifier and orchestration subsystems."""
-    if "VIRGINIE" not in ai_reason:
-        return
-
     status = "✅ freigegeben" if allowed else "🚫 blockiert"
     score_pct = ai_score * 100.0
     bias = "bullish" if score_pct >= 60 else ("bearish" if score_pct <= 40 else "neutral")
@@ -674,10 +671,6 @@ def _notify_virginie_sell_decision(
 ) -> None:
     """Publish VIRGINIE sell decisions incl. monitored in-trade market context."""
     position = pos or {}
-    ai_reason = str(position.get("ai_reason", "") or "")
-    if "VIRGINIE" not in ai_reason:
-        return
-
     entry = safe_float(position.get("entry", 0), 0.0)
     entry = entry if entry > 0 else 0.0
     peak = safe_float(position.get("peak_price", entry), entry)
@@ -823,9 +816,34 @@ def open_position(ex, scan: dict):
         ai_reason,
     )
     _notify_virginie_decision(symbol, bool(allowed), str(ai_reason), float(ai_score))
+    # Signal always logged after Virginie decides (allowed or blocked)
+    state.add_signal(
+        {
+            "symbol": symbol,
+            "signal": "KAUF" if allowed else "BLOCKIERT",
+            "confidence": scan.get("confidence", 0),
+            "rsi": scan.get("rsi"),
+            "price": price,
+            "time": scan.get("time", datetime.now().strftime("%H:%M:%S")),
+            "votes": scan.get("votes", {}),
+            "mtf_desc": scan.get("mtf_desc", ""),
+            "news_score": scan.get("news_score", 0),
+            "news_headline": scan.get("news_headline", ""),
+            "onchain_detail": scan.get("onchain_detail", ""),
+            "ai_reason": ai_reason,
+        }
+    )
     if not allowed:
         _record_decision(symbol, "blocked", f"ai_filter:{ai_reason}", scan)
         return
+    discord.signal_opportunity(
+        symbol,
+        "buy",
+        float(scan.get("confidence", 0.0)),
+        float(price),
+        news_score=float(scan.get("news_score", 0.0)),
+        note=scan.get("mtf_desc", "") or "VIRGINIE freigegeben (Signal +1)",
+    )
 
     # ── Selbstlernender Kauf-Algorithmus ─────────────────────────────────
     algo_buy, algo_conf, algo_reason = trading_algos.evaluate_buy(scan)
@@ -1823,13 +1841,36 @@ def bot_loop():
                     exchanges.pop(name)
                     if primary_name == name:
                         primary_name = None
-                # Connect newly enabled exchanges
-                for cfg in admin_ex_configs:
-                    name = cfg["exchange"]
-                    if name in exchanges:
-                        continue
-                    try:
-                        inst = _create_exchange_from_db_config(cfg)
+                # Connect newly enabled exchanges – parallel to avoid sequential blocking
+                new_cfgs = [c for c in admin_ex_configs if c["exchange"] not in exchanges]
+                if new_cfgs:
+
+                    def _connect_exchange(cfg: dict) -> tuple[str, Any, Exception | None]:
+                        _name = cfg["exchange"]
+                        try:
+                            _inst = _create_exchange_from_db_config(cfg)
+                            return _name, _inst, None
+                        except Exception as _exc:
+                            return _name, None, _exc
+
+                    with ThreadPoolExecutor(max_workers=len(new_cfgs)) as connect_pool:
+                        connect_results = list(connect_pool.map(_connect_exchange, new_cfgs))
+
+                    for name, inst, exc in connect_results:
+                        if exc is not None:
+                            log.error("Exchange %s Verbindung fehlgeschlagen: %s", name, exc)
+                            now_ts = time.time()
+                            if now_ts - last_error_emit_ts > 15:
+                                emit_event(
+                                    "status",
+                                    {
+                                        "msg": f"⚠️ Exchange {name.upper()} Verbindung fehlgeschlagen",
+                                        "key": f"ws_exchange_connect_failed_{name}",
+                                        "type": "warning",
+                                    },
+                                )
+                                last_error_emit_ts = now_ts
+                            continue
                         exchanges[name] = inst
                         if _sync_live_balance(inst, name):
                             with state._lock:
@@ -1842,19 +1883,6 @@ def bot_loop():
                             state.exchange_balances.get(name, 0),
                             CONFIG.get("quote_currency", "USDT"),
                         )
-                    except Exception as exc:
-                        log.error("Exchange %s Verbindung fehlgeschlagen: %s", name, exc)
-                        now_ts = time.time()
-                        if now_ts - last_error_emit_ts > 15:
-                            emit_event(
-                                "status",
-                                {
-                                    "msg": f"⚠️ Exchange {name.upper()} Verbindung fehlgeschlagen",
-                                    "key": f"ws_exchange_connect_failed_{name}",
-                                    "type": "warning",
-                                },
-                            )
-                            last_error_emit_ts = now_ts
                 # Determine primary exchange (is_primary=1, else first available)
                 primary_name = next(
                     (
@@ -2104,31 +2132,8 @@ def bot_loop():
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
                         if res and res["signal"] == 1:
-                            discord.signal_opportunity(
-                                res["symbol"],
-                                "buy",
-                                float(res.get("confidence", 0.0)),
-                                float(res.get("price", 0.0)),
-                                news_score=float(res.get("news_score", 0.0)),
-                                note=res.get("mtf_desc", "") or "Long-Kandidat erkannt (Signal +1)",
-                            )
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
-                            state.add_signal(
-                                {
-                                    "symbol": res["symbol"],
-                                    "signal": "KAUF",
-                                    "confidence": res["confidence"],
-                                    "rsi": res["rsi"],
-                                    "price": res["price"],
-                                    "time": res["time"],
-                                    "votes": res["votes"],
-                                    "mtf_desc": res.get("mtf_desc", ""),
-                                    "news_score": res.get("news_score", 0),
-                                    "news_headline": res.get("news_headline", ""),
-                                    "onchain_detail": res.get("onchain_detail", ""),
-                                }
-                            )
                             open_position(primary_ex, res)
 
             emit_event("update", state.snapshot())
