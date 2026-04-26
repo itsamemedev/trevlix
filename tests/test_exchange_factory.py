@@ -1,6 +1,6 @@
 """Tests für services.exchange_factory.
 
-Verifiziert, dass alle 11 unterstützten Exchanges korrekt erstellt werden
+Verifiziert, dass alle 12 unterstützten Exchanges korrekt erstellt werden
 und Passphrasen für OKX/KuCoin korrekt gesetzt sind.
 """
 
@@ -23,7 +23,7 @@ from services.exchange_factory import (
 class TestSupportedExchanges:
     def test_all_exchanges_supported(self):
         names = supported_exchanges()
-        assert len(names) == 11
+        assert len(names) == 12
         assert set(names) == {
             "binance",
             "bitget",
@@ -35,6 +35,7 @@ class TestSupportedExchanges:
             "kraken",
             "kucoin",
             "mexc",
+            "nonkyc",
             "okx",
         }
 

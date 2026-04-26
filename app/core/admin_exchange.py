@@ -27,6 +27,7 @@ def get_exchange_key_states(db) -> dict[str, bool]:
         "bitget",
         "mexc",
         "gateio",
+        "nonkyc",
     )
     result = {ex: False for ex in exchanges}
     try:

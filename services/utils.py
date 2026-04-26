@@ -23,6 +23,7 @@ EXCHANGE_MAP = {
     "bitget": "bitget",
     "mexc": "mexc",
     "gateio": "gateio",
+    "nonkyc": "nonkyc",  # NonKYC.io – No-KYC Altcoin-Spot-Exchange
 }
 
 # Valid CCXT-style timeframe strings
