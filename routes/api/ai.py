@@ -26,6 +26,7 @@ _virginie_chat_lock = threading.Lock()
 
 # ── Virginie-Helfer ───────────────────────────────────────────────────────────
 
+
 def _chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
     with _virginie_chat_lock:
         history = _virginie_chat_by_user.setdefault(
@@ -54,6 +55,27 @@ def _runtime_status(deps: AppDeps) -> dict[str, Any]:
     assistant_agents = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
     assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
     cfg = deps.config
+
+    # Last decision from forecast feed
+    last_decision: dict = {}
+    if deps.get_virginie_forecast_feed:
+        feed = deps.get_virginie_forecast_feed(1)
+        if feed:
+            last_decision = feed[0]
+
+    # Daily PnL from risk manager
+    daily_pnl = 0.0
+    if deps.risk_mgr and hasattr(deps.risk_mgr, "daily_pnl"):
+        daily_pnl = float(deps.risk_mgr.daily_pnl)
+
+    # Decision counts from AI engine
+    allowed_count = int(ai.get("allowed_count", 0))
+    blocked_count = int(ai.get("blocked_count", 0))
+    blocked_pct = float(ai.get("blocked_pct", 0.0))
+
+    # State snapshot for trade count
+    snap = deps.state.snapshot() if deps.state else {}
+
     return {
         "enabled": bool(cfg.get("virginie_enabled", True)),
         "primary_control": bool(cfg.get("virginie_primary_control", True)),
@@ -64,6 +86,15 @@ def _runtime_status(deps: AppDeps) -> dict[str, Any]:
         "assistant_version": ai.get("assistant_version", "0.0.0"),
         "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
         "assistant_review": assistant_review if isinstance(assistant_review, dict) else {},
+        # Operational metrics
+        "last_decision": last_decision,
+        "autonomous_trades_today": allowed_count,
+        "blocked_today": blocked_count,
+        "blocked_pct": blocked_pct,
+        "daily_pnl": daily_pnl,
+        "open_positions": len(snap.get("positions", [])),
+        "manage_exits": bool(cfg.get("virginie_manage_exits", True)),
+        "open_threshold": float(cfg.get("virginie_open_threshold", 0.35)),
     }
 
 
@@ -76,23 +107,53 @@ def _runtime_advice(deps: AppDeps) -> dict[str, Any]:
     guardrail_min_score = float(status.get("min_score", 0) or 0)
     actions: list[dict[str, str]] = []
     if not status.get("enabled", True):
-        actions.append({"priority": "high", "title": "VIRGINIE aktivieren",
-                        "detail": "Setze virginie_enabled=true."})
+        actions.append(
+            {
+                "priority": "high",
+                "title": "VIRGINIE aktivieren",
+                "detail": "Setze virginie_enabled=true.",
+            }
+        )
     if not trained:
-        actions.append({"priority": "high", "title": "Training starten",
-                        "detail": "Modell noch nicht trainiert – starte Initial-Training."})
+        actions.append(
+            {
+                "priority": "high",
+                "title": "Training starten",
+                "detail": "Modell noch nicht trainiert – starte Initial-Training.",
+            }
+        )
     if wf < 55:
-        actions.append({"priority": "medium", "title": "Qualität stabilisieren",
-                        "detail": "WF-Accuracy niedrig – Trainingsdaten erhöhen."})
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Qualität stabilisieren",
+                "detail": "WF-Accuracy niedrig – Trainingsdaten erhöhen.",
+            }
+        )
     if drift >= 0.7:
-        actions.append({"priority": "medium", "title": "Drift reduzieren",
-                        "detail": "Erhöhtes Drift-Risiko – Setups neu kalibrieren."})
+        actions.append(
+            {
+                "priority": "medium",
+                "title": "Drift reduzieren",
+                "detail": "Erhöhtes Drift-Risiko – Setups neu kalibrieren.",
+            }
+        )
     if guardrail_min_score < 0.5:
-        actions.append({"priority": "low", "title": "Min-Score anheben",
-                        "detail": "Konservativeres Verhalten: virginie_min_score +0.05."})
+        actions.append(
+            {
+                "priority": "low",
+                "title": "Min-Score anheben",
+                "detail": "Konservativeres Verhalten: virginie_min_score +0.05.",
+            }
+        )
     if not actions:
-        actions.append({"priority": "low", "title": "System stabil",
-                        "detail": "VIRGINIE läuft stabil – Fokus auf Monitoring."})
+        actions.append(
+            {
+                "priority": "low",
+                "title": "System stabil",
+                "detail": "VIRGINIE läuft stabil – Fokus auf Monitoring.",
+            }
+        )
     return {
         "assistant": status.get("assistant_name", "VIRGINIE"),
         "version": status.get("assistant_version", "0.0.0"),
@@ -111,9 +172,17 @@ def _edge_profile(deps: AppDeps) -> dict[str, Any]:
     autonomy = float(status.get("autonomy_weight", 0.7) or 0.7)
     open_trades = int(snap.get("open_trades", 0) or 0)
     risk_load = min(100.0, open_trades * 8.0)
-    edge_score = max(0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load))
-    tier = "S" if edge_score >= 85 else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
-    urgency = "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    edge_score = max(
+        0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load)
+    )
+    tier = (
+        "S"
+        if edge_score >= 85
+        else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
+    )
+    urgency = (
+        "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
+    )
     signature = uuid.uuid5(
         uuid.NAMESPACE_DNS,
         f"{status.get('assistant_version', '0')}-{snap.get('exchange', 'na')}-{tier}-{int(edge_score)}-{int(drift * 100)}",
@@ -134,7 +203,9 @@ def _cpu_fast_reply(prompt: str) -> str | None:
     if not p:
         return None
     if any(k in p for k in ("risiko", "risk", "verlust", "drawdown")):
-        return "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades."
+        return (
+            "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades."
+        )
     if any(k in p for k in ("markt", "market", "regime", "trend")):
         return "CPU-Quickcheck: Regime + Volatilität zuerst prüfen. Nur bei bestätigtem Trend aggressiv handeln."
     if any(k in p for k in ("setup", "konfig", "config", "einstellung")):
@@ -142,6 +213,46 @@ def _cpu_fast_reply(prompt: str) -> str | None:
     if len(p.split()) <= 5:
         return "Beschreibe bitte kurz Symbol, Ziel und Risiko-Toleranz."
     return None
+
+
+def _slash_status(deps: AppDeps) -> str:
+    status = _runtime_status(deps)
+    ai = deps.ai_engine.to_dict() if deps.ai_engine else {}
+    agents_dict = status.get("assistant_agents", {})
+    agents_count = len(agents_dict) if isinstance(agents_dict, dict) else 0
+    wf = float(ai.get("wf_accuracy", 0) or 0)
+    trained = bool(ai.get("is_trained", False))
+    snap = deps.state.snapshot() if deps.state else {}
+    return (
+        f"Status: VIRGINIE {status.get('assistant_version', '0.0.0')}, "
+        f"Agents={agents_count}, "
+        f"WF={wf:.1f}%, Trained={trained}, "
+        f"Running={snap.get('running', False)}, "
+        f"Paper={snap.get('paper_trading', True)}"
+    )
+
+
+def _slash_plan(deps: AppDeps) -> str:
+    advice = _runtime_advice(deps)
+    actions = advice.get("actions", [])
+    lines = ["Aktionsplan VIRGINIE:"]
+    for i, a in enumerate(actions[:5], 1):
+        priority = a.get("priority", "?")
+        title = a.get("title", "?")
+        detail = a.get("detail", "")
+        lines.append(f"{i}. [{priority.upper()}] {title}: {detail}")
+    if not actions:
+        lines.append("1. [LOW] System stabil: Keine Maßnahmen erforderlich.")
+    return "\n".join(lines)
+
+
+def _slash_edge(deps: AppDeps) -> str:
+    ep = _edge_profile(deps)
+    return (
+        f"VIRGINIE Edge: Score={ep['edge_score']:.1f}/100, "
+        f"Tier={ep['tier']}, Urgency={ep['urgency']}, "
+        f"Signature={ep['signature']}"
+    )
 
 
 def _build_context(deps: AppDeps, user_id: int) -> str:
@@ -152,7 +263,7 @@ def _build_context(deps: AppDeps, user_id: int) -> str:
         f"[{e['role']}]: {e['content'][:200]}" for e in recent if e.get("role") != "system"
     )
     return (
-        f"Exchange: {snap.get('exchange', '?')}, Paper: {snap.get('paper_trading', True)}, "
+        f"VIRGINIE – Exchange: {snap.get('exchange', '?')}, Paper: {snap.get('paper_trading', True)}, "
         f"Running: {snap.get('running', False)}, Open: {snap.get('open_trades', 0)}, "
         f"PnL: {snap.get('total_pnl', 0):.2f}, WR: {snap.get('win_rate', 0):.1f}%, "
         f"AI trained: {ai.get('is_trained', False)}, WF: {ai.get('wf_accuracy', 0):.1f}%\n"
@@ -161,12 +272,22 @@ def _build_context(deps: AppDeps, user_id: int) -> str:
 
 
 def _generate_reply(deps: AppDeps, user_id: int, user_prompt: str) -> str:
+    # Slash commands bypass CPU-fast and LLM, always handled inline
+    if user_prompt.startswith("/"):
+        cmd = user_prompt.split()[0].lower()
+        if cmd == "/status":
+            return _slash_status(deps)
+        if cmd == "/plan":
+            return _slash_plan(deps)
+        if cmd == "/edge":
+            return _slash_edge(deps)
+
     cfg = deps.config
     if cfg.get("virginie_cpu_fast_chat", True):
         fast = _cpu_fast_reply(user_prompt)
         if fast:
             return fast
-    if deps.knowledge and deps.knowledge.llm_enabled:
+    if deps.knowledge:
         try:
             ctx = _build_context(deps, user_id)
             answer = deps.knowledge.query_llm_with_tools(user_prompt, ctx)
@@ -182,6 +303,7 @@ def _generate_reply(deps: AppDeps, user_id: int, user_prompt: str) -> str:
 
 # ── Blueprint-Fabrik ──────────────────────────────────────────────────────────
 
+
 def create_ai_blueprint(deps: AppDeps) -> Blueprint:
     """Erstellt den AI/Virginie/Knowledge/MCP Blueprint."""
     bp = Blueprint("api_ai", __name__)
@@ -196,10 +318,12 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_virginie_chat_history():
         user_id = int(getattr(request, "user_id", 0) or 0)
-        return jsonify({
-            "messages": _chat_history_for_user(user_id),
-            "max_messages": _VIRGINIE_CHAT_MAX_MESSAGES,
-        })
+        return jsonify(
+            {
+                "messages": _chat_history_for_user(user_id),
+                "max_messages": _VIRGINIE_CHAT_MAX_MESSAGES,
+            }
+        )
 
     @bp.route("/api/v1/virginie/chat", methods=["POST"])
     @auth
@@ -268,6 +392,7 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
         if deps.knowledge is None:
             return jsonify([])
         from services.knowledge import KnowledgeBase
+
         if category not in KnowledgeBase.CATEGORIES:
             return jsonify({"error": f"Unbekannte Kategorie: {category}"}), 400
         limit = min(si(request.args.get("limit", 50), 50), 200)
@@ -284,6 +409,7 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "prompt ist Pflichtfeld"}), 400
         summary = deps.knowledge.get_market_summary()
         import json as _json
+
         context = (
             f"Du bist ein Krypto-Trading-Analyst. Aktuelles Wissen:\n"
             f"Top Symbole: {_json.dumps(summary.get('top_symbols', [])[:5])}\n"
@@ -299,15 +425,17 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
         if deps.knowledge is None:
             return jsonify({"llm_enabled": False})
         kb = deps.knowledge
-        return jsonify({
-            "llm_enabled": kb.llm_enabled,
-            "llm_endpoint": bool(kb._llm_endpoint),
-            "cached_market_analysis": kb.cached_market_analysis or None,
-            "trade_patterns": len(kb.get_category("trade_pattern", limit=100)),
-            "model_analyses": len(kb.get_category("model_config", limit=100)),
-            "risk_patterns": len(kb.get_category("risk_pattern", limit=100)),
-            "multi_llm_providers": (kb._multi_llm.status() if kb._multi_llm else []),
-        })
+        return jsonify(
+            {
+                "llm_enabled": kb.llm_enabled,
+                "llm_endpoint": bool(kb._llm_endpoint),
+                "cached_market_analysis": kb.cached_market_analysis or None,
+                "trade_patterns": len(kb.get_category("trade_pattern", limit=100)),
+                "model_analyses": len(kb.get_category("model_config", limit=100)),
+                "risk_patterns": len(kb.get_category("risk_pattern", limit=100)),
+                "multi_llm_providers": (kb._multi_llm.status() if kb._multi_llm else []),
+            }
+        )
 
     # ── MCP Tools ─────────────────────────────────────────────────────────────
 
@@ -346,13 +474,15 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
         if deps.ai_engine is None:
             return jsonify({"enabled": False})
         ai = deps.ai_engine.to_dict()
-        return jsonify({
-            "shared_enabled": bool(ai.get("shared_enabled", False)),
-            "is_trained": bool(ai.get("is_trained", False)),
-            "wf_accuracy": float(ai.get("wf_accuracy", 0) or 0),
-            "drift_score": float(ai.get("drift_score", 0) or 0),
-            "samples": int(ai.get("samples", 0) or 0),
-        })
+        return jsonify(
+            {
+                "shared_enabled": bool(ai.get("shared_enabled", False)),
+                "is_trained": bool(ai.get("is_trained", False)),
+                "wf_accuracy": float(ai.get("wf_accuracy", 0) or 0),
+                "drift_score": float(ai.get("drift_score", 0) or 0),
+                "samples": int(ai.get("samples", 0) or 0),
+            }
+        )
 
     @bp.route("/api/v1/ai/shared/force-sync", methods=["POST"])
     @auth
@@ -371,12 +501,14 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
     def api_ai_shared_train():
         if deps.ai_engine is None:
             return jsonify({"ok": False, "error": "AI nicht verfügbar"}), 503
+
         def _train():
             try:
                 if hasattr(deps.ai_engine, "train"):
                     deps.ai_engine.train()
             except Exception:
                 pass
+
         threading.Thread(target=_train, daemon=True).start()
         return jsonify({"ok": True, "msg": "Training gestartet"})
 

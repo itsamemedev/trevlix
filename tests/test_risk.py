@@ -167,3 +167,78 @@ class TestPositionSizing:
                 break
             levels_used += 1
         assert levels_used == max_levels
+
+
+class TestDailyPnlAccumulation:
+    """Tests für tägliche PnL-Akkumulation in record_result."""
+
+    def _make_risk(self):
+        from services.risk import RiskManager
+
+        return RiskManager(
+            {"paper_balance": 10000.0, "circuit_breaker_losses": 5, "circuit_breaker_min": 30}
+        )
+
+    def test_record_result_accumulates_pnl(self):
+        rm = self._make_risk()
+        rm.record_result(True, 50.0)
+        rm.record_result(False, -30.0)
+        assert rm.daily_pnl == 20.0
+
+    def test_record_result_default_pnl_zero(self):
+        rm = self._make_risk()
+        rm.record_result(True)
+        assert rm.daily_pnl == 0.0
+
+    def test_daily_pnl_resets_on_day_change(self):
+        from datetime import date
+
+        rm = self._make_risk()
+        rm.record_result(True, 100.0)
+        rm._day = date(2000, 1, 1)
+        rm.reset_daily(9500.0)
+        assert rm.daily_pnl == 0.0
+
+
+class TestDailyLossCircuitBreaker:
+    """Tests für automatische Circuit-Breaker-Aktivierung bei Tageslimit-Überschreitung."""
+
+    def _make_risk(self):
+        from services.risk import RiskManager
+
+        return RiskManager(
+            {"paper_balance": 10000.0, "max_daily_loss_pct": 0.05, "circuit_breaker_min": 30}
+        )
+
+    def test_daily_loss_exceeded_activates_circuit_breaker(self):
+        rm = self._make_risk()
+        rm.daily_start = 10000.0
+        exceeded = rm.daily_loss_exceeded(9400.0)
+        assert exceeded
+        assert rm.circuit_breaker_active()
+
+    def test_daily_loss_cb_fires_only_once(self):
+        rm = self._make_risk()
+        rm.daily_start = 10000.0
+        rm.daily_loss_exceeded(9400.0)
+        first_until = rm.circuit_breaker_until
+        rm.daily_loss_exceeded(9300.0)
+        assert rm.circuit_breaker_until == first_until
+
+    def test_daily_loss_within_limit_no_cb(self):
+        rm = self._make_risk()
+        rm.daily_start = 10000.0
+        exceeded = rm.daily_loss_exceeded(9700.0)
+        assert not exceeded
+        assert not rm.circuit_breaker_active()
+
+    def test_daily_loss_cb_flag_resets_on_day_change(self):
+        from datetime import date
+
+        rm = self._make_risk()
+        rm.daily_start = 10000.0
+        rm.daily_loss_exceeded(9400.0)
+        assert rm._daily_loss_cb_fired
+        rm._day = date(2000, 1, 1)
+        rm._reset_daily_unlocked(10000.0)
+        assert not rm._daily_loss_cb_fired

@@ -729,9 +729,11 @@ def open_position(ex, scan: dict):
         _record_decision(symbol, "blocked", "already_open", scan)
         return
     if symbol in state.short_positions:
+        _record_decision(symbol, "blocked", "short_position_open", scan)
         return
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert")
+        _record_decision(symbol, "blocked", "cooldown", scan)
         return
     if not regime.is_bull and CONFIG.get("use_market_regime", True):
         _record_decision(symbol, "blocked", "market_regime_bear", scan)
@@ -769,13 +771,17 @@ def open_position(ex, scan: dict):
         return
 
     if risk.is_correlated(symbol, list(state.positions.keys())):
+        _record_decision(symbol, "blocked", "correlation", scan)
         return
     if not scan.get("mtf_ok", True) and CONFIG.get("mtf_enabled"):
+        _record_decision(symbol, "blocked", "mtf_bearish", scan)
         return
     if scan.get("ob_ratio", 0.5) < CONFIG.get("ob_imbalance_min", 0.45):
+        _record_decision(symbol, "blocked", "ob_imbalance", scan)
         return
     ok, spread, _ = liq.check(ex, symbol)
     if not ok:
+        _record_decision(symbol, "blocked", "liquidity_spread", scan)
         return
 
     features = ai_engine.extract_features(
@@ -1194,7 +1200,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     else:
         regime_str = pos.get("regime", "bull")
         ai_engine.on_sell(symbol, pnl, regime_str)
-        risk.record_result(pnl > 0)
+        risk.record_result(pnl > 0, pnl)
         # Trade DNA: Ergebnis aufzeichnen
         if CONFIG.get("use_trade_dna") and pos.get("dna_fingerprint"):
             dna_entry = {
@@ -1604,6 +1610,42 @@ def manage_positions(ex):
                 telegram.algo_sell_signal(symbol, price, algo_conf, algo_reason, pnl=_unrealized)
                 close_position(ex, symbol, f"SellAlgo:{algo_reason}")
             else:
+                # VIRGINIE autonomous exit evaluation
+                if (
+                    CONFIG.get("virginie_manage_exits", True)
+                    and CONFIG.get("virginie_enabled", True)
+                    and ai_engine is not None
+                    and hasattr(ai_engine, "virginie")
+                    and ai_engine.virginie is not None
+                ):
+                    try:
+                        _pos_entry = pos.get("entry", 0)
+                        if _pos_entry and _pos_entry > 0:
+                            from services.virginie import Opportunity
+
+                            _pnl_pct = (price - _pos_entry) / _pos_entry
+                            _hold_opp = Opportunity(
+                                key="hold_position",
+                                success_probability=max(0.0, min(1.0, 0.5 + _pnl_pct * 5.0)),
+                                expected_profit=max(0.0, _pnl_pct * 100.0),
+                                cost=max(0.0, -_pnl_pct * 100.0),
+                                risk_penalty=max(0.0, -_pnl_pct * 20.0),
+                            )
+                            _vdec = ai_engine.virginie.select_opportunity_with_report([_hold_opp])
+                            if _vdec.selected is None and _pnl_pct < -CONFIG.get(
+                                "virginie_exit_drawdown", 0.008
+                            ):
+                                _vreason = str(_vdec.reason)[:80]
+                                log.info(
+                                    "🤖 VIRGINIE-Exit %s pnl=%.2f%% reason=%s",
+                                    symbol,
+                                    _pnl_pct * 100,
+                                    _vreason,
+                                )
+                                close_position(ex, symbol, f"VIRGINIE-Exit:{_vreason}")
+                                continue
+                    except Exception as _ve:
+                        log.debug("VIRGINIE-Exit eval %s: %s", symbol, _ve)
                 # DCA prüfen
                 try_dca(ex, symbol)
 
@@ -2119,6 +2161,7 @@ def bot_loop():
                 and not risk.daily_loss_exceeded(state.balance)
                 and not risk.circuit_breaker_active()
             ):
+                _all_scan_results: list = []
                 with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
                     futures = {
                         pool.submit(scan_symbol, primary_ex, s): s
@@ -2131,10 +2174,83 @@ def bot_loop():
                         except Exception as scan_err:
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
-                        if res and res["signal"] == 1:
+                        if res:
+                            _all_scan_results.append(res)
+                        # VIRGINIE primary-control: also evaluate borderline signals
+                        _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+                            "virginie_primary_control", True
+                        )
+                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.35))
+                        _signal_ok = res and (
+                            res["signal"] == 1
+                            or (
+                                _virginie_primary
+                                and res.get("confidence", 0) >= _virginie_threshold
+                            )
+                        )
+                        if _signal_ok:
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
                             open_position(primary_ex, res)
+
+                # VIRGINIE self-supply: evaluate top candidates when ML emits no buy signal
+                _vp_enabled = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+                    "virginie_primary_control", True
+                )
+                if (
+                    _vp_enabled
+                    and ai_engine is not None
+                    and hasattr(ai_engine, "virginie")
+                    and ai_engine.virginie is not None
+                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
+                    and _all_scan_results
+                ):
+                    from services.virginie import Opportunity
+
+                    _top_n = int(CONFIG.get("virginie_scan_top_n", 5))
+                    _vss_candidates = sorted(
+                        [r for r in _all_scan_results if r.get("signal") != 1],
+                        key=lambda x: float(x.get("confidence", 0)),
+                        reverse=True,
+                    )[:_top_n]
+                    if _vss_candidates:
+                        _vss_opps = [
+                            Opportunity(
+                                key=r["symbol"],
+                                success_probability=float(r.get("confidence", 0)),
+                                expected_profit=0.15,
+                                cost=0.005,
+                                risk_penalty=float(r.get("atr_pct", 1.0)) * 0.01,
+                            )
+                            for r in _vss_candidates
+                        ]
+                        try:
+                            _vss_dec = ai_engine.virginie.select_opportunity_with_report(
+                                _vss_opps
+                            )
+                            if _vss_dec and _vss_dec.selected:
+                                _chosen = next(
+                                    (
+                                        r
+                                        for r in _vss_candidates
+                                        if r["symbol"] == _vss_dec.selected.key
+                                    ),
+                                    None,
+                                )
+                                if (
+                                    _chosen
+                                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
+                                ):
+                                    log.info(
+                                        "🤖 VIRGINIE self-supply: %s conf=%.2f ev=%.4f reason=%s",
+                                        _vss_dec.selected.key,
+                                        float(_chosen.get("confidence", 0)),
+                                        float(_vss_dec.base_score),
+                                        _vss_dec.reason,
+                                    )
+                                    open_position(primary_ex, _chosen)
+                        except Exception as _vsse:
+                            log.debug("VIRGINIE self-supply error: %s", _vsse)
 
             emit_event("update", state.snapshot())
 

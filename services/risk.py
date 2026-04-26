@@ -32,6 +32,7 @@ class RiskManager:
         self.max_drawdown = 0.0
         self.consecutive_losses = 0
         self.circuit_breaker_until = None
+        self._daily_loss_cb_fired = False
         self._price_history: dict[str, list[float]] = {}
         self._day = datetime.now().date()
 
@@ -83,10 +84,22 @@ class RiskManager:
             if self.daily_start <= 0:
                 return False
             if balance < 0:
-                return True
-            return (self.daily_start - balance) / self.daily_start > self.config.get(
-                "max_daily_loss_pct", 0.05
-            )
+                exceeded = True
+            else:
+                exceeded = (self.daily_start - balance) / self.daily_start > self.config.get(
+                    "max_daily_loss_pct", 0.05
+                )
+            if exceeded and not self._daily_loss_cb_fired:
+                mins = self.config.get("circuit_breaker_min", 30)
+                self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
+                self._daily_loss_cb_fired = True
+                log.warning(
+                    "Daily-Loss Circuit Breaker: Tagesverlust-Limit überschritten – CB für %d min",
+                    mins,
+                )
+                if self.discord:
+                    self.discord.circuit_breaker(0, mins)
+            return exceeded
 
     def _reset_daily_unlocked(self, balance):
         """Internes Reset ohne Lock (muss unter self._lock aufgerufen werden)."""
@@ -94,6 +107,7 @@ class RiskManager:
         if today != self._day:
             self.daily_start = balance
             self.daily_pnl = 0.0
+            self._daily_loss_cb_fired = False
             self._day = today
 
     def circuit_breaker_active(self) -> bool:
@@ -118,8 +132,9 @@ class RiskManager:
                 return True
             return False
 
-    def record_result(self, won: bool):
+    def record_result(self, won: bool, pnl: float = 0.0):
         with self._lock:
+            self.daily_pnl += pnl
             if won:
                 self.consecutive_losses = 0
             else:

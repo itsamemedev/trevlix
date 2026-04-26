@@ -9,6 +9,8 @@ Covers the hardened paths:
 
 import threading
 
+import pytest
+
 from services.trade_execution import TradeExecutionService
 
 
@@ -146,3 +148,71 @@ class TestSellValidation:
         r = svc.execute_sell(_FakeEx(), symbol="BTC/USDT", qty=0.0, invest_usdt=500.0)
         assert not r.ok
         assert "Menge" in r.reason
+
+
+class TestPaperSlippage:
+    """Paper mode applies configurable slippage to buy and sell prices."""
+
+    def test_buy_slippage_reduces_qty(self):
+        cfg = {"paper_trading": True, "paper_slippage_bps": 10}
+        svc = TradeExecutionService(config=cfg, state=_State(1000.0), get_fee_rate=lambda: 0.001)
+        r = svc.execute_buy(_FakeEx(), symbol="BTC/USDT", price=1000.0, invest_usdt=100.0)
+        assert r.ok
+        # Without slippage: qty ≈ (100 - 0.1) / 1000 = 0.0999
+        # With 10bps slippage: effective_price = 1001.0, qty ≈ 0.0988
+        assert r.meta["actual_price"] == pytest.approx(1001.0, rel=1e-9)
+        assert r.meta["qty"] < 0.0999
+        assert r.meta["slippage_bps"] == 10
+
+    def test_sell_slippage_reduces_proceeds(self):
+        cfg = {"paper_trading": True, "paper_slippage_bps": 10}
+        svc = TradeExecutionService(config=cfg, state=_State(1000.0), get_fee_rate=lambda: 0.001)
+        r = svc.execute_sell(_FakeEx(), symbol="BTC/USDT", qty=0.1, invest_usdt=500.0)
+        assert r.ok
+        assert r.meta["effective_proceeds"] < 500.0
+        assert r.meta["slippage_bps"] == 10
+
+    def test_zero_slippage_config(self):
+        cfg = {"paper_trading": True, "paper_slippage_bps": 0}
+        svc = TradeExecutionService(config=cfg, state=_State(1000.0), get_fee_rate=lambda: 0.001)
+        r = svc.execute_buy(_FakeEx(), symbol="BTC/USDT", price=1000.0, invest_usdt=100.0)
+        assert r.meta["actual_price"] == 1000.0
+
+
+class _FakeExWithFill(_FakeEx):
+    """FakeEx that returns filled/average fields in order response."""
+
+    def create_market_buy_order(self, symbol, qty):
+        self.buys += 1
+        return {"id": "buy-1", "filled": qty * 0.99, "average": 50250.0}
+
+    def create_market_sell_order(self, symbol, qty):
+        self.sells += 1
+        return {"id": "sell-1", "filled": qty * 0.98, "average": 49800.0}
+
+
+class TestLiveFillVerification:
+    """Live orders extract actual filled qty and average price."""
+
+    def test_buy_extracts_filled_and_average(self):
+        svc = _make_service(paper=False)
+        r = svc.execute_buy(_FakeExWithFill(), symbol="BTC/USDT", price=50000.0, invest_usdt=100.0)
+        assert r.ok
+        assert r.meta["actual_price"] == 50250.0
+        assert r.meta["qty"] < 0.002  # 0.001 * 0.99
+
+    def test_sell_extracts_filled_and_average(self):
+        svc = _make_service(paper=False)
+        r = svc.execute_sell(
+            _FakeExWithFill(), symbol="BTC/USDT", qty=0.1, invest_usdt=5000.0, price=50000.0
+        )
+        assert r.ok
+        assert r.meta["actual_price"] == 49800.0
+        assert r.meta["actual_qty"] == pytest.approx(0.098, rel=1e-2)
+
+    def test_buy_falls_back_to_requested_qty_when_order_missing_filled(self):
+        svc = _make_service(paper=False)
+        r = svc.execute_buy(_FakeEx(), symbol="BTC/USDT", price=50000.0, invest_usdt=100.0)
+        assert r.ok
+        # _FakeEx returns {"id": "buy-1"} with no filled/average — should fall back
+        assert r.meta["actual_price"] == 50000.0

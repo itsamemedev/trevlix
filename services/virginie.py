@@ -126,7 +126,7 @@ def build_startup_examples() -> list[LearningExample]:
                 "Priorisiere Chancen mit hohem EV, niedriger Varianz und klaren Exit-Regeln "
                 "(Stop-Loss + Take-Profit), respektiere Guardrails und minimiere Overtrading."
             ),
-            quality_score=0.75,
+            quality_score=0.90,
         ),
         LearningExample(
             example_id="startup-agent-control",

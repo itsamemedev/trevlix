@@ -6,6 +6,7 @@ User-Settings, Exchange-Verwaltung, Signale, Grid, Kühlzeiten.
 
 from __future__ import annotations
 
+import re
 import threading
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -15,6 +16,17 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
+
+# ── Constants ─────────────────────────────────────────────────────────────────
+
+_SYMBOL_RE = re.compile(r"^[A-Z0-9]{1,15}/[A-Z0-9]{1,15}$")
+MAX_GRID_LEVELS = 200
+_MIN_CELL_USDT = 5.0
+
+
+def _valid_symbol(sym: str) -> bool:
+    return bool(_SYMBOL_RE.match(sym))
+
 
 # ── Pydantic validation models ────────────────────────────────────────────────
 
@@ -347,6 +359,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         sym = str(data.get("symbol", "")).strip().upper()
         if not sym:
             return jsonify({"error": "symbol required"}), 400
+        if not _valid_symbol(sym):
+            return jsonify({"error": "invalid_symbol"}), 400
         with st._lock:
             in_long = sym in st.positions
             in_short = sym in st.short_positions
@@ -372,6 +386,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         invest = sf(data.get("invest_usdt", 0.0), 0.0)
         if not sym:
             return jsonify({"error": "symbol required"}), 400
+        if not _valid_symbol(sym):
+            return jsonify({"error": "invalid_symbol"}), 400
         if invest <= 0:
             return jsonify({"error": "invest_usdt must be > 0"}), 400
         try:
@@ -413,6 +429,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         sym = str(data.get("symbol", "")).strip().upper()
         if not sym:
             return jsonify({"error": "symbol required"}), 400
+        if not _valid_symbol(sym):
+            return jsonify({"error": "invalid_symbol"}), 400
         with st._lock:
             pos = st.positions.get(sym)
         if not pos:
@@ -866,6 +884,14 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         invest = sf(data.get("invest_usdt", 100), 100)
         if not symbol or lower <= 0 or upper <= lower or levels < 2:
             return jsonify({"error": "Ungültige Grid-Parameter"}), 400
+        if not _valid_symbol(symbol):
+            return jsonify({"error": "invalid_symbol"}), 400
+        if levels > MAX_GRID_LEVELS:
+            return jsonify({"error": f"levels must be <= {MAX_GRID_LEVELS}"}), 400
+        if invest > 0 and invest / levels < _MIN_CELL_USDT:
+            return jsonify(
+                {"error": f"invest / levels must be >= {_MIN_CELL_USDT} USDT per cell"}
+            ), 400
         if deps.grid_engine is None:
             return jsonify({"error": "Grid-Engine nicht verfügbar"}), 503
         try:

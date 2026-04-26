@@ -637,6 +637,7 @@ class ArbitrageScanner:
         self._lock = threading.Lock()
         self.found_today = 0
         self.last_scan = None
+        self._arb_notified: dict[str, float] = {}  # sym → last_notify_timestamp
 
     def _get_ex(self, name: str):
         with self._lock:
@@ -714,7 +715,10 @@ class ArbitrageScanner:
                     opportunities.append(opp)
                     db.save_arb(opp)
                     self.found_today += 1
-                    discord.arb_found(sym, buy_ex, sell_ex, net_spread)
+                    cooldown = float(CONFIG.get("arb_notify_cooldown_sec", 3600))
+                    if time.time() - self._arb_notified.get(sym, 0.0) >= cooldown:
+                        discord.arb_found(sym, buy_ex, sell_ex, net_spread, p_buy, p_sell)
+                        self._arb_notified[sym] = time.time()
                     state.arb_log.appendleft(
                         {
                             "time": datetime.now().strftime("%H:%M"),
@@ -722,6 +726,8 @@ class ArbitrageScanner:
                             "buy": buy_ex,
                             "sell": sell_ex,
                             "spread": round(net_spread, 3),
+                            "price_buy": round(p_buy, 6),
+                            "price_sell": round(p_sell, 6),
                         }
                     )
                     log.info(f"💹 ARB: {sym} {buy_ex}→{sell_ex} Spread:{net_spread:.2f}%")
@@ -848,7 +854,7 @@ class ShortEngine:
             state.closed_trades.insert(0, trade)
         db.save_trade(trade)
         won = pnl >= 0
-        risk.record_result(won)
+        risk.record_result(won, pnl)
         icon = "✅" if won else "❌"
         state.add_activity(
             icon,
