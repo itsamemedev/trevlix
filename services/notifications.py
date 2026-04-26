@@ -265,10 +265,25 @@ class DiscordNotifier:
             "alert",
         )
 
-    def arb_found(self, symbol: str, buy_ex: str, sell_ex: str, spread: float) -> None:
+    def arb_found(
+        self,
+        symbol: str,
+        buy_ex: str,
+        sell_ex: str,
+        spread: float,
+        price_buy: float = 0.0,
+        price_sell: float = 0.0,
+    ) -> None:
+        profit_100 = round(100.0 * spread / 100.0, 3)
+        price_line = (
+            f"Kauf-Preis:  {price_buy:.6f}\nVerkauf-Preis: {price_sell:.6f}\n"
+            if price_buy > 0
+            else ""
+        )
         self.send(
             f"💹 ARBITRAGE: {symbol}",
-            f"```\nKauf:    {buy_ex}\nVerkauf: {sell_ex}\nSpread:  {spread:.2f}%\n```",
+            f"```\nKauf:    {buy_ex}\nVerkauf: {sell_ex}\n{price_line}"
+            f"Spread:  {spread:.3f}%\nProfit:  +{profit_100:.3f} USDT/100\n```",
             "arb",
         )
 

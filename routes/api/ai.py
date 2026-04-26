@@ -55,6 +55,27 @@ def _runtime_status(deps: AppDeps) -> dict[str, Any]:
     assistant_agents = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
     assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
     cfg = deps.config
+
+    # Last decision from forecast feed
+    last_decision: dict = {}
+    if deps.get_virginie_forecast_feed:
+        feed = deps.get_virginie_forecast_feed(1)
+        if feed:
+            last_decision = feed[0]
+
+    # Daily PnL from risk manager
+    daily_pnl = 0.0
+    if deps.risk_mgr and hasattr(deps.risk_mgr, "daily_pnl"):
+        daily_pnl = float(deps.risk_mgr.daily_pnl)
+
+    # Decision counts from AI engine
+    allowed_count = int(ai.get("allowed_count", 0))
+    blocked_count = int(ai.get("blocked_count", 0))
+    blocked_pct = float(ai.get("blocked_pct", 0.0))
+
+    # State snapshot for trade count
+    snap = deps.state.snapshot() if deps.state else {}
+
     return {
         "enabled": bool(cfg.get("virginie_enabled", True)),
         "primary_control": bool(cfg.get("virginie_primary_control", True)),
@@ -65,6 +86,15 @@ def _runtime_status(deps: AppDeps) -> dict[str, Any]:
         "assistant_version": ai.get("assistant_version", "0.0.0"),
         "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
         "assistant_review": assistant_review if isinstance(assistant_review, dict) else {},
+        # Operational metrics
+        "last_decision": last_decision,
+        "autonomous_trades_today": allowed_count,
+        "blocked_today": blocked_count,
+        "blocked_pct": blocked_pct,
+        "daily_pnl": daily_pnl,
+        "open_positions": len(snap.get("positions", [])),
+        "manage_exits": bool(cfg.get("virginie_manage_exits", True)),
+        "open_threshold": float(cfg.get("virginie_open_threshold", 0.35)),
     }
 
 

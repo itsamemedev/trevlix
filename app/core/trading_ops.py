@@ -1610,6 +1610,42 @@ def manage_positions(ex):
                 telegram.algo_sell_signal(symbol, price, algo_conf, algo_reason, pnl=_unrealized)
                 close_position(ex, symbol, f"SellAlgo:{algo_reason}")
             else:
+                # VIRGINIE autonomous exit evaluation
+                if (
+                    CONFIG.get("virginie_manage_exits", True)
+                    and CONFIG.get("virginie_enabled", True)
+                    and ai_engine is not None
+                    and hasattr(ai_engine, "virginie")
+                    and ai_engine.virginie is not None
+                ):
+                    try:
+                        _pos_entry = pos.get("entry", 0)
+                        if _pos_entry and _pos_entry > 0:
+                            from services.virginie import Opportunity
+
+                            _pnl_pct = (price - _pos_entry) / _pos_entry
+                            _hold_opp = Opportunity(
+                                key="hold_position",
+                                success_probability=max(0.0, min(1.0, 0.5 + _pnl_pct * 5.0)),
+                                expected_profit=max(0.0, _pnl_pct * 100.0),
+                                cost=max(0.0, -_pnl_pct * 100.0),
+                                risk_penalty=max(0.0, -_pnl_pct * 20.0),
+                            )
+                            _vdec = ai_engine.virginie.select_opportunity_with_report([_hold_opp])
+                            if _vdec.selected is None and _pnl_pct < -CONFIG.get(
+                                "virginie_exit_drawdown", 0.008
+                            ):
+                                _vreason = str(_vdec.reason)[:80]
+                                log.info(
+                                    "🤖 VIRGINIE-Exit %s pnl=%.2f%% reason=%s",
+                                    symbol,
+                                    _pnl_pct * 100,
+                                    _vreason,
+                                )
+                                close_position(ex, symbol, f"VIRGINIE-Exit:{_vreason}")
+                                continue
+                    except Exception as _ve:
+                        log.debug("VIRGINIE-Exit eval %s: %s", symbol, _ve)
                 # DCA prüfen
                 try_dca(ex, symbol)
 
@@ -2137,7 +2173,19 @@ def bot_loop():
                         except Exception as scan_err:
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
-                        if res and res["signal"] == 1:
+                        # VIRGINIE primary-control: also evaluate borderline signals
+                        _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+                            "virginie_primary_control", True
+                        )
+                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.35))
+                        _signal_ok = res and (
+                            res["signal"] == 1
+                            or (
+                                _virginie_primary
+                                and res.get("confidence", 0) >= _virginie_threshold
+                            )
+                        )
+                        if _signal_ok:
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
                             open_position(primary_ex, res)
