@@ -2328,9 +2328,7 @@ _API_KEY_MAX_LEN = 256
 _API_SECRET_MAX_LEN = 512
 _PASSPHRASE_MAX_LEN = 128
 # Erlaubt: Base64/Hex/URL-safe Zeichen wie sie alle großen Exchanges nutzen.
-_API_KEY_ALLOWED = set(
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=+/."
-)
+_API_KEY_ALLOWED = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_=+/.")
 
 
 def _validate_key_field(value: str, max_len: int, *, allow_empty: bool = False) -> tuple[bool, str]:
@@ -3366,8 +3364,10 @@ _api_deps = AppDeps(
     safe_int=safe_int,
     safe_float=safe_float,
     safe_bool=safe_bool,
-    create_exchange=create_exchange,
-    close_position=close_position,
+    create_exchange=lambda: create_exchange(),
+    close_position=lambda ex, sym, reason, partial_ratio=1.0: close_position(
+        ex, sym, reason, partial_ratio
+    ),
     open_position=open_position,
     fetch_markets=fetch_markets,
     scan_symbol=scan_symbol,
