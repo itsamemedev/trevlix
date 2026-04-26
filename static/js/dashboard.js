@@ -734,6 +734,20 @@ async function loadVirginieEdgeProfile(){
       tierEl.style.color = tier==='S' ? 'var(--green)' : tier==='A' ? 'var(--jade)' : tier==='B' ? 'var(--yellow)' : 'var(--red)';
     }
   }catch(_e){}
+  try{
+    const rs = await fetch('/api/v1/virginie/status', {credentials:'include'});
+    if(rs.ok){
+      const ds = await rs.json();
+      const dpnl = Number(ds.daily_pnl||0);
+      const dpEl = document.getElementById('vStatusDailyPnl');
+      if(dpEl){ dpEl.textContent=(dpnl>=0?'+':'')+dpnl.toFixed(2)+' USDT'; dpEl.style.color=dpnl>=0?'var(--green)':'var(--red)'; }
+      _s('vStatusAutoTrades', String(ds.autonomous_trades_today||0));
+      const bt = Number(ds.blocked_today||0);
+      const bpct = Number(ds.blocked_pct||0);
+      _s('vStatusBlocked', `${bt} (${bpct.toFixed(1)}%)`);
+      _s('vStatusOpenPos', String(ds.open_positions||0));
+    }
+  }catch(_e){}
   loadVirginieForecastFeed();
 }
 
@@ -1050,7 +1064,7 @@ function renderArbLog(arb){
       <span style="font-size:13px;font-weight:700">${esc(String(a.symbol||''))}</span>
       <span style="font-family:var(--mono);font-weight:900;font-size:13px;color:var(--yellow)">+${esc(String(a.spread||0))}%</span>
     </div>
-    <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${esc(String(a.buy||''))} → Verkauf: ${esc(String(a.sell||''))} · ${esc(String(a.time||'—'))}</div>
+    <div style="font-size:10px;color:var(--sub);margin-top:3px;font-family:var(--mono)">Kauf: ${esc(String(a.buy||''))}${a.price_buy?` @${Number(a.price_buy).toFixed(4)}`:''}→ Verkauf: ${esc(String(a.sell||''))}${a.price_sell?` @${Number(a.price_sell).toFixed(4)}`:''}· ${esc(String(a.time||'—'))}</div>
   </div>`).join('');
   const alh=document.getElementById('arbLogHome'); if(alh) alh.innerHTML=html||'<div class="empty" style="padding:8px">—</div>';
   const al2=document.getElementById('arbList2'); if(al2) al2.innerHTML=html||'<div class="empty" style="padding:8px">'+QI18n.t('empty_no_scans')+'</div>';

@@ -2161,6 +2161,7 @@ def bot_loop():
                 and not risk.daily_loss_exceeded(state.balance)
                 and not risk.circuit_breaker_active()
             ):
+                _all_scan_results: list = []
                 with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
                     futures = {
                         pool.submit(scan_symbol, primary_ex, s): s
@@ -2173,6 +2174,8 @@ def bot_loop():
                         except Exception as scan_err:
                             log.debug(f"Scan-Future: {scan_err}")
                             continue
+                        if res:
+                            _all_scan_results.append(res)
                         # VIRGINIE primary-control: also evaluate borderline signals
                         _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
                             "virginie_primary_control", True
@@ -2189,6 +2192,65 @@ def bot_loop():
                             if len(state.positions) >= CONFIG.get("max_open_trades", 5):
                                 continue
                             open_position(primary_ex, res)
+
+                # VIRGINIE self-supply: evaluate top candidates when ML emits no buy signal
+                _vp_enabled = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+                    "virginie_primary_control", True
+                )
+                if (
+                    _vp_enabled
+                    and ai_engine is not None
+                    and hasattr(ai_engine, "virginie")
+                    and ai_engine.virginie is not None
+                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
+                    and _all_scan_results
+                ):
+                    from services.virginie import Opportunity
+
+                    _top_n = int(CONFIG.get("virginie_scan_top_n", 5))
+                    _vss_candidates = sorted(
+                        [r for r in _all_scan_results if r.get("signal") != 1],
+                        key=lambda x: float(x.get("confidence", 0)),
+                        reverse=True,
+                    )[:_top_n]
+                    if _vss_candidates:
+                        _vss_opps = [
+                            Opportunity(
+                                key=r["symbol"],
+                                success_probability=float(r.get("confidence", 0)),
+                                expected_profit=0.15,
+                                cost=0.005,
+                                risk_penalty=float(r.get("atr_pct", 1.0)) * 0.01,
+                            )
+                            for r in _vss_candidates
+                        ]
+                        try:
+                            _vss_dec = ai_engine.virginie.select_opportunity_with_report(
+                                _vss_opps
+                            )
+                            if _vss_dec and _vss_dec.selected:
+                                _chosen = next(
+                                    (
+                                        r
+                                        for r in _vss_candidates
+                                        if r["symbol"] == _vss_dec.selected.key
+                                    ),
+                                    None,
+                                )
+                                if (
+                                    _chosen
+                                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
+                                ):
+                                    log.info(
+                                        "🤖 VIRGINIE self-supply: %s conf=%.2f ev=%.4f reason=%s",
+                                        _vss_dec.selected.key,
+                                        float(_chosen.get("confidence", 0)),
+                                        float(_vss_dec.base_score),
+                                        _vss_dec.reason,
+                                    )
+                                    open_position(primary_ex, _chosen)
+                        except Exception as _vsse:
+                            log.debug("VIRGINIE self-supply error: %s", _vsse)
 
             emit_event("update", state.snapshot())
 

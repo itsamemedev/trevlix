@@ -726,6 +726,8 @@ class ArbitrageScanner:
                             "buy": buy_ex,
                             "sell": sell_ex,
                             "spread": round(net_spread, 3),
+                            "price_buy": round(p_buy, 6),
+                            "price_sell": round(p_sell, 6),
                         }
                     )
                     log.info(f"💹 ARB: {sym} {buy_ex}→{sell_ex} Spread:{net_spread:.2f}%")

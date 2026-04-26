@@ -591,3 +591,52 @@ def test_virginie_review_skips_when_rules_not_met():
     assert review["reviewed"] is True
     assert review["version"] == "0.0.1"
     assert "No bump" in review["summary"]
+
+
+class TestVirginieSelfsupply:
+    """VIRGINIE self-supply: select best opportunity from scan results."""
+
+    def _make_core(self):
+        return VirginieCore(guardrails=VirginieGuardrails(min_score=0.0, max_risk_penalty=10.0))
+
+    def _scan(self, symbol, confidence, signal=0, atr_pct=1.0):
+        return {"symbol": symbol, "confidence": confidence, "signal": signal, "atr_pct": atr_pct}
+
+    def test_selects_highest_ev_candidate(self):
+        core = self._make_core()
+        opps = [
+            Opportunity(key="ETH/USDT", success_probability=0.6, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
+            Opportunity(key="BTC/USDT", success_probability=0.4, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
+        ]
+        decision = core.select_opportunity_with_report(opps)
+        assert decision.selected is not None
+        assert decision.selected.key == "ETH/USDT"
+
+    def test_rejects_candidate_below_guardrails(self):
+        core = VirginieCore(guardrails=VirginieGuardrails(min_score=0.1, max_risk_penalty=10.0))
+        # EV = 0.05 * 0.15 - 0.005 - 0.01 = 0.0075 - 0.015 = -0.0075 < 0.1 → rejected
+        opps = [
+            Opportunity(key="DOGE/USDT", success_probability=0.05, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
+        ]
+        decision = core.select_opportunity_with_report(opps)
+        assert decision.selected is None
+        assert "guardrail" in decision.reason.lower()
+
+    def test_empty_list_returns_no_selection(self):
+        core = self._make_core()
+        decision = core.select_opportunity_with_report([])
+        assert decision.selected is None
+
+    def test_opportunity_from_scan_result(self):
+        """Validate the EV formula used in bot_loop self-supply."""
+        scan = self._scan("SOL/USDT", confidence=0.45, atr_pct=0.8)
+        opp = Opportunity(
+            key=scan["symbol"],
+            success_probability=float(scan["confidence"]),
+            expected_profit=0.15,
+            cost=0.005,
+            risk_penalty=float(scan["atr_pct"]) * 0.01,
+        )
+        ev = ProfitDecisionEngine.score(opp)
+        # 0.45 * 0.15 - 0.005 - 0.008 = 0.0675 - 0.013 = 0.0545
+        assert ev == pytest.approx(0.0545, rel=1e-4)
