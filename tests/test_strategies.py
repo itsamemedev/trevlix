@@ -272,3 +272,59 @@ class TestVWAP:
 
         below = {**bearish_row, "price_vs_vwap": -0.02, "rsi": 40}
         assert strat_vwap(below, bearish_row) == -1
+
+
+class TestATRAdaptiveThresholds:
+    """Verifies that ATR-based threshold scaling works correctly for each strategy."""
+
+    def test_rsi_stoch_high_atr_requires_deeper_oversold(self):
+        from services.strategies import strat_rsi_stoch
+
+        # At atr_pct=3, oversold_rsi = max(25, 35 - 9.9) ≈ 25.1 — RSI 24 passes, RSI 27 doesn't
+        row_passes = {"rsi": 24, "stoch_rsi": 10, "atr_pct": 3.0}
+        row_blocks = {"rsi": 27, "stoch_rsi": 10, "atr_pct": 3.0}
+        assert strat_rsi_stoch(row_passes, {}) == 1
+        assert strat_rsi_stoch(row_blocks, {}) == 0
+
+    def test_rsi_stoch_low_atr_uses_base_threshold(self):
+        from services.strategies import strat_rsi_stoch
+
+        # At atr_pct=0, oversold_rsi = 35, so RSI 34 passes
+        row = {"rsi": 34, "stoch_rsi": 20, "atr_pct": 0.0}
+        assert strat_rsi_stoch(row, {}) == 1
+
+    def test_roc_high_atr_raises_threshold(self):
+        from services.strategies import strat_roc
+
+        # At atr_pct=3, r10_min=3.0, r20_min=5.0 — values just below threshold blocked
+        row_passes = {"roc10": 3.5, "roc20": 5.5, "atr_pct": 3.0}
+        row_blocks = {"roc10": 2.5, "roc20": 4.5, "atr_pct": 3.0}
+        assert strat_roc(row_passes, {}) == 1
+        assert strat_roc(row_blocks, {}) == 0
+
+    def test_vol_high_atr_raises_spike_threshold(self):
+        from services.strategies import strat_vol
+
+        # At atr_pct=3, spike_min=min(3.0, 2.9)=2.9 — vol_ratio 2.5 is blocked
+        row_blocked = {"vol_ratio": 2.5, "atr_pct": 3.0, "close": 100, "ema21": 90}
+        prev = {"close": 99}
+        assert strat_vol(row_blocked, prev) == 0
+        # vol_ratio 3.0 passes the spike check
+        row_passes = {**row_blocked, "vol_ratio": 3.0}
+        assert strat_vol(row_passes, prev) == 1
+
+    def test_vwap_high_atr_raises_deviation_threshold(self):
+        from services.strategies import strat_vwap
+
+        # At atr_pct=5, dev_min=min(0.03, 0.005+0.025)=0.03 — pvw 0.025 blocked
+        row_blocked = {"price_vs_vwap": 0.025, "rsi": 60, "atr_pct": 5.0}
+        row_passes = {"price_vs_vwap": 0.035, "rsi": 60, "atr_pct": 5.0}
+        assert strat_vwap(row_blocked, {}) == 0
+        assert strat_vwap(row_passes, {}) == 1
+
+    def test_boll_high_atr_tightens_band_threshold(self):
+        from services.strategies import strat_boll
+
+        # At atr_pct=3, low_band=max(0.02, 0.05-0.03)=0.02 — bb_pct 0.015 passes
+        row = {"bb_pct": 0.015, "rsi": 35, "atr_pct": 3.0}
+        assert strat_boll(row, {}) == 1

@@ -848,7 +848,7 @@ class ShortEngine:
             state.closed_trades.insert(0, trade)
         db.save_trade(trade)
         won = pnl >= 0
-        risk.record_result(won)
+        risk.record_result(won, pnl)
         icon = "✅" if won else "❌"
         state.add_activity(
             icon,

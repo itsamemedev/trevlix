@@ -912,3 +912,96 @@ class TestPasswordPolicy:
             CONFIG["allow_registration"] = old_val
         except Exception:
             pytest.skip("Registration endpoint not available")
+
+
+class TestSymbolValidation:
+    """Invalid symbol format returns 400 with error=invalid_symbol."""
+
+    def test_close_position_invalid_symbol(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        for bad in ["BTCUSDT", "BTC-USDT", "BTC/", "/USDT", "BTC//USDT"]:
+            resp = app_client.post("/api/v1/trading/close-position", json={"symbol": bad})
+            assert resp.status_code == 400, f"Expected 400 for symbol={bad!r}"
+            assert resp.get_json().get("error") == "invalid_symbol"
+
+    def test_manual_buy_invalid_symbol(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        resp = app_client.post(
+            "/api/v1/trading/buy", json={"symbol": "BTCUSDT", "invest_usdt": 100}
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "invalid_symbol"
+
+    def test_manual_sell_invalid_symbol(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        resp = app_client.post("/api/v1/trading/sell", json={"symbol": "BTC-USDT"})
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "invalid_symbol"
+
+    def test_valid_symbol_passes_format_check(self, app_client):
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+        # Valid format — will fail for other reasons (no position), NOT format error
+        resp = app_client.post("/api/v1/trading/close-position", json={"symbol": "BTC/USDT"})
+        assert resp.status_code != 400 or resp.get_json().get("error") != "invalid_symbol"
+
+
+class TestGridValidation:
+    """Grid endpoint enforces levels cap and cell minimum."""
+
+    def _setup(self, app_client, monkeypatch):
+        import server
+
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+            sess["user_role"] = "admin"
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "admin"})
+
+    def test_grid_create_exceeds_max_levels(self, app_client, monkeypatch):
+        self._setup(app_client, monkeypatch)
+        resp = app_client.post(
+            "/api/v1/grid",
+            json={
+                "symbol": "BTC/USDT",
+                "lower": 40000,
+                "upper": 50000,
+                "levels": 201,
+                "invest_usdt": 10000,
+            },
+        )
+        assert resp.status_code == 400
+        data = resp.get_json()
+        assert "levels" in data.get("error", "")
+
+    def test_grid_create_cell_too_small(self, app_client, monkeypatch):
+        self._setup(app_client, monkeypatch)
+        resp = app_client.post(
+            "/api/v1/grid",
+            json={
+                "symbol": "BTC/USDT",
+                "lower": 40000,
+                "upper": 50000,
+                "levels": 100,
+                "invest_usdt": 100,
+            },
+        )
+        assert resp.status_code == 400
+        assert "cell" in resp.get_json().get("error", "")
+
+    def test_grid_create_invalid_symbol(self, app_client, monkeypatch):
+        self._setup(app_client, monkeypatch)
+        resp = app_client.post(
+            "/api/v1/grid",
+            json={
+                "symbol": "BTCUSDT",
+                "lower": 40000,
+                "upper": 50000,
+                "levels": 10,
+                "invest_usdt": 1000,
+            },
+        )
+        assert resp.status_code == 400
+        assert resp.get_json().get("error") == "invalid_symbol"

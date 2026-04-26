@@ -729,9 +729,11 @@ def open_position(ex, scan: dict):
         _record_decision(symbol, "blocked", "already_open", scan)
         return
     if symbol in state.short_positions:
+        _record_decision(symbol, "blocked", "short_position_open", scan)
         return
     if symbol_cooldown.is_blocked(symbol):
         log.debug(f"[COOLDOWN] {symbol} blockiert")
+        _record_decision(symbol, "blocked", "cooldown", scan)
         return
     if not regime.is_bull and CONFIG.get("use_market_regime", True):
         _record_decision(symbol, "blocked", "market_regime_bear", scan)
@@ -769,13 +771,17 @@ def open_position(ex, scan: dict):
         return
 
     if risk.is_correlated(symbol, list(state.positions.keys())):
+        _record_decision(symbol, "blocked", "correlation", scan)
         return
     if not scan.get("mtf_ok", True) and CONFIG.get("mtf_enabled"):
+        _record_decision(symbol, "blocked", "mtf_bearish", scan)
         return
     if scan.get("ob_ratio", 0.5) < CONFIG.get("ob_imbalance_min", 0.45):
+        _record_decision(symbol, "blocked", "ob_imbalance", scan)
         return
     ok, spread, _ = liq.check(ex, symbol)
     if not ok:
+        _record_decision(symbol, "blocked", "liquidity_spread", scan)
         return
 
     features = ai_engine.extract_features(
@@ -1194,7 +1200,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     else:
         regime_str = pos.get("regime", "bull")
         ai_engine.on_sell(symbol, pnl, regime_str)
-        risk.record_result(pnl > 0)
+        risk.record_result(pnl > 0, pnl)
         # Trade DNA: Ergebnis aufzeichnen
         if CONFIG.get("use_trade_dna") and pos.get("dna_fingerprint"):
             dna_entry = {

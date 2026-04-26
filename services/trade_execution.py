@@ -98,6 +98,10 @@ class TradeExecutionService:
             return ExecutionResult(False, mode, reason)
         fee = invest_usdt * self._get_fee_rate()
         if mode == "paper":
+            slippage_bps = self._safe_float(self._config.get("paper_slippage_bps"), 5.0)
+            slippage_factor = slippage_bps / 10_000.0
+            effective_price = price * (1.0 + slippage_factor)
+            actual_qty = max(0.0, (invest_usdt - fee) / effective_price)
             with self._state._lock:
                 if self._safe_float(self._state.balance, 0.0) < invest_usdt:
                     return ExecutionResult(False, mode, "Unzureichendes Guthaben")
@@ -109,7 +113,11 @@ class TradeExecutionService:
                 "filled",
                 fee=fee,
                 executed_at=datetime.now().isoformat(),
-                meta={"qty": qty},
+                meta={
+                    "qty": actual_qty,
+                    "actual_price": effective_price,
+                    "slippage_bps": slippage_bps,
+                },
             )
         try:
             bal = ex.fetch_balance()
@@ -133,6 +141,18 @@ class TradeExecutionService:
                 exc,
             )
             return ExecutionResult(False, mode, f"live_buy_failed:{exc}")
+        actual_qty = self._safe_float((order or {}).get("filled"), qty)
+        actual_price = self._safe_float((order or {}).get("average"), price)
+        if price > 0 and actual_price > 0:
+            slippage_pct = (actual_price - price) / price * 100.0
+            if abs(slippage_pct) > 0.1:
+                log.warning(
+                    "Buy slippage %.3f%% for %s (req=%.4f actual=%.4f)",
+                    slippage_pct,
+                    symbol,
+                    price,
+                    actual_price,
+                )
         return ExecutionResult(
             True,
             mode,
@@ -140,7 +160,7 @@ class TradeExecutionService:
             fee=fee,
             order_id=str((order or {}).get("id", "")),
             executed_at=datetime.now().isoformat(),
-            meta={"qty": qty, "order": order},
+            meta={"qty": actual_qty, "actual_price": actual_price, "order": order},
         )
 
     def _safe_mark_order(self, symbol: str) -> None:
@@ -152,7 +172,9 @@ class TradeExecutionService:
         except Exception as exc:  # pragma: no cover - defensive
             log.warning("mark_order failed for %s: %s", symbol, exc)
 
-    def execute_sell(self, ex, *, symbol: str, qty: float, invest_usdt: float) -> ExecutionResult:
+    def execute_sell(
+        self, ex, *, symbol: str, qty: float, invest_usdt: float, price: float = 0.0
+    ) -> ExecutionResult:
         mode = self._mode()
         if qty is None or qty <= 0:
             return ExecutionResult(False, mode, "Ungültige Menge (<=0)")
@@ -164,9 +186,17 @@ class TradeExecutionService:
         if not valid_precision:
             return ExecutionResult(False, mode, reason_precision)
         if mode == "paper":
+            slippage_bps = self._safe_float(self._config.get("paper_slippage_bps"), 5.0)
+            slippage_factor = slippage_bps / 10_000.0
+            effective_proceeds = invest_usdt * (1.0 - slippage_factor)
             self._safe_mark_order(symbol)
             return ExecutionResult(
-                True, mode, "filled", fee=fee, executed_at=datetime.now().isoformat()
+                True,
+                mode,
+                "filled",
+                fee=fee,
+                executed_at=datetime.now().isoformat(),
+                meta={"effective_proceeds": effective_proceeds, "slippage_bps": slippage_bps},
             )
         # Mark cooldown BEFORE sending the order (see execute_buy for rationale).
         self._safe_mark_order(symbol)
@@ -180,6 +210,18 @@ class TradeExecutionService:
                 exc,
             )
             return ExecutionResult(False, mode, f"live_sell_failed:{exc}")
+        actual_qty = self._safe_float((order or {}).get("filled"), qty)
+        actual_price = self._safe_float((order or {}).get("average"), price)
+        if price > 0 and actual_price > 0:
+            slippage_pct = (price - actual_price) / price * 100.0
+            if abs(slippage_pct) > 0.1:
+                log.warning(
+                    "Sell slippage %.3f%% for %s (req=%.4f actual=%.4f)",
+                    slippage_pct,
+                    symbol,
+                    price,
+                    actual_price,
+                )
         return ExecutionResult(
             True,
             mode,
@@ -187,5 +229,5 @@ class TradeExecutionService:
             fee=fee,
             order_id=str((order or {}).get("id", "")),
             executed_at=datetime.now().isoformat(),
-            meta={"order": order},
+            meta={"actual_qty": actual_qty, "actual_price": actual_price, "order": order},
         )
