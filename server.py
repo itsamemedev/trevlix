@@ -1597,6 +1597,7 @@ def on_update_config(data: dict | None = None):
         "bitget",
         "mexc",
         "gateio",
+        "nonkyc",
     }
     updated: dict[str, Any] = {}
     for k, v in data.items():

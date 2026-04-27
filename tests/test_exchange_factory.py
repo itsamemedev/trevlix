@@ -15,6 +15,7 @@ from services.exchange_factory import (
     get_exchange_class,
     invalidate_fee_cache,
     requires_passphrase,
+    safe_fetch_balance,
     safe_fetch_tickers,
     supported_exchanges,
 )
@@ -172,6 +173,83 @@ class TestFeeCache:
 
     def test_invalidate_cache_specific(self):
         invalidate_fee_cache("binance")  # Should not raise
+
+
+class TestSafeFetchBalance:
+    """Tests für den cryptocom Spot-Wallet-Fallback in safe_fetch_balance."""
+
+    class _BaseEx:
+        def __init__(self, ex_id: str, balance: dict, spot_resp: dict | None = None):
+            self.id = ex_id
+            self._balance = balance
+            self._spot_resp = spot_resp
+            self.spot_called = False
+
+        def fetch_balance(self, params=None):
+            return self._balance
+
+        def v2PrivatePostPrivateGetAccountSummary(self, params):
+            self.spot_called = True
+            return self._spot_resp
+
+    def test_non_cryptocom_returns_v1_unchanged(self):
+        bal = {"total": {"USDT": 100.0}, "free": {"USDT": 100.0}, "used": {}}
+        ex = self._BaseEx("binance", bal)
+        out = safe_fetch_balance(ex)
+        assert out == bal
+        assert not ex.spot_called
+
+    def test_cryptocom_with_v1_balance_skips_spot_fallback(self):
+        bal = {"total": {"USDT": 50.0}, "free": {"USDT": 50.0}, "used": {}}
+        ex = self._BaseEx("cryptocom", bal)
+        out = safe_fetch_balance(ex)
+        assert out == bal
+        assert not ex.spot_called
+
+    def test_cryptocom_empty_v1_falls_back_to_spot(self):
+        v1_empty = {"total": {}, "free": {}, "used": {}}
+        spot = {
+            "result": {
+                "accounts": [
+                    {"currency": "USDT", "balance": "150.5", "available": "150.5", "order": "0"},
+                    {"currency": "BTC", "balance": "0.01", "available": "0.005", "order": "0.005"},
+                ]
+            }
+        }
+        ex = self._BaseEx("cryptocom", v1_empty, spot)
+        out = safe_fetch_balance(ex)
+        assert ex.spot_called
+        assert out["total"]["USDT"] == 150.5
+        assert out["total"]["BTC"] == 0.01
+        assert out["free"]["BTC"] == 0.005
+        assert out["used"]["BTC"] == 0.005
+
+    def test_cryptocom_spot_fallback_filters_zero_balances(self):
+        v1_empty = {"total": {}, "free": {}, "used": {}}
+        spot = {
+            "result": {
+                "accounts": [
+                    {"currency": "USDT", "balance": "0", "available": "0", "order": "0"},
+                    {"currency": "ETH", "balance": "1.5", "available": "1.5", "order": "0"},
+                ]
+            }
+        }
+        ex = self._BaseEx("cryptocom", v1_empty, spot)
+        out = safe_fetch_balance(ex)
+        assert "USDT" not in out["total"]
+        assert out["total"]["ETH"] == 1.5
+
+    def test_cryptocom_spot_fallback_handles_missing_method(self):
+        v1_empty = {"total": {}, "free": {}, "used": {}}
+
+        class NoFallbackEx:
+            id = "cryptocom"
+
+            def fetch_balance(self, params=None):
+                return v1_empty
+
+        out = safe_fetch_balance(NoFallbackEx())
+        assert out == v1_empty
 
 
 if __name__ == "__main__":

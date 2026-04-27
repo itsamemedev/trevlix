@@ -27,7 +27,7 @@ except ImportError:
     CCXT_AVAILABLE = False
 
 from services.encryption import decrypt_value
-from services.exchange_factory import create_ccxt_exchange
+from services.exchange_factory import create_ccxt_exchange, safe_fetch_balance
 
 log = logging.getLogger("trevlix.exchange_manager")
 
@@ -261,7 +261,12 @@ class ExchangeManager:
         result: dict[str, dict] = {}
         for name, inst in self.get_active_exchanges(user_id):
             try:
-                bal = self._call_with_retry(name, inst.fetch_balance, "fetch_balance") or {}
+                bal = (
+                    self._call_with_retry(
+                        name, lambda inst=inst: safe_fetch_balance(inst), "fetch_balance"
+                    )
+                    or {}
+                )
                 result[name] = {
                     "total": {
                         k: float(v)

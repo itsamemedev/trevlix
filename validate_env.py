@@ -190,6 +190,10 @@ def validate() -> list[Issue]:
         "kraken",
         "huobi",
         "coinbase",
+        "bitget",
+        "mexc",
+        "gateio",
+        "nonkyc",
     }
     if exchange and exchange not in valid_exchanges:
         issues.append(

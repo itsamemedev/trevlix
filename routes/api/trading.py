@@ -43,6 +43,7 @@ _VALID_EXCHANGES: frozenset[str] = frozenset(
         "bitget",
         "mexc",
         "gateio",
+        "nonkyc",
     }
 )
 
