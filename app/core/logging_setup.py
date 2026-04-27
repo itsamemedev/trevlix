@@ -4,8 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
+import logging.handlers
 import os
+import traceback
 from typing import Any
+
+# Max size per log file before rotation (10 MB)
+_LOG_MAX_BYTES = 10 * 1024 * 1024
+# Number of rotated backup files to keep
+_LOG_BACKUP_COUNT = 5
+# Max size for errors.log (5 MB – smaller, high-signal only)
+_ERR_MAX_BYTES = 5 * 1024 * 1024
 
 
 class ColorFormatter(logging.Formatter):
@@ -31,7 +40,12 @@ class ColorFormatter(logging.Formatter):
 
 
 class JSONFormatter(logging.Formatter):
-    """JSON-Formatter für strukturierte Logs."""
+    """JSON-Formatter für strukturierte Logs.
+
+    Gibt jede Log-Zeile als einzelnes JSON-Objekt aus. Bei ERROR/CRITICAL
+    werden Modul, Funktion, Zeilennummer und der vollständige Traceback
+    (falls vorhanden) automatisch mitgeliefert.
+    """
 
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -40,7 +54,29 @@ class JSONFormatter(logging.Formatter):
             "logger": record.name,
             "msg": record.getMessage(),
         }
+        # Detaillierter Kontext für Fehler-Levels
+        # Absolute Pfade (record.pathname) werden bewusst weggelassen, um
+        # Server-Topologie nicht in Log-Aggregatoren preiszugeben.
+        if record.levelno >= logging.ERROR:
+            payload["module"] = record.module
+            payload["func"] = record.funcName
+            payload["line"] = record.lineno
+        if record.exc_info:
+            payload["exception"] = {
+                "type": record.exc_info[0].__name__ if record.exc_info[0] else None,
+                "value": str(record.exc_info[1]),
+                "traceback": traceback.format_exception(*record.exc_info),
+            }
+        if record.stack_info:
+            payload["stack"] = self.formatStack(record.stack_info)
         return json.dumps(payload, ensure_ascii=False)
+
+
+class _ErrorLevelFilter(logging.Filter):
+    """Lässt nur ERROR- und CRITICAL-Records durch."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.levelno >= logging.ERROR
 
 
 def configure_logging(
@@ -50,22 +86,57 @@ def configure_logging(
     use_color_logs: bool,
     logger_name: str = "TREVLIX",
 ) -> logging.Logger:
-    """Konfiguriert Datei- + Konsolenlogging und liefert den Hauptlogger."""
+    """Konfiguriert Datei- + Konsolenlogging und liefert den Hauptlogger.
+
+    Richtet drei Handler ein:
+    - Konsole: farbig (optional) oder Plaintext
+    - trevlix.log: alle Log-Level (rotierend, max 10 MB × 5 Backups)
+    - errors.log: nur ERROR/CRITICAL (rotierend, max 5 MB × 5 Backups),
+      immer im JSON-Format mit vollständigem Traceback und Kontext
+    """
     log_dir = os.path.join(base_dir, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
-    file_handler = logging.FileHandler(os.path.join(log_dir, "trevlix.log"), encoding="utf-8")
-    console_handler = logging.StreamHandler()
+    main_log = os.path.join(log_dir, "trevlix.log")
+    error_log = os.path.join(log_dir, "errors.log")
 
+    # Haupt-Log: rotierende Datei, alle Levels
+    main_handler = logging.handlers.RotatingFileHandler(
+        main_log,
+        maxBytes=_LOG_MAX_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+
+    # Fehler-Log: rotierende Datei, nur ERROR+, immer JSON mit Traceback
+    error_handler = logging.handlers.RotatingFileHandler(
+        error_log,
+        maxBytes=_ERR_MAX_BYTES,
+        backupCount=_LOG_BACKUP_COUNT,
+        encoding="utf-8",
+    )
+
+    # Restriktive Permissions (0o600): Logs können Tracebacks und API-Antworten
+    # enthalten, daher nur für den Bot-Owner lesbar machen.
+    for path in (main_log, error_log):
+        try:
+            if os.path.exists(path):
+                os.chmod(path, 0o600)
+        except OSError:
+            pass
+    error_handler.addFilter(_ErrorLevelFilter())
+    error_handler.setFormatter(JSONFormatter())
+
+    console_handler = logging.StreamHandler()
     if use_color_logs and not use_json_logs:
         console_handler.setFormatter(ColorFormatter())
 
-    handlers: list[logging.Handler] = [file_handler, console_handler]
+    handlers: list[logging.Handler] = [main_handler, error_handler, console_handler]
 
     if use_json_logs:
         json_formatter = JSONFormatter()
-        for handler in handlers:
-            handler.setFormatter(json_formatter)
+        main_handler.setFormatter(json_formatter)
+        console_handler.setFormatter(json_formatter)
 
     logging.basicConfig(
         level=log_level,

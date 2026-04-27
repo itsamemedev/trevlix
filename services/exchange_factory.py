@@ -56,6 +56,7 @@ EXCHANGE_DEFAULT_FEES: dict[str, float] = {
     "bitget": 0.0010,  # 0.10% Standard
     "mexc": 0.0020,  # 0.20% Standard Spot (Maker gratis auf Promo)
     "gateio": 0.0020,  # 0.20% Standard
+    "nonkyc": 0.0020,  # 0.20% Standard Taker (kein KYC, viele Altcoins)
 }
 
 # Exchanges die eine API-Passphrase zusätzlich zu Key/Secret benötigen
@@ -77,6 +78,7 @@ _EXCHANGE_TIMEOUT_OVERRIDES: dict[str, int] = {
     "okx": 15000,
     "kucoin": 15000,
     "binance": 10000,
+    "nonkyc": 20000,  # NonKYC ist tendenziell langsamer (kleinere Infrastruktur)
 }
 _DEFAULT_TIMEOUT_MS = 15000
 
@@ -88,6 +90,16 @@ _TICKER_RETRY_BACKOFF_S = 0.5
 _TRANSIENT_EXC: tuple[type[Exception], ...] = (OSError, TimeoutError)
 if CCXT_AVAILABLE:
     _TRANSIENT_EXC = (*_TRANSIENT_EXC, ccxt.RequestTimeout, ccxt.NetworkError)
+try:
+    import requests as _requests
+
+    _TRANSIENT_EXC = (
+        *_TRANSIENT_EXC,
+        _requests.ConnectionError,
+        _requests.Timeout,
+    )
+except ImportError:
+    pass
 
 # Fee-Cache: TTLCache auto-expires after 1 hour, no manual timestamp tracking needed
 _FEE_CACHE_TTL = 3600  # 1 Stunde
@@ -95,15 +107,27 @@ _fee_cache: TTLCache[str, float] = TTLCache(maxsize=50, ttl=_FEE_CACHE_TTL)
 _fee_cache_lock = threading.Lock()
 
 
+# Exchanges, die nicht in ccxt enthalten sind und über einen lokalen Adapter
+# bereitgestellt werden. Werden in get_exchange_class() / create_ccxt_exchange()
+# als Sonderfall behandelt.
+_LOCAL_ADAPTERS: frozenset[str] = frozenset({"nonkyc"})
+
+
 def get_exchange_class(exchange_name: str) -> Any | None:
-    """Gibt die CCXT-Klasse für eine Exchange zurück.
+    """Gibt die CCXT-Klasse (oder lokalen Adapter) für eine Exchange zurück.
 
     Args:
-        exchange_name: Name der Exchange (z.B. "binance", "okx").
+        exchange_name: Name der Exchange (z.B. "binance", "okx", "nonkyc").
 
     Returns:
-        CCXT-Klasse oder None, falls nicht verfügbar.
+        CCXT-Klasse, lokaler Adapter, oder None falls nicht verfügbar.
     """
+    if exchange_name in _LOCAL_ADAPTERS:
+        if exchange_name == "nonkyc":
+            from services.nonkyc_adapter import NonKYCExchange
+
+            return NonKYCExchange
+        return None
     if not CCXT_AVAILABLE:
         return None
     cls_name = EXCHANGE_MAP.get(exchange_name, exchange_name)
@@ -134,7 +158,8 @@ def create_ccxt_exchange(
     Returns:
         CCXT Exchange-Instanz oder None bei Fehler.
     """
-    if not CCXT_AVAILABLE:
+    is_local = exchange_name in _LOCAL_ADAPTERS
+    if not CCXT_AVAILABLE and not is_local:
         log.error("CCXT nicht installiert")
         return None
 
