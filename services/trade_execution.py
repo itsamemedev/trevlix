@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
+from services.exchange_factory import safe_fetch_balance
+
 log = logging.getLogger(__name__)
 
 
@@ -120,7 +122,7 @@ class TradeExecutionService:
                 },
             )
         try:
-            bal = ex.fetch_balance()
+            bal = safe_fetch_balance(ex)
             free = self._safe_float((bal.get("USDT") or {}).get("free"), 0.0)
             if free and free < invest_usdt:
                 return ExecutionResult(False, mode, "Live-Guthaben zu niedrig")

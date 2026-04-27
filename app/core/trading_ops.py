@@ -40,6 +40,9 @@ from services.exchange_factory import (
     get_fee_rate as _factory_get_fee_rate,
 )
 from services.exchange_factory import (
+    safe_fetch_balance as _factory_safe_fetch_balance,
+)
+from services.exchange_factory import (
     safe_fetch_tickers as _factory_safe_fetch_tickers,
 )
 from services.strategies import STRATEGIES, compute_indicators
@@ -1764,7 +1767,7 @@ def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
     name = exchange_name or getattr(ex, "_trevlix_name", "_default")
     quote = CONFIG.get("quote_currency", "USDT")
     try:
-        bal = ex.fetch_balance()
+        bal = _factory_safe_fetch_balance(ex)
         live_free = float((bal.get("free") or {}).get(quote, 0) or 0)
         if live_free >= 0:
             with state._lock:
@@ -2225,9 +2228,7 @@ def bot_loop():
                             for r in _vss_candidates
                         ]
                         try:
-                            _vss_dec = ai_engine.virginie.select_opportunity_with_report(
-                                _vss_opps
-                            )
+                            _vss_dec = ai_engine.virginie.select_opportunity_with_report(_vss_opps)
                             if _vss_dec and _vss_dec.selected:
                                 _chosen = next(
                                     (
@@ -2237,9 +2238,8 @@ def bot_loop():
                                     ),
                                     None,
                                 )
-                                if (
-                                    _chosen
-                                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
+                                if _chosen and len(state.positions) < CONFIG.get(
+                                    "max_open_trades", 5
                                 ):
                                     log.info(
                                         "🤖 VIRGINIE self-supply: %s conf=%.2f ev=%.4f reason=%s",
@@ -2358,7 +2358,7 @@ def fetch_aggregated_balance() -> dict:
 
     for ex_id, ex in exchanges_to_check.items():
         try:
-            bal = ex.fetch_balance()
+            bal = _factory_safe_fetch_balance(ex)
             totals: dict[str, float] = {}
             for k, v in (bal.get("total") or {}).items():
                 fv = safe_float(v, 0.0)
@@ -2393,7 +2393,7 @@ def safety_scan():
         return
     try:
         ex = create_exchange()
-        bal = ex.fetch_balance()
+        bal = _factory_safe_fetch_balance(ex)
         suspicious = []
         for coin, details in bal.get("total", {}).items():
             if coin == CONFIG["quote_currency"] or float(details or 0) <= 0.001:

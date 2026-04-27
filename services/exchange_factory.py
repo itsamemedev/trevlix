@@ -276,6 +276,83 @@ def _fetch_tickers_filtered(ex: Any, sym_set: set[str], symbols: list[str]) -> d
     return result
 
 
+def safe_fetch_balance(ex: Any, params: dict | None = None) -> dict:
+    """Holt Balance mit Exchange-spezifischen Eigenheiten korrekt.
+
+    Hintergrund: CCXT's ``cryptocom.fetch_balance()`` ruft den v1-Endpoint
+    ``private/user-balance`` auf, der nur die Unified-Margin-Trading-Account-
+    Balances zurückgibt. Guthaben im **Spot Wallet** der Crypto.com Exchange
+    (wo die meisten User ihre Coins halten) erscheinen dort NICHT. Wir fallen
+    in diesem Fall auf den v2-Endpoint ``private/get-account-summary`` zurück,
+    der die Spot-Wallet-Balances liefert.
+
+    Args:
+        ex: CCXT Exchange-Instanz.
+        params: Optionale zusätzliche Params für fetch_balance().
+
+    Returns:
+        CCXT-Balance-Dict mit ``total``, ``free``, ``used`` Keys.
+    """
+    params = params or {}
+    try:
+        bal = ex.fetch_balance(params) if params else ex.fetch_balance()
+    except Exception:
+        # Errors propagate — caller decides how to handle them.
+        raise
+    bal = bal or {}
+
+    if getattr(ex, "id", "") == "cryptocom":
+        totals = bal.get("total") or {}
+        has_funds = any(isinstance(v, (int, float)) and float(v) > 0 for v in totals.values())
+        if not has_funds:
+            spot = _fetch_cryptocom_spot_balance(ex)
+            if spot:
+                return spot
+    return bal
+
+
+def _fetch_cryptocom_spot_balance(ex: Any) -> dict:
+    """Lädt Crypto.com Exchange Spot-Wallet Balances via v2-Endpoint.
+
+    Nutzt ``v2/private/get-account-summary`` – der Spot-Wallet-Endpoint, den
+    der v1 Unified-Trading-Account-Endpoint nicht abdeckt.
+
+    Returns:
+        Leeres Dict bei Fehler, sonst ein CCXT-konformes Balance-Dict.
+    """
+    method = getattr(ex, "v2PrivatePostPrivateGetAccountSummary", None)
+    if method is None:
+        return {}
+    try:
+        resp = method({}) or {}
+    except Exception as exc:
+        log.debug("cryptocom v2 spot-balance fetch failed: %s", exc)
+        return {}
+
+    accounts = (resp.get("result") or {}).get("accounts") or []
+    free: dict[str, float] = {}
+    used: dict[str, float] = {}
+    total: dict[str, float] = {}
+    for acc in accounts:
+        currency = str(acc.get("currency") or "").upper()
+        if not currency:
+            continue
+        try:
+            balance = float(acc.get("balance") or 0)
+            available = float(acc.get("available") or 0)
+            order = float(acc.get("order") or 0)
+        except (TypeError, ValueError):
+            continue
+        if balance <= 0 and available <= 0:
+            continue
+        total[currency] = balance if balance > 0 else available
+        free[currency] = available
+        used[currency] = order
+    if not total:
+        return {}
+    return {"free": free, "used": used, "total": total, "info": resp}
+
+
 def get_fee_rate(
     exchange_id: str,
     symbol: str = "BTC/USDT",

@@ -18,7 +18,7 @@ from flask import Blueprint, Response, jsonify, request, send_file, session
 
 from app.core.time_compat import UTC
 from services.encryption import decrypt_value
-from services.exchange_factory import create_ccxt_exchange
+from services.exchange_factory import create_ccxt_exchange, safe_fetch_balance
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
@@ -118,7 +118,7 @@ def _fetch_exchange_snapshot(
         }
 
     try:
-        bal = inst.fetch_balance() or {}
+        bal = safe_fetch_balance(inst) or {}
     except Exception as exc:
         # Vollständige Exception nur ins Server-Log, nicht zum Client –
         # CCXT-Fehler enthalten teils Header, IPs oder API-Keys-Fragmente.

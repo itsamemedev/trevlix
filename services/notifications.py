@@ -23,6 +23,7 @@ from datetime import datetime
 import httpx
 
 from app.core.time_compat import UTC
+from services.market_links import build_market_url
 
 log = logging.getLogger("trevlix.notifications")
 
@@ -83,12 +84,19 @@ class DiscordNotifier:
     def _cfg(self, key: str, default=None):
         return self._config.get(key, default)
 
+    def _market_url(self, symbol: str | None) -> str:
+        """Erzeugt eine Markt-Deep-Link-URL für ``symbol`` auf der Default-Exchange."""
+        if not symbol:
+            return ""
+        return build_market_url(self._cfg("exchange", ""), symbol)
+
     def send(
         self,
         title: str,
         desc: str,
         color_key: str = "info",
         fields: list | None = None,
+        market_url: str = "",
     ) -> None:
         url = self._cfg("discord_webhook", "")
         if not url or not isinstance(url, str):
@@ -109,6 +117,9 @@ class DiscordNotifier:
                 "timestamp": datetime.now(UTC).isoformat(),
                 "footer": {"text": f"{self._bot_full} · {exchange_str}"},
             }
+            if market_url:
+                # Discord rendert den Embed-Titel als Hyperlink, sobald `url` gesetzt ist.
+                embed["url"] = market_url
             if fields:
                 embed["fields"] = [
                     {"name": f[0], "value": str(f[1]), "inline": f[2] if len(f) > 2 else True}
@@ -167,6 +178,7 @@ class DiscordNotifier:
                 ("Regime", regime or "—"),
                 ("Votes", vote_txt, False),
             ],
+            market_url=self._market_url(symbol),
         )
 
     def trade_sell(
@@ -199,6 +211,7 @@ class DiscordNotifier:
                 ("Result", "WIN ✅" if won else "LOSS ❌"),
                 ("ROI", f"{roi_icon} {pnl_pct:+.2f}%"),
             ],
+            market_url=self._market_url(symbol),
         )
 
     def signal_opportunity(
@@ -246,6 +259,7 @@ class DiscordNotifier:
             ),
             color,
             fields=[("Note", note[:200] if note else "Potential setup detected", False)],
+            market_url=self._market_url(symbol),
         )
 
     def circuit_breaker(self, losses: int, pause_min: int) -> None:
@@ -263,6 +277,7 @@ class DiscordNotifier:
             f"```\nAktuell: {price:.4f}\nZiel:    {target:.4f}\n"
             f"Richtung: {'↑' if direction == 'above' else '↓'}\n```",
             "alert",
+            market_url=self._market_url(symbol),
         )
 
     def arb_found(
@@ -292,6 +307,7 @@ class DiscordNotifier:
             f"🚨 ANOMALIE: {symbol}",
             f"```\nAnomalie-Score: {score:.3f}\nBot pausiert!\n```",
             "anomaly",
+            market_url=self._market_url(symbol),
         )
 
     def algo_buy_signal(
@@ -327,6 +343,7 @@ class DiscordNotifier:
                     "📝 Paper" if self._cfg("paper_trading") else "💰 Live",
                 ),
             ],
+            market_url=self._market_url(symbol),
         )
 
     def algo_sell_signal(
@@ -357,6 +374,7 @@ class DiscordNotifier:
                 ("Typ", "Selbstlernend (KI)"),
                 ("Grund", reason[:100]),
             ],
+            market_url=self._market_url(symbol),
         )
 
     def daily_report(self, report: dict) -> None:
@@ -403,6 +421,7 @@ class DiscordNotifier:
             f"🔴 SHORT: {symbol}",
             f"```\nPreis:      {price:.4f} USDT\nInvestiert: {invest:.2f} USDT\n```",
             "sell_loss",
+            market_url=self._market_url(symbol),
         )
 
     def genetic_result(self, gen: int, fitness: float, genome: dict) -> None:
@@ -442,6 +461,7 @@ class DiscordNotifier:
             f"Matches:     {matches}\n"
             f"Multiplikator: {multiplier:.2f}x\n```",
             color,
+            market_url=self._market_url(symbol),
         )
 
     def smart_exit(self, symbol: str, sl: float, tp: float, regime: str, atr_pct: float) -> None:
@@ -459,6 +479,7 @@ class DiscordNotifier:
             f"```\nRegime:  {regime}\nATR:     {atr_pct:.2f}%\n"
             f"SL:      {sl:.4f}\nTP:      {tp:.4f}\n```",
             "info",
+            market_url=self._market_url(symbol),
         )
 
 
@@ -479,6 +500,15 @@ class TelegramNotifier:
     def __init__(self, config: dict, bot_full: str = "TREVLIX"):
         self._config = config
         self._bot_full = bot_full
+
+    def _market_link(self, symbol: str | None) -> str:
+        """Liefert eine HTML-Zeile mit klickbarem Markt-Link, oder leeren String."""
+        if not symbol:
+            return ""
+        url = build_market_url(self._config.get("exchange", ""), symbol)
+        if not url:
+            return ""
+        return f'\n🔗 <a href="{url}">Markt öffnen</a>'
 
     def _token(self) -> str:
         return self._config.get("telegram_token", "") or os.getenv("TELEGRAM_TOKEN", "")
@@ -551,6 +581,7 @@ class TelegramNotifier:
             f"Investiert: <code>{invest:.2f}</code> USDT\n"
             f"KI-Score: <code>{ai_score:.0f}%</code>  Win: <code>{win_prob:.0f}%</code>\n"
             f"Modus: {mode}"
+            f"{self._market_link(symbol)}"
         )
 
     def trade_sell(
@@ -569,6 +600,7 @@ class TelegramNotifier:
             f"Preis: <code>{price:.4f}</code> USDT\n"
             f"PnL: <code>{pnl:+.2f} ({pnl_pct:+.2f}%)</code>\n"
             f"Grund: {reason}"
+            f"{self._market_link(symbol)}"
         )
 
     def error(self, msg: str) -> None:
@@ -605,6 +637,7 @@ class TelegramNotifier:
             f"Preis: <code>{price:.4f}</code> USDT\n"
             f"Konfidenz: <code>{confidence:.1%}</code>\n"
             f"Strategie: {reason}"
+            f"{self._market_link(symbol)}"
         )
 
     def algo_sell_signal(
@@ -624,6 +657,7 @@ class TelegramNotifier:
             f"Preis: <code>{price:.4f}</code> USDT\n"
             f"Konfidenz: <code>{confidence:.1%}</code>\n"
             f"Grund: {reason}{pnl_txt}"
+            f"{self._market_link(symbol)}"
         )
 
     def price_alert(self, symbol: str, price: float, target: float, direction: str) -> None:
@@ -631,4 +665,5 @@ class TelegramNotifier:
         self.send(
             f"🔔 <b>PREIS-ALERT: {symbol}</b>\n"
             f"Aktuell: <code>{price:.4f}</code>  Ziel: <code>{target:.4f}</code> {arrow}"
+            f"{self._market_link(symbol)}"
         )
