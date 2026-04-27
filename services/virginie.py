@@ -73,8 +73,8 @@ class VirginieGuardrails:
         max_risk_penalty: Hard upper bound on accepted risk penalty.
     """
 
-    min_score: float = 0.0
-    max_risk_penalty: float = 1_000.0
+    min_score: float = 0.5
+    max_risk_penalty: float = 5.0
 
 
 @dataclass(frozen=True)

@@ -1285,7 +1285,8 @@ class AIEngine:
                 )
             return allowed, prob, f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}%"
         except Exception as e:
-            return True, conf, f"Err:{e}"
+            log.warning("should_buy exception – blocking trade: %s", e, exc_info=True)
+            return False, conf, f"Err:{e}"
 
     def _predict(self, X_s, features_raw) -> float:
         # Regime-Modell wählen
@@ -1465,7 +1466,7 @@ class AIEngine:
             },
             "assistant_agents": self.virginie_orchestrator.status(),
             "assistant_review": self.virginie.review_status(),
-            "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", False)),
+            "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", True)),
             "assistant_autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
             "params": {
                 "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),

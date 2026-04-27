@@ -14,8 +14,8 @@ def test_build_default_config_includes_expected_keys():
     assert cfg["virginie_enabled"] is True
     assert cfg["virginie_primary_control"] is True
     assert cfg["virginie_autonomy_weight"] == 0.7
-    assert cfg["virginie_min_score"] == 0.0
-    assert cfg["virginie_max_risk_penalty"] == 1000.0
+    assert cfg["virginie_min_score"] == 0.5
+    assert cfg["virginie_max_risk_penalty"] == 5.0
 
 
 def test_build_default_config_env_overrides(monkeypatch):

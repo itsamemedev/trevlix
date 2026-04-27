@@ -1542,9 +1542,16 @@ def manage_positions(ex):
                 if new_smart_tp and new_smart_tp > pos.get("tp", 0):
                     pos["tp"] = new_smart_tp
 
-        # Trailing Stop
+        # Trailing Stop – only activate after minimum profit is locked in
         with state._lock:
-            if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
+            _trailing_min = float(CONFIG.get("trailing_min_profit", 0.005))
+            _trailing_active = (
+                CONFIG.get("trailing_stop")
+                and pos_entry > 0
+                and (price - pos_entry) / pos_entry >= _trailing_min
+                and price > pos.get("highest", price)
+            )
+            if _trailing_active:
                 pos["highest"] = price
                 new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
                 if new_sl > pos.get("sl", 0):
@@ -2139,22 +2146,30 @@ def bot_loop():
                         for fut in as_completed(short_futures):
                             try:
                                 scan = fut.result()
-                                if (
-                                    scan
-                                    and scan["signal"] == -1
-                                    and scan.get("confidence", 0)
-                                    >= CONFIG.get("min_vote_score", 0.3)
-                                ):
-                                    discord.signal_opportunity(
-                                        scan["symbol"],
-                                        "sell",
-                                        float(scan.get("confidence", 0.0)),
-                                        float(scan.get("price", 0.0)),
-                                        news_score=float(scan.get("news_score", 0.0)),
-                                        note="Short-Kandidat erkannt (Signal -1)",
-                                    )
-                                    invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
-                                    short_engine.open_short(scan["symbol"], invest, scan["price"])
+                                if not scan:
+                                    continue
+                                if scan["signal"] != -1:
+                                    continue
+                                if scan.get("confidence", 0) < CONFIG.get("min_vote_score", 0.3):
+                                    continue
+                                if len(state.short_positions) >= CONFIG.get("max_open_trades", 5):
+                                    continue
+                                if risk.circuit_breaker_active():
+                                    continue
+                                if risk.daily_loss_exceeded(state.balance):
+                                    continue
+                                if anomaly is not None and anomaly.is_anomaly:
+                                    continue
+                                discord.signal_opportunity(
+                                    scan["symbol"],
+                                    "sell",
+                                    float(scan.get("confidence", 0.0)),
+                                    float(scan.get("price", 0.0)),
+                                    news_score=float(scan.get("news_score", 0.0)),
+                                    note="Short-Kandidat erkannt (Signal -1)",
+                                )
+                                invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
+                                short_engine.open_short(scan["symbol"], invest, scan["price"])
                             except Exception as se:
                                 log.debug(f"Short-Scan: {se}")
 
@@ -2183,11 +2198,12 @@ def bot_loop():
                         _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
                             "virginie_primary_control", True
                         )
-                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.35))
+                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.60))
                         _signal_ok = res and (
                             res["signal"] == 1
                             or (
                                 _virginie_primary
+                                and res.get("signal", 0) >= 0
                                 and res.get("confidence", 0) >= _virginie_threshold
                             )
                         )
@@ -2221,8 +2237,8 @@ def bot_loop():
                             Opportunity(
                                 key=r["symbol"],
                                 success_probability=float(r.get("confidence", 0)),
-                                expected_profit=0.15,
-                                cost=0.005,
+                                expected_profit=float(CONFIG.get("take_profit_pct", 0.06)),
+                                cost=float(CONFIG.get("stop_loss_pct", 0.025)),
                                 risk_penalty=float(r.get("atr_pct", 1.0)) * 0.01,
                             )
                             for r in _vss_candidates
