@@ -114,7 +114,6 @@ class KnowledgeBase:
             except Exception as e:
                 log.debug("Multi-LLM Init: %s", e)
 
-
     def store(
         self, category: str, key: str, value: Any, confidence: float = 0.5, source: str = "ai"
     ) -> bool:

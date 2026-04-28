@@ -133,7 +133,6 @@ class CryptoPanicClient:
         """Prüft ob ein gültiger Token konfiguriert ist."""
         return bool(self.token and self.token.strip())
 
-
     def _request_posts(
         self, url: str, params: dict, currency: str
     ) -> tuple[bool, list, int | None]:

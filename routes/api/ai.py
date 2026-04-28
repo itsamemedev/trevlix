@@ -14,9 +14,9 @@ from typing import TYPE_CHECKING, Any
 
 from flask import Blueprint, jsonify, request
 
-log = logging.getLogger("trevlix.api.ai")
-
 from app.core.time_compat import UTC
+
+log = logging.getLogger("trevlix.api.ai")
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps

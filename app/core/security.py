@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import secrets
 
-
 _CSP = (
     "default-src 'self'; "
     "script-src 'self' 'unsafe-inline' 'unsafe-eval' "

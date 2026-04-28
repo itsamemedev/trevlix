@@ -1219,8 +1219,8 @@ class AIEngine:
         primary_control = bool(CONFIG.get("virginie_primary_control", True))
         autonomy_w = float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7)
         autonomy_w = min(1.0, max(0.0, autonomy_w))
-        _tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100   # e.g. 6.0
-        _sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100   # e.g. 2.5
+        _tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100  # e.g. 6.0
+        _sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100  # e.g. 2.5
         _fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100  # round-trip
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             if virginie_enabled and primary_control:
@@ -1272,7 +1272,7 @@ class AIEngine:
 
             X_s = self.scaler.transform(features.reshape(1, -1))
             prob = self._predict(X_s, features)
-            allowed_by_model = prob >= CONFIG["ai_min_confidence"]
+            allowed_by_model = prob >= float(CONFIG.get("ai_min_confidence", 0.50))
 
             if virginie_enabled:
                 blended_prob = autonomy_w * prob + (1.0 - autonomy_w) * float(conf)
@@ -1368,12 +1368,13 @@ class AIEngine:
             return 0.5
 
     def kelly_size(self, win_prob, balance, atr, fg_boost=1.0) -> float:
+        risk_per_trade = float(CONFIG.get("risk_per_trade", 0.015))
         if win_prob <= 0.5:
-            return balance * CONFIG["risk_per_trade"] * fg_boost
-        sl_pct = CONFIG["stop_loss_pct"]
+            return balance * risk_per_trade * fg_boost
+        sl_pct = float(CONFIG.get("stop_loss_pct", 0.025))
         if sl_pct <= 0:
-            return balance * CONFIG["risk_per_trade"] * fg_boost
-        odds = CONFIG["take_profit_pct"] / sl_pct
+            return balance * risk_per_trade * fg_boost
+        odds = float(CONFIG.get("take_profit_pct", 0.06)) / sl_pct
         kelly = float(np.clip(((win_prob * odds - (1 - win_prob)) / odds) * 0.5, 0.01, 0.25))
         vol_adj = 1.0 / (1 + atr * 10) if atr > 0 else 1.0
         return balance * kelly * vol_adj * fg_boost

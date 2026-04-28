@@ -9,7 +9,6 @@ Verwendung:
 
 import logging
 import threading
-import time
 from datetime import datetime
 
 import numpy as np

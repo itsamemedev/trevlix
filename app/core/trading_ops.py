@@ -970,7 +970,7 @@ def open_position(ex, scan: dict):
         "confidence": scan["confidence"],
         "ai_score": round(ai_score * 100, 1),
         "win_prob": round(win_prob, 1),
-        "regime": "bull" if regime.is_bull else "bear",
+        "regime": "bull" if (regime and regime.is_bull) else "bear",
         "dca_level": 0,
         "partial_sold": 0,
         "news_score": round(news_score, 3),
@@ -1596,17 +1596,12 @@ def manage_positions(ex):
         # Max-Hold-Hours: zeitbasierter Exit wenn konfiguriert
         _max_hold_h = float(CONFIG.get("max_hold_hours", 0))
         if _max_hold_h > 0:
-            _entry_ts = pos.get("entry_ts") or pos.get("time")
-            if _entry_ts:
-                try:
-                    from datetime import datetime as _dt
-                    _opened = _dt.fromisoformat(str(_entry_ts)) if isinstance(_entry_ts, str) else _entry_ts
-                    _held_h = (_dt.now() - _opened).total_seconds() / 3600.0
-                    if _held_h >= _max_hold_h:
-                        close_position(ex, symbol, f"MaxHold {_max_hold_h}h ⏰")
-                        continue
-                except Exception:
-                    pass
+            _opened_ts = pos.get("opened_ts")
+            if _opened_ts:
+                _held_h = (time.time() - float(_opened_ts)) / 3600.0
+                if _held_h >= _max_hold_h:
+                    close_position(ex, symbol, f"MaxHold {_max_hold_h}h ⏰")
+                    continue
 
         if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
@@ -2203,9 +2198,15 @@ def bot_loop():
                                     _p = state.positions.get(_fresh["symbol"])
                                     if _p:
                                         for _k in (
-                                            "rsi", "stoch_rsi", "bb_pct", "vol_ratio",
-                                            "ema_alignment", "macd_hist_slope", "roc10",
-                                            "atr_pct", "price_vs_ema21",
+                                            "rsi",
+                                            "stoch_rsi",
+                                            "bb_pct",
+                                            "vol_ratio",
+                                            "ema_alignment",
+                                            "macd_hist_slope",
+                                            "roc10",
+                                            "atr_pct",
+                                            "price_vs_ema21",
                                         ):
                                             if _k in _fresh:
                                                 _p[_k] = _fresh[_k]

@@ -26,9 +26,7 @@ def _run_monte_carlo(deps: AppDeps, n_simulations: int = 10_000, n_days: int = 3
     if len(trades) < 5:
         return {"error": "Mindestens 5 abgeschlossene Trades erforderlich"}
     pnl_pcts = [
-        t.get("pnl", 0) / max(t.get("invested", 1), 1)
-        for t in trades
-        if t.get("invested", 0) > 0
+        t.get("pnl", 0) / max(t.get("invested", 1), 1) for t in trades if t.get("invested", 0) > 0
     ]
     if not pnl_pcts:
         return {"error": "Keine PnL-Daten vorhanden"}
@@ -40,7 +38,9 @@ def _run_monte_carlo(deps: AppDeps, n_simulations: int = 10_000, n_days: int = 3
             1,
             (
                 datetime.now()
-                - datetime.fromisoformat(str(trades[-1].get("opened", datetime.now().isoformat()))[:19])
+                - datetime.fromisoformat(
+                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
+                )
             ).days,
         )
         trades_per_day = max(0.1, len(trades) / span_days)
@@ -78,7 +78,9 @@ def _run_monte_carlo(deps: AppDeps, n_simulations: int = 10_000, n_days: int = 3
         "var_95_pct": round(var_pct, 2),
         "prob_profit_pct": round(float(np.mean(results_arr > start_value) * 100), 1),
         "prob_ruin_pct": round(float(np.mean(results_arr < start_value * 0.5) * 100), 1),
-        "expected_return": round((float(p50) - start_value) / start_value * 100, 2) if start_value > 0 else 0.0,
+        "expected_return": round((float(p50) - start_value) / start_value * 100, 2)
+        if start_value > 0
+        else 0.0,
     }
 
 
@@ -145,14 +147,16 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/metrics")
     @auth
     def api_metrics():
-        return jsonify({
-            "portfolio_value": st.portfolio_value(),
-            "positions": len(st.positions),
-            "short_positions": len(st.short_positions),
-            "balance": st.balance,
-            "running": st.running,
-            "iteration": st.iteration,
-        })
+        return jsonify(
+            {
+                "portfolio_value": st.portfolio_value(),
+                "positions": len(st.positions),
+                "short_positions": len(st.short_positions),
+                "balance": st.balance,
+                "running": st.running,
+                "iteration": st.iteration,
+            }
+        )
 
     # ── System Analytics ──────────────────────────────────────────────────────
 
@@ -199,8 +203,12 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
                     "adapted": aw.get("strategies_adapted", 0),
                     "total_votes": aw.get("total_votes", 0),
                     "top": [
-                        {"name": s.get("strategy", "?"), "weight": round(s.get("weight", 0), 2),
-                         "win_rate": f"{s.get('win_rate', 0):.0f}%", "trades": s.get("trades", 0)}
+                        {
+                            "name": s.get("strategy", "?"),
+                            "weight": round(s.get("weight", 0), 2),
+                            "win_rate": f"{s.get('win_rate', 0):.0f}%",
+                            "trades": s.get("trades", 0),
+                        }
                         for s in top_strats
                     ],
                 }
@@ -247,13 +255,17 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
         if not prices:
             return jsonify({"regime": "UNKNOWN"})
         regime_result = deps.adv_risk.classify_regime(
-            [e["value"] for e in list(st.portfolio_history)[-50:]] if st.portfolio_history else prices
+            [e["value"] for e in list(st.portfolio_history)[-50:]]
+            if st.portfolio_history
+            else prices
         )
-        return jsonify({
-            "regime": regime_result,
-            "vol_pct": round(deps.adv_risk._ewma_vol * 100, 3),
-            "risk_level": deps.adv_risk.volatility_forecast(1)["risk_level"],
-        })
+        return jsonify(
+            {
+                "regime": regime_result,
+                "vol_pct": round(deps.adv_risk._ewma_vol * 100, 3),
+                "risk_level": deps.adv_risk.volatility_forecast(1)["risk_level"],
+            }
+        )
 
     # ── Revenue ───────────────────────────────────────────────────────────────
 
@@ -433,7 +445,9 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
         n = si(request.args.get("n", 10), 10)
         if deps.trade_dna is None:
             return jsonify({"top": [], "worst": []})
-        return jsonify({"top": deps.trade_dna.top_patterns(n), "worst": deps.trade_dna.worst_patterns(n)})
+        return jsonify(
+            {"top": deps.trade_dna.top_patterns(n), "worst": deps.trade_dna.worst_patterns(n)}
+        )
 
     @bp.route("/api/v1/smart-exits")
     @auth

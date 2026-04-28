@@ -15,10 +15,22 @@ if TYPE_CHECKING:
 
 _PROTECTED_KEYS = frozenset(
     {
-        "api_key", "secret", "short_api_key", "short_secret",
-        "mysql_pass", "mysql_host", "mysql_port", "mysql_user", "mysql_db",
-        "jwt_secret", "admin_password", "cryptopanic_token", "discord_webhook",
-        "telegram_token", "telegram_chat_id", "encryption_key",
+        "api_key",
+        "secret",
+        "short_api_key",
+        "short_secret",
+        "mysql_pass",
+        "mysql_host",
+        "mysql_port",
+        "mysql_user",
+        "mysql_db",
+        "jwt_secret",
+        "admin_password",
+        "cryptopanic_token",
+        "discord_webhook",
+        "telegram_token",
+        "telegram_chat_id",
+        "encryption_key",
     }
 )
 
@@ -75,9 +87,19 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
     @admin
     def api_admin_config():
         _HIDDEN = {
-            "api_key", "secret", "mysql_pass", "admin_password", "jwt_secret",
-            "short_api_key", "short_secret", "cryptopanic_token", "encryption_key",
-            "secret_key", "telegram_token", "extra_exchanges", "funding_rate_cache",
+            "api_key",
+            "secret",
+            "mysql_pass",
+            "admin_password",
+            "jwt_secret",
+            "short_api_key",
+            "short_secret",
+            "cryptopanic_token",
+            "encryption_key",
+            "secret_key",
+            "telegram_token",
+            "extra_exchanges",
+            "funding_rate_cache",
         }
         safe = {k: v for k, v in cfg.items() if k not in _HIDDEN}
         return jsonify(safe)
@@ -104,7 +126,11 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
                     v = sf(v, original)
                 cfg[k] = v
                 updated.append(k)
-        _db_audit(request.user_id, "config_update", f"Geändert: {', '.join(updated) if updated else 'nichts'}")
+        _db_audit(
+            request.user_id,
+            "config_update",
+            f"Geändert: {', '.join(updated) if updated else 'nichts'}",
+        )
         return jsonify({"ok": True, "updated": updated})
 
     # ── Exchanges ─────────────────────────────────────────────────────────────
@@ -142,7 +168,9 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
         try:
             with db._get_conn() as conn:
                 with conn.cursor() as c:
-                    c.execute("UPDATE user_exchanges SET enabled=%s WHERE id=%s", (enabled, exchange_id))
+                    c.execute(
+                        "UPDATE user_exchanges SET enabled=%s WHERE id=%s", (enabled, exchange_id)
+                    )
             return jsonify({"ok": True})
         except Exception as e:
             log.error("API error: %s", e)
@@ -226,7 +254,9 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
         _set_env("TELEGRAM_CHAT_ID", chat_id)
         _db_audit(session.get("user_id", 0), "telegram_configure", "Telegram konfiguriert")
         ok = deps.telegram.test() if deps.telegram else False
-        return jsonify({"success": ok, "enabled": deps.telegram.enabled if deps.telegram else False})
+        return jsonify(
+            {"success": ok, "enabled": deps.telegram.enabled if deps.telegram else False}
+        )
 
     # ── Funding-Rates ─────────────────────────────────────────────────────────
 
@@ -236,7 +266,12 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
         n = si(request.args.get("n", 20), 20)
         if deps.funding_tracker is None:
             return jsonify({"top_rates": [], "status": {}})
-        return jsonify({"top_rates": deps.funding_tracker.top_rates(n), "status": deps.funding_tracker.status()})
+        return jsonify(
+            {
+                "top_rates": deps.funding_tracker.top_rates(n),
+                "status": deps.funding_tracker.status(),
+            }
+        )
 
     @bp.route("/api/v1/funding-rates/config", methods=["POST"])
     @auth
@@ -256,27 +291,37 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
     def api_news_filter():
         if request.method == "POST":
             d = body()
-            cfg["news_sentiment_min"] = sf(d.get("min_score", cfg["news_sentiment_min"]), cfg["news_sentiment_min"])
-            cfg["news_require_positive"] = bool(d.get("require_positive", cfg["news_require_positive"]))
-            cfg["news_block_score"] = sf(d.get("block_score", cfg["news_block_score"]), cfg["news_block_score"])
+            cfg["news_sentiment_min"] = sf(
+                d.get("min_score", cfg["news_sentiment_min"]), cfg["news_sentiment_min"]
+            )
+            cfg["news_require_positive"] = bool(
+                d.get("require_positive", cfg["news_require_positive"])
+            )
+            cfg["news_block_score"] = sf(
+                d.get("block_score", cfg["news_block_score"]), cfg["news_block_score"]
+            )
             _db_audit(
                 session.get("user_id", 0),
                 "news_filter_update",
                 f"min={cfg['news_sentiment_min']} pos={cfg['news_require_positive']}",
             )
-            return jsonify({
-                "success": True,
-                "config": {
-                    "news_sentiment_min": cfg["news_sentiment_min"],
-                    "news_require_positive": cfg["news_require_positive"],
-                    "news_block_score": cfg["news_block_score"],
-                },
-            })
-        return jsonify({
-            "news_sentiment_min": cfg.get("news_sentiment_min", -0.2),
-            "news_require_positive": cfg.get("news_require_positive", False),
-            "news_block_score": cfg.get("news_block_score", -0.4),
-        })
+            return jsonify(
+                {
+                    "success": True,
+                    "config": {
+                        "news_sentiment_min": cfg["news_sentiment_min"],
+                        "news_require_positive": cfg["news_require_positive"],
+                        "news_block_score": cfg["news_block_score"],
+                    },
+                }
+            )
+        return jsonify(
+            {
+                "news_sentiment_min": cfg.get("news_sentiment_min", -0.2),
+                "news_require_positive": cfg.get("news_require_positive", False),
+                "news_block_score": cfg.get("news_block_score", -0.4),
+            }
+        )
 
     # ── Strategy Weights ──────────────────────────────────────────────────────
 
@@ -286,11 +331,13 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
         if deps.adaptive_weights is None:
             return jsonify({"weights": {}, "performance": []})
         regime = request.args.get("regime")
-        return jsonify({
-            "weights": deps.adaptive_weights.get_weights(regime),
-            "performance": deps.adaptive_weights.strategy_performance(),
-            "regime_performance": deps.adaptive_weights.regime_performance(),
-            **deps.adaptive_weights.stats(),
-        })
+        return jsonify(
+            {
+                "weights": deps.adaptive_weights.get_weights(regime),
+                "performance": deps.adaptive_weights.strategy_performance(),
+                "regime_performance": deps.adaptive_weights.regime_performance(),
+                **deps.adaptive_weights.stats(),
+            }
+        )
 
     return bp

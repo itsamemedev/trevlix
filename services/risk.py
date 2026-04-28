@@ -468,8 +468,8 @@ class AdvancedRiskMetrics:
             scores = np.abs(probs - y_cal)
             if len(scores) == 0:
                 return {"lower": 0.3, "upper": 0.7, "coverage": 0.9, "method": "fallback"}
-            q_level = math.ceil(((len(scores) + 1) * (1 - alpha)) / len(scores))
-            q_level = min(q_level, 1.0)
+            q_rank = math.ceil((len(scores) + 1) * (1 - alpha))
+            q_level = min(q_rank / len(scores), 1.0)
             q_hat = float(np.quantile(scores, q_level))
             test_proba = model.predict_proba(X_test)
             if test_proba.shape[0] == 0 or test_proba.shape[1] < 2:

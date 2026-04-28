@@ -49,7 +49,6 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-import json
 import os
 import threading
 import time
@@ -59,18 +58,17 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
-import requests
 from dotenv import load_dotenv
 from flask import (
     Response,
     g,
     jsonify,
     request,
-    send_file,
     session,
 )
 from flask_socketio import emit
 
+import app.core.trading_ops as _trading_ops_mod
 from app.core.admin_exchange import (
     get_admin_exchange_by_name,
     get_admin_primary_exchange,
@@ -144,7 +142,6 @@ from app.core.trading_classes import (
     ShortEngine,
     init_trading_classes,
 )
-import app.core.trading_ops as _trading_ops_mod
 from app.core.trading_ops import (
     _preflight_exchange_markets,
     bot_loop,
@@ -3347,12 +3344,12 @@ def _maybe_auto_start_bot() -> bool:
 
 
 # ── API-Blueprint-Registrierung ────────────────────────────────────────────
-from routes.api.deps import AppDeps
-from routes.api.trading import create_trading_blueprint
-from routes.api.admin import create_admin_blueprint
-from routes.api.ai import create_ai_blueprint
-from routes.api.system import create_system_blueprint
-from routes.api.market import create_market_blueprint
+from routes.api.admin import create_admin_blueprint  # noqa: E402
+from routes.api.ai import create_ai_blueprint  # noqa: E402
+from routes.api.deps import AppDeps  # noqa: E402
+from routes.api.market import create_market_blueprint  # noqa: E402
+from routes.api.system import create_system_blueprint  # noqa: E402
+from routes.api.trading import create_trading_blueprint  # noqa: E402
 
 _api_deps = AppDeps(
     config=CONFIG,

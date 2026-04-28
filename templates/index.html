@@ -178,6 +178,13 @@ nav.scrolled { background: rgba(2,5,7,.98); }
   background-size:80px 80px;
   mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, black, transparent);
 }
+.hero-alpha-banner {
+  position:relative; z-index:2; width:100%; max-width:780px; margin:0 auto 20px;
+  background:rgba(255,165,0,.12); border:1px solid rgba(255,165,0,.45); border-radius:6px;
+  color:#ffaa00; font-family:var(--fm); font-size:12px; font-weight:700;
+  letter-spacing:1px; text-transform:uppercase; padding:10px 18px;
+  text-align:center; animation:fadeUp .6s ease both;
+}
 .hero-eyebrow {
   display:inline-flex; align-items:center; gap:8px; position:relative; z-index:1;
   font-family:var(--fm); font-size:11px; letter-spacing:2.5px;
@@ -788,6 +795,7 @@ footer::before {
 <section id="hero">
   <div class="hero-bg"></div>
   <div class="hero-grid"></div>
+  <div class="hero-alpha-banner">⚠️ ALPHA VERSION — Software befindet sich in der aktiven Entwicklung. Nicht für den produktiven Einsatz mit echten Geldern empfohlen.</div>
   <div class="hero-eyebrow" data-i18n="web_hero_eyebrow">v1.7.1 · trevlix.dev · Open Source</div>
   <h1 class="hero-h1">
     ALGORITHMIC<br>
@@ -1820,11 +1828,11 @@ footer::before {
   </style>
   <script>
     const DONATE_ADDRS = {
-      cryptocom: { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_CRO',   network: 'TRC-20 (TRON)' },
-      binance:   { addr: '0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxBNB', network: 'BEP-20 (BSC) oder TRC-20' },
-      bybit:     { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_BBT',    network: 'TRC-20 (TRON)' },
-      okx:       { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_OKX',    network: 'TRC-20 (TRON) oder ERC-20' },
-      kucoin:    { addr: 'TFxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx_KUC',    network: 'TRC-20 (TRON)' },
+      cryptocom: { addr: '0x1874Ddb57FE25Db00128e72Ae9d1F4B664a2EfCe', network: 'ERC-20 (Ethereum) / BEP-20 (BSC) / Polygon' },
+      binance:   { addr: '0x1874Ddb57FE25Db00128e72Ae9d1F4B664a2EfCe', network: 'ERC-20 (Ethereum) / BEP-20 (BSC) / Polygon' },
+      bybit:     { addr: '0x1874Ddb57FE25Db00128e72Ae9d1F4B664a2EfCe', network: 'ERC-20 (Ethereum) / BEP-20 (BSC) / Polygon' },
+      okx:       { addr: '0x1874Ddb57FE25Db00128e72Ae9d1F4B664a2EfCe', network: 'ERC-20 (Ethereum) / BEP-20 (BSC) / Polygon' },
+      kucoin:    { addr: '0x1874Ddb57FE25Db00128e72Ae9d1F4B664a2EfCe', network: 'ERC-20 (Ethereum) / BEP-20 (BSC) / Polygon' },
     };
     function showDonateAddr(ex) {
       const d = DONATE_ADDRS[ex];

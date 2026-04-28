@@ -605,8 +605,20 @@ class TestVirginieSelfsupply:
     def test_selects_highest_ev_candidate(self):
         core = self._make_core()
         opps = [
-            Opportunity(key="ETH/USDT", success_probability=0.6, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
-            Opportunity(key="BTC/USDT", success_probability=0.4, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
+            Opportunity(
+                key="ETH/USDT",
+                success_probability=0.6,
+                expected_profit=0.15,
+                cost=0.005,
+                risk_penalty=0.01,
+            ),
+            Opportunity(
+                key="BTC/USDT",
+                success_probability=0.4,
+                expected_profit=0.15,
+                cost=0.005,
+                risk_penalty=0.01,
+            ),
         ]
         decision = core.select_opportunity_with_report(opps)
         assert decision.selected is not None
@@ -616,7 +628,13 @@ class TestVirginieSelfsupply:
         core = VirginieCore(guardrails=VirginieGuardrails(min_score=0.1, max_risk_penalty=10.0))
         # EV = 0.05 * 0.15 - 0.005 - 0.01 = 0.0075 - 0.015 = -0.0075 < 0.1 → rejected
         opps = [
-            Opportunity(key="DOGE/USDT", success_probability=0.05, expected_profit=0.15, cost=0.005, risk_penalty=0.01),
+            Opportunity(
+                key="DOGE/USDT",
+                success_probability=0.05,
+                expected_profit=0.15,
+                cost=0.005,
+                risk_penalty=0.01,
+            ),
         ]
         decision = core.select_opportunity_with_report(opps)
         assert decision.selected is None

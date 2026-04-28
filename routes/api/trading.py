@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import threading
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -414,6 +415,11 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                             "highest": price,
                             "manual": True,
                             "trade_mode": "paper" if cfg.get("paper_trading", True) else "live",
+                            "opened": datetime.now().isoformat(),
+                            "opened_ts": time.time(),
+                            "observed_ticks": 0,
+                            "peak_price": price,
+                            "trough_price": price,
                         }
                 log.info("Manueller Kauf: %s @ %.4f invest=%.2f", sym, price, invest)
                 return jsonify({"ok": True, "symbol": sym, "price": price, "mode": result.mode})
