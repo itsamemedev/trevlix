@@ -462,12 +462,11 @@ class TestGetScore:
         )
 
         client = CryptoPanicClient(token="test-token")
-        client._cache["BTC:free"] = {
+        client._cache.set("BTC:free", {
             "score": 0.42,
             "headline": "Cached BTC headline",
             "count": 7,
-            "ts": 1.0,  # absichtlich veraltet
-        }
+        })
 
         score, headline, count = client.get_score("BTC/USDT")
 

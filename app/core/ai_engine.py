@@ -1219,14 +1219,18 @@ class AIEngine:
         primary_control = bool(CONFIG.get("virginie_primary_control", True))
         autonomy_w = float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7)
         autonomy_w = min(1.0, max(0.0, autonomy_w))
+        _tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100   # e.g. 6.0
+        _sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100   # e.g. 2.5
+        _fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100  # round-trip
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             if virginie_enabled and primary_control:
+                _rp = float(max(0.0, (1.0 - conf) * _sl_pts))
                 opportunity = Opportunity(
                     key="buy_signal",
                     success_probability=float(conf),
-                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
-                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
-                    risk_penalty=float(max(0.0, (1.0 - conf) * 10.0)),
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed = virginie_decision.selected is not None
@@ -1239,18 +1243,46 @@ class AIEngine:
         try:
             if virginie_enabled:
                 self._sync_virginie_guardrails_from_config()
+
+            # Fast-path: near-unanimous strategy agreement → skip expensive ML inference,
+            # use conf directly as blended_prob but still run guardrail/EV check.
+            _fast_threshold = float(CONFIG.get("virginie_fast_path_threshold", 0.80))
+            _use_fast_path = virginie_enabled and primary_control and float(conf) >= _fast_threshold
+            if _use_fast_path:
+                blended_prob = float(conf)
+                _rp = float(max(0.0, (1.0 - blended_prob) * _sl_pts))
+                opportunity = Opportunity(
+                    key="buy_signal",
+                    success_probability=blended_prob,
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
+                )
+                virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
+                allowed = virginie_decision.selected is not None
+                if allowed:
+                    self.allowed_count += 1
+                else:
+                    self.blocked_count += 1
+                return (
+                    allowed,
+                    blended_prob,
+                    f"{'✅' if allowed else '🚫'} FastPath:{conf * 100:.1f}% | {virginie_decision.reason}",
+                )
+
             X_s = self.scaler.transform(features.reshape(1, -1))
             prob = self._predict(X_s, features)
             allowed_by_model = prob >= CONFIG["ai_min_confidence"]
 
             if virginie_enabled:
                 blended_prob = autonomy_w * prob + (1.0 - autonomy_w) * float(conf)
+                _rp = float(max(0.0, (1.0 - blended_prob) * _sl_pts))
                 opportunity = Opportunity(
                     key="buy_signal",
                     success_probability=blended_prob,
-                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
-                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
-                    risk_penalty=float(max(0.0, (1.0 - blended_prob) * 10.0)),
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed_by_virginie = virginie_decision.selected is not None

@@ -7,11 +7,14 @@ Trade-DNA, Smart-Exits, Performance-Attribution.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from flask import Blueprint, Response, jsonify, request
+
+log = logging.getLogger("trevlix.api.system")
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
@@ -324,7 +327,8 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
             node = deps.cluster_ctrl.add_node(name, host, port, api_token)
             return jsonify({"ok": True, "node": node.to_dict()}), 201
         except ValueError as e:
-            return jsonify({"error": str(e)}), 409
+            log.warning("cluster_add_node failed: %s", e)
+            return jsonify({"error": "cluster_add_node_failed"}), 409
 
     @bp.route("/api/v1/cluster/nodes/<name>", methods=["DELETE"])
     @auth

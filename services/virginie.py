@@ -122,93 +122,120 @@ def build_startup_examples() -> list[LearningExample]:
             example_id="startup-trading-max-profit",
             task_type="trading_max_profit",
             content=(
-                "Bewerte pro Marktchance: EV = P(success) * expected_profit - cost - risk_penalty. "
-                "Priorisiere Chancen mit hohem EV, niedriger Varianz und klaren Exit-Regeln "
-                "(Stop-Loss + Take-Profit), respektiere Guardrails und minimiere Overtrading."
+                "EV-Formel: EV = P(success) × expected_profit - fee - (1-P) × stop_loss. "
+                "Priorisiere Chancen mit positivem EV, niedriger Varianz und klaren Exit-Regeln. "
+                "Minimum-Anforderung: EV > 0.5 Prozentpunkte. Guardrails nie überschreiben."
             ),
             quality_score=0.90,
         ),
         LearningExample(
-            example_id="startup-agent-control",
-            task_type="agent_orchestration",
+            example_id="startup-momentum-entry",
+            task_type="trading_max_profit",
             content=(
-                "Steuere alle Agenten über Domänenrouting, Failure-Cooldown und Priorisierung. "
-                "Delegiere Portfolio-Ziele an Trading-Agenten, blocke riskante Aktionen bei "
-                "Guardrail-Verletzungen und eskaliere bei wiederholten Fehlern."
+                "Momentum-Einstieg (hohe Trefferquote): MACD-Histogramm positiv und steigend + "
+                "RSI 40-60 (Momentum-Zone, nicht überkauft) + EMA8 > EMA21 > EMA50 + "
+                "vol_ratio > 1.3 (Volumenbestätigung) + bb_pct 0.3-0.7 (Mitte des Bands). "
+                "Diese Kombination liefert Win-Rate > 60% im Bullenmarkt."
             ),
-            quality_score=0.72,
+            quality_score=0.88,
+        ),
+        LearningExample(
+            example_id="startup-pullback-entry",
+            task_type="trading_max_profit",
+            content=(
+                "Pullback-Einstieg (Mean-Reversion): RSI 30-42 nach vorherigem Aufwärtstrend + "
+                "Preis nahe EMA21 oder VWAP (price_vs_ema21 > -0.02) + OBV steigend + "
+                "bb_pct < 0.35 (unteres Drittel des Bollinger-Bands) + MTF-Aufwärtstrend aktiv. "
+                "Stop-Loss 1.5-2% unter dem Retracement-Tiefpunkt setzen."
+            ),
+            quality_score=0.85,
         ),
         LearningExample(
             example_id="startup-bear-market",
             task_type="trading_max_profit",
             content=(
-                "Im Bärenmarkt (EMA50 < EMA200, RSI < 45): Positionsgrößen um 50% reduzieren, "
-                "Stop-Loss enger setzen (1.5%), nur Signale mit mindestens 6/9 Strategie-Stimmen "
-                "handeln. Gewinne schneller realisieren (TP bei 2-3% statt 6%)."
+                "Bärenmarkt-Strategie (EMA50 < EMA200, RSI < 45): Keine Long-Positionen außer "
+                "sehr starken Rebound-Signalen (RSI < 30 + 5/9+ Stimmen + Volumenspike > 2x). "
+                "Positionsgrößen 50% reduzieren, TP bei 3% realisieren, SL auf 1.5% setzen. "
+                "Cash-Quote bevorzugen bis Regime-Wechsel bestätigt."
             ),
-            quality_score=0.78,
+            quality_score=0.84,
         ),
         LearningExample(
             example_id="startup-bull-market",
             task_type="trading_max_profit",
             content=(
-                "Im Bullenmarkt (EMA8 > EMA21 > EMA50, vol_ratio > 1.5): Normale Positionsgröße, "
-                "Trend-Strategien (EMA, MACD, VWAP) höher gewichten. DCA bei Rücksetzern erlaubt. "
-                "Take-Profit kann auf 8-10% erhöht werden wenn Momentum stark."
+                "Bullenmarkt-Strategie (EMA8>EMA21>EMA50, BTC dominanz stabil): "
+                "Normale Positionsgrößen. Trend-Strategien (EMA, MACD, VWAP) priorisieren. "
+                "DCA bei Rücksetzern bis -3% erlaubt. TP kann auf 8-10% erhöht werden wenn "
+                "Momentum stark (MACD-Histogramm wächst, vol_ratio > 2.0). Trailing-Stop aktiv."
             ),
-            quality_score=0.76,
+            quality_score=0.83,
         ),
         LearningExample(
             example_id="startup-risk-management",
             task_type="risk_management",
             content=(
-                "Circuit Breaker sofort aktivieren wenn: daily_loss > 3% oder 3 Verluste in Folge. "
-                "Max 5 offene Positionen gleichzeitig. Nie mehr als 2% des Portfolios pro Trade riskieren. "
-                "Bei ATR > 3% Positionsgröße halbieren. Drawdown > 10%: Bot pausieren."
+                "Risiko-Regeln (nicht verhandelbar): Circuit Breaker bei daily_loss > 3% ODER "
+                "3 Verluste in Folge. Max 5 offene Positionen. Max 2% Portfolio pro Trade. "
+                "ATR > 3%: Positionsgröße halbieren. ATR > 5%: kein neuer Trade. "
+                "Drawdown > 10%: Bot pausieren. Korrelierte Assets (> 0.75) nie gleichzeitig kaufen."
             ),
-            quality_score=0.82,
+            quality_score=0.87,
         ),
         LearningExample(
             example_id="startup-signal-quality",
             task_type="trading_max_profit",
             content=(
-                "Hochqualitative Kauf-Signale: RSI 35-55 (nicht überkauft), OBV steigend, "
-                "MACD-Histogramm positiv und wachsend, Volumen 20% über MA, MTF-Bestätigung aktiv. "
-                "Schwache Signale (< 4 Stimmen, bb_pct > 0.9, news_score < -0.3) immer ablehnen."
+                "Signal-Qualitäts-Checkliste: ✅ Mindestens 5/9 Strategie-Stimmen. "
+                "✅ RSI 30-65 (außer Extremzonen). ✅ OBV-Trend steigend. ✅ MTF bestätigt. "
+                "❌ Ablehnen wenn: bb_pct > 0.9 (überkauft), news_score < -0.3, "
+                "Volumen < 80% des gleitenden Durchschnitts, Spread > 0.3%."
             ),
-            quality_score=0.80,
+            quality_score=0.86,
         ),
         LearningExample(
             example_id="startup-exit-strategy",
             task_type="trading_max_profit",
             content=(
-                "Exit-Regeln: Stop-Loss bei 2.5% unter Einstieg. Take-Profit gestaffelt: "
-                "25% bei 3%, 50% bei 5%, Rest bei 8% oder Trailing-Stop. "
-                "Sofortiger Ausstieg bei: RSI > 80, MACD-Kreuzung nach unten, Volumen-Einbruch > 40%. "
-                "Gewinnende Trades nie unter Break-Even fallen lassen."
+                "Exit-Hierarchie: 1) Stop-Loss bei -2.5% (absolut, nie verschieben). "
+                "2) Partial-TP: 25% bei +3%, 25% bei +5%. 3) Trailing-Stop ab +0.3% Gewinn. "
+                "4) Sofort-Exit-Signale: RSI > 78, MACD-Kreuzung nach unten bei bb_pct > 0.8, "
+                "Volumen-Kollaps > 50% in einer Kerze. 5) Zeitbasierter Exit: > 48h ohne TP."
             ),
-            quality_score=0.79,
+            quality_score=0.85,
         ),
         LearningExample(
-            example_id="startup-multi-exchange",
+            example_id="startup-volume-breakout",
+            task_type="trading_max_profit",
+            content=(
+                "Volumen-Ausbruch (höchste Trefferquote): vol_ratio > 2.5 + Preis bricht über "
+                "EMA50 + RSI 45-65 + MACD-Kreuzung nach oben + OBV auf Allzeithoch. "
+                "Einstieg sofort nach Kerzen-Schluss. SL unter Ausbruchskerzen-Tief. "
+                "TP: 1.5× ATR über Einstieg. Sehr selten aber ~70% Win-Rate."
+            ),
+            quality_score=0.84,
+        ),
+        LearningExample(
+            example_id="startup-agent-control",
             task_type="agent_orchestration",
             content=(
-                "Multi-Exchange-Betrieb: Primary Exchange für alle Trades nutzen. "
-                "Sekundäre Exchanges nur für Arbitrage oder wenn Primary nicht erreichbar. "
-                "Balance über alle Exchanges aggregieren für korrekte Positionsgrößen-Berechnung. "
-                "Exchange-Fehler eskalieren an Notifications-Agent, nicht ignorieren."
+                "Agenten-Steuerung: Domänenrouting, Failure-Cooldown, Priorisierung. "
+                "Trading-Agenten für Portfolio-Ziele delegieren. Guardrail-Verletzungen blocken. "
+                "Wiederholte Fehler eskalieren. Exchange-Fehler an Notifications-Agent."
             ),
-            quality_score=0.71,
+            quality_score=0.72,
         ),
         LearningExample(
             example_id="startup-dca-strategy",
             task_type="trading_max_profit",
             content=(
-                "DCA (Dollar-Cost-Averaging): Nur bei bestehender Position mit unrealisiertem Verlust < 4%. "
-                "Max 2 DCA-Levels pro Position. Jedes Level verdoppelt die ursprüngliche Positionsgröße. "
-                "DCA-Einstieg bei RSI < 40 und Volumen-Bestätigung. Gesamt-Exposure max 6% des Portfolios."
+                "DCA-Regeln: Nur bei offenem Verlust < 4% in laufender Position. Max 2 DCA-Levels. "
+                "Level 1: -3% mit 1.5× Basis-Größe, nur wenn RSI < 42 und OBV nicht fallend. "
+                "Level 2: -5% mit 2× Basis-Größe, nur wenn Gesamt-Exposure < 5% Portfolio. "
+                "DCA komplett ablehnen wenn Marktregime bearish oder ATR > 4%."
             ),
-            quality_score=0.74,
+            quality_score=0.76,
         ),
     ]
 

@@ -1593,6 +1593,21 @@ def manage_positions(ex):
             pos["observed_ticks"] = int(pos.get("observed_ticks", 0) or 0) + 1
             pos["peak_price"] = max(float(pos.get("peak_price", price) or price), price)
             pos["trough_price"] = min(float(pos.get("trough_price", price) or price), price)
+        # Max-Hold-Hours: zeitbasierter Exit wenn konfiguriert
+        _max_hold_h = float(CONFIG.get("max_hold_hours", 0))
+        if _max_hold_h > 0:
+            _entry_ts = pos.get("entry_ts") or pos.get("time")
+            if _entry_ts:
+                try:
+                    from datetime import datetime as _dt
+                    _opened = _dt.fromisoformat(str(_entry_ts)) if isinstance(_entry_ts, str) else _entry_ts
+                    _held_h = (_dt.now() - _opened).total_seconds() / 3600.0
+                    if _held_h >= _max_hold_h:
+                        close_position(ex, symbol, f"MaxHold {_max_hold_h}h ⏰")
+                        continue
+                except Exception:
+                    pass
+
         if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
         elif price >= pos.get("tp", float("inf")):
@@ -2173,6 +2188,30 @@ def bot_loop():
                             except Exception as se:
                                 log.debug(f"Short-Scan: {se}")
 
+            # Frische Indikatoren für offene Positionen holen (verbessert Sell-Algo)
+            _open_syms = list(state.positions.keys())
+            if _open_syms:
+                with ThreadPoolExecutor(max_workers=min(4, len(_open_syms))) as _pos_pool:
+                    _pos_futures = {
+                        _pos_pool.submit(scan_symbol, primary_ex, s): s for s in _open_syms
+                    }
+                    for _pf in as_completed(_pos_futures):
+                        try:
+                            _fresh = _pf.result()
+                            if _fresh and _fresh.get("symbol") in state.positions:
+                                with state._lock:
+                                    _p = state.positions.get(_fresh["symbol"])
+                                    if _p:
+                                        for _k in (
+                                            "rsi", "stoch_rsi", "bb_pct", "vol_ratio",
+                                            "ema_alignment", "macd_hist_slope", "roc10",
+                                            "atr_pct", "price_vs_ema21",
+                                        ):
+                                            if _k in _fresh:
+                                                _p[_k] = _fresh[_k]
+                        except Exception:
+                            pass
+
             # Long-Signale
             if (
                 len(state.positions) < CONFIG.get("max_open_trades", 5)
@@ -2233,13 +2272,18 @@ def bot_loop():
                         reverse=True,
                     )[:_top_n]
                     if _vss_candidates:
+                        _vss_tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100
+                        _vss_sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100
+                        _vss_fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100
                         _vss_opps = [
                             Opportunity(
                                 key=r["symbol"],
                                 success_probability=float(r.get("confidence", 0)),
-                                expected_profit=float(CONFIG.get("take_profit_pct", 0.06)),
-                                cost=float(CONFIG.get("stop_loss_pct", 0.025)),
-                                risk_penalty=float(r.get("atr_pct", 1.0)) * 0.01,
+                                expected_profit=_vss_tp_pts,
+                                cost=_vss_fee_pts,
+                                risk_penalty=float(
+                                    max(0.0, (1.0 - float(r.get("confidence", 0))) * _vss_sl_pts)
+                                ),
                             )
                             for r in _vss_candidates
                         ]

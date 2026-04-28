@@ -27,6 +27,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from services.cache import TTLCache
+
 log = logging.getLogger("trevlix.knowledge")
 
 # Optionale LLM-Anbindung
@@ -86,14 +88,8 @@ class KnowledgeBase:
         self._llm_api_key = llm_api_key
         self._llm_model = llm_model
         self._lock = threading.Lock()
-        self._cache: dict[str, dict] = {}
-        self._cache_ts: dict[str, float] = {}
-        self._cache_ttl = 300  # 5 Minuten Cache
-        self._cache_max_size = 500  # Max Einträge
-        self._llm_cache: dict[str, str] = {}
-        self._llm_cache_ts: dict[str, float] = {}
-        self._llm_cache_ttl = 900  # 15 Minuten LLM-Response Cache
-        self._llm_cache_max_size = 100  # Max LLM-Einträge
+        self._cache: TTLCache[dict] = TTLCache(ttl_seconds=300, max_size=500)
+        self._llm_cache: TTLCache[str] = TTLCache(ttl_seconds=900, max_size=100)
         self._cached_market_analysis: str = ""
         self._cached_market_analysis_ts: float = 0.0
         self._idle_learning = {
@@ -118,16 +114,6 @@ class KnowledgeBase:
             except Exception as e:
                 log.debug("Multi-LLM Init: %s", e)
 
-    @staticmethod
-    def _evict_cache(cache: dict, ts_dict: dict, max_size: int) -> None:
-        """Entfernt die ältesten Einträge wenn Cache max_size überschreitet."""
-        if len(cache) <= max_size:
-            return
-        sorted_keys = sorted(cache.keys(), key=lambda k: ts_dict.get(k, 0))  # type: ignore[arg-type]
-        to_remove = len(cache) - max_size
-        for k in sorted_keys[:to_remove]:
-            cache.pop(k, None)
-            ts_dict.pop(k, None)
 
     def store(
         self, category: str, key: str, value: Any, confidence: float = 0.5, source: str = "ai"
@@ -169,7 +155,7 @@ class KnowledgeBase:
                     )
             # Cache invalidieren
             cache_key = f"{category}:{key}"
-            self._cache.pop(cache_key, None)
+            self._cache.delete(cache_key)
             return True
         except Exception as e:
             log.error(f"KnowledgeBase.store: {e}")
@@ -186,9 +172,9 @@ class KnowledgeBase:
             Dict mit value, confidence, source, updated_at oder None.
         """
         cache_key = f"{category}:{key}"
-        now = time.time()
-        if cache_key in self._cache and now - self._cache_ts.get(cache_key, 0) < self._cache_ttl:
-            return self._cache[cache_key]
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
         try:
             with self._db._get_conn() as conn:
                 with conn.cursor() as c:
@@ -213,9 +199,7 @@ class KnowledgeBase:
                     row["updated_at"].isoformat() if row.get("updated_at") is not None else None
                 ),
             }
-            self._cache[cache_key] = result
-            self._cache_ts[cache_key] = now
-            self._evict_cache(self._cache, self._cache_ts, self._cache_max_size)
+            self._cache.set(cache_key, result)
             return result
         except Exception as e:
             log.error(f"KnowledgeBase.get: {e}")
@@ -747,17 +731,12 @@ class KnowledgeBase:
         Returns:
             LLM-Antwort als String oder None bei Fehler/Cache-Miss.
         """
-        now = time.time()
-        with self._lock:
-            if cache_key in self._llm_cache:
-                if now - self._llm_cache_ts.get(cache_key, 0) < self._llm_cache_ttl:
-                    return self._llm_cache[cache_key]
+        cached = self._llm_cache.get(cache_key)
+        if cached is not None:
+            return cached
         answer = self.query_llm(prompt, context)
         if answer:
-            with self._lock:
-                self._llm_cache[cache_key] = answer
-                self._llm_cache_ts[cache_key] = now
-                self._evict_cache(self._llm_cache, self._llm_cache_ts, self._llm_cache_max_size)
+            self._llm_cache.set(cache_key, answer)
         return answer
 
     def analyze_trade_async(self, trade: dict, features: dict | None = None) -> None:

@@ -5,6 +5,7 @@ Alle Virginie-Hilfsfunktionen leben in diesem Modul (kein server.py-Zugriff).
 
 from __future__ import annotations
 
+import logging
 import threading
 import uuid
 from collections import deque
@@ -12,6 +13,8 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from flask import Blueprint, jsonify, request
+
+log = logging.getLogger("trevlix.api.ai")
 
 from app.core.time_compat import UTC
 
@@ -494,7 +497,8 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
                 deps.ai_engine.force_sync()
             return jsonify({"ok": True})
         except Exception as e:
-            return jsonify({"ok": False, "error": str(e)}), 500
+            log.error("ai_force_sync failed: %s", e, exc_info=True)
+            return jsonify({"ok": False, "error": "ai_sync_failed"}), 500
 
     @bp.route("/api/v1/ai/shared/train", methods=["POST"])
     @auth
