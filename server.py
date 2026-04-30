@@ -1449,7 +1449,7 @@ def on_start_bot():
         broadcast=True,
     )
     state.add_activity(
-        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
+        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG.get('exchange', '').upper()}", "success"
     )
     log.info("🚀 Bot gestartet")
 
@@ -1769,6 +1769,9 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
 def on_force_train():
     if not _ws_admin_required():
         return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_training", "type": "error"})
+        return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
     threading.Thread(
         target=_run_ai_job,
@@ -1780,6 +1783,9 @@ def on_force_train():
 @socketio.on("force_optimize")
 def on_force_optimize():
     if not _ws_admin_required():
+        return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_optimizing", "type": "error"})
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
     threading.Thread(
@@ -1797,6 +1803,9 @@ def on_force_optimize():
 @socketio.on("force_genetic")
 def on_force_genetic():
     if not _ws_admin_required():
+        return
+    if genetic is None:
+        emit("status", {"msg": "❌ Genetischer Optimizer nicht verfügbar", "key": "ws_ai_genetic", "type": "error"})
         return
     emit(
         "status",
@@ -1818,6 +1827,9 @@ def on_force_genetic():
 @socketio.on("reset_ai")
 def on_reset_ai():
     if not _ws_admin_required():
+        return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_reset", "type": "error"})
         return
     with ai_engine._lock:
         ai_engine.X_raw = []
@@ -2005,6 +2017,9 @@ def on_send_report():
 def on_reset_cb():
     if not _ws_auth_required():
         return
+    if risk is None:
+        emit("status", {"msg": "❌ Risk-Manager nicht initialisiert", "key": "ws_cb_reset", "type": "error"})
+        return
     with risk._lock:
         risk.circuit_breaker_until = None
         risk.consecutive_losses = 0
@@ -2019,6 +2034,10 @@ def on_reset_cb():
 @socketio.on("scan_arbitrage")
 def on_scan_arb():
     if not _ws_auth_required():
+        return
+
+    if arb_scanner is None:
+        emit("status", {"msg": "❌ Arbitrage-Scanner nicht verfügbar", "key": "ws_arb_result", "type": "error"})
         return
 
     def _arb():
@@ -2038,6 +2057,8 @@ def on_scan_arb():
 @socketio.on("update_dominance")
 def on_update_dominance():
     if not _ws_auth_required():
+        return
+    if dominance is None:
         return
     threading.Thread(target=dominance.update, daemon=True).start()
     emit(

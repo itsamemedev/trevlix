@@ -381,12 +381,19 @@ def get_fee_rate(
         ex_cls = get_exchange_class(exchange_id)
         if ex_cls:
             ex = ex_cls({"enableRateLimit": True})
-            fee_info = ex.fetch_trading_fee(symbol)
-            default_rate = EXCHANGE_DEFAULT_FEES.get(exchange_id, fallback)
-            rate = float(fee_info.get("taker", default_rate))
-            with _fee_cache_lock:
-                _fee_cache[exchange_id] = rate
-            return rate
+            try:
+                fee_info = ex.fetch_trading_fee(symbol)
+                default_rate = EXCHANGE_DEFAULT_FEES.get(exchange_id, fallback)
+                rate = float(fee_info.get("taker", default_rate))
+                with _fee_cache_lock:
+                    _fee_cache[exchange_id] = rate
+                return rate
+            finally:
+                if hasattr(ex, "close"):
+                    try:
+                        ex.close()
+                    except Exception:
+                        pass
     except Exception as e:
         log.debug("Live-Fee-Abfrage für %s fehlgeschlagen: %s", exchange_id, e)
 
