@@ -82,9 +82,9 @@ def _runtime_status(deps: AppDeps) -> dict[str, Any]:
     return {
         "enabled": bool(cfg.get("virginie_enabled", True)),
         "primary_control": bool(cfg.get("virginie_primary_control", True)),
-        "autonomy_weight": float(cfg.get("virginie_autonomy_weight", 0.7) or 0.7),
-        "min_score": float(cfg.get("virginie_min_score", 0.0) or 0.0),
-        "max_risk_penalty": float(cfg.get("virginie_max_risk_penalty", 1000.0) or 1000.0),
+        "autonomy_weight": float(cfg.get("virginie_autonomy_weight", 0.7)),
+        "min_score": float(cfg.get("virginie_min_score", 0.0)),
+        "max_risk_penalty": float(cfg.get("virginie_max_risk_penalty", 1000.0)),
         "assistant_name": ai.get("assistant_name", "VIRGINIE"),
         "assistant_version": ai.get("assistant_version", "0.0.0"),
         "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
@@ -296,8 +296,8 @@ def _generate_reply(deps: AppDeps, user_id: int, user_prompt: str) -> str:
             answer = deps.knowledge.query_llm_with_tools(user_prompt, ctx)
             if answer:
                 return str(answer)
-        except Exception:
-            pass
+        except Exception as _llm_exc:
+            log.warning("LLM query failed: %s", _llm_exc)
     return (
         "VIRGINIE analysiert: Das System läuft stabil. "
         "Für detailliertere Antworten setze LLM_ENDPOINT in der .env-Datei."

@@ -329,7 +329,7 @@ class FundingRateTracker:
                             self._rates[base] = float(fr)
                         except (ValueError, TypeError):
                             log.debug("Ungültige Funding-Rate für %s: %s", base, fr)
-            self._last_update = datetime.now()
+                self._last_update = datetime.now()
             log.debug(f"[FUNDING] {len(self._rates)} Rates geladen")
         except Exception as e:
             log.debug(f"[FUNDING] Update: {e}")
@@ -356,12 +356,13 @@ class FundingRateTracker:
         ]
 
     def status(self) -> dict:
-        return {
-            "count": len(self._rates),
-            "last_update": self._last_update.isoformat() if self._last_update else None,
-            "filter_enabled": self.config.get("funding_rate_filter"),
-            "max_rate": self.config.get("funding_rate_max"),
-        }
+        with self._lock:
+            return {
+                "count": len(self._rates),
+                "last_update": self._last_update.isoformat() if self._last_update else None,
+                "filter_enabled": self.config.get("funding_rate_filter"),
+                "max_rate": self.config.get("funding_rate_max"),
+            }
 
 
 class AdvancedRiskMetrics:

@@ -885,11 +885,11 @@ def open_position(ex, scan: dict):
     dna_mult = dna_adjustment.get("multiplier", 1.0) if dna_adjustment else 1.0
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
-        if CONFIG["ai_use_kelly"]
+        if CONFIG.get("ai_use_kelly", False)
         else state.balance * CONFIG.get("risk_per_trade", 0.015) * fg_boost
     )
     invest *= dna_mult
-    invest = min(invest, state.balance * CONFIG["max_position_pct"])
+    invest = min(invest, state.balance * CONFIG.get("max_position_pct", 0.1))
     if invest < 5:
         _record_decision(symbol, "blocked", "invest_too_small", scan)
         return
@@ -933,6 +933,7 @@ def open_position(ex, scan: dict):
         sl = price * (1 - CONFIG.get("stop_loss_pct", 0.025))
         tp = price * (1 + CONFIG.get("take_profit_pct", 0.06))
 
+    order_resp: dict = {}
     if trade_execution is not None:
         exec_result = trade_execution.execute_buy(
             ex, symbol=symbol, price=price, invest_usdt=invest
@@ -1037,7 +1038,7 @@ def open_position(ex, scan: dict):
                 "fees": fee,
                 "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
                 "exchange": CONFIG.get("exchange", "cryptocom"),
-                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": "entry",
                 "meta": {"ai_reason": ai_reason, "algo_reason": algo_reason},
             }
@@ -1130,6 +1131,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
+    order_resp: dict = {}
     if trade_execution is not None:
         exec_result = trade_execution.execute_sell(
             ex, symbol=symbol, qty=close_qty, invest_usdt=close_invest
@@ -1271,7 +1273,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "fees": fee,
                 "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
                 "exchange": CONFIG.get("exchange", "cryptocom"),
-                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": reason,
                 "meta": {"partial": is_partial},
             }
@@ -1605,7 +1607,7 @@ def manage_positions(ex):
 
         if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
-        elif price >= pos.get("tp", float("inf")):
+        elif pos.get("tp") and price >= pos["tp"]:
             close_position(ex, symbol, "Take-Profit 🎯")
         else:
             # ── Selbstlernender Verkauf-Algorithmus ──────────────────────
@@ -2386,7 +2388,7 @@ def fetch_aggregated_balance() -> dict:
         Dict mit ``total_usdt``, ``by_exchange`` und ``errors``.
     """
     result: dict = {"total_usdt": 0.0, "by_exchange": {}, "errors": []}
-    if CONFIG["paper_trading"]:
+    if CONFIG.get("paper_trading", True):
         result["total_usdt"] = state.balance
         result["by_exchange"]["paper"] = {"USDT": state.balance}
         return result
@@ -2450,16 +2452,17 @@ def fetch_aggregated_balance() -> dict:
 
 def safety_scan():
     """Prüft beim Start ob unbekannte Positionen auf Exchange sind."""
-    if CONFIG["paper_trading"]:
+    if CONFIG.get("paper_trading", True):
         return
     try:
         ex = create_exchange()
         bal = _factory_safe_fetch_balance(ex)
         suspicious = []
+        _quote = CONFIG.get("quote_currency", "USDT")
         for coin, details in bal.get("total", {}).items():
-            if coin == CONFIG["quote_currency"] or float(details or 0) <= 0.001:
+            if coin == _quote or float(details or 0) <= 0.001:
                 continue
-            sym = f"{coin}/{CONFIG['quote_currency']}"
+            sym = f"{coin}/{_quote}"
             if sym not in state.positions:
                 suspicious.append(f"{coin}: {float(details or 0):.4f}")
         if suspicious:
