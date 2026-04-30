@@ -142,7 +142,7 @@ class MultiTimeframeFilter:
                 ok = c["trend"] >= 0
                 return ok, f"{'✅' if ok else '❌'} 4h cached"
         try:
-            ohlcv = ex.fetch_ohlcv(symbol, CONFIG["mtf_confirm_tf"], limit=60)
+            ohlcv = ex.fetch_ohlcv(symbol, CONFIG.get("mtf_confirm_tf", "4h"), limit=60)
             if not ohlcv or len(ohlcv) < 30:
                 return True, "MTF: wenig Daten"
             df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
@@ -897,9 +897,9 @@ class ShortEngine:
                 invested = pos.get("invested", 0)
                 est_fee = invested * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
                 pos["pnl_unrealized"] = invested * (pnl_pct / 100) * leverage - est_fee
-            sl = pos.get("sl", float("inf"))
-            tp = pos.get("tp", 0)
-            if price >= sl:
+            sl = pos.get("sl")
+            tp = pos.get("tp")
+            if sl and price >= sl:
                 self.close_short(sym, "SL 🛑")
-            elif price <= tp:
+            elif tp and price <= tp:
                 self.close_short(sym, "TP 🎯")
