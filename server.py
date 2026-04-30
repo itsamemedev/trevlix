@@ -1709,7 +1709,7 @@ def on_save_keys(data: dict | None = None):
     emit(
         "status",
         {
-            "msg": f"🔑 Keys gespeichert ({CONFIG['exchange']})",
+            "msg": f"🔑 Keys gespeichert ({CONFIG.get('exchange', '')})",
             "key": "ws_keys_saved",
             "type": "success",
         },
@@ -1885,6 +1885,9 @@ def on_close_position(data: dict | None = None):
         except Exception as e:
             emit("status", {"msg": f"❌ {e}", "type": "error"})
     elif in_short:
+        if short_engine is None:
+            emit("status", {"msg": "❌ Short-Engine nicht verfügbar", "type": "error"})
+            return
         short_engine.close_short(sym, "Manuell 🖐")
         emit(
             "status",
@@ -1916,8 +1919,8 @@ def on_run_backtest(data: dict | None = None):
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 safe_int(data.get("candles", 500), 500),
-                safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
-                safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+                safe_float(data.get("sl", CONFIG.get("stop_loss_pct", 0.025)), CONFIG.get("stop_loss_pct", 0.025)),
+                safe_float(data.get("tp", CONFIG.get("take_profit_pct", 0.060)), CONFIG.get("take_profit_pct", 0.060)),
                 safe_float(
                     data.get("vote", CONFIG.get("min_vote_score", 0.3)),
                     CONFIG.get("min_vote_score", 0.3),
