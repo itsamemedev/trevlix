@@ -14,9 +14,9 @@ Für die Service-Schicht siehe `docs/SERVICES.md`.
 | Datei | Zweck |
 |-------|-------|
 | `server.py` | Haupteinstiegspunkt. Flask- und SocketIO-App, Bot-Lifecycle, REST- und WebSocket-Handler, DB-Init. |
-| `ai_engine.py` | Legacy-Referenzimplementierung (verwaist – aktive AI liegt in `app/core/ai_engine.py`). Wird nur vom Installer/Dockerfile referenziert. |
 | `trevlix_i18n.py` | Backend-Übersetzungen für DE/EN/ES/RU/PT. |
 | `validate_env.py` | Environment-Variablen-Validierung vor Serverstart. |
+| `legacy/ai_engine.py` | Archivierte Referenzimplementierung. Nicht aktiv, nicht importiert, kein Lint-Zwang. Wird in einem zukünftigen Release entfernt. |
 
 ## `routes/` – Flask-Blueprints
 

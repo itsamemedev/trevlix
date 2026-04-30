@@ -88,13 +88,14 @@ test-cov:
 	@echo "✓ Coverage-Report: htmlcov/index.html"
 
 # ── Code-Qualität ──────────────────────────────────────────────────────────────
+# legacy/ ist absichtlich ausgeschlossen (archivierte Module, kein Lint-Zwang).
 lint:
 	@command -v ruff &>/dev/null || $(VENV)/bin/pip install --quiet ruff
-	$(VENV)/bin/ruff check server.py ai_engine.py trevlix_i18n.py services/ tests/
+	$(VENV)/bin/ruff check server.py trevlix_i18n.py validate_env.py app/ routes/ services/ tests/
 
 format:
 	@command -v ruff &>/dev/null || $(VENV)/bin/pip install --quiet ruff
-	$(VENV)/bin/ruff format server.py ai_engine.py trevlix_i18n.py services/ tests/
+	$(VENV)/bin/ruff format server.py trevlix_i18n.py validate_env.py app/ routes/ services/ tests/
 
 deep-scan:
 	$(PYTHON) scripts/deep_scan.py

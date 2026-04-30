@@ -42,8 +42,9 @@ services:
     volumes:
       # Hot-Reload: Quellcode-Mount
       - ./server.py:/app/server.py:ro
-      - ./ai_engine.py:/app/ai_engine.py:ro
       - ./trevlix_i18n.py:/app/trevlix_i18n.py:ro
+      - ./validate_env.py:/app/validate_env.py:ro
+      - ./app/:/app/app/:ro
       - ./services/:/app/services/:ro
       - ./routes/:/app/routes/:ro
       - ./templates/:/app/templates/:ro

@@ -923,11 +923,11 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 if [[ -f "./server.py" ]]; then
     log "Local files detected — copying..."
     # Copy all relevant files and directories
-    for f in server.py ai_engine.py trevlix_i18n.py validate_env.py requirements.txt \
+    for f in server.py trevlix_i18n.py validate_env.py requirements.txt \
               trevlix_translations.js motd.sh; do
         [[ -f "./$f" ]] && cp "./$f" "$INSTALL_DIR/$f" && ok "Copied: $f"
     done
-    for d in routes services templates static docker tests; do
+    for d in app routes services templates static docker tests; do
         if [[ -d "./$d" ]]; then
             cp -r "./$d" "$INSTALL_DIR/$d" && ok "Copied: $d/"
         fi

@@ -38,7 +38,6 @@ COPY --from=builder /install /usr/local
 
 # Anwendungsdateien kopieren
 COPY server.py .
-COPY ai_engine.py .
 COPY trevlix_i18n.py .
 COPY validate_env.py .
 COPY app/ ./app/
