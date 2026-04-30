@@ -50,6 +50,7 @@
 """
 
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -1216,6 +1217,8 @@ def on_connect(auth=None):
             if uid:
                 user_id = uid
                 session["user_id"] = uid
+                if "_csrf_token" not in session:
+                    session["_csrf_token"] = secrets.token_hex(32)
                 username = "jwt-user"
             else:
                 try:
@@ -1227,6 +1230,8 @@ def on_connect(auth=None):
                     user_id = payload.get("user_id")
                     if user_id:
                         session["user_id"] = user_id
+                        if "_csrf_token" not in session:
+                            session["_csrf_token"] = secrets.token_hex(32)
                         username = payload.get("username", "jwt-user")
                 except (pyjwt.InvalidTokenError, Exception):
                     pass

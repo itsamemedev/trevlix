@@ -289,8 +289,8 @@ class DailyReportScheduler:
                 )
             best = max(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
             worst = min(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
-            ai_acc = ai_engine.wf_accuracy * 100
-            arb_count = getattr(arb_scanner, "found_today", 0)
+            ai_acc = (ai_engine.wf_accuracy * 100) if ai_engine else 0.0
+            arb_count = getattr(arb_scanner, "found_today", 0) if arb_scanner else 0
             report = {
                 "date": today,
                 "summary": {
