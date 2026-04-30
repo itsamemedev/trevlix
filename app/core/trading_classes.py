@@ -142,7 +142,7 @@ class MultiTimeframeFilter:
                 ok = c["trend"] >= 0
                 return ok, f"{'✅' if ok else '❌'} 4h cached"
         try:
-            ohlcv = ex.fetch_ohlcv(symbol, CONFIG["mtf_confirm_tf"], limit=60)
+            ohlcv = ex.fetch_ohlcv(symbol, CONFIG.get("mtf_confirm_tf", "4h"), limit=60)
             if not ohlcv or len(ohlcv) < 30:
                 return True, "MTF: wenig Daten"
             df = pd.DataFrame(ohlcv, columns=["ts", "o", "h", "l", "close", "v"])
@@ -289,8 +289,8 @@ class DailyReportScheduler:
                 )
             best = max(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
             worst = min(coin_pnl, key=coin_pnl.get, default="—") if coin_pnl else "—"
-            ai_acc = ai_engine.wf_accuracy * 100
-            arb_count = getattr(arb_scanner, "found_today", 0)
+            ai_acc = (ai_engine.wf_accuracy * 100) if ai_engine else 0.0
+            arb_count = getattr(arb_scanner, "found_today", 0) if arb_scanner else 0
             report = {
                 "date": today,
                 "summary": {
@@ -570,8 +570,8 @@ class BotState:
             "max_drawdown": round(risk.max_drawdown, 2),
             "daily_pnl": round(daily_pnl, 2),
             "trade_today": len(trades_today),
-            "market_regime": "bullish" if regime.is_bull else "bearish",
-            "btc_price": round(regime.btc_price, 2),
+            "market_regime": "bullish" if (regime and regime.is_bull) else "bearish",
+            "btc_price": round(regime.btc_price, 2) if regime else 0,
             "positions": open_pos,
             "closed_trades": [
                 {
@@ -601,13 +601,13 @@ class BotState:
             "arb_log": list(self.arb_log)[:10],
             "last_scan": self.last_scan,
             "next_scan": self.next_scan,
-            "ai": ai_engine.to_dict(),
-            "fear_greed": fg_idx.to_dict(),
-            "circuit_breaker": risk.circuit_status(),
-            "dominance": dominance.to_dict(),
-            "anomaly": anomaly.to_dict(),
-            "genetic": genetic.to_dict(),
-            "rl": rl_agent.to_dict(),
+            "ai": ai_engine.to_dict() if ai_engine else {},
+            "fear_greed": fg_idx.to_dict() if fg_idx else {},
+            "circuit_breaker": risk.circuit_status() if risk else {},
+            "dominance": dominance.to_dict() if dominance else {},
+            "anomaly": anomaly.to_dict() if anomaly else {},
+            "genetic": genetic.to_dict() if genetic else {},
+            "rl": rl_agent.to_dict() if rl_agent else {},
             "exchange": CONFIG.get("exchange", "cryptocom"),
             "exchange_key_states": _get_exchange_key_states(),
             "paper_trading": CONFIG.get("paper_trading", True),
@@ -897,9 +897,9 @@ class ShortEngine:
                 invested = pos.get("invested", 0)
                 est_fee = invested * get_exchange_fee_rate(CONFIG.get("short_exchange")) * leverage
                 pos["pnl_unrealized"] = invested * (pnl_pct / 100) * leverage - est_fee
-            sl = pos.get("sl", float("inf"))
-            tp = pos.get("tp", 0)
-            if price >= sl:
+            sl = pos.get("sl")
+            tp = pos.get("tp")
+            if sl and price >= sl:
                 self.close_short(sym, "SL 🛑")
-            elif price <= tp:
+            elif tp and price <= tp:
                 self.close_short(sym, "TP 🎯")

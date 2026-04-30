@@ -99,6 +99,7 @@ class MCPToolRegistry:
         self._exchange_fn = exchange_fn
         self._config = config or {}
         self._tools: dict[str, MCPTool] = {}
+        self._tools_lock = threading.Lock()
         self._call_cache: dict[str, tuple[float, Any]] = {}
         self._cache_ttl = 60  # 1 Minute Cache für Tool-Ergebnisse
         self._cache_lock = threading.Lock()
@@ -383,22 +384,25 @@ class MCPToolRegistry:
 
     def register(self, tool: MCPTool) -> None:
         """Registriert ein neues Tool."""
-        self._tools[tool.name] = tool
+        with self._tools_lock:
+            self._tools[tool.name] = tool
 
     def get_tools_schema(self) -> list[dict[str, Any]]:
         """Gibt alle Tool-Schemas im MCP/OpenAI-Format zurück."""
-        return [tool.to_schema() for tool in self._tools.values()]
+        with self._tools_lock:
+            return [tool.to_schema() for tool in self._tools.values()]
 
     def get_tool_descriptions(self) -> str:
         """Gibt eine formatierte Beschreibung aller Tools zurück.
 
         Wird als System-Prompt-Ergänzung für die LLM verwendet.
         """
-        lines = ["Verfügbare Tools:"]
-        for tool in self._tools.values():
-            params = tool.parameters.get("properties", {})
-            param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
-            lines.append(f"- {tool.name}({param_str}): {tool.description}")
+        with self._tools_lock:
+            lines = ["Verfügbare Tools:"]
+            for tool in self._tools.values():
+                params = tool.parameters.get("properties", {})
+                param_str = ", ".join(f"{k}: {v.get('type', 'any')}" for k, v in params.items())
+                lines.append(f"- {tool.name}({param_str}): {tool.description}")
         return "\n".join(lines)
 
     def execute(self, tool_name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -411,8 +415,10 @@ class MCPToolRegistry:
         Returns:
             Dict mit 'result' oder 'error' Schlüssel.
         """
-        if tool_name not in self._tools:
-            return {"error": f"Unbekanntes Tool: {tool_name}"}
+        with self._tools_lock:
+            if tool_name not in self._tools:
+                return {"error": f"Unbekanntes Tool: {tool_name}"}
+            tool_ref = self._tools[tool_name]
 
         arguments = arguments or {}
 
@@ -427,7 +433,7 @@ class MCPToolRegistry:
                     return cached_result
 
         try:
-            result = self._tools[tool_name].handler(arguments)
+            result = tool_ref.handler(arguments)
             # Cache speichern + Eviction atomar
             with self._cache_lock:
                 self._call_cache[cache_key] = (now, result)

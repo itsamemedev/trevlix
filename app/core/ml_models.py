@@ -125,7 +125,7 @@ class AnomalyDetector:
             local_scaler = StandardScaler()
             X_s = local_scaler.fit_transform(X)
             new_model = IsolationForest(
-                contamination=CONFIG["anomaly_contamination"],
+                contamination=float(CONFIG.get("anomaly_contamination", 0.05)),
                 n_estimators=100,
                 random_state=42,
                 n_jobs=-1,
@@ -284,14 +284,14 @@ class GeneticOptimizer:
 
     def _run(self, trades: list[dict]):
         try:
-            pop_size = CONFIG["genetic_population"]
-            n_gen = CONFIG["genetic_generations"]
+            pop_size = int(CONFIG.get("genetic_population", 30))
+            n_gen = int(CONFIG.get("genetic_generations", 20))
             # Initialpopulation
             population = [self._random_genome() for _ in range(pop_size)]
             # Bestes aus Config als Seed
             population[0] = {
-                "sl": CONFIG["stop_loss_pct"],
-                "tp": CONFIG["take_profit_pct"],
+                "sl": float(CONFIG.get("stop_loss_pct", 0.025)),
+                "tp": float(CONFIG.get("take_profit_pct", 0.060)),
                 "vote": CONFIG.get("min_vote_score", 0.3),
                 "rsi_buy": 35,
                 "rsi_sell": 65,

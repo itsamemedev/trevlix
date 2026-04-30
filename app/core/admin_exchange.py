@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+
+log = logging.getLogger(__name__)
+
 
 def _get_admin_id(db) -> int | None:
     if db is None or not getattr(db, "db_available", False):
@@ -38,8 +42,8 @@ def get_exchange_key_states(db) -> dict[str, bool]:
             ex_name = ex_info.get("exchange", "")
             if ex_name in result:
                 result[ex_name] = bool(ex_info.get("api_key") and ex_info.get("api_key") != "")
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("get_exchange_key_states: %s", exc)
     return result
 
 

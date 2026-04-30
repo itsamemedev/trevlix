@@ -57,7 +57,7 @@ def compute_indicators(df: pd.DataFrame) -> pd.DataFrame | None:
     Returns:
         DataFrame mit Indikatoren oder None bei zu wenig Daten / Fehler.
     """
-    if df is None or df.empty or len(df) < 80:
+    if df is None or df.empty or len(df) < 200:
         return None
     try:
         df = df.copy()
@@ -176,8 +176,8 @@ def strat_rsi_stoch(r: Row, p: Row) -> int:
     rsi = _nz(r.get("rsi"), 50.0)
     sr = _nz(r.get("stoch_rsi"), 50.0)
     atr = _nz(r.get("atr_pct"), 0.0)
-    oversold_rsi = max(25.0, 35.0 - atr * 3.3)
-    overbought_rsi = min(75.0, 65.0 + atr * 3.3)
+    oversold_rsi = max(25.0, 30.0 - atr * 1.67)
+    overbought_rsi = min(75.0, 70.0 + atr * 1.67)
     oversold_sr = max(15.0, 25.0 - atr * 3.3)
     overbought_sr = min(85.0, 75.0 + atr * 3.3)
     if rsi < oversold_rsi and sr < oversold_sr:
@@ -213,9 +213,9 @@ def strat_boll(r: Row, p: Row) -> int:
     atr = _nz(r.get("atr_pct"), 0.0)
     low_band = max(0.02, 0.05 - atr * 0.01)
     high_band = min(0.98, 0.95 + atr * 0.01)
-    if bp < low_band and rsi < 40:
+    if bp < low_band and rsi < 35:
         return 1
-    if bp > high_band and rsi > 60:
+    if bp > high_band and rsi > 65:
         return -1
     return 0
 
@@ -297,7 +297,7 @@ def strat_vwap(r: Row, p: Row) -> int:
     pvw = _nz(r.get("price_vs_vwap"), 0.0)
     rsi = _nz(r.get("rsi"), 50.0)
     atr = _nz(r.get("atr_pct"), 0.0)
-    dev_min = min(0.03, 0.005 + atr * 0.005)
+    dev_min = min(0.03, 0.01 + atr * 0.005)
     if pvw > dev_min and rsi > 50:
         return 1
     if pvw < -dev_min and rsi < 50:

@@ -201,13 +201,13 @@ class TestBollinger:
     def test_lower_band_buy(self, bullish_row):
         from services.strategies import strat_boll
 
-        lower = {**bullish_row, "bb_pct": 0.02, "rsi": 35}
+        lower = {**bullish_row, "bb_pct": 0.02, "rsi": 34}
         assert strat_boll(lower, bullish_row) == 1
 
     def test_upper_band_sell(self, bearish_row):
         from services.strategies import strat_boll
 
-        upper = {**bearish_row, "bb_pct": 0.97, "rsi": 65}
+        upper = {**bearish_row, "bb_pct": 0.97, "rsi": 66}
         assert strat_boll(upper, bearish_row) == -1
 
 
@@ -289,9 +289,11 @@ class TestATRAdaptiveThresholds:
     def test_rsi_stoch_low_atr_uses_base_threshold(self):
         from services.strategies import strat_rsi_stoch
 
-        # At atr_pct=0, oversold_rsi = 35, so RSI 34 passes
-        row = {"rsi": 34, "stoch_rsi": 20, "atr_pct": 0.0}
+        # At atr_pct=0, oversold_rsi = 30, so RSI 28 passes; RSI 31 blocked
+        row = {"rsi": 28, "stoch_rsi": 20, "atr_pct": 0.0}
         assert strat_rsi_stoch(row, {}) == 1
+        row_blocked = {"rsi": 31, "stoch_rsi": 20, "atr_pct": 0.0}
+        assert strat_rsi_stoch(row_blocked, {}) == 0
 
     def test_roc_high_atr_raises_threshold(self):
         from services.strategies import strat_roc
@@ -316,7 +318,7 @@ class TestATRAdaptiveThresholds:
     def test_vwap_high_atr_raises_deviation_threshold(self):
         from services.strategies import strat_vwap
 
-        # At atr_pct=5, dev_min=min(0.03, 0.005+0.025)=0.03 — pvw 0.025 blocked
+        # At atr_pct=5, dev_min=min(0.03, 0.01+0.025)=0.03 — pvw 0.025 blocked
         row_blocked = {"price_vs_vwap": 0.025, "rsi": 60, "atr_pct": 5.0}
         row_passes = {"price_vs_vwap": 0.035, "rsi": 60, "atr_pct": 5.0}
         assert strat_vwap(row_blocked, {}) == 0
@@ -325,6 +327,6 @@ class TestATRAdaptiveThresholds:
     def test_boll_high_atr_tightens_band_threshold(self):
         from services.strategies import strat_boll
 
-        # At atr_pct=3, low_band=max(0.02, 0.05-0.03)=0.02 — bb_pct 0.015 passes
-        row = {"bb_pct": 0.015, "rsi": 35, "atr_pct": 3.0}
+        # At atr_pct=3, low_band=max(0.02, 0.05-0.03)=0.02 — bb_pct 0.015, rsi 34 passes
+        row = {"bb_pct": 0.015, "rsi": 34, "atr_pct": 3.0}
         assert strat_boll(row, {}) == 1

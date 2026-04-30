@@ -522,7 +522,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"ohlcv": ohlcv, "trades": trades})
         except Exception as e:
             log.error("API error: %s", e)
-            return jsonify({"error": "Internal server error"})
+            return jsonify({"error": "Internal server error"}), 500
 
     # ── Heatmap (Legacy) ──────────────────────────────────────────────────────
 
@@ -534,7 +534,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify(deps.get_heatmap_data(ex))
         except Exception as e:
             log.error("API error: %s", e)
-            return jsonify({"error": "Internal server error"})
+            return jsonify({"error": "Internal server error"}), 500
 
     # ── Portfolio Optimierung ─────────────────────────────────────────────────
 

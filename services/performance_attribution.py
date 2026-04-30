@@ -76,9 +76,9 @@ class _FactorStats:
         self.pnl_list.append(pnl)
         if len(self.pnl_list) > 1000:
             self.pnl_list = self.pnl_list[-1000:]
-        if pnl >= 0:
+        if pnl > 0:
             self.wins += 1
-        else:
+        elif pnl < 0:
             self.losses += 1
 
     def to_dict(self) -> dict[str, Any]:

@@ -9,7 +9,6 @@ Verwendung:
 
 import logging
 import threading
-import time
 from datetime import datetime
 
 import numpy as np
@@ -18,38 +17,9 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from services.cache import TTLCache
+
 log = logging.getLogger("trevlix.market_data")
-
-
-class _TTLCache:
-    """Einfacher Thread-sicherer TTL-Cache für API-Responses.
-
-    Args:
-        ttl: Time-to-live in Sekunden.
-    """
-
-    def __init__(self, ttl: int = 300) -> None:
-        self._ttl = ttl
-        self._data: dict[str, tuple[float, object]] = {}
-        self._lock = threading.Lock()
-
-    def get(self, key: str) -> object | None:
-        """Gibt den gecachten Wert zurück oder None bei Ablauf/Miss."""
-        with self._lock:
-            entry = self._data.get(key)
-            if entry and time.monotonic() - entry[0] < self._ttl:
-                return entry[1]
-            return None
-
-    def set(self, key: str, value: object) -> None:
-        """Speichert einen Wert mit aktuellem Timestamp."""
-        with self._lock:
-            self._data[key] = (time.monotonic(), value)
-
-    def clear(self) -> None:
-        """Leert den gesamten Cache."""
-        with self._lock:
-            self._data.clear()
 
 
 # ── Shared CoinGecko ID map (previously duplicated in two classes) ────────────
@@ -101,7 +71,7 @@ class FearGreedIndex:
     """Fear & Greed Index von alternative.me mit TTL-Cache."""
 
     _URL = "https://api.alternative.me/fng/?limit=1"
-    _cache = _TTLCache(ttl=300)  # 5 Minuten Cache
+    _cache = TTLCache(ttl_seconds=300)  # 5 Minuten Cache
 
     def __init__(self, config: dict):
         self.config = config
@@ -189,7 +159,7 @@ class DominanceFilter:
     """BTC/USDT-Dominanz-Filter für Altcoin-Käufe mit TTL-Cache."""
 
     _URL = "https://api.coingecko.com/api/v3/global"
-    _cache = _TTLCache(ttl=300)  # 5 Minuten Cache
+    _cache = TTLCache(ttl_seconds=300)  # 5 Minuten Cache
 
     def __init__(self, config: dict):
         self.config = config

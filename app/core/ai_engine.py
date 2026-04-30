@@ -245,7 +245,7 @@ class AIEngine:
         self.bear_model = None
         self.lstm_model = None
         self.lstm_acc = 0.0
-        self.lstm_seq = CONFIG["lstm_lookback"]
+        self.lstm_seq = CONFIG.get("lstm_lookback", 24)
         self.X_raw = []
         self.y_raw = []
         self.regimes_raw = []
@@ -339,17 +339,18 @@ class AIEngine:
                     self.X_bear.append(xi)
                     self.y_bear.append(yi)
             n = len(self.X_raw)
-            self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
-            if n >= CONFIG["ai_min_samples"] and not models_loaded:
+            _min_s = CONFIG.get("ai_min_samples", 20)
+            self.progress_pct = min(100, int(n / max(_min_s, 1) * 100))
+            if n >= _min_s and not models_loaded:
                 # Nur neu trainieren wenn kein gespeichertes Modell vorhanden
                 threading.Thread(target=self._train, daemon=True).start()
-            elif n >= CONFIG["ai_min_samples"] and models_loaded:
+            elif n >= _min_s and models_loaded:
                 # Modell geladen, aber nach N neuen Samples auch neu trainieren
                 log.info("🧠 Persistiertes Modell geladen – kein Cold-Start")
             self.status_msg = (
                 f"✅ {n} Samples geladen"
                 if n > 0
-                else "⏳ Brauche min. " + str(CONFIG["ai_min_samples"]) + " Trades"
+                else "⏳ Brauche min. " + str(_min_s) + " Trades"
             )
             log.info(f"🧠 KI: {n} Samples (Bull:{len(self.X_bull)} Bear:{len(self.X_bear)})")
         except Exception as e:
@@ -753,9 +754,9 @@ class AIEngine:
             # LSTM
             lstm_m = None
             lstm_acc = 0.0
-            if TF_AVAILABLE and n >= CONFIG["lstm_min_samples"]:
+            if TF_AVAILABLE and n >= CONFIG.get("lstm_min_samples", 50):
                 try:
-                    sl = min(CONFIG["lstm_lookback"], n // 4, n - 1)
+                    sl = min(CONFIG.get("lstm_lookback", 24), n // 4, n - 1)
                     if sl >= 4:
                         Xs_s = [X_s[i - sl : i] for i in range(sl, n)]
                         ys_s = list(y[sl:])
@@ -938,8 +939,8 @@ class AIEngine:
             sl_grid = [0.010, 0.015, 0.020, 0.025, 0.030, 0.040, 0.050]
             tp_grid = [0.030, 0.050, 0.060, 0.070, 0.080, 0.100, 0.120, 0.150]
             best_score = -999.0
-            prev_sl = CONFIG["stop_loss_pct"]
-            prev_tp = CONFIG["take_profit_pct"]
+            prev_sl = CONFIG.get("stop_loss_pct", 0.025)
+            prev_tp = CONFIG.get("take_profit_pct", 0.060)
             best_sl = prev_sl
             best_tp = prev_tp
             for sl in sl_grid:
@@ -1219,14 +1220,18 @@ class AIEngine:
         primary_control = bool(CONFIG.get("virginie_primary_control", True))
         autonomy_w = float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7)
         autonomy_w = min(1.0, max(0.0, autonomy_w))
+        _tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100  # e.g. 6.0
+        _sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100  # e.g. 2.5
+        _fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100  # round-trip
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             if virginie_enabled and primary_control:
+                _rp = float(max(0.0, (1.0 - conf) * _sl_pts))
                 opportunity = Opportunity(
                     key="buy_signal",
                     success_probability=float(conf),
-                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
-                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
-                    risk_penalty=float(max(0.0, (1.0 - conf) * 10.0)),
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed = virginie_decision.selected is not None
@@ -1239,18 +1244,46 @@ class AIEngine:
         try:
             if virginie_enabled:
                 self._sync_virginie_guardrails_from_config()
-            X_s = self.scaler.transform(features.reshape(1, -1))
-            prob = self._predict(X_s, features)
-            allowed_by_model = prob >= CONFIG["ai_min_confidence"]
 
-            if virginie_enabled:
-                blended_prob = autonomy_w * prob + (1.0 - autonomy_w) * float(conf)
+            # Fast-path: near-unanimous strategy agreement → skip expensive ML inference,
+            # use conf directly as blended_prob but still run guardrail/EV check.
+            _fast_threshold = float(CONFIG.get("virginie_fast_path_threshold", 0.80))
+            _use_fast_path = virginie_enabled and primary_control and float(conf) >= _fast_threshold
+            if _use_fast_path:
+                blended_prob = float(conf)
+                _rp = float(max(0.0, (1.0 - blended_prob) * _sl_pts))
                 opportunity = Opportunity(
                     key="buy_signal",
                     success_probability=blended_prob,
-                    expected_profit=float(CONFIG.get("take_profit_pct", 0.06)) * 100,
-                    cost=float(CONFIG.get("stop_loss_pct", 0.025)) * 100,
-                    risk_penalty=float(max(0.0, (1.0 - blended_prob) * 10.0)),
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
+                )
+                virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
+                allowed = virginie_decision.selected is not None
+                if allowed:
+                    self.allowed_count += 1
+                else:
+                    self.blocked_count += 1
+                return (
+                    allowed,
+                    blended_prob,
+                    f"{'✅' if allowed else '🚫'} FastPath:{conf * 100:.1f}% | {virginie_decision.reason}",
+                )
+
+            X_s = self.scaler.transform(features.reshape(1, -1))
+            prob = self._predict(X_s, features)
+            allowed_by_model = prob >= float(CONFIG.get("ai_min_confidence", 0.50))
+
+            if virginie_enabled:
+                blended_prob = autonomy_w * prob + (1.0 - autonomy_w) * float(conf)
+                _rp = float(max(0.0, (1.0 - blended_prob) * _sl_pts))
+                opportunity = Opportunity(
+                    key="buy_signal",
+                    success_probability=blended_prob,
+                    expected_profit=_tp_pts,
+                    cost=_fee_pts,
+                    risk_penalty=_rp,
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed_by_virginie = virginie_decision.selected is not None
@@ -1285,7 +1318,8 @@ class AIEngine:
                 )
             return allowed, prob, f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}%"
         except Exception as e:
-            return True, conf, f"Err:{e}"
+            log.warning("should_buy exception – blocking trade: %s", e, exc_info=True)
+            return False, conf, f"Err:{e}"
 
     def _predict(self, X_s, features_raw) -> float:
         # Regime-Modell wählen
@@ -1335,12 +1369,13 @@ class AIEngine:
             return 0.5
 
     def kelly_size(self, win_prob, balance, atr, fg_boost=1.0) -> float:
+        risk_per_trade = float(CONFIG.get("risk_per_trade", 0.015))
         if win_prob <= 0.5:
-            return balance * CONFIG["risk_per_trade"] * fg_boost
-        sl_pct = CONFIG["stop_loss_pct"]
+            return balance * risk_per_trade * fg_boost
+        sl_pct = float(CONFIG.get("stop_loss_pct", 0.025))
         if sl_pct <= 0:
-            return balance * CONFIG["risk_per_trade"] * fg_boost
-        odds = CONFIG["take_profit_pct"] / sl_pct
+            return balance * risk_per_trade * fg_boost
+        odds = float(CONFIG.get("take_profit_pct", 0.06)) / sl_pct
         kelly = float(np.clip(((win_prob * odds - (1 - win_prob)) / odds) * 0.5, 0.01, 0.25))
         vol_adj = 1.0 / (1 + atr * 10) if atr > 0 else 1.0
         return balance * kelly * vol_adj * fg_boost
@@ -1400,13 +1435,14 @@ class AIEngine:
             daemon=True,
         ).start()
         n = len(self.X_raw)
-        self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
+        _min_s = CONFIG.get("ai_min_samples", 20)
+        self.progress_pct = min(100, int(n / max(_min_s, 1) * 100))
         if (
-            n >= CONFIG["ai_min_samples"]
-            and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
+            n >= _min_s
+            and self.trades_since_retrain >= CONFIG.get("ai_retrain_every", 5)
         ):
             threading.Thread(target=self._train, daemon=True).start()
-        if self.trades_since_optimize >= CONFIG["ai_optimize_every"]:
+        if self.trades_since_optimize >= CONFIG.get("ai_optimize_every", 15):
             threading.Thread(target=self._optimize, daemon=True).start()
         # Genetischer Optimizer nach 30 Trades
         if n % 30 == 0 and state and genetic is not None:
@@ -1465,7 +1501,7 @@ class AIEngine:
             },
             "assistant_agents": self.virginie_orchestrator.status(),
             "assistant_review": self.virginie.review_status(),
-            "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", False)),
+            "assistant_primary_control": bool(CONFIG.get("virginie_primary_control", True)),
             "assistant_autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
             "params": {
                 "sl": round(CONFIG.get("stop_loss_pct", 0.025) * 100, 2),

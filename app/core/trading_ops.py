@@ -885,11 +885,11 @@ def open_position(ex, scan: dict):
     dna_mult = dna_adjustment.get("multiplier", 1.0) if dna_adjustment else 1.0
     invest = (
         ai_engine.kelly_size(win_prob / 100, state.balance, scan.get("atr14", 0), fg_boost)
-        if CONFIG["ai_use_kelly"]
+        if CONFIG.get("ai_use_kelly", False)
         else state.balance * CONFIG.get("risk_per_trade", 0.015) * fg_boost
     )
     invest *= dna_mult
-    invest = min(invest, state.balance * CONFIG["max_position_pct"])
+    invest = min(invest, state.balance * CONFIG.get("max_position_pct", 0.1))
     if invest < 5:
         _record_decision(symbol, "blocked", "invest_too_small", scan)
         return
@@ -933,6 +933,7 @@ def open_position(ex, scan: dict):
         sl = price * (1 - CONFIG.get("stop_loss_pct", 0.025))
         tp = price * (1 + CONFIG.get("take_profit_pct", 0.06))
 
+    order_resp: dict = {}
     if trade_execution is not None:
         exec_result = trade_execution.execute_buy(
             ex, symbol=symbol, price=price, invest_usdt=invest
@@ -970,7 +971,7 @@ def open_position(ex, scan: dict):
         "confidence": scan["confidence"],
         "ai_score": round(ai_score * 100, 1),
         "win_prob": round(win_prob, 1),
-        "regime": "bull" if regime.is_bull else "bear",
+        "regime": "bull" if (regime and regime.is_bull) else "bear",
         "dca_level": 0,
         "partial_sold": 0,
         "news_score": round(news_score, 3),
@@ -1037,7 +1038,7 @@ def open_position(ex, scan: dict):
                 "fees": fee,
                 "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
                 "exchange": CONFIG.get("exchange", "cryptocom"),
-                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": "entry",
                 "meta": {"ai_reason": ai_reason, "algo_reason": algo_reason},
             }
@@ -1130,6 +1131,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
     fee = close_invest * get_exchange_fee_rate()  # [#29] Exchange-spezifische Fee
     pnl = close_invest * (pnl_pct / 100) - fee
 
+    order_resp: dict = {}
     if trade_execution is not None:
         exec_result = trade_execution.execute_sell(
             ex, symbol=symbol, qty=close_qty, invest_usdt=close_invest
@@ -1271,7 +1273,7 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "fees": fee,
                 "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
                 "exchange": CONFIG.get("exchange", "cryptocom"),
-                "exchange_order_id": (locals().get("order_resp") or {}).get("id", ""),
+                "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": reason,
                 "meta": {"partial": is_partial},
             }
@@ -1542,9 +1544,16 @@ def manage_positions(ex):
                 if new_smart_tp and new_smart_tp > pos.get("tp", 0):
                     pos["tp"] = new_smart_tp
 
-        # Trailing Stop
+        # Trailing Stop – only activate after minimum profit is locked in
         with state._lock:
-            if CONFIG.get("trailing_stop") and price > pos.get("highest", price):
+            _trailing_min = float(CONFIG.get("trailing_min_profit", 0.005))
+            _trailing_active = (
+                CONFIG.get("trailing_stop")
+                and pos_entry > 0
+                and (price - pos_entry) / pos_entry >= _trailing_min
+                and price > pos.get("highest", price)
+            )
+            if _trailing_active:
                 pos["highest"] = price
                 new_sl = price * (1 - CONFIG.get("trailing_pct", 0.03))
                 if new_sl > pos.get("sl", 0):
@@ -1586,9 +1595,19 @@ def manage_positions(ex):
             pos["observed_ticks"] = int(pos.get("observed_ticks", 0) or 0) + 1
             pos["peak_price"] = max(float(pos.get("peak_price", price) or price), price)
             pos["trough_price"] = min(float(pos.get("trough_price", price) or price), price)
+        # Max-Hold-Hours: zeitbasierter Exit wenn konfiguriert
+        _max_hold_h = float(CONFIG.get("max_hold_hours", 0))
+        if _max_hold_h > 0:
+            _opened_ts = pos.get("opened_ts")
+            if _opened_ts:
+                _held_h = (time.time() - float(_opened_ts)) / 3600.0
+                if _held_h >= _max_hold_h:
+                    close_position(ex, symbol, f"MaxHold {_max_hold_h}h ⏰")
+                    continue
+
         if price <= pos.get("sl", 0):
             close_position(ex, symbol, "Stop-Loss 🛑")
-        elif price >= pos.get("tp", float("inf")):
+        elif pos.get("tp") and price >= pos["tp"]:
             close_position(ex, symbol, "Take-Profit 🎯")
         else:
             # ── Selbstlernender Verkauf-Algorithmus ──────────────────────
@@ -2139,24 +2158,62 @@ def bot_loop():
                         for fut in as_completed(short_futures):
                             try:
                                 scan = fut.result()
-                                if (
-                                    scan
-                                    and scan["signal"] == -1
-                                    and scan.get("confidence", 0)
-                                    >= CONFIG.get("min_vote_score", 0.3)
-                                ):
-                                    discord.signal_opportunity(
-                                        scan["symbol"],
-                                        "sell",
-                                        float(scan.get("confidence", 0.0)),
-                                        float(scan.get("price", 0.0)),
-                                        news_score=float(scan.get("news_score", 0.0)),
-                                        note="Short-Kandidat erkannt (Signal -1)",
-                                    )
-                                    invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
-                                    short_engine.open_short(scan["symbol"], invest, scan["price"])
+                                if not scan:
+                                    continue
+                                if scan["signal"] != -1:
+                                    continue
+                                if scan.get("confidence", 0) < CONFIG.get("min_vote_score", 0.3):
+                                    continue
+                                if len(state.short_positions) >= CONFIG.get("max_open_trades", 5):
+                                    continue
+                                if risk.circuit_breaker_active():
+                                    continue
+                                if risk.daily_loss_exceeded(state.balance):
+                                    continue
+                                if anomaly is not None and anomaly.is_anomaly:
+                                    continue
+                                discord.signal_opportunity(
+                                    scan["symbol"],
+                                    "sell",
+                                    float(scan.get("confidence", 0.0)),
+                                    float(scan.get("price", 0.0)),
+                                    news_score=float(scan.get("news_score", 0.0)),
+                                    note="Short-Kandidat erkannt (Signal -1)",
+                                )
+                                invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
+                                short_engine.open_short(scan["symbol"], invest, scan["price"])
                             except Exception as se:
                                 log.debug(f"Short-Scan: {se}")
+
+            # Frische Indikatoren für offene Positionen holen (verbessert Sell-Algo)
+            _open_syms = list(state.positions.keys())
+            if _open_syms:
+                with ThreadPoolExecutor(max_workers=min(4, len(_open_syms))) as _pos_pool:
+                    _pos_futures = {
+                        _pos_pool.submit(scan_symbol, primary_ex, s): s for s in _open_syms
+                    }
+                    for _pf in as_completed(_pos_futures):
+                        try:
+                            _fresh = _pf.result()
+                            if _fresh and _fresh.get("symbol") in state.positions:
+                                with state._lock:
+                                    _p = state.positions.get(_fresh["symbol"])
+                                    if _p:
+                                        for _k in (
+                                            "rsi",
+                                            "stoch_rsi",
+                                            "bb_pct",
+                                            "vol_ratio",
+                                            "ema_alignment",
+                                            "macd_hist_slope",
+                                            "roc10",
+                                            "atr_pct",
+                                            "price_vs_ema21",
+                                        ):
+                                            if _k in _fresh:
+                                                _p[_k] = _fresh[_k]
+                        except Exception:
+                            pass
 
             # Long-Signale
             if (
@@ -2183,11 +2240,12 @@ def bot_loop():
                         _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
                             "virginie_primary_control", True
                         )
-                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.35))
+                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.60))
                         _signal_ok = res and (
                             res["signal"] == 1
                             or (
                                 _virginie_primary
+                                and res.get("signal", 0) >= 0
                                 and res.get("confidence", 0) >= _virginie_threshold
                             )
                         )
@@ -2217,13 +2275,18 @@ def bot_loop():
                         reverse=True,
                     )[:_top_n]
                     if _vss_candidates:
+                        _vss_tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100
+                        _vss_sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100
+                        _vss_fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100
                         _vss_opps = [
                             Opportunity(
                                 key=r["symbol"],
                                 success_probability=float(r.get("confidence", 0)),
-                                expected_profit=0.15,
-                                cost=0.005,
-                                risk_penalty=float(r.get("atr_pct", 1.0)) * 0.01,
+                                expected_profit=_vss_tp_pts,
+                                cost=_vss_fee_pts,
+                                risk_penalty=float(
+                                    max(0.0, (1.0 - float(r.get("confidence", 0))) * _vss_sl_pts)
+                                ),
                             )
                             for r in _vss_candidates
                         ]
@@ -2325,7 +2388,7 @@ def fetch_aggregated_balance() -> dict:
         Dict mit ``total_usdt``, ``by_exchange`` und ``errors``.
     """
     result: dict = {"total_usdt": 0.0, "by_exchange": {}, "errors": []}
-    if CONFIG["paper_trading"]:
+    if CONFIG.get("paper_trading", True):
         result["total_usdt"] = state.balance
         result["by_exchange"]["paper"] = {"USDT": state.balance}
         return result
@@ -2389,16 +2452,17 @@ def fetch_aggregated_balance() -> dict:
 
 def safety_scan():
     """Prüft beim Start ob unbekannte Positionen auf Exchange sind."""
-    if CONFIG["paper_trading"]:
+    if CONFIG.get("paper_trading", True):
         return
     try:
         ex = create_exchange()
         bal = _factory_safe_fetch_balance(ex)
         suspicious = []
+        _quote = CONFIG.get("quote_currency", "USDT")
         for coin, details in bal.get("total", {}).items():
-            if coin == CONFIG["quote_currency"] or float(details or 0) <= 0.001:
+            if coin == _quote or float(details or 0) <= 0.001:
                 continue
-            sym = f"{coin}/{CONFIG['quote_currency']}"
+            sym = f"{coin}/{_quote}"
             if sym not in state.positions:
                 suspicious.append(f"{coin}: {float(details or 0):.4f}")
         if suspicious:

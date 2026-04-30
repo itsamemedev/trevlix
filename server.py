@@ -49,8 +49,8 @@
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 
-import json
 import os
+import secrets
 import threading
 import time
 import uuid
@@ -59,18 +59,17 @@ from datetime import datetime
 from typing import Any
 
 import numpy as np
-import requests
 from dotenv import load_dotenv
 from flask import (
     Response,
     g,
     jsonify,
     request,
-    send_file,
     session,
 )
 from flask_socketio import emit
 
+import app.core.trading_ops as _trading_ops_mod
 from app.core.admin_exchange import (
     get_admin_exchange_by_name,
     get_admin_primary_exchange,
@@ -144,7 +143,6 @@ from app.core.trading_classes import (
     ShortEngine,
     init_trading_classes,
 )
-import app.core.trading_ops as _trading_ops_mod
 from app.core.trading_ops import (
     _preflight_exchange_markets,
     bot_loop,
@@ -1219,6 +1217,8 @@ def on_connect(auth=None):
             if uid:
                 user_id = uid
                 session["user_id"] = uid
+                if "_csrf_token" not in session:
+                    session["_csrf_token"] = secrets.token_hex(32)
                 username = "jwt-user"
             else:
                 try:
@@ -1230,6 +1230,8 @@ def on_connect(auth=None):
                     user_id = payload.get("user_id")
                     if user_id:
                         session["user_id"] = user_id
+                        if "_csrf_token" not in session:
+                            session["_csrf_token"] = secrets.token_hex(32)
                         username = payload.get("username", "jwt-user")
                 except (pyjwt.InvalidTokenError, Exception):
                     pass
@@ -1447,7 +1449,7 @@ def on_start_bot():
         broadcast=True,
     )
     state.add_activity(
-        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG['exchange'].upper()}", "success"
+        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG.get('exchange', '').upper()}", "success"
     )
     log.info("🚀 Bot gestartet")
 
@@ -1707,7 +1709,7 @@ def on_save_keys(data: dict | None = None):
     emit(
         "status",
         {
-            "msg": f"🔑 Keys gespeichert ({CONFIG['exchange']})",
+            "msg": f"🔑 Keys gespeichert ({CONFIG.get('exchange', '')})",
             "key": "ws_keys_saved",
             "type": "success",
         },
@@ -1767,6 +1769,9 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
 def on_force_train():
     if not _ws_admin_required():
         return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_training", "type": "error"})
+        return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
     threading.Thread(
         target=_run_ai_job,
@@ -1778,6 +1783,9 @@ def on_force_train():
 @socketio.on("force_optimize")
 def on_force_optimize():
     if not _ws_admin_required():
+        return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_optimizing", "type": "error"})
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
     threading.Thread(
@@ -1795,6 +1803,9 @@ def on_force_optimize():
 @socketio.on("force_genetic")
 def on_force_genetic():
     if not _ws_admin_required():
+        return
+    if genetic is None:
+        emit("status", {"msg": "❌ Genetischer Optimizer nicht verfügbar", "key": "ws_ai_genetic", "type": "error"})
         return
     emit(
         "status",
@@ -1816,6 +1827,9 @@ def on_force_genetic():
 @socketio.on("reset_ai")
 def on_reset_ai():
     if not _ws_admin_required():
+        return
+    if ai_engine is None:
+        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_reset", "type": "error"})
         return
     with ai_engine._lock:
         ai_engine.X_raw = []
@@ -1871,6 +1885,9 @@ def on_close_position(data: dict | None = None):
         except Exception as e:
             emit("status", {"msg": f"❌ {e}", "type": "error"})
     elif in_short:
+        if short_engine is None:
+            emit("status", {"msg": "❌ Short-Engine nicht verfügbar", "type": "error"})
+            return
         short_engine.close_short(sym, "Manuell 🖐")
         emit(
             "status",
@@ -1902,8 +1919,8 @@ def on_run_backtest(data: dict | None = None):
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 safe_int(data.get("candles", 500), 500),
-                safe_float(data.get("sl", CONFIG["stop_loss_pct"]), CONFIG["stop_loss_pct"]),
-                safe_float(data.get("tp", CONFIG["take_profit_pct"]), CONFIG["take_profit_pct"]),
+                safe_float(data.get("sl", CONFIG.get("stop_loss_pct", 0.025)), CONFIG.get("stop_loss_pct", 0.025)),
+                safe_float(data.get("tp", CONFIG.get("take_profit_pct", 0.060)), CONFIG.get("take_profit_pct", 0.060)),
                 safe_float(
                     data.get("vote", CONFIG.get("min_vote_score", 0.3)),
                     CONFIG.get("min_vote_score", 0.3),
@@ -2003,6 +2020,9 @@ def on_send_report():
 def on_reset_cb():
     if not _ws_auth_required():
         return
+    if risk is None:
+        emit("status", {"msg": "❌ Risk-Manager nicht initialisiert", "key": "ws_cb_reset", "type": "error"})
+        return
     with risk._lock:
         risk.circuit_breaker_until = None
         risk.consecutive_losses = 0
@@ -2017,6 +2037,10 @@ def on_reset_cb():
 @socketio.on("scan_arbitrage")
 def on_scan_arb():
     if not _ws_auth_required():
+        return
+
+    if arb_scanner is None:
+        emit("status", {"msg": "❌ Arbitrage-Scanner nicht verfügbar", "key": "ws_arb_result", "type": "error"})
         return
 
     def _arb():
@@ -2036,6 +2060,8 @@ def on_scan_arb():
 @socketio.on("update_dominance")
 def on_update_dominance():
     if not _ws_auth_required():
+        return
+    if dominance is None:
         return
     threading.Thread(target=dominance.update, daemon=True).start()
     emit(
@@ -3347,12 +3373,12 @@ def _maybe_auto_start_bot() -> bool:
 
 
 # ── API-Blueprint-Registrierung ────────────────────────────────────────────
-from routes.api.deps import AppDeps
-from routes.api.trading import create_trading_blueprint
-from routes.api.admin import create_admin_blueprint
-from routes.api.ai import create_ai_blueprint
-from routes.api.system import create_system_blueprint
-from routes.api.market import create_market_blueprint
+from routes.api.admin import create_admin_blueprint  # noqa: E402
+from routes.api.ai import create_ai_blueprint  # noqa: E402
+from routes.api.deps import AppDeps  # noqa: E402
+from routes.api.market import create_market_blueprint  # noqa: E402
+from routes.api.system import create_system_blueprint  # noqa: E402
+from routes.api.trading import create_trading_blueprint  # noqa: E402
 
 _api_deps = AppDeps(
     config=CONFIG,

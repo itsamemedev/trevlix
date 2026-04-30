@@ -12,11 +12,12 @@ Unterstützte Plans: free, pro, developer
 """
 
 import logging
-import threading
 import time
 
 import httpx
 import numpy as np
+
+from services.cache import TTLCache
 
 log = logging.getLogger("trevlix.cryptopanic")
 
@@ -106,9 +107,7 @@ class CryptoPanicClient:
         _free_v2_url = _API_V2_URL.format(plan="free")
         self._fallback_url = _free_v2_url if self.plan != "free" else _API_V1_FALLBACK_URL
         self._active_url = self._base_url
-        self._cache: dict = {}
-        self._cache_max_size: int = 200
-        self._cache_lock = threading.Lock()
+        self._cache: TTLCache[dict] = TTLCache(ttl_seconds=CACHE_TTL, max_size=200)
         self._rate_limited_until: float = 0.0
         self._last_fetch_was_rate_limited: bool = False
         self._last_api_call_at: float = 0.0
@@ -133,12 +132,6 @@ class CryptoPanicClient:
     def is_configured(self) -> bool:
         """Prüft ob ein gültiger Token konfiguriert ist."""
         return bool(self.token and self.token.strip())
-
-    def _is_cache_valid(self, cache_key: str) -> bool:
-        """Prüft ob der Cache für den Cache-Key noch gültig ist."""
-        if cache_key not in self._cache:
-            return False
-        return (time.time() - self._cache[cache_key]["ts"]) < CACHE_TTL
 
     def _request_posts(
         self, url: str, params: dict, currency: str
@@ -389,12 +382,10 @@ class CryptoPanicClient:
                 if stale_db_cached is not None:
                     return stale_db_cached
 
-        # In-Memory-Cache prüfen (atomares Read unter Lock – verhindert Race
-        # mit gleichzeitiger Eviction am Ende der Methode).
-        with self._cache_lock:
-            if self._is_cache_valid(cache_key):
-                c = self._cache[cache_key]
-                return c["score"], c["headline"], c["count"]
+        # In-Memory-Cache prüfen (TTLCache ist thread-safe)
+        cached_entry = self._cache.get(cache_key)
+        if cached_entry is not None:
+            return cached_entry["score"], cached_entry["headline"], cached_entry["count"]
 
         # Ohne Token: Feature deaktiviert, neutraler Score
         if not self.is_configured:
@@ -402,10 +393,9 @@ class CryptoPanicClient:
         else:
             posts = self.fetch_posts(coin)
             if self._last_fetch_was_rate_limited:
-                with self._cache_lock:
-                    if cache_key in self._cache:
-                        c = self._cache[cache_key]
-                        return c["score"], c["headline"], c["count"]
+                stale = self._cache.get(cache_key)
+                if stale is not None:
+                    return stale["score"], stale["headline"], stale["count"]
             score, headline, count = self.analyze_sentiment(posts)
 
             if self._last_fetch_was_rate_limited and count == 0:
@@ -413,18 +403,7 @@ class CryptoPanicClient:
                     return stale_db_cached
                 return 0.0, "—", 0
 
-        # Caches aktualisieren (mit Max-Size-Eviction) – atomar unter Lock
-        with self._cache_lock:
-            self._cache[cache_key] = {
-                "score": score,
-                "headline": headline,
-                "count": count,
-                "ts": time.time(),
-            }
-            if len(self._cache) > self._cache_max_size:
-                oldest = min(self._cache, key=lambda k: self._cache[k].get("ts", 0))
-                if oldest != cache_key:
-                    del self._cache[oldest]
+        self._cache.set(cache_key, {"score": score, "headline": headline, "count": count})
 
         if db:
             db.save_news(symbol, score, headline, count)

@@ -14,46 +14,41 @@ import time
 
 
 class TestTTLCache:
-    """Tests für den Market Data TTL-Cache."""
+    """Tests für den services.cache.TTLCache (vormals market_data._TTLCache)."""
 
     def test_cache_set_and_get(self):
-        """Gespeicherte Werte werden korrekt zurückgegeben."""
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=60)
+        cache = TTLCache(ttl_seconds=60)
         cache.set("key1", {"value": 42})
         assert cache.get("key1") == {"value": 42}
 
     def test_cache_miss_returns_none(self):
-        """Nicht vorhandene Keys geben None zurück."""
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=60)
+        cache = TTLCache(ttl_seconds=60)
         assert cache.get("missing") is None
 
     def test_cache_expiry(self):
-        """Abgelaufene Einträge geben None zurück."""
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=0)  # Sofort abgelaufen
+        cache = TTLCache(ttl_seconds=0.001)  # 1 ms TTL
         cache.set("key1", "value")
-        time.sleep(0.01)
+        time.sleep(0.05)
         assert cache.get("key1") is None
 
     def test_cache_overwrite(self):
-        """Überschriebene Werte werden korrekt zurückgegeben."""
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=60)
+        cache = TTLCache(ttl_seconds=60)
         cache.set("key1", "old")
         cache.set("key1", "new")
         assert cache.get("key1") == "new"
 
     def test_cache_clear(self):
-        """clear() leert den gesamten Cache."""
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=60)
+        cache = TTLCache(ttl_seconds=60)
         cache.set("a", 1)
         cache.set("b", 2)
         cache.clear()
@@ -61,12 +56,11 @@ class TestTTLCache:
         assert cache.get("b") is None
 
     def test_cache_thread_safety(self):
-        """Cache ist thread-safe bei parallelen Zugriffen."""
         import threading
 
-        from services.market_data import _TTLCache
+        from services.cache import TTLCache
 
-        cache = _TTLCache(ttl=60)
+        cache = TTLCache(ttl_seconds=60)
         errors: list[str] = []
 
         def writer(n: int) -> None:

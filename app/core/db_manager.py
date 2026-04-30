@@ -640,7 +640,7 @@ class MySQLManager:
                             trade.get("invested"),
                             trade.get("opened"),
                             trade.get("closed"),
-                            trade.get("exchange", CONFIG["exchange"]),
+                            trade.get("exchange", CONFIG.get("exchange", "cryptocom")),
                             trade.get("regime", "bull"),
                             trade.get("trade_type", "long"),
                             trade.get("partial_sold", 0),
@@ -1390,10 +1390,10 @@ class MySQLManager:
         payload = {
             "sub": user_id,
             "label": label,
-            "exp": datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+            "exp": datetime.now(UTC) + timedelta(hours=CONFIG.get("jwt_expiry_hours", 24)),
             "iat": datetime.now(UTC),
         }
-        token = pyjwt.encode(payload, CONFIG["jwt_secret"], algorithm="HS256")
+        token = pyjwt.encode(payload, CONFIG.get("jwt_secret", ""), algorithm="HS256")
         try:
             with self._get_conn() as conn:
                 with conn.cursor() as c:
@@ -1403,7 +1403,7 @@ class MySQLManager:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(UTC) + timedelta(hours=CONFIG["jwt_expiry_hours"]),
+                            datetime.now(UTC) + timedelta(hours=CONFIG.get("jwt_expiry_hours", 24)),
                         ),
                     )
         except Exception as e:
@@ -1416,7 +1416,7 @@ class MySQLManager:
         try:
             payload = pyjwt.decode(
                 token,
-                CONFIG["jwt_secret"],
+                CONFIG.get("jwt_secret", ""),
                 algorithms=["HS256"],
                 options={"require": ["exp"]},
             )
@@ -1796,7 +1796,7 @@ class MySQLManager:
                 safe_cfg = {k: v for k, v in CONFIG.items() if k not in _BACKUP_SENSITIVE_KEYS}
                 zf.writestr("config.json", json.dumps(safe_cfg, indent=2, ensure_ascii=False))
             # Alte löschen
-            cutoff = datetime.now() - timedelta(days=CONFIG["backup_keep_days"])
+            cutoff = datetime.now() - timedelta(days=CONFIG.get("backup_keep_days", 30))
             for fn in os.listdir(bdir):
                 fp = os.path.join(bdir, fn)
                 if os.path.getmtime(fp) < cutoff.timestamp():
