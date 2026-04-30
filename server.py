@@ -115,9 +115,6 @@ from app.core.request_helpers import (
     safe_float,
     safe_int,
 )
-from app.core.request_helpers import (
-    normalize_exchange_name as _normalize_exchange_name,
-)
 from app.core.runtime import run_server
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
@@ -212,6 +209,7 @@ from services.utils import (
     BOT_NAME,
     BOT_VERSION,
     EXCHANGE_MAP,
+    normalize_exchange_name,
     validate_config,
 )
 from services.utils import make_secret as _secret
@@ -436,11 +434,6 @@ def _handle_unexpected(e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "internal_server_error"}), 500
     return "Internal Server Error", 500
-
-
-def normalize_exchange_name(raw: Any) -> str:
-    """Normalisiert und validiert einen Exchange-Namen."""
-    return _normalize_exchange_name(raw, EXCHANGE_MAP)
 
 
 def _generate_csrf_token() -> str:

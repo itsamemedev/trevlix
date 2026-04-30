@@ -54,6 +54,19 @@ def make_secret(val: str) -> SecretStr:
     return SecretStr(val)
 
 
+def normalize_exchange_name(raw) -> str:
+    """Normalisiert einen Exchange-Namen gegen ``EXCHANGE_MAP``.
+
+    Bequemer 1-Argument-Wrapper um den canonical
+    ``app.core.request_helpers.normalize_exchange_name(raw, exchange_map)``,
+    der die projektweite ``EXCHANGE_MAP`` einbindet. Hält ``server.py`` und
+    ``app/core/trading_ops.py`` von duplizierten Adapter-Funktionen frei.
+    """
+    from app.core.request_helpers import normalize_exchange_name as _impl
+
+    return _impl(raw, EXCHANGE_MAP)
+
+
 def validate_symbol(symbol: str) -> bool:
     """Returns True if ``symbol`` looks like a valid trading pair (e.g. 'BTC/USDT')."""
     return bool(_SYMBOL_RE.match(symbol))
