@@ -39,7 +39,7 @@ class TradeExecutionService:
     def _safe_float(v: Any, default: float = 0.0) -> float:
         try:
             return float(v)
-        except Exception:
+        except (ValueError, TypeError):
             return default
 
     def _validate_symbol(self, ex, symbol: str) -> tuple[bool, str]:

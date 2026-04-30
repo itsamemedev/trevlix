@@ -146,8 +146,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 min(si(data.get("candles", 500), 500), 5000),
-                sf(data.get("sl", cfg["stop_loss_pct"]), cfg["stop_loss_pct"]),
-                sf(data.get("tp", cfg["take_profit_pct"]), cfg["take_profit_pct"]),
+                sf(data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)),
+                sf(data.get("tp", cfg.get("take_profit_pct", 0.060)), cfg.get("take_profit_pct", 0.060)),
                 sf(
                     data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
                 ),
@@ -335,14 +335,15 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         if action == "start":
             if deps.trade_mode:
                 deps.trade_mode.set_enabled(True)
+            bot_loop_fn = deps.bot_loop_fn or (
+                deps.trading_ops_mod.bot_loop if deps.trading_ops_mod else None
+            )
             with st._lock:
                 st.running = True
                 st.paused = False
-            if not any(t.name == "BotLoop" and t.is_alive() for t in threading.enumerate()):
-                bot_loop_fn = deps.bot_loop_fn or (
-                    deps.trading_ops_mod.bot_loop if deps.trading_ops_mod else None
-                )
-                if bot_loop_fn:
+                if bot_loop_fn and not any(
+                    t.name == "BotLoop" and t.is_alive() for t in threading.enumerate()
+                ):
                     threading.Thread(target=bot_loop_fn, daemon=True, name="BotLoop").start()
             return jsonify({"ok": True, "running": True})
         if action == "stop":
@@ -781,7 +782,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     def api_user_update_keys():
         data = body()
         exchange = (
-            norm_ex(data.get("exchange", cfg["exchange"]))
+            norm_ex(data.get("exchange", cfg.get("exchange", "")))
             if norm_ex
             else str(data.get("exchange", ""))
         )

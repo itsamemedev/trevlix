@@ -292,13 +292,15 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
         if request.method == "POST":
             d = body()
             cfg["news_sentiment_min"] = sf(
-                d.get("min_score", cfg["news_sentiment_min"]), cfg["news_sentiment_min"]
+                d.get("min_score", cfg.get("news_sentiment_min", -0.2)),
+                cfg.get("news_sentiment_min", -0.2),
             )
             cfg["news_require_positive"] = bool(
-                d.get("require_positive", cfg["news_require_positive"])
+                d.get("require_positive", cfg.get("news_require_positive", False))
             )
             cfg["news_block_score"] = sf(
-                d.get("block_score", cfg["news_block_score"]), cfg["news_block_score"]
+                d.get("block_score", cfg.get("news_block_score", -0.4)),
+                cfg.get("news_block_score", -0.4),
             )
             _db_audit(
                 session.get("user_id", 0),
