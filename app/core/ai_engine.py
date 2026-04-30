@@ -245,7 +245,7 @@ class AIEngine:
         self.bear_model = None
         self.lstm_model = None
         self.lstm_acc = 0.0
-        self.lstm_seq = CONFIG["lstm_lookback"]
+        self.lstm_seq = CONFIG.get("lstm_lookback", 24)
         self.X_raw = []
         self.y_raw = []
         self.regimes_raw = []
@@ -339,17 +339,18 @@ class AIEngine:
                     self.X_bear.append(xi)
                     self.y_bear.append(yi)
             n = len(self.X_raw)
-            self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
-            if n >= CONFIG["ai_min_samples"] and not models_loaded:
+            _min_s = CONFIG.get("ai_min_samples", 20)
+            self.progress_pct = min(100, int(n / max(_min_s, 1) * 100))
+            if n >= _min_s and not models_loaded:
                 # Nur neu trainieren wenn kein gespeichertes Modell vorhanden
                 threading.Thread(target=self._train, daemon=True).start()
-            elif n >= CONFIG["ai_min_samples"] and models_loaded:
+            elif n >= _min_s and models_loaded:
                 # Modell geladen, aber nach N neuen Samples auch neu trainieren
                 log.info("🧠 Persistiertes Modell geladen – kein Cold-Start")
             self.status_msg = (
                 f"✅ {n} Samples geladen"
                 if n > 0
-                else "⏳ Brauche min. " + str(CONFIG["ai_min_samples"]) + " Trades"
+                else "⏳ Brauche min. " + str(_min_s) + " Trades"
             )
             log.info(f"🧠 KI: {n} Samples (Bull:{len(self.X_bull)} Bear:{len(self.X_bear)})")
         except Exception as e:
@@ -753,9 +754,9 @@ class AIEngine:
             # LSTM
             lstm_m = None
             lstm_acc = 0.0
-            if TF_AVAILABLE and n >= CONFIG["lstm_min_samples"]:
+            if TF_AVAILABLE and n >= CONFIG.get("lstm_min_samples", 50):
                 try:
-                    sl = min(CONFIG["lstm_lookback"], n // 4, n - 1)
+                    sl = min(CONFIG.get("lstm_lookback", 24), n // 4, n - 1)
                     if sl >= 4:
                         Xs_s = [X_s[i - sl : i] for i in range(sl, n)]
                         ys_s = list(y[sl:])
@@ -938,8 +939,8 @@ class AIEngine:
             sl_grid = [0.010, 0.015, 0.020, 0.025, 0.030, 0.040, 0.050]
             tp_grid = [0.030, 0.050, 0.060, 0.070, 0.080, 0.100, 0.120, 0.150]
             best_score = -999.0
-            prev_sl = CONFIG["stop_loss_pct"]
-            prev_tp = CONFIG["take_profit_pct"]
+            prev_sl = CONFIG.get("stop_loss_pct", 0.025)
+            prev_tp = CONFIG.get("take_profit_pct", 0.060)
             best_sl = prev_sl
             best_tp = prev_tp
             for sl in sl_grid:
@@ -1434,13 +1435,14 @@ class AIEngine:
             daemon=True,
         ).start()
         n = len(self.X_raw)
-        self.progress_pct = min(100, int(n / max(CONFIG["ai_min_samples"], 1) * 100))
+        _min_s = CONFIG.get("ai_min_samples", 20)
+        self.progress_pct = min(100, int(n / max(_min_s, 1) * 100))
         if (
-            n >= CONFIG["ai_min_samples"]
-            and self.trades_since_retrain >= CONFIG["ai_retrain_every"]
+            n >= _min_s
+            and self.trades_since_retrain >= CONFIG.get("ai_retrain_every", 5)
         ):
             threading.Thread(target=self._train, daemon=True).start()
-        if self.trades_since_optimize >= CONFIG["ai_optimize_every"]:
+        if self.trades_since_optimize >= CONFIG.get("ai_optimize_every", 15):
             threading.Thread(target=self._optimize, daemon=True).start()
         # Genetischer Optimizer nach 30 Trades
         if n % 30 == 0 and state and genetic is not None:
