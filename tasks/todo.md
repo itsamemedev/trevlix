@@ -1,5 +1,66 @@
 # Tasks
 
+## Session: refactor-trading-app-dmXcw (2026-04-30) – Repo Cleanup & Modularisation
+
+### Scope
+
+User-Auftrag: Professionell aufräumen ohne Funktionalität kaputt zu machen.
+Modularisierung großer Dateien, tote Dateien isolieren, Duplikate entfernen,
+Templates auf Partials umstellen. Phase B (alle drei): db_manager-Repos +
+dashboard.js-Splitting + bot_loop-Helper-Extraktion.
+
+### Verifikations-Limit
+
+Sandbox hat kein flask/ccxt/cryptography → pytest-Suite läuft nicht hier.
+Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
+`ruff format --check`, manueller grep auf Aufrufer.
+
+### Geplante Schritte
+
+#### Block A – Cleanup (Schritte 1–4, niedrig-Risiko)
+- [ ] 1. Dockerfile: `COPY app/ ./app/` ergänzen (kritischer Build-Bug)
+- [ ] 2. Root `ai_engine.py` → `legacy/ai_engine.py` + Banner; Dockerfile/Makefile/install.sh/Doku anpassen
+- [ ] 3. `normalize_exchange_name`-Duplikat in `trading_ops.py` entfernen
+- [ ] 4. `index.html` + `dashboard.html` auf `_partials/site_nav.html` etc. umstellen
+
+#### Block B – server.py Aufteilung (Schritte 5–10, mittel-Risiko)
+- [ ] 5. `_collect_system_analytics` (304 Z.) → `app/core/system_analytics.py`
+- [ ] 6. `_set_env_var` (202 Z.) → `app/core/env_writer.py`
+- [ ] 7. `_maybe_auto_start_bot` (180 Z.) → `app/core/auto_start.py`
+- [ ] 8. `run_monte_carlo` (90 Z.) → `services/monte_carlo.py`
+- [ ] 9. VIRGINIE chat helpers (`_virginie_*`) → `app/core/virginie_chat.py`
+- [ ] 10. `PROJECT_STRUCTURE.md` + `docs/MODULE_MAPPING.md` updaten
+
+#### Block B2 – db_manager Repositories
+- [ ] B2.1 Schema-Init aus `MySQLManager._init_db_once()` in `app/core/db_schema.py` extrahieren
+- [ ] B2.2 User-Methoden → `app/core/repositories/user_repo.py`
+- [ ] B2.3 Trade-Methoden → `app/core/repositories/trade_repo.py`
+- [ ] B2.4 Alert-Methoden → `app/core/repositories/alert_repo.py`
+- [ ] B2.5 AI-Sample/Backtest-Methoden → `app/core/repositories/ai_repo.py`
+- [ ] B2.6 Sentiment/News/Onchain-Methoden → `app/core/repositories/intel_repo.py`
+- [ ] B2.7 Backup/Daily-Report-Methoden → `app/core/repositories/maintenance_repo.py`
+- [ ] B2.8 `MySQLManager` als dünner Composition-Wrapper mit Delegation für Backward-Compat
+
+#### Block B1 – dashboard.js Aufteilung
+- [ ] B1.1 `static/js/dashboard/utils.js` (esc, escJS, _storage, fmt-Helfer)
+- [ ] B1.2 `static/js/dashboard/api.js` (fetch-Wrapper, JWT-Header)
+- [ ] B1.3 `static/js/dashboard/charts.js` (Chart.js init + updates)
+- [ ] B1.4 `static/js/dashboard/websocket.js` (Socket-Handler-Bindings)
+- [ ] B1.5 `static/js/dashboard/renderers.js` (updateUI, updatePositions, ...)
+- [ ] B1.6 `static/js/dashboard/virginie.js` (VIRGINIE-Chat & 3D-AI)
+- [ ] B1.7 `static/js/dashboard.js` als dünner Bootstrap-Loader oder mehrere `<script>`-Tags in dashboard.html
+
+#### Block B3 – bot_loop & Position-Helper
+- [ ] B3.1 `bot_loop` Phasen in private Helfer extrahieren (`_phase_reconcile_exchanges`, `_phase_manage_positions`, `_phase_refresh_markets`, `_phase_scan_symbols`, `_phase_emit_state`); kein Verhalten ändern
+- [ ] B3.2 `open_position` Pre-Check-Block in `_pre_open_validations()` extrahieren
+- [ ] B3.3 `close_position` Persistenz/Notification-Block in `_post_close_persistence()` extrahieren
+
+### Review (wird am Ende ausgefüllt)
+
+(Bericht in Phase 5)
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
 
 ### Scope
