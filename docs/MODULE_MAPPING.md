@@ -48,6 +48,7 @@ Für die Service-Schicht siehe `docs/SERVICES.md`.
 | `llm_providers.py` | Multi-LLM-Provider mit Failover (Groq, Cerebras, OpenRouter, HuggingFace). |
 | `market_data.py` | Fear/Greed-Index, BTC-Dominance, On-Chain-Daten, Sentiment. |
 | `mcp_tools.py` | Model-Context-Protocol-Tool-Layer für externe KI-Clients. |
+| `monte_carlo.py` | Portfolio-Risiko-Simulation (Percentile-Bänder, VaR, Ruin-Wahrscheinlichkeit). |
 | `notifications.py` | Discord-Webhook + Telegram-Bot-Notifications. |
 | `ollama_client.py` | Lightweight-Wrapper um lokale Ollama-Instanz (Health, Chat, Model-Pull). |
 | `passwords.py` | Passwort-Policies + sichere Hashing-Helfer. |
@@ -77,12 +78,14 @@ Für die Service-Schicht siehe `docs/SERVICES.md`.
 | `app_setup.py` | Flask-App-Konstruktion, CORS, Limiter, Session-Config. Verdrahtet `configure_logging()`. |
 | `audit_writer.py` | Asynchroner Audit-Log-Writer. |
 | `auth_guards.py` | Decorators: `require_auth`, `api_auth_required`, Admin-Gates. |
+| `auto_start.py` | Bot-Auto-Start: Feasibility-Checks + Thread-Launch. |
 | `backup_verify.py` | Integritätsprüfung für Backup-Archive. |
 | `bootstrap.py` | Frühinitialisierung (vor Flask). |
 | `bot_heartbeat.py` | Heartbeat-Emitter an WebSocket-Clients. |
 | `db_manager.py` | `MySQLManager` – Schema-Init, High-Level-DB-API. |
 | `db_request_context.py` | Per-Request-DB-Transaktionskontext. |
 | `default_config.py` | Default-Werte für `CONFIG`-Dict. |
+| `env_writer.py` | Atomare Mutation der `.env`-Datei (Key-Validierung + Newline-Schutz). |
 | `exchange_runtime.py` | Runtime-Wiring für aktive Exchanges. |
 | `exchange_secret.py` | Key-Load/Save via `services/encryption`. |
 | `http_routes.py` | Kleinere HTTP-Utility-Routen (Healthcheck, etc.). |
@@ -99,11 +102,13 @@ Für die Service-Schicht siehe `docs/SERVICES.md`.
 | `socket_emit.py` | Thread-safe Emit-Wrapper für SocketIO. |
 | `socket_error_logger.py` | Fehler-Logger für fehlgeschlagene Socket-Emits. |
 | `startup_view.py` | Startup-Banner + Ready-Summary (farbige Multi-Section-Box). |
+| `system_analytics.py` | Builder-Funktionen für Dashboard-Analytics (System/API/LLM/DB/AI/Risk/Revenue). |
 | `tax_export.py` | CSV/JSON-Export der Steuerreports. |
 | `time_compat.py` | Kompatibilitätswrapper für `datetime.utcnow` → `now(timezone.utc)`. |
 | `trade_export.py` | Export von Trades (CSV). |
 | `trading_classes.py` | Domain-Objekte: `Position`, `Trade`, `BotState`. |
 | `trading_ops.py` | Trade-Open/Close-Operationen auf Domain-Ebene. |
+| `virginie_chat.py` | VIRGINIE-Chat-State + Helfer (Status/Advice/Edge/CPU-Fast-Reply/Reply). |
 | `websocket_authz.py` | Socket-Authorisierung (Admin/User-Rolle). |
 | `websocket_guard.py` | `WsRateLimiter` – LRU-basiertes Rate-Limiting pro Socket-Sid. |
 | `websocket_state.py` | Per-Socket-State mit Bereinigung bei Disconnect. |
