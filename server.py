@@ -97,6 +97,7 @@ from app.core.bootstrap import (
 from app.core.db_manager import MySQLManager, init_db_manager
 from app.core.db_request_context import close_request_db_conn, get_request_db_conn
 from app.core.default_config import build_default_config
+from app.core.env_writer import set_env_var
 from app.core.exchange_secret import is_single_exchange_mode, reveal_and_decrypt
 from app.core.http_routes import register_default_blueprints, register_system_routes
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
@@ -2712,40 +2713,9 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
 telegram = TelegramNotifier(CONFIG, BOT_FULL)
 
 
-def _set_env_var(key: str, value: str):
-    """Setzt/aktualisiert eine Variable in der .env Datei (atomarer Schreibvorgang)."""
-    import re as _re
-    import tempfile
-
-    env_path = ".env"
-    if not os.path.exists(env_path):
-        return
-    # Validate key to prevent regex injection
-    if not _re.match(r"^[A-Z_][A-Z0-9_]*$", key):
-        log.warning(f"_set_env_var: Ungültiger Key '{key}'")
-        return
-    # Newline-Injection verhindern
-    value = value.replace("\n", "").replace("\r", "")
-    with open(env_path) as f:
-        txt = f.read()
-    escaped_key = _re.escape(key)
-    if _re.search(f"^{escaped_key}=", txt, _re.M):
-        txt = _re.sub(f"^{escaped_key}=.*$", f"{key}={value}", txt, flags=_re.M)
-    else:
-        txt += f"\n{key}={value}"
-    # Atomic write: write to temp file, then rename
-    env_dir = os.path.dirname(os.path.abspath(env_path))
-    fd, tmp_path = tempfile.mkstemp(dir=env_dir, prefix=".env.tmp.")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(txt)
-        os.replace(tmp_path, env_path)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+def _set_env_var(key: str, value: str) -> None:
+    """Atomic mutation of a single .env entry. Forwards to env_writer.set_env_var."""
+    set_env_var(key, value, log=log)
 
 
 # SymbolCooldown importiert aus services.risk
