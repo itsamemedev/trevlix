@@ -1,14 +1,5 @@
-// ── HTML-Escaping für sichere innerHTML-Nutzung ──────────────────────
-function esc(s){if(!s)return'';return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
-// JS-safe escaping for use in onclick="fn('${escJS(val)}')" attributes
-function escJS(s){if(!s)return'';return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/</g,'\\x3c').replace(/>/g,'\\x3e');}
-
-// ── Safe localStorage wrapper (handles private browsing) ─────────────
-const _storage = {
-  get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
-  set(k,v){try{localStorage.setItem(k,v);}catch(e){}},
-  del(k){try{localStorage.removeItem(k);}catch(e){}}
-};
+// Helpers (esc, escJS, _storage, fmt*, toast) live in dashboard_utils.js
+// which dashboard.html loads before this file.
 
 // ── JWT Token (aus Cookie oder Session) ──────────────────────────────
 let _jwtToken = (document.cookie.match(/(?:^|;\s*)token=([^;]*)/)||[])[1] || '';
@@ -90,23 +81,7 @@ function closeMobileNav(){
   if(drawer) drawer.classList.remove('open');
 }
 
-// ── Format ───────────────────────────────────────────────────────────
-const fmt=(n,d=2)=>Number(n||0).toLocaleString('de-DE',{minimumFractionDigits:d,maximumFractionDigits:d});
-const fmtPct=n=>(n>=0?'+':'')+fmt(n)+'%';
-const fmtS=(n,d=2)=>(n>=0?'+':'')+fmt(n,d);
-const clr=n=>n>=0?'var(--green)':'var(--red)';
-
-// ── Toast ────────────────────────────────────────────────────────────
-function toast(msg, type='info'){
-  const c=document.getElementById('toasts');
-  if(!c) return;
-  /* [Verbesserung #39] Max 5 Toasts gleichzeitig anzeigen */
-  while(c.children.length >= 5){ c.removeChild(c.firstChild); }
-  const t=document.createElement('div');
-  t.className='toast '+type; t.textContent=msg;
-  t.setAttribute('role','alert');
-  c.appendChild(t); setTimeout(()=>t.remove(),3700);
-}
+// fmt/fmtPct/fmtS/clr/toast moved to dashboard_utils.js (loaded earlier).
 
 // ── Log ──────────────────────────────────────────────────────────────
 function addLog(msg, type='info', cat='system'){
