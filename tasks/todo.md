@@ -21,7 +21,7 @@ Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
 - [ ] 1. Dockerfile: `COPY app/ ./app/` ergänzen (kritischer Build-Bug)
 - [ ] 2. Root `ai_engine.py` → `legacy/ai_engine.py` + Banner; Dockerfile/Makefile/install.sh/Doku anpassen
 - [ ] 3. `normalize_exchange_name`-Duplikat in `trading_ops.py` entfernen
-- [ ] 4. `index.html` + `dashboard.html` auf `_partials/site_nav.html` etc. umstellen
+- [~] 4. ~~`index.html` + `dashboard.html` auf `_partials/site_nav.html` umstellen~~ – **WONTFIX**: nach Inspektion sind das bewusst andere Nav-Komponenten (`mainNav` vs `siteNav` vs Dashboard-Header) für drei verschiedene Use-Cases (Landing/Marketing mit Anchor-Links, App-Dashboard mit Bot-Status-Chips, statische Info-Seiten). Vereinheitlichung würde Anchor-Scroll + Lang-Switcher + Status-Chips brechen.
 
 #### Block B – server.py Aufteilung (Schritte 5–10, mittel-Risiko)
 - [ ] 5. `_collect_system_analytics` (304 Z.) → `app/core/system_analytics.py`
