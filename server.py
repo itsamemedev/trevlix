@@ -53,8 +53,6 @@ import os
 import secrets
 import threading
 import time
-import uuid
-from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -129,7 +127,6 @@ from app.core.socket_error_logger import log_socket_error
 from app.core.startup_view import render_startup_banner
 from app.core.system_analytics import build_llm_header_status, build_system_analytics
 from app.core.tax_export import tax_rows_to_csv
-from app.core.time_compat import UTC
 from app.core.trade_export import trades_to_json
 from app.core.trading_classes import (
     ArbitrageScanner,
@@ -158,6 +155,16 @@ from app.core.trading_ops import (
     open_position,
     safety_scan,
     scan_symbol,
+)
+from app.core.virginie_chat import (
+    build_chat_context,
+    chat_append,
+    chat_history_for_user,
+    cpu_fast_reply,
+    edge_profile,
+    generate_chat_reply,
+    runtime_advice,
+    runtime_status,
 )
 from app.core.websocket_authz import ws_admin_required, ws_auth_required
 from app.core.websocket_guard import WsRateLimiter
@@ -582,9 +589,7 @@ state = BotState(db)
 # Globales Shutdown-Event: alle kooperativen Hintergrund-Threads prüfen dieses Event.
 _SHUTDOWN_EVENT = threading.Event()
 ai_engine = AIEngine(db)
-_VIRGINIE_CHAT_MAX_MESSAGES = 80
-_virginie_chat_lock = threading.Lock()
-_virginie_chat_by_user: dict[int, deque[dict[str, Any]]] = {}
+# VIRGINIE chat state lives in app/core/virginie_chat (shared with HTTP API).
 
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
@@ -620,261 +625,50 @@ threading.Thread(target=_idle_learning_loop, daemon=True, name="IdleLearningLoop
 
 
 def _virginie_chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        return [dict(item) for item in history]
+    """Forwards to virginie_chat.chat_history_for_user (shared store)."""
+    return chat_history_for_user(user_id)
 
 
 def _virginie_chat_append(user_id: int, role: str, content: str) -> dict[str, Any]:
-    entry = {
-        "id": uuid.uuid4().hex,
-        "role": role,
-        "content": str(content).strip(),
-        "time": datetime.now(UTC).isoformat(),
-    }
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        history.append(entry)
-    return entry
+    """Forwards to virginie_chat.chat_append (shared store)."""
+    return chat_append(user_id, role, content)
 
 
 def _virginie_runtime_status() -> dict[str, Any]:
-    """Verdichteter VIRGINIE Status für API/Chat."""
-    ai = ai_engine.to_dict() if ai_engine else {}
-    assistant_agents = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
-    assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
-    return {
-        "enabled": bool(CONFIG.get("virginie_enabled", True)),
-        "primary_control": bool(CONFIG.get("virginie_primary_control", True)),
-        "autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
-        "min_score": float(CONFIG.get("virginie_min_score", 0.0) or 0.0),
-        "max_risk_penalty": float(CONFIG.get("virginie_max_risk_penalty", 1000.0) or 1000.0),
-        "assistant_name": ai.get("assistant_name", "VIRGINIE"),
-        "assistant_version": ai.get("assistant_version", "0.0.0"),
-        "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
-        "assistant_review": assistant_review if isinstance(assistant_review, dict) else {},
-    }
+    """Forwards to virginie_chat.runtime_status with module globals."""
+    return runtime_status(config=CONFIG, ai_engine=ai_engine)
 
 
 def _virginie_runtime_advice() -> dict[str, Any]:
-    """Leitet konkrete nächste Schritte aus Runtime-Status ab."""
-    status = _virginie_runtime_status()
-    ai = ai_engine.to_dict() if ai_engine else {}
-    wf = float(ai.get("wf_accuracy", 0) or 0)
-    drift = float(ai.get("drift_score", 0) or 0)
-    trained = bool(ai.get("is_trained", False))
-    guardrail_min_score = float(status.get("min_score", 0) or 0)
-    actions: list[dict[str, str]] = []
-    if not status.get("enabled", True):
-        actions.append(
-            {
-                "priority": "high",
-                "title": "VIRGINIE aktivieren",
-                "detail": "Setze virginie_enabled=true, damit Guardrails und Agenten-Workflow aktiv sind.",
-            }
-        )
-    if not trained:
-        actions.append(
-            {
-                "priority": "high",
-                "title": "Training starten",
-                "detail": "Das Modell ist noch nicht trainiert. Starte ein Initial-Training im Admin-Bereich.",
-            }
-        )
-    if wf < 55:
-        actions.append(
-            {
-                "priority": "medium",
-                "title": "Qualität stabilisieren",
-                "detail": "WF-Accuracy ist niedrig. Prüfe Feature-Importance und erhöhe Trainingsdaten.",
-            }
-        )
-    if drift >= 0.7:
-        actions.append(
-            {
-                "priority": "medium",
-                "title": "Drift reduzieren",
-                "detail": "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren und Risk-Limits prüfen.",
-            }
-        )
-    if guardrail_min_score < 0.5:
-        actions.append(
-            {
-                "priority": "low",
-                "title": "Min-Score anheben",
-                "detail": "Für konservativeres Verhalten virginie_min_score leicht erhöhen (z.B. +0.05).",
-            }
-        )
-    if not actions:
-        actions.append(
-            {
-                "priority": "low",
-                "title": "System stabil",
-                "detail": "VIRGINIE läuft stabil. Fokus auf Monitoring und regelmäßiges Review.",
-            }
-        )
-    return {
-        "assistant": status.get("assistant_name", "VIRGINIE"),
-        "version": status.get("assistant_version", "0.0.0"),
-        "wf_accuracy": wf,
-        "drift_score": drift,
-        "actions": actions[:5],
-    }
+    """Forwards to virginie_chat.runtime_advice with module globals."""
+    return runtime_advice(config=CONFIG, ai_engine=ai_engine)
 
 
 def _virginie_edge_profile() -> dict[str, Any]:
-    """Kompakter VIRGINIE-Edge-Score für Trading/Forecast-Workflows."""
-    status = _virginie_runtime_status()
-    advice = _virginie_runtime_advice()
-    snap = state.snapshot() if state else {}
-    wf = float(advice.get("wf_accuracy", 0) or 0)
-    drift = float(advice.get("drift_score", 0) or 0)
-    autonomy = float(status.get("autonomy_weight", 0.7) or 0.7)
-    running = bool(snap.get("running", False))
-    open_trades = int(snap.get("open_trades", 0) or 0)
-    risk_load = min(100.0, open_trades * 8.0)
-    edge_score = max(
-        0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load)
-    )
-    tier = (
-        "S"
-        if edge_score >= 85
-        else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
-    )
-    urgency = (
-        "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
-    )
-    signature = uuid.uuid5(
-        uuid.NAMESPACE_DNS,
-        f"{status.get('assistant_version', '0')}-{snap.get('exchange', 'na')}-{tier}-{int(edge_score)}-{int(drift * 100)}",
-    ).hex[:12]
-    return {
-        "edge_score": round(edge_score, 2),
-        "tier": tier,
-        "urgency": urgency,
-        "running": running,
-        "exchange": snap.get("exchange", "unbekannt"),
-        "open_trades": open_trades,
-        "signature": signature,
-    }
+    """Forwards to virginie_chat.edge_profile with module globals."""
+    return edge_profile(config=CONFIG, ai_engine=ai_engine, state=state)
 
 
 def _virginie_cpu_fast_reply(prompt: str) -> str | None:
-    """Ultraschnelle CPU-basierte VIRGINIE-Antwort ohne externen LLM-Call."""
-    p = str(prompt or "").strip().lower()
-    if not p:
-        return None
-    if any(k in p for k in ("risiko", "risk", "verlust", "drawdown")):
-        return (
-            "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades. "
-            "Wenn Drawdown steigt, Trade-Frequenz reduzieren und Stops enger setzen."
-        )
-    if any(k in p for k in ("markt", "market", "regime", "trend")):
-        return (
-            "CPU-Quickcheck: Regime + Volatilität zuerst prüfen. "
-            "Nur bei bestätigtem Trend aggressiv handeln, sonst Positionsgröße drosseln."
-        )
-    if any(k in p for k in ("setup", "konfig", "config", "einstellung")):
-        return (
-            "CPU-Quickcheck Setup: 1) virginie_primary_control aktiv, 2) ai_min_confidence validieren, "
-            "3) stop_loss/take_profit auf aktuelle Volatilität abstimmen."
-        )
-    if len(p.split()) <= 5:
-        return "Beschreibe bitte kurz Symbol, Ziel und Risiko-Toleranz, dann gebe ich dir einen konkreten Plan."
-    return None
+    """Forwards to virginie_chat.cpu_fast_reply (pure)."""
+    return cpu_fast_reply(prompt)
 
 
 def _build_virginie_chat_context(user_id: int) -> str:
-    ai = ai_engine.to_dict() if ai_engine else {}
-    snap = state.snapshot() if state else {}
-    ass = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
-    recent = _virginie_chat_history_for_user(user_id)[-8:]
-    recent_lines = []
-    for item in recent:
-        role = "User" if str(item.get("role", "")) == "user" else "VIRGINIE"
-        msg = str(item.get("content", "")).strip().replace("\n", " ")
-        if msg:
-            recent_lines.append(f"- {role}: {msg[:160]}")
-    recent_block = "\n".join(recent_lines) if recent_lines else "- (keine Historie)"
-    return (
-        "Du bist VIRGINIE, die Trading-Assistentin im TREVLIX Admin-Dashboard.\n"
-        "Antwortstil: kurz, konkret, handlungsorientiert, sicherheitsbewusst.\n"
-        "Keine Garantien, stattdessen klare nächste Schritte vorschlagen.\n"
-        f"Aktuelle Bot-Lage: running={bool(snap.get('running', False))}, "
-        f"paper_trading={bool(snap.get('paper_trading', True))}, "
-        f"exchange={snap.get('exchange', 'unbekannt')}, "
-        f"portfolio={snap.get('portfolio_value', 0)}.\n"
-        f"VIRGINIE-Agenten: count={ass.get('registered_agents', 0)}, "
-        f"coverage={ass.get('coverage_pct', 0)}%, "
-        f"last_agent={ass.get('last_agent', '—')}.\n"
-        "Letzte Unterhaltung (gekürzt):\n"
-        f"{recent_block}"
-    )
+    """Forwards to virginie_chat.build_chat_context with module globals."""
+    return build_chat_context(user_id, ai_engine=ai_engine, state=state)
 
 
 def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
-    prompt = str(user_prompt or "").strip()
-    if not prompt:
-        return "Bitte sende eine konkrete Frage, damit ich dir gezielt helfen kann."
-    status = _virginie_runtime_status()
-    if not status.get("enabled", True):
-        return "VIRGINIE ist aktuell deaktiviert. Aktiviere 'virginie_enabled' in den Settings."
-    cmd = prompt.lower()
-    if cmd in {"/help", "help"}:
-        return (
-            "VIRGINIE Kommandos: /status (Live-Status), /review (letztes Self-Review), "
-            "/plan (Aktionsplan), /edge (Edge-Profil), /help (diese Hilfe). "
-            "Du kannst auch normale Fragen zu Risiko, Setup und Strategie stellen."
-        )
-    if cmd in {"/status", "status"}:
-        agents = status.get("assistant_agents", {})
-        return (
-            f"Status: {'Primary' if status.get('primary_control') else 'Hybrid'} | "
-            f"w={status.get('autonomy_weight', 0):.2f} | "
-            f"Agents={agents.get('registered_agents', 0)} | "
-            f"Coverage={agents.get('coverage_pct', 0)}% | "
-            f"Last={agents.get('last_agent', '—')}"
-        )
-    if cmd in {"/review", "review"}:
-        review = status.get("assistant_review", {})
-        summary = str(review.get("summary", "")).strip() if isinstance(review, dict) else ""
-        return (
-            summary
-            or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
-        )
-    if cmd in {"/plan", "plan", "/diagnose", "diagnose"}:
-        advice = _virginie_runtime_advice()
-        action_lines = [
-            f"{i + 1}. [{a.get('priority', 'low')}] {a.get('title', 'Schritt')} – {a.get('detail', '')}"
-            for i, a in enumerate(advice.get("actions", []))
-        ]
-        return "VIRGINIE Aktionsplan:\n" + (
-            "\n".join(action_lines) if action_lines else "Keine Aktionen."
-        )
-    if cmd in {"/edge", "edge"}:
-        edge = _virginie_edge_profile()
-        return (
-            f"VIRGINIE Edge: {edge.get('edge_score', 0)} / 100 | Tier {edge.get('tier')} | "
-            f"Urgency {edge.get('urgency')} | Exchange {edge.get('exchange')} | Sig {edge.get('signature')}"
-        )
-    if bool(CONFIG.get("virginie_cpu_fast_chat", True)):
-        fast_reply = _virginie_cpu_fast_reply(prompt)
-        if fast_reply:
-            return fast_reply
-    context = _build_virginie_chat_context(user_id)
-    try:
-        reply = knowledge_base.query_llm_with_tools(prompt, context)
-        if reply:
-            return str(reply).strip()[:4000]
-    except Exception as exc:
-        log.debug("VIRGINIE chat LLM fallback: %s", exc)
-    return (
-        "Ich konnte die LLM-Antwort gerade nicht abrufen. "
-        "Bitte prüfe die LLM-Konfiguration unter Wissen/LLM-Status und versuche es erneut."
+    """Forwards to virginie_chat.generate_chat_reply with module globals."""
+    return generate_chat_reply(
+        user_id,
+        user_prompt,
+        config=CONFIG,
+        ai_engine=ai_engine,
+        state=state,
+        knowledge_base=knowledge_base,
+        log=log,
     )
 
 

@@ -1,6 +1,9 @@
 """AI Blueprint – VIRGINIE, Knowledge-Base, MCP-Tools, KI-Status.
 
-Alle Virginie-Hilfsfunktionen leben in diesem Modul (kein server.py-Zugriff).
+Chat-Speicher und einfache Helfer (status/advice/edge/cpu_fast_reply/
+context/reply) leben in app/core/virginie_chat – sowohl HTTP- als
+auch WebSocket-Pfad teilen sich denselben Store. Diese Datei erweitert
+den Status um deps-spezifische Felder (last_decision, daily_pnl, ...).
 """
 
 from __future__ import annotations
@@ -8,49 +11,27 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections import deque
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from flask import Blueprint, jsonify, request
 
-from app.core.time_compat import UTC
+from app.core.virginie_chat import (
+    VIRGINIE_CHAT_MAX_MESSAGES as _VIRGINIE_CHAT_MAX_MESSAGES,
+)
+from app.core.virginie_chat import (
+    chat_append as _chat_append,
+)
+from app.core.virginie_chat import (
+    chat_history_for_user as _chat_history_for_user,
+)
+from app.core.virginie_chat import (
+    clear_chat_history as _clear_chat_history,
+)
 
 log = logging.getLogger("trevlix.api.ai")
 
 if TYPE_CHECKING:
     from routes.api.deps import AppDeps
-
-# Modul-lokaler Chat-Speicher (pro User, max 100 Einträge)
-_VIRGINIE_CHAT_MAX_MESSAGES = 100
-_virginie_chat_by_user: dict[int, deque] = {}
-_virginie_chat_lock = threading.Lock()
-
-
-# ── Virginie-Helfer ───────────────────────────────────────────────────────────
-
-
-def _chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        return [dict(item) for item in history]
-
-
-def _chat_append(user_id: int, role: str, content: str) -> dict[str, Any]:
-    entry = {
-        "id": uuid.uuid4().hex,
-        "role": role,
-        "content": str(content).strip(),
-        "time": datetime.now(UTC).isoformat(),
-    }
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        history.append(entry)
-    return entry
 
 
 def _runtime_status(deps: AppDeps) -> dict[str, Any]:
@@ -347,8 +328,7 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_virginie_chat_clear():
         user_id = int(getattr(request, "user_id", 0) or 0)
-        with _virginie_chat_lock:
-            _virginie_chat_by_user[int(user_id)] = deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
+        _clear_chat_history(user_id)
         return jsonify({"ok": True})
 
     @bp.route("/api/v1/virginie/status")
