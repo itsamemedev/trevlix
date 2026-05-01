@@ -11,7 +11,6 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
 from flask import Blueprint, Response, jsonify, request
 
 log = logging.getLogger("trevlix.api.system")
@@ -21,67 +20,15 @@ if TYPE_CHECKING:
 
 
 def _run_monte_carlo(deps: AppDeps, n_simulations: int = 10_000, n_days: int = 30) -> dict:
-    """Monte-Carlo-Simulation des Portfolio-Werts über n_days Tage."""
-    trades = deps.state.closed_trades
-    if len(trades) < 5:
-        return {"error": "Mindestens 5 abgeschlossene Trades erforderlich"}
-    pnl_pcts = [
-        t.get("pnl", 0) / max(t.get("invested", 1), 1) for t in trades if t.get("invested", 0) > 0
-    ]
-    if not pnl_pcts:
-        return {"error": "Keine PnL-Daten vorhanden"}
-    mu = float(np.mean(pnl_pcts))
-    sigma = float(np.std(pnl_pcts))
-    start_value = deps.state.portfolio_value()
-    if trades:
-        span_days = max(
-            1,
-            (
-                datetime.now()
-                - datetime.fromisoformat(
-                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
-                )
-            ).days,
-        )
-        trades_per_day = max(0.1, len(trades) / span_days)
-    else:
-        trades_per_day = 1.0
-    results = []
-    rng = np.random.default_rng(42)
-    cfg = deps.config
-    for _ in range(n_simulations):
-        val = start_value
-        for _day in range(n_days):
-            n_trades_today = max(0, int(rng.poisson(trades_per_day)))
-            for _ in range(n_trades_today):
-                pnl_pct = rng.normal(mu, sigma)
-                invested = val * cfg.get("risk_per_trade", 0.015)
-                val = max(0, val + invested * pnl_pct)
-        results.append(val)
-    results_arr = np.array(results)
-    p5, p25, p50, p75, p95 = np.percentile(results_arr, [5, 25, 50, 75, 95])
-    var_95 = start_value - float(p5)
-    var_pct = var_95 / start_value * 100 if start_value > 0 else 0
-    return {
-        "n_simulations": n_simulations,
-        "n_days": n_days,
-        "start_value": round(start_value, 2),
-        "mu_per_trade": round(mu * 100, 3),
-        "sigma_per_trade": round(sigma * 100, 3),
-        "trades_per_day": round(trades_per_day, 2),
-        "percentile_5": round(float(p5), 2),
-        "percentile_25": round(float(p25), 2),
-        "percentile_50": round(float(p50), 2),
-        "percentile_75": round(float(p75), 2),
-        "percentile_95": round(float(p95), 2),
-        "var_95_usdt": round(var_95, 2),
-        "var_95_pct": round(var_pct, 2),
-        "prob_profit_pct": round(float(np.mean(results_arr > start_value) * 100), 1),
-        "prob_ruin_pct": round(float(np.mean(results_arr < start_value * 0.5) * 100), 1),
-        "expected_return": round((float(p50) - start_value) / start_value * 100, 2)
-        if start_value > 0
-        else 0.0,
-    }
+    """Monte-Carlo-Simulation des Portfolio-Werts. Forwards to services.monte_carlo."""
+    from services.monte_carlo import simulate_monte_carlo
+
+    return simulate_monte_carlo(
+        state=deps.state,
+        config=deps.config,
+        n_simulations=n_simulations,
+        n_days=n_days,
+    )
 
 
 def create_system_blueprint(deps: AppDeps) -> Blueprint:

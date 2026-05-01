@@ -58,7 +58,6 @@ from collections import deque
 from datetime import datetime
 from typing import Any
 
-import numpy as np
 from dotenv import load_dotenv
 from flask import (
     Response,
@@ -191,6 +190,7 @@ from services.market_data import (
     SentimentFetcher,
 )
 from services.mcp_tools import MCPToolRegistry
+from services.monte_carlo import simulate_monte_carlo
 from services.notifications import DiscordNotifier, TelegramNotifier
 from services.performance_attribution import PerformanceAttribution
 from services.redis_market_cache import RedisMarketCache
@@ -2625,84 +2625,13 @@ def on_request_system_analytics():
 
 
 def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
-    """
-    Monte-Carlo-Simulation des Portfolio-Werts über n_days Tage.
-    Basiert auf den tatsächlichen PnL-Verteilungen aus closed_trades.
-    """
-    trades = state.closed_trades
-    if len(trades) < 5:
-        return {"error": "Mindestens 5 abgeschlossene Trades erforderlich"}
-
-    pnl_pcts = [
-        t.get("pnl", 0) / max(t.get("invested", 1), 1) for t in trades if t.get("invested", 0) > 0
-    ]
-    if not pnl_pcts:
-        return {"error": "Keine PnL-Daten vorhanden"}
-
-    mu = float(np.mean(pnl_pcts))
-    sigma = float(np.std(pnl_pcts))
-    start_value = state.portfolio_value()
-
-    # Tägliche Anzahl Trades (Durchschnitt)
-    if trades:
-        span_days = max(
-            1,
-            (
-                datetime.now()
-                - datetime.fromisoformat(
-                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
-                )
-            ).days,
-        )
-        trades_per_day = max(0.1, len(trades) / span_days)
-    else:
-        trades_per_day = 1.0
-
-    results = []
-    rng = np.random.default_rng(42)
-    for _ in range(n_simulations):
-        val = start_value
-        path = [val]
-        for _day in range(n_days):
-            n_trades_today = max(0, int(rng.poisson(trades_per_day)))
-            for _ in range(n_trades_today):
-                pnl_pct = rng.normal(mu, sigma)
-                invested = val * CONFIG.get("risk_per_trade", 0.015)
-                val = max(0, val + invested * pnl_pct)
-            path.append(round(val, 2))
-        results.append(val)
-
-    results_arr = np.array(results)
-    p5, p25, p50, p75, p95 = np.percentile(results_arr, [5, 25, 50, 75, 95])
-
-    # Value at Risk (95% Konfidenz)
-    var_95 = start_value - float(p5)
-    var_pct = var_95 / start_value * 100 if start_value > 0 else 0
-
-    # Probability of profit
-    prob_profit = float(np.mean(results_arr > start_value) * 100)
-    prob_ruin = float(np.mean(results_arr < start_value * 0.5) * 100)
-
-    return {
-        "n_simulations": n_simulations,
-        "n_days": n_days,
-        "start_value": round(start_value, 2),
-        "mu_per_trade": round(mu * 100, 3),
-        "sigma_per_trade": round(sigma * 100, 3),
-        "trades_per_day": round(trades_per_day, 2),
-        "percentile_5": round(float(p5), 2),
-        "percentile_25": round(float(p25), 2),
-        "percentile_50": round(float(p50), 2),
-        "percentile_75": round(float(p75), 2),
-        "percentile_95": round(float(p95), 2),
-        "var_95_usdt": round(var_95, 2),
-        "var_95_pct": round(var_pct, 2),
-        "prob_profit_pct": round(prob_profit, 1),
-        "prob_ruin_pct": round(prob_ruin, 1),
-        "expected_return": round((float(p50) - start_value) / start_value * 100, 2)
-        if start_value > 0
-        else 0.0,
-    }
+    """Monte-Carlo portfolio simulation. Forwards to services.monte_carlo."""
+    return simulate_monte_carlo(
+        state=state,
+        config=CONFIG,
+        n_simulations=n_simulations,
+        n_days=n_days,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════════════════
