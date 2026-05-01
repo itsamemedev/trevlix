@@ -50,10 +50,19 @@ Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
 - [ ] B1.6 `static/js/dashboard/virginie.js` (VIRGINIE-Chat & 3D-AI)
 - [ ] B1.7 `static/js/dashboard.js` als dünner Bootstrap-Loader oder mehrere `<script>`-Tags in dashboard.html
 
-#### Block B3 – bot_loop & Position-Helper
-- [ ] B3.1 `bot_loop` Phasen in private Helfer extrahieren (`_phase_reconcile_exchanges`, `_phase_manage_positions`, `_phase_refresh_markets`, `_phase_scan_symbols`, `_phase_emit_state`); kein Verhalten ändern
-- [ ] B3.2 `open_position` Pre-Check-Block in `_pre_open_validations()` extrahieren
-- [ ] B3.3 `close_position` Persistenz/Notification-Block in `_post_close_persistence()` extrahieren
+#### Block B3 – bot_loop & Position-Helper – **WONTFIX in dieser Session**
+- [~] B3.1 `bot_loop`-Phasen-Extraktion **abgebrochen**: 502-Zeilen-Loop teilt
+      kritische lokale Variablen (`exchanges` dict, `primary_name`, `primary_ex`,
+      `last_error_emit_ts`) zwischen 12 Phasen, plus mehrere `continue`-
+      Statements für Loop-Control. Sichere Extraktion verlangt pytest-Coverage
+      des Trade-Hot-Paths + ein Paper-Trading-Sim-Run, beides in dieser Sandbox
+      nicht verfügbar (kein flask/ccxt/cryptography in System-Python).
+- [~] B3.2 `open_position` (388 Z.): gleiches Risiko – Trade-Hot-Path mit
+      vielen DB-/Discord-/State-Side-Effects in spezifischer Reihenfolge.
+- [~] B3.3 `close_position` (268 Z.): gleiches Risiko.
+- **Empfehlung für Folge-Session:** B3 mit `pytest tests/test_fetch_markets.py
+  tests/test_paper_trading.py tests/test_trade_execution_safety.py` als Gate
+  + Paper-Mode-Sim-Run auf einem Test-Account.
 
 ### Review (wird am Ende ausgefüllt)
 
