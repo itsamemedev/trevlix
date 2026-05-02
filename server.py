@@ -90,6 +90,12 @@ from app.core.backup_verify import verify_latest_backup
 from app.core.bootstrap import (
     resolve_project_paths,
 )
+from app.core.config_validation import (
+    ALLOWED_CONFIG_KEYS,
+    VALID_EXCHANGES,
+    VALID_TIMEFRAMES,
+    coerce_config_value,
+)
 
 # ── Extracted modules ────────────────────────────────────────────────────────
 from app.core.db_manager import MySQLManager, init_db_manager
@@ -1291,113 +1297,12 @@ def on_update_config(data: dict | None = None):
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
-    allowed = {
-        "stop_loss_pct",
-        "take_profit_pct",
-        "max_open_trades",
-        "scan_interval",
-        "paper_trading",
-        "trailing_stop",
-        "ai_min_confidence",
-        "virginie_enabled",
-        "virginie_primary_control",
-        "virginie_autonomy_weight",
-        "virginie_min_score",
-        "virginie_max_risk_penalty",
-        "virginie_cpu_fast_chat",
-        "circuit_breaker_losses",
-        "circuit_breaker_min",
-        "max_spread_pct",
-        "use_fear_greed",
-        "ai_use_kelly",
-        "mtf_enabled",
-        "use_sentiment",
-        "use_news",
-        "use_onchain",
-        "use_dominance",
-        "use_anomaly",
-        "use_dca",
-        "use_partial_tp",
-        "use_shorts",
-        "use_arbitrage",
-        "use_market_regime",
-        "arb_min_spread_pct",
-        "arb_scan_limit",
-        "genetic_enabled",
-        "rl_enabled",
-        "backup_enabled",
-        "portfolio_goal",
-        "discord_daily_report",
-        "discord_report_hour",
-        "risk_per_trade",
-        "news_block_score",
-        "news_boost_score",
-        "dca_max_levels",
-        "dca_drop_pct",
-        "trailing_pct",
-        "lstm_lookback",
-        # Dashboard-spezifische Einstellungen
-        "language",
-        "allow_registration",
-        "break_even_enabled",
-        "break_even_trigger",
-        "break_even_buffer",
-        "partial_tp_pct",
-        "use_grid",
-        "use_rl",
-        "use_lstm",
-        # Exchange selection – allowed for all authenticated users
-        "exchange",
-        "timeframe",
-    }
-    # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
-    _numeric_keys = {
-        "stop_loss_pct",
-        "take_profit_pct",
-        "ai_min_confidence",
-        "virginie_autonomy_weight",
-        "virginie_min_score",
-        "virginie_max_risk_penalty",
-        "max_spread_pct",
-        "risk_per_trade",
-        "news_block_score",
-        "news_boost_score",
-        "dca_drop_pct",
-        "trailing_pct",
-        "break_even_trigger",
-        "break_even_buffer",
-        "partial_tp_pct",
-        "portfolio_goal",
-        "arb_min_spread_pct",
-    }
-    _int_keys = {
-        "max_open_trades",
-        "scan_interval",
-        "circuit_breaker_losses",
-        "circuit_breaker_min",
-        "dca_max_levels",
-        "lstm_lookback",
-        "discord_report_hour",
-        "arb_scan_limit",
-    }
-    _valid_exchanges = {
-        "cryptocom",
-        "binance",
-        "bybit",
-        "okx",
-        "kucoin",
-        "kraken",
-        "huobi",
-        "coinbase",
-        "bitget",
-        "mexc",
-        "gateio",
-        "nonkyc",
-    }
     updated: dict[str, Any] = {}
     for k, v in data.items():
-        if k not in allowed:
+        if k not in ALLOWED_CONFIG_KEYS:
             continue
+        # State-side-effect keys are handled inline because they touch
+        # trade_mode / state._exchange_reset / _pin_user_exchange.
         if k == "paper_trading":
             desired_paper = bool(v)
             CONFIG[k] = desired_paper
@@ -1406,7 +1311,7 @@ def on_update_config(data: dict | None = None):
             continue
         if k == "exchange":
             ex = normalize_exchange_name(str(v))
-            if ex and ex in _valid_exchanges:
+            if ex and ex in VALID_EXCHANGES:
                 CONFIG["exchange"] = ex
                 state._exchange_reset = True
                 _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
@@ -1415,33 +1320,16 @@ def on_update_config(data: dict | None = None):
             continue
         if k == "timeframe":
             tf = str(v).strip().lower()
-            if tf in {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"}:
+            if tf in VALID_TIMEFRAMES:
                 CONFIG["timeframe"] = tf
                 updated["timeframe"] = tf
             continue
-        if k in _numeric_keys:
-            v = safe_float(v, CONFIG.get(k, 0.0))
-            if v < 0:
-                continue  # Reject negative numeric values
-        elif k in _int_keys:
-            v = safe_int(v, CONFIG.get(k, 0))
-            if v < 0:
-                continue  # Reject negative int values
-        elif isinstance(CONFIG.get(k), bool):
-            v = bool(v)
-        # Sanity: reject unreasonable values for critical keys
-        if k == "max_open_trades" and (v < 1 or v > 100):
+        # Pure validation + type coercion in app/core/config_validation.
+        coerced = coerce_config_value(k, v, CONFIG)
+        if coerced is None:
             continue
-        if k == "stop_loss_pct" and (v <= 0 or v > 50):
-            continue
-        if k == "take_profit_pct" and (v <= 0 or v > 500):
-            continue
-        if k == "scan_interval" and (v < 5 or v > 3600):
-            continue
-        if k == "risk_per_trade" and (v <= 0 or v > 0.5):
-            continue
-        CONFIG[k] = v
-        updated[k] = v
+        CONFIG[k] = coerced
+        updated[k] = coerced
     # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
     persist_failed = False
     try:
