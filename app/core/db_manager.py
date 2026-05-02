@@ -6,16 +6,12 @@ Module-level globals are injected at startup via init_db_manager().
 from __future__ import annotations
 
 import csv
-import hashlib
-import hmac
 import io
 import json
 import logging as _stdlib_logging
 import os
-import secrets
 import threading
 from contextlib import contextmanager
-from datetime import datetime, timedelta
 from typing import Any
 
 try:
@@ -41,9 +37,7 @@ except ImportError:
 import numpy as np
 from tenacity import RetryError, before_sleep_log, retry, stop_after_attempt, wait_exponential
 
-from app.core.time_compat import UTC
 from services.encryption import decrypt_value, encrypt_value
-from services.passwords import pbkdf2_hash, pbkdf2_verify
 
 # ---------------------------------------------------------------------------
 # Module-level references – populated by init_db_manager()
@@ -87,9 +81,16 @@ def init_db_manager(
 
 class MySQLManager:
     def __init__(self):
+        from app.core.repositories.user_repo import UserRepository
+
         self._lock = threading.Lock()
         self._pool: ConnectionPool | None = None
         self.db_available = False  # [Verbesserung #3] Flag für Degraded-Mode
+        # Per-domain repositories (composition over inheritance).
+        # The manager keeps thin delegation wrappers on its public API
+        # so existing callers (db.get_user(), db.create_user(), …) keep
+        # working unchanged.
+        self.users = UserRepository(self)
         self._init_db()
 
     def _build_pool(self) -> ConnectionPool | None:
@@ -596,223 +597,45 @@ class MySQLManager:
 
     # ── Users ───────────────────────────────────────────────────────────────
     def _decrypt_user_keys(self, user: dict | None) -> dict | None:
-        """Entschlüsselt API-Key/Secret eines User-Dicts nach dem Laden aus der DB."""
-        if not user:
-            return user
-        if user.get("api_key"):
-            user["api_key"] = self._dec(user["api_key"])
-        if user.get("api_secret"):
-            user["api_secret"] = self._dec(user["api_secret"])
-        return user
-
+        """Forwards to UserRepository._decrypt_user_keys."""
+        return self.users._decrypt_user_keys(user)
     def get_user(self, username: str) -> dict[str, Any] | None:
-        """Lädt einen Benutzer anhand des Benutzernamens.
-
-        Args:
-            username: Der gesuchte Benutzername.
-
-        Returns:
-            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
-        """
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("SELECT * FROM users WHERE username=%s", (username,))
-                    row = c.fetchone()
-            return self._decrypt_user_keys(dict(row)) if row else None
-        except Exception as e:
-            log.error(f"get_user({username!r}): {e}")
-            return None
-
+        """Forwards to UserRepository.get_user."""
+        return self.users.get_user(username)
     def get_user_by_id(self, uid: int) -> dict[str, Any] | None:
-        """Lädt einen Benutzer anhand der ID.
-
-        Args:
-            uid: Die gesuchte User-ID.
-
-        Returns:
-            User-Dict mit entschlüsselten Keys oder None wenn nicht gefunden.
-        """
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("SELECT * FROM users WHERE id=%s", (uid,))
-                    row = c.fetchone()
-            return self._decrypt_user_keys(dict(row)) if row else None
-        except Exception as e:
-            log.error(f"get_user_by_id({uid}): {e}")
-            return None
-
+        """Forwards to UserRepository.get_user_by_id."""
+        return self.users.get_user_by_id(uid)
     def get_all_users(self) -> list[dict[str, Any]]:
-        """Lädt alle Benutzer (ohne sensible Keys).
-
-        Returns:
-            Liste von User-Dicts mit serialisierten Datumsfeldern.
-        """
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "SELECT id,username,role,balance,initial_balance,exchange,created_at,last_login FROM users"
-                    )
-                    rows = c.fetchall()
-            result: list[dict[str, Any]] = []
-            for r in rows:
-                d = dict(r)
-                for k in ("created_at", "last_login"):
-                    if k in d and hasattr(d.get(k), "isoformat"):
-                        d[k] = d[k].isoformat() if d[k] else None
-                result.append(d)
-            return result
-        except Exception as e:
-            log.error(f"get_all_users: {e}")
-            return []
-
+        """Forwards to UserRepository.get_all_users."""
+        return self.users.get_all_users()
     def create_user(
         self, username: str, password: str, role: str = "user", balance: float = 10000.0
     ) -> bool:
-        try:
-            pw = password.encode()
-            if BCRYPT_AVAILABLE:
-                h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
-            else:
-                h = pbkdf2_hash(pw)
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "INSERT INTO users (username,password_hash,role,balance,initial_balance) VALUES(%s,%s,%s,%s,%s)",
-                        (username, h, role, balance, balance),
-                    )
-            return True
-        except Exception as e:
-            log.error(f"create_user: {e}")
-            return False
-
+        """Forwards to UserRepository.create_user."""
+        return self.users.create_user(username, password, role, balance)
     def verify_password(self, stored_hash: str, password: str) -> bool:
-        """Verifiziert ein Passwort gegen den gespeicherten Hash.
-
-        Args:
-            stored_hash: Gespeicherter bcrypt- oder SHA-256-Hash.
-            password: Eingegebenes Klartext-Passwort.
-
-        Returns:
-            True wenn das Passwort korrekt ist.
-        """
-        try:
-            pw = password.encode()
-            if BCRYPT_AVAILABLE and stored_hash.startswith("$2"):
-                # bcrypt-Hash (beginnt mit $2a$, $2b$, $2y$)
-                return bcrypt.checkpw(pw, stored_hash.encode())
-            if stored_hash.startswith("pbkdf2$"):
-                return pbkdf2_verify(pw, stored_hash)
-            # Legacy SHA-256 hashes (migrate users to bcrypt/pbkdf2)
-            log.warning("verify_password: SHA-256 Legacy-Hash – Migration empfohlen")
-            return hmac.compare_digest(hashlib.sha256(pw).hexdigest(), stored_hash)
-        except Exception:
-            return False
-
+        """Forwards to UserRepository.verify_password."""
+        return self.users.verify_password(stored_hash, password)
     def update_user_login(self, user_id: int) -> None:
-        """Aktualisiert den last_login Timestamp eines Users.
-
-        Args:
-            user_id: Die User-ID.
-        """
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("UPDATE users SET last_login=NOW() WHERE id=%s", (user_id,))
-        except Exception as e:
-            log.warning(f"update_user_login({user_id}): {e}")
-
+        """Forwards to UserRepository.update_user_login."""
+        return self.users.update_user_login(user_id)
     def update_password(self, user_id: int, new_password: str) -> bool:
-        """Setzt das Passwort eines Users neu (bcrypt oder SHA-256 Fallback).
-
-        Args:
-            user_id: Die User-ID.
-            new_password: Das neue Klartext-Passwort.
-
-        Returns:
-            True bei Erfolg, False bei Fehler.
-        """
-        try:
-            pw = new_password.encode()
-            if BCRYPT_AVAILABLE:
-                h = bcrypt.hashpw(pw, bcrypt.gensalt()).decode()
-            else:
-                h = hashlib.sha256(pw).hexdigest()
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("UPDATE users SET password_hash=%s WHERE id=%s", (h, user_id))
-            return True
-        except Exception as e:
-            log.error("update_password(%s): %s", user_id, e)
-            return False
-
+        """Forwards to UserRepository.update_password."""
+        return self.users.update_password(user_id, new_password)
     def update_user_balance(self, user_id: int, balance: float) -> None:
-        """Aktualisiert den Kontostand eines Users.
-
-        Args:
-            user_id: Die User-ID.
-            balance: Neuer Kontostand.
-        """
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("UPDATE users SET balance=%s WHERE id=%s", (balance, user_id))
-        except Exception as e:
-            log.error(f"update_user_balance({user_id}, {balance}): {e}")
-
-    # ── User Settings ────────────────────────────────────────────────────────
+        """Forwards to UserRepository.update_user_balance."""
+        return self.users.update_user_balance(user_id, balance)
     def update_user_settings(self, user_id: int, settings: dict) -> bool:
-        """Speichert User-Settings als JSON in der DB."""
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "UPDATE users SET settings_json=%s WHERE id=%s",
-                        (_jdumps(settings), user_id),
-                    )
-            return True
-        except Exception as e:
-            log.error(f"update_user_settings: {e}")
-            return False
-
+        """Forwards to UserRepository.update_user_settings."""
+        return self.users.update_user_settings(user_id, settings)
     def get_user_settings(self, user_id: int) -> dict:
-        """Lädt User-Settings aus der DB."""
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute("SELECT settings_json FROM users WHERE id=%s", (user_id,))
-                    row = c.fetchone()
-            if row and row.get("settings_json"):
-                try:
-                    settings = _jloads(row["settings_json"])
-                    return settings if isinstance(settings, dict) else {}
-                except (json.JSONDecodeError, TypeError):
-                    log.warning(f"get_user_settings({user_id}): invalid JSON in settings_json")
-                    return {}
-            return {}
-        except Exception as e:
-            log.error(f"get_user_settings({user_id}): {e}")
-            return {}
-
+        """Forwards to UserRepository.get_user_settings."""
+        return self.users.get_user_settings(user_id)
     def update_user_api_keys(
         self, user_id: int, exchange: str, api_key: str, api_secret: str
     ) -> bool:
-        """Speichert verschlüsselte API-Keys für einen User."""
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "UPDATE users SET exchange=%s, api_key=%s, api_secret=%s WHERE id=%s",
-                        (exchange, self._enc(api_key), self._enc(api_secret), user_id),
-                    )
-            return True
-        except Exception as e:
-            log.error(f"update_user_api_keys: {e}")
-            return False
-
-    # ── User Exchanges (Multi-Exchange pro User) ─────────────────────────────
+        """Forwards to UserRepository.update_user_api_keys."""
+        return self.users.update_user_api_keys(user_id, exchange, api_key, api_secret)
     def get_user_exchanges(self, user_id: int) -> list[dict]:
         """Gibt alle Exchange-Konfigurationen eines Users zurück (ohne Keys, nur Flags)."""
         try:
@@ -1020,54 +843,11 @@ class MySQLManager:
 
     # ── API Tokens ──────────────────────────────────────────────────────────
     def create_api_token(self, user_id: int, label: str = "default") -> str:
-        if not JWT_AVAILABLE:
-            return secrets.token_urlsafe(32)
-        payload = {
-            "sub": user_id,
-            "label": label,
-            "exp": datetime.now(UTC) + timedelta(hours=CONFIG.get("jwt_expiry_hours", 24)),
-            "iat": datetime.now(UTC),
-        }
-        token = pyjwt.encode(payload, CONFIG.get("jwt_secret", ""), algorithm="HS256")
-        try:
-            with self._get_conn() as conn:
-                with conn.cursor() as c:
-                    c.execute(
-                        "INSERT INTO api_tokens (user_id,token,label,expires_at) VALUES(%s,%s,%s,%s)",
-                        (
-                            user_id,
-                            token[:500],
-                            label,
-                            datetime.now(UTC) + timedelta(hours=CONFIG.get("jwt_expiry_hours", 24)),
-                        ),
-                    )
-        except Exception as e:
-            log.error(f"create_token: {e}")
-        return token
-
+        """Forwards to UserRepository.create_api_token."""
+        return self.users.create_api_token(user_id, label)
     def verify_api_token(self, token: str) -> int | None:
-        if not JWT_AVAILABLE or not token:
-            return None
-        try:
-            payload = pyjwt.decode(
-                token,
-                CONFIG.get("jwt_secret", ""),
-                algorithms=["HS256"],
-                options={"require": ["exp"]},
-            )
-            sub = payload.get("sub")
-            return int(sub) if sub is not None else None
-        except pyjwt.ExpiredSignatureError:
-            log.info("verify_api_token: Token abgelaufen")
-            return None
-        except pyjwt.InvalidTokenError as exc:
-            log.debug("verify_api_token: ungültig (%s)", exc)
-            return None
-        except Exception as exc:
-            log.warning("verify_api_token: %s", exc)
-            return None
-
-    # ── Misc ────────────────────────────────────────────────────────────────
+        """Forwards to UserRepository.verify_api_token."""
+        return self.users.verify_api_token(token)
     def save_backtest(self, result: dict):
         try:
             with self._get_conn() as conn:
