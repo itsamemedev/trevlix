@@ -146,8 +146,13 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 min(si(data.get("candles", 500), 500), 5000),
-                sf(data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)),
-                sf(data.get("tp", cfg.get("take_profit_pct", 0.060)), cfg.get("take_profit_pct", 0.060)),
+                sf(
+                    data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
+                ),
+                sf(
+                    data.get("tp", cfg.get("take_profit_pct", 0.060)),
+                    cfg.get("take_profit_pct", 0.060),
+                ),
                 sf(
                     data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
                 ),

@@ -348,9 +348,7 @@ class AIEngine:
                 # Modell geladen, aber nach N neuen Samples auch neu trainieren
                 log.info("🧠 Persistiertes Modell geladen – kein Cold-Start")
             self.status_msg = (
-                f"✅ {n} Samples geladen"
-                if n > 0
-                else "⏳ Brauche min. " + str(_min_s) + " Trades"
+                f"✅ {n} Samples geladen" if n > 0 else "⏳ Brauche min. " + str(_min_s) + " Trades"
             )
             log.info(f"🧠 KI: {n} Samples (Bull:{len(self.X_bull)} Bear:{len(self.X_bear)})")
         except Exception as e:
@@ -1437,10 +1435,7 @@ class AIEngine:
         n = len(self.X_raw)
         _min_s = CONFIG.get("ai_min_samples", 20)
         self.progress_pct = min(100, int(n / max(_min_s, 1) * 100))
-        if (
-            n >= _min_s
-            and self.trades_since_retrain >= CONFIG.get("ai_retrain_every", 5)
-        ):
+        if n >= _min_s and self.trades_since_retrain >= CONFIG.get("ai_retrain_every", 5):
             threading.Thread(target=self._train, daemon=True).start()
         if self.trades_since_optimize >= CONFIG.get("ai_optimize_every", 15):
             threading.Thread(target=self._optimize, daemon=True).start()

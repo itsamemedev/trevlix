@@ -190,16 +190,16 @@ class TestSmartExitAdapt:
         engine = SmartExitEngine(_make_config())
         pos = {"entry": 30000, "sl": 29250, "tp": 31800}
         new_sl, _ = engine.adapt("BTC/USDT", pos, 31000, 500, "bull")
-        if new_sl is not None:
-            assert new_sl > 29250
+        assert new_sl is not None, "SL-Anpassung muss bei 3.3% Profit greifen"
+        assert new_sl > 29250
 
     def test_adapt_extends_tp_in_strong_bull(self):
         """TP wird bei starkem Profit + Bull erweitert."""
         engine = SmartExitEngine(_make_config())
         pos = {"entry": 30000, "sl": 29250, "tp": 31800}
         _, new_tp = engine.adapt("BTC/USDT", pos, 31500, 500, "bull")
-        if new_tp is not None:
-            assert new_tp > 31800
+        assert new_tp is not None, "TP-Erweiterung muss bei 5% Profit + bull greifen"
+        assert new_tp > 31800
 
 
 # ── Regime-Klassifikation ───────────────────────────────────────────────

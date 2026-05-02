@@ -347,10 +347,13 @@ class TestTradingAlgorithmManager:
         assert isinstance(conf, float)
 
     def test_record_results(self, bullish_scan, open_position):
-        """Feedback-Loop funktioniert ohne Fehler."""
+        """Feedback-Loop aktualisiert Signal-Zähler korrekt."""
         mgr = TradingAlgorithmManager()
         mgr.record_buy_result(bullish_scan, pnl=50.0)
+        assert mgr.buy_algo.total_signals == 1
+        assert mgr.buy_algo.profitable_signals == 1
         mgr.record_sell_result(bullish_scan, open_position, pnl=50.0, exit_reason="TP")
+        assert mgr.sell_algo.total_signals == 1
 
     def test_to_dict(self):
         """to_dict liefert vollständigen Status."""
