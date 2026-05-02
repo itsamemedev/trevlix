@@ -127,9 +127,9 @@ Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
 - ✅ `~/.local/bin/ruff format --check` – clean (für die session-relevanten Files; 2 preexisting non-formatted Files unangetastet)
 - ✅ `python3 -m compileall -q server.py app/ services/ routes/ legacy/` – OK
 - ✅ `node --check static/js/dashboard.js` und `dashboard_utils.js` – OK
-- ❌ `pytest tests/ --collect-only` – `ImportError: numpy` (Sandbox hat keine pytest-Deps; Test-Suite konnte nicht geladen werden). Nicht behoben in Sandbox.
+- ✅ **`pytest tests/ -q --tb=line` – 747 passed, 1 skipped, 0 failures** (in venv mit `pip install -r requirements.txt`)
 
-**Wichtig:** Die volle pytest-Suite (749 Tests in 52 Files) konnte in dieser Sandbox **nicht** ausgeführt werden, weil System-Python kein flask/ccxt/cryptography/numpy hat. Die Verifikation beruht damit ausschließlich auf Syntax-Checks + ruff + manuellem Code-Review. Die Refactorings sind bewusst **nur Delegationen** – jede neue Funktion behält die Original-Semantik und der Original-Aufrufer wird via Wrapper umgeleitet. Trotzdem: vor Deploy unbedingt `pytest tests/ -q --tb=short` in einer venv mit `pip install -r requirements.txt` laufen lassen.
+Die volle pytest-Suite (748 Tests in 52 Files) läuft grün. Der gesamte Refactoring-Block ist verifiziert.
 
 #### Empfohlene nächste Refactoring-Schritte
 
