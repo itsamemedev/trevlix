@@ -64,11 +64,84 @@ Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
   tests/test_paper_trading.py tests/test_trade_execution_safety.py` als Gate
   + Paper-Mode-Sim-Run auf einem Test-Account.
 
-### Review (Phase 5 – Final Report)
+### Review (Phase 5 – Final Report) – Stand nach allen Erweiterungen
 
 **Branch:** `claude/refactor-trading-app-dmXcw`
-**Commits in dieser Session:** 14 (siehe `git log f20b03c..HEAD --oneline`)
-**Files-Stats:** 26 files changed, 2030 insertions(+), 1464 deletions(-)
+**Commits in dieser Session:** 22 (siehe `git log cb2ed3a^..HEAD --oneline`)
+**Files-Stats:** 36 files changed, 4131 insertions(+), 2742 deletions(-)
+
+#### Erweiterte Endbilanz nach Optionen 1-4 (zusätzlich zum ursprünglichen 5-Phasen-Plan)
+
+| Hauptdatei | Pre-Session | Final | Delta |
+|---|---:|---:|---:|
+| `server.py` | 3 527 | 2 757 | **−770 (−22 %)** |
+| `app/core/db_manager.py` | 1 928 | 509 | **−1 419 (−74 %)** |
+| `app/core/trading_ops.py` | 2 473 | 2 465 | −8 |
+| `static/js/dashboard.js` | 3 759 | 3 663 | −96 |
+| `install.sh` | 1 890 | 1 899 | +9 (Doku-Kommentare) |
+
+**Neue Module: 19 (vs. 9 vorher), darunter 6 Repository-Klassen.**
+
+#### Was zusätzlich geliefert wurde
+
+1. **Option 2 – pytest in venv** ✅
+   - `pip install -r requirements.txt` → 95 Pakete (numpy, ccxt, flask, xgboost, lightgbm, catboost, optuna, etc.)
+   - 748 Tests collected, **747 passed, 1 skipped, 0 failures** als Baseline
+   - Alle nachfolgenden Refactorings haben pytest als Verifikations-Gate
+
+2. **Option 3 – db_manager Repository-Split** ✅
+   - 6 neue Repository-Klassen unter `app/core/repositories/`:
+     - `UserRepository` (14 Methoden) – User CRUD + JWT API tokens
+     - `TradeRepository` (12 Methoden) – Trades/Orders/Decisions/Positions + CSV
+     - `ExchangeRepository` (6 Methoden) – Multi-Exchange pro User mit FOR UPDATE
+     - `AlertRepository` (5 Methoden) – Price Alerts mit User-Scope für IDOR
+     - `AIRepository` (6 Methoden) – AI Training Samples + Backtests + Genetic
+     - `IntelRepository` (9 Methoden) – Sentiment/News/OnChain/Arb/Daily-Reports
+   - `MySQLManager` von 1928 → **509 Zeilen** (-74%) durch Lazy-Init-Properties + Delegations-Wrapper
+   - Backward-Compat: alle public APIs (`db.get_user()`, `db.save_trade()`, ...) unverändert
+   - Lazy-Init via `@property` damit `MySQLManager.__new__(MySQLManager)` in Tests weiterhin funktioniert
+
+3. **Option 4a – install.sh shellcheck** ✅
+   - shellcheck 0.11.0 Baseline gefahren, 4 echte Issues gefixt (SC2034 unused, SC2086 ×3 absichtliche word-splitting Stellen mit `# shellcheck disable` markiert)
+   - 7 verbleibende Issues sind alle false-positives (SC2015 `cmd && success || warn` Pattern + SC1091 `source /etc/os-release`)
+   - Bash-Splitting bewusst NICHT gemacht: install.sh wird via `curl | bash` distributed, single-file-Pattern muss erhalten bleiben
+
+4. **Option 4b – on_update_config Allow-list-Refactor** ✅ (mit Tests!)
+   - Neue Datei `app/core/config_validation.py`:
+     - `ALLOWED_CONFIG_KEYS` (frozenset, die security-kritische Allow-list)
+     - `NUMERIC_KEYS`, `INT_KEYS`, `VALID_EXCHANGES`, `VALID_TIMEFRAMES`
+     - `SANITY_BOUNDS` dict (per-key min/max mit inclusive-Flags)
+     - `coerce_config_value(key, raw, current) -> Any | None`
+   - Server.py: 200-Zeilen-Handler → 40 Zeilen + Modul-Konstanten
+   - **21 neue Tests** in `tests/test_config_validation.py`:
+     - Allow-list enthält nicht admin_password / jwt_secret / api_key / secret / discord_webhook etc.
+     - Type-Coercion mit Edge-Cases (negative Werte, falsche Strings, bool-Cast)
+     - Alle Sanity-Bounds an oberer/unterer Grenze
+     - Lession 59 Regression-Schutz aktiv
+
+5. **Option 4c – dashboard.js Theme/Pine/Copy-Trading** ✅
+   - 5 weitere Funktionen in `static/js/dashboard_misc.js` extrahiert (zusätzlich zu `dashboard_utils.js`)
+   - dashboard.html lädt nun 3 JS-Files in korrekter Reihenfolge
+   - Inline `onclick="..."` weiterhin funktional (alle extracted functions sind top-level)
+
+#### Tests am Ende
+
+```
+.venv/bin/pytest tests/ -q --tb=line
+======================= 768 passed, 1 skipped in 38.35s =======================
+```
+
+(=  747 ursprüngliche + 21 neue Allow-list-Tests)
+node --check passt für alle 3 dashboard.js-Files. ruff check + format clean.
+
+#### Weiter unbehandelt (verbleibende Risiken)
+
+| Bereich | Status |
+|---|---|
+| `bot_loop` / `open_position` / `close_position` Splitting | Bewusst nicht angefasst – Trading-Hot-Path mit geteilten lokalen Variablen + `continue`-Statements |
+| `dashboard.js` Charts/WebSocket-Events/Renderers Aufspaltung | Benötigt ES-Module + Bundler oder window.* Assignments + Browser-Test |
+| `install.sh` Library-Style-Splitting | Würde `curl | bash`-Distribution kaputtmachen |
+| `on_update_config` State-Side-Effect-Cases (paper_trading, exchange, timeframe) | Bleiben inline, weil sie `trade_mode` / `state._exchange_reset` / `_pin_user_exchange` mutieren |
 
 #### Was wurde geändert
 
