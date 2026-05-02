@@ -166,9 +166,7 @@ def apply_schema(
         INDEX idx_user_time(user_id, created_at)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4""")
     try:
-        c.execute(
-            "ALTER TABLE audit_log ADD INDEX idx_user_time(user_id, created_at)"
-        )
+        c.execute("ALTER TABLE audit_log ADD INDEX idx_user_time(user_id, created_at)")
     except Exception:
         pass
 

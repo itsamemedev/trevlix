@@ -168,9 +168,7 @@ def _section_api(*, config: dict[str, Any], state: Any, create_exchange) -> dict
     }
 
 
-def _section_llm(
-    *, config: dict[str, Any], knowledge_base: Any, log: Any
-) -> dict[str, Any]:
+def _section_llm(*, config: dict[str, Any], knowledge_base: Any, log: Any) -> dict[str, Any]:
     """LLM endpoint + provider + connectivity block (with network probe)."""
     llm_endpoint = config.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
     llm_model = config.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
@@ -261,8 +259,7 @@ def _section_db(*, db: Any) -> dict[str, Any]:
         with db.get_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables "
-                    "WHERE table_schema=DATABASE()"
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()"
                 )
                 row = cur.fetchone()
                 out["tables"] = row[0] if row else "—"

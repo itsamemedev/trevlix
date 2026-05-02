@@ -193,9 +193,7 @@ def verify_backup(backup_path: str) -> dict[str, Any]:
         if actual == stored:
             result["ok"] = True
         else:
-            result["error"] = (
-                f"Checksum mismatch: {actual[:16]}... ≠ {stored[:16]}..."
-            )
+            result["error"] = f"Checksum mismatch: {actual[:16]}... ≠ {stored[:16]}..."
     except Exception as e:
         result["error"] = str(e)
     return result

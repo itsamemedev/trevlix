@@ -33,9 +33,7 @@ _chat_by_user: dict[int, deque[dict[str, Any]]] = {}
 def chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
     """Return a copy of the per-user chat history (oldest first)."""
     with _chat_lock:
-        history = _chat_by_user.setdefault(
-            int(user_id), deque(maxlen=VIRGINIE_CHAT_MAX_MESSAGES)
-        )
+        history = _chat_by_user.setdefault(int(user_id), deque(maxlen=VIRGINIE_CHAT_MAX_MESSAGES))
         return [dict(item) for item in history]
 
 
@@ -48,9 +46,7 @@ def chat_append(user_id: int, role: str, content: str) -> dict[str, Any]:
         "time": datetime.now(UTC).isoformat(),
     }
     with _chat_lock:
-        history = _chat_by_user.setdefault(
-            int(user_id), deque(maxlen=VIRGINIE_CHAT_MAX_MESSAGES)
-        )
+        history = _chat_by_user.setdefault(int(user_id), deque(maxlen=VIRGINIE_CHAT_MAX_MESSAGES))
         history.append(entry)
     return entry
 
@@ -99,8 +95,7 @@ def runtime_advice(*, config: dict[str, Any], ai_engine: Any) -> dict[str, Any]:
                 "priority": "high",
                 "title": "VIRGINIE aktivieren",
                 "detail": (
-                    "Setze virginie_enabled=true, damit Guardrails und "
-                    "Agenten-Workflow aktiv sind."
+                    "Setze virginie_enabled=true, damit Guardrails und Agenten-Workflow aktiv sind."
                 ),
             }
         )
@@ -121,8 +116,7 @@ def runtime_advice(*, config: dict[str, Any], ai_engine: Any) -> dict[str, Any]:
                 "priority": "medium",
                 "title": "Qualität stabilisieren",
                 "detail": (
-                    "WF-Accuracy ist niedrig. Prüfe Feature-Importance "
-                    "und erhöhe Trainingsdaten."
+                    "WF-Accuracy ist niedrig. Prüfe Feature-Importance und erhöhe Trainingsdaten."
                 ),
             }
         )
@@ -132,8 +126,7 @@ def runtime_advice(*, config: dict[str, Any], ai_engine: Any) -> dict[str, Any]:
                 "priority": "medium",
                 "title": "Drift reduzieren",
                 "detail": (
-                    "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren "
-                    "und Risk-Limits prüfen."
+                    "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren und Risk-Limits prüfen."
                 ),
             }
         )
@@ -143,8 +136,7 @@ def runtime_advice(*, config: dict[str, Any], ai_engine: Any) -> dict[str, Any]:
                 "priority": "low",
                 "title": "Min-Score anheben",
                 "detail": (
-                    "Für konservativeres Verhalten virginie_min_score "
-                    "leicht erhöhen (z.B. +0.05)."
+                    "Für konservativeres Verhalten virginie_min_score leicht erhöhen (z.B. +0.05)."
                 ),
             }
         )
@@ -185,9 +177,7 @@ def edge_profile(*, config: dict[str, Any], ai_engine: Any, state: Any) -> dict[
         else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
     )
     urgency = (
-        "high"
-        if (drift >= 0.75 or edge_score < 45)
-        else ("medium" if edge_score < 65 else "low")
+        "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
     )
     signature = uuid.uuid5(
         uuid.NAMESPACE_DNS,
