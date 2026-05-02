@@ -260,7 +260,7 @@ class KnowledgeBase:
         # Symbol-Info aktualisieren
         sym_info = self.get("symbol_info", symbol)
         if sym_info and sym_info.get("value"):
-            data = sym_info["value"]
+            data = dict(sym_info["value"])  # Kopie, um gecachtes Objekt nicht zu mutieren
             data["total_trades"] = data.get("total_trades", 0) + 1
             data["total_pnl"] = data.get("total_pnl", 0) + pnl
             data["wins"] = data.get("wins", 0) + (1 if pnl > 0 else 0)
@@ -283,7 +283,7 @@ class KnowledgeBase:
             strat_key = f"{reason}_{regime}"
             strat_info = self.get("strategy_perf", strat_key)
             if strat_info and strat_info.get("value"):
-                sd = strat_info["value"]
+                sd = dict(strat_info["value"])  # Kopie, um gecachtes Objekt nicht zu mutieren
                 sd["trades"] = sd.get("trades", 0) + 1
                 sd["pnl"] = sd.get("pnl", 0) + pnl
                 sd["wins"] = sd.get("wins", 0) + (1 if pnl > 0 else 0)
