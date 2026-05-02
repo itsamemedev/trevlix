@@ -1,11 +1,16 @@
 """
 ╔══════════════════════════════════════════════════════════════════╗
-║   TREVLIX AI ENGINE  –  Selbstlernende Gewinnoptimierung         ║
+║   LEGACY – TREVLIX AI ENGINE  (Referenz-Implementierung)         ║
 ║                                                                  ║
-║  HINWEIS: Dieses Modul ist ein eigenständiges Referenz-Modul.   ║
-║  server.py importiert es NICHT – server.py hat eine eigene,     ║
-║  erweiterte AIEngine-Klasse mit 9 Strategien (inkl. Ichimoku    ║
-║  und VWAP), Fourier/Wavelet-Features und Bull/Bear-Regimen.     ║
+║  Diese Datei ist NICHT mehr aktiv. Die produktive AIEngine       ║
+║  liegt in `app/core/ai_engine.py`. Nichts importiert dieses      ║
+║  Modul (verifiziert per grep im Refactor-Branch                  ║
+║  claude/refactor-trading-app-dmXcw).                             ║
+║                                                                  ║
+║  Sie wird hier als historische Referenz aufbewahrt und wird in   ║
+║  einem zukünftigen Release entfernt, sobald sicher ist, dass     ║
+║  kein externer Konsument darauf zugreift. Keine neuen Features,  ║
+║  keine Bugfixes, kein Lint-Enforcement.                          ║
 ║                                                                  ║
 ╠══════════════════════════════════════════════════════════════════╣
 ║                                                                  ║

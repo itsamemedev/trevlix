@@ -27,9 +27,6 @@ from app.core.bot_heartbeat import heartbeat_sleep
 from app.core.exchange_runtime import create_exchange_instance, preflight_exchange_markets
 from app.core.market_cache import build_cache_paths, load_market_cache, save_market_cache
 from app.core.request_helpers import (
-    normalize_exchange_name as _normalize_exchange_name,
-)
-from app.core.request_helpers import (
     safe_float,
     safe_int,
 )
@@ -47,7 +44,7 @@ from services.exchange_factory import (
 )
 from services.strategies import STRATEGIES, compute_indicators
 from services.trade_execution import TradeExecutionService
-from services.utils import EXCHANGE_MAP
+from services.utils import normalize_exchange_name
 
 # ---------------------------------------------------------------------------
 # Module-level references – populated by init_trading_ops()
@@ -166,11 +163,6 @@ def get_virginie_forecast_quality() -> dict:
         "win_rate": round((matched_wins / matched_total) * 100, 1) if matched_total else 0.0,
         "by_tier": by_tier,
     }
-
-
-def normalize_exchange_name(raw):
-    """Normalize exchange names with the shared EXCHANGE_MAP."""
-    return _normalize_exchange_name(raw, EXCHANGE_MAP)
 
 
 def init_trading_ops(

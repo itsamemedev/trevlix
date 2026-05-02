@@ -11,9 +11,10 @@ Trevlix ist ein algorithmischer Krypto-Trading-Bot auf Basis von Flask und WebSo
 ```
 trevlix/
 ├── server.py                # Kern-Applikation: Flask + SocketIO, Bot-Lifecycle, DB-Init
-├── ai_engine.py             # ML-Ensemble: XGBoost, RandomForest, LSTM, RL, Genetic Optimizer
 ├── trevlix_i18n.py          # Internationalisierung (DE, EN, ES, RU, PT)
 ├── validate_env.py          # Umgebungsvariablen-Validierung vor dem Start
+├── app/core/ai_engine.py    # Aktive ML-Engine: XGBoost, RandomForest, LSTM, RL, Genetic Optimizer
+├── legacy/ai_engine.py      # Archivierte Referenz-Implementierung (nicht importiert, kein Lint)
 │
 ├── routes/                  # Flask Blueprints
 │   ├── auth.py              # Authentifizierung: Login, Registrierung, 2FA, Admin-Routen
@@ -74,7 +75,7 @@ Die Architektur gliedert sich in vier Schichten:
 | `strategies.py` | 9 unabhaengige Trading-Strategien, die per Voting-Mechanismus einen Konsens bilden. Jede Strategie liefert BUY/SELL/HOLD. |
 | `utils.py` | Gemeinsame Konstanten (`BOT_NAME`, `BOT_VERSION`), Validierungsfunktionen, Hilfsklassen wie `SecretStr`. |
 
-### 3.3 KI Engine (`ai_engine.py`)
+### 3.3 KI Engine (`app/core/ai_engine.py`)
 
 Das ML-Ensemble kombiniert fuenf Modelltypen:
 

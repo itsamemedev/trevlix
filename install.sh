@@ -89,6 +89,10 @@ JADE='\033[38;5;47m'
 INSTALL_DIR="${CUSTOM_INSTALL_DIR:-/opt/trevlix}"
 SERVICE_USER="trevlix"
 SERVICE_NAME="trevlix"
+# Documented minimum Python version. Not referenced by code (the actual
+# version checks below hard-code 3.9/3.10/3.11) but kept for operators
+# scanning the script for compatibility info.
+# shellcheck disable=SC2034
 PYTHON_MIN="3.9"
 LOG_FILE="/tmp/trevlix_install_$(date +%Y%m%d_%H%M%S).log"
 REPO_URL="https://github.com/itsamemedev/Trevlix"
@@ -689,13 +693,18 @@ case "$OS_FAMILY" in
         done
         ;;
     rhel|fedora)
-        # dnf/yum can handle multiple packages at once efficiently
+        # dnf/yum can handle multiple packages at once efficiently.
+        # PKG_INSTALL + BASE_PKGS are word-split intentionally (each is a
+        # whitespace-separated list built from controlled strings, never user input).
+        # shellcheck disable=SC2086
         $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
         ;;
     suse)
+        # shellcheck disable=SC2086
         $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
         ;;
     arch)
+        # shellcheck disable=SC2086
         $PKG_INSTALL $BASE_PKGS || warn "Some base packages could not be installed"
         ;;
 esac
@@ -923,11 +932,11 @@ chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_DIR"
 if [[ -f "./server.py" ]]; then
     log "Local files detected — copying..."
     # Copy all relevant files and directories
-    for f in server.py ai_engine.py trevlix_i18n.py validate_env.py requirements.txt \
+    for f in server.py trevlix_i18n.py validate_env.py requirements.txt \
               trevlix_translations.js motd.sh; do
         [[ -f "./$f" ]] && cp "./$f" "$INSTALL_DIR/$f" && ok "Copied: $f"
     done
-    for d in routes services templates static docker tests; do
+    for d in app routes services templates static docker tests; do
         if [[ -d "./$d" ]]; then
             cp -r "./$d" "$INSTALL_DIR/$d" && ok "Copied: $d/"
         fi

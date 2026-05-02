@@ -53,12 +53,9 @@ import os
 import secrets
 import threading
 import time
-import uuid
-from collections import deque
 from datetime import datetime
 from typing import Any
 
-import numpy as np
 from dotenv import load_dotenv
 from flask import (
     Response,
@@ -88,15 +85,23 @@ from app.core.auth_guards import (
     build_api_auth_required,
     build_dashboard_auth,
 )
+from app.core.auto_start import has_any_configured_exchange, maybe_auto_start_bot
 from app.core.backup_verify import verify_latest_backup
 from app.core.bootstrap import (
     resolve_project_paths,
+)
+from app.core.config_validation import (
+    ALLOWED_CONFIG_KEYS,
+    VALID_EXCHANGES,
+    VALID_TIMEFRAMES,
+    coerce_config_value,
 )
 
 # ── Extracted modules ────────────────────────────────────────────────────────
 from app.core.db_manager import MySQLManager, init_db_manager
 from app.core.db_request_context import close_request_db_conn, get_request_db_conn
 from app.core.default_config import build_default_config
+from app.core.env_writer import set_env_var
 from app.core.exchange_secret import is_single_exchange_mode, reveal_and_decrypt
 from app.core.http_routes import register_default_blueprints, register_system_routes
 from app.core.lifecycle import build_graceful_shutdown_handler, register_signal_handlers
@@ -115,9 +120,6 @@ from app.core.request_helpers import (
     safe_float,
     safe_int,
 )
-from app.core.request_helpers import (
-    normalize_exchange_name as _normalize_exchange_name,
-)
 from app.core.runtime import run_server
 from app.core.security import (
     apply_security_headers as _apply_security_headers,
@@ -129,8 +131,8 @@ from app.core.session_guard import handle_session_and_csrf
 from app.core.socket_emit import emit_socket_event
 from app.core.socket_error_logger import log_socket_error
 from app.core.startup_view import render_startup_banner
+from app.core.system_analytics import build_llm_header_status, build_system_analytics
 from app.core.tax_export import tax_rows_to_csv
-from app.core.time_compat import UTC
 from app.core.trade_export import trades_to_json
 from app.core.trading_classes import (
     ArbitrageScanner,
@@ -159,6 +161,16 @@ from app.core.trading_ops import (
     open_position,
     safety_scan,
     scan_symbol,
+)
+from app.core.virginie_chat import (
+    build_chat_context,
+    chat_append,
+    chat_history_for_user,
+    cpu_fast_reply,
+    edge_profile,
+    generate_chat_reply,
+    runtime_advice,
+    runtime_status,
 )
 from app.core.websocket_authz import ws_admin_required, ws_auth_required
 from app.core.websocket_guard import WsRateLimiter
@@ -191,6 +203,7 @@ from services.market_data import (
     SentimentFetcher,
 )
 from services.mcp_tools import MCPToolRegistry
+from services.monte_carlo import simulate_monte_carlo
 from services.notifications import DiscordNotifier, TelegramNotifier
 from services.performance_attribution import PerformanceAttribution
 from services.redis_market_cache import RedisMarketCache
@@ -212,6 +225,7 @@ from services.utils import (
     BOT_NAME,
     BOT_VERSION,
     EXCHANGE_MAP,
+    normalize_exchange_name,
     validate_config,
 )
 from services.utils import make_secret as _secret
@@ -438,11 +452,6 @@ def _handle_unexpected(e):
     return "Internal Server Error", 500
 
 
-def normalize_exchange_name(raw: Any) -> str:
-    """Normalisiert und validiert einen Exchange-Namen."""
-    return _normalize_exchange_name(raw, EXCHANGE_MAP)
-
-
 def _generate_csrf_token() -> str:
     """Kompatibler Wrapper für Jinja-Global/Tests."""
     return _core_generate_csrf_token(session)
@@ -586,9 +595,7 @@ state = BotState(db)
 # Globales Shutdown-Event: alle kooperativen Hintergrund-Threads prüfen dieses Event.
 _SHUTDOWN_EVENT = threading.Event()
 ai_engine = AIEngine(db)
-_VIRGINIE_CHAT_MAX_MESSAGES = 80
-_virginie_chat_lock = threading.Lock()
-_virginie_chat_by_user: dict[int, deque[dict[str, Any]]] = {}
+# VIRGINIE chat state lives in app/core/virginie_chat (shared with HTTP API).
 
 # ── MCP-Tool-Integration für KI ────────────────────────────────────────────
 mcp_registry = MCPToolRegistry(
@@ -624,261 +631,50 @@ threading.Thread(target=_idle_learning_loop, daemon=True, name="IdleLearningLoop
 
 
 def _virginie_chat_history_for_user(user_id: int) -> list[dict[str, Any]]:
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        return [dict(item) for item in history]
+    """Forwards to virginie_chat.chat_history_for_user (shared store)."""
+    return chat_history_for_user(user_id)
 
 
 def _virginie_chat_append(user_id: int, role: str, content: str) -> dict[str, Any]:
-    entry = {
-        "id": uuid.uuid4().hex,
-        "role": role,
-        "content": str(content).strip(),
-        "time": datetime.now(UTC).isoformat(),
-    }
-    with _virginie_chat_lock:
-        history = _virginie_chat_by_user.setdefault(
-            int(user_id), deque(maxlen=_VIRGINIE_CHAT_MAX_MESSAGES)
-        )
-        history.append(entry)
-    return entry
+    """Forwards to virginie_chat.chat_append (shared store)."""
+    return chat_append(user_id, role, content)
 
 
 def _virginie_runtime_status() -> dict[str, Any]:
-    """Verdichteter VIRGINIE Status für API/Chat."""
-    ai = ai_engine.to_dict() if ai_engine else {}
-    assistant_agents = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
-    assistant_review = ai.get("assistant_review", {}) if isinstance(ai, dict) else {}
-    return {
-        "enabled": bool(CONFIG.get("virginie_enabled", True)),
-        "primary_control": bool(CONFIG.get("virginie_primary_control", True)),
-        "autonomy_weight": float(CONFIG.get("virginie_autonomy_weight", 0.7) or 0.7),
-        "min_score": float(CONFIG.get("virginie_min_score", 0.0) or 0.0),
-        "max_risk_penalty": float(CONFIG.get("virginie_max_risk_penalty", 1000.0) or 1000.0),
-        "assistant_name": ai.get("assistant_name", "VIRGINIE"),
-        "assistant_version": ai.get("assistant_version", "0.0.0"),
-        "assistant_agents": assistant_agents if isinstance(assistant_agents, dict) else {},
-        "assistant_review": assistant_review if isinstance(assistant_review, dict) else {},
-    }
+    """Forwards to virginie_chat.runtime_status with module globals."""
+    return runtime_status(config=CONFIG, ai_engine=ai_engine)
 
 
 def _virginie_runtime_advice() -> dict[str, Any]:
-    """Leitet konkrete nächste Schritte aus Runtime-Status ab."""
-    status = _virginie_runtime_status()
-    ai = ai_engine.to_dict() if ai_engine else {}
-    wf = float(ai.get("wf_accuracy", 0) or 0)
-    drift = float(ai.get("drift_score", 0) or 0)
-    trained = bool(ai.get("is_trained", False))
-    guardrail_min_score = float(status.get("min_score", 0) or 0)
-    actions: list[dict[str, str]] = []
-    if not status.get("enabled", True):
-        actions.append(
-            {
-                "priority": "high",
-                "title": "VIRGINIE aktivieren",
-                "detail": "Setze virginie_enabled=true, damit Guardrails und Agenten-Workflow aktiv sind.",
-            }
-        )
-    if not trained:
-        actions.append(
-            {
-                "priority": "high",
-                "title": "Training starten",
-                "detail": "Das Modell ist noch nicht trainiert. Starte ein Initial-Training im Admin-Bereich.",
-            }
-        )
-    if wf < 55:
-        actions.append(
-            {
-                "priority": "medium",
-                "title": "Qualität stabilisieren",
-                "detail": "WF-Accuracy ist niedrig. Prüfe Feature-Importance und erhöhe Trainingsdaten.",
-            }
-        )
-    if drift >= 0.7:
-        actions.append(
-            {
-                "priority": "medium",
-                "title": "Drift reduzieren",
-                "detail": "Erhöhtes Drift-Risiko erkannt. Setups neu kalibrieren und Risk-Limits prüfen.",
-            }
-        )
-    if guardrail_min_score < 0.5:
-        actions.append(
-            {
-                "priority": "low",
-                "title": "Min-Score anheben",
-                "detail": "Für konservativeres Verhalten virginie_min_score leicht erhöhen (z.B. +0.05).",
-            }
-        )
-    if not actions:
-        actions.append(
-            {
-                "priority": "low",
-                "title": "System stabil",
-                "detail": "VIRGINIE läuft stabil. Fokus auf Monitoring und regelmäßiges Review.",
-            }
-        )
-    return {
-        "assistant": status.get("assistant_name", "VIRGINIE"),
-        "version": status.get("assistant_version", "0.0.0"),
-        "wf_accuracy": wf,
-        "drift_score": drift,
-        "actions": actions[:5],
-    }
+    """Forwards to virginie_chat.runtime_advice with module globals."""
+    return runtime_advice(config=CONFIG, ai_engine=ai_engine)
 
 
 def _virginie_edge_profile() -> dict[str, Any]:
-    """Kompakter VIRGINIE-Edge-Score für Trading/Forecast-Workflows."""
-    status = _virginie_runtime_status()
-    advice = _virginie_runtime_advice()
-    snap = state.snapshot() if state else {}
-    wf = float(advice.get("wf_accuracy", 0) or 0)
-    drift = float(advice.get("drift_score", 0) or 0)
-    autonomy = float(status.get("autonomy_weight", 0.7) or 0.7)
-    running = bool(snap.get("running", False))
-    open_trades = int(snap.get("open_trades", 0) or 0)
-    risk_load = min(100.0, open_trades * 8.0)
-    edge_score = max(
-        0.0, min(100.0, (wf * 0.55) + ((1.0 - drift) * 35.0) + (autonomy * 10.0) - risk_load)
-    )
-    tier = (
-        "S"
-        if edge_score >= 85
-        else ("A" if edge_score >= 70 else ("B" if edge_score >= 55 else "C"))
-    )
-    urgency = (
-        "high" if (drift >= 0.75 or edge_score < 45) else ("medium" if edge_score < 65 else "low")
-    )
-    signature = uuid.uuid5(
-        uuid.NAMESPACE_DNS,
-        f"{status.get('assistant_version', '0')}-{snap.get('exchange', 'na')}-{tier}-{int(edge_score)}-{int(drift * 100)}",
-    ).hex[:12]
-    return {
-        "edge_score": round(edge_score, 2),
-        "tier": tier,
-        "urgency": urgency,
-        "running": running,
-        "exchange": snap.get("exchange", "unbekannt"),
-        "open_trades": open_trades,
-        "signature": signature,
-    }
+    """Forwards to virginie_chat.edge_profile with module globals."""
+    return edge_profile(config=CONFIG, ai_engine=ai_engine, state=state)
 
 
 def _virginie_cpu_fast_reply(prompt: str) -> str | None:
-    """Ultraschnelle CPU-basierte VIRGINIE-Antwort ohne externen LLM-Call."""
-    p = str(prompt or "").strip().lower()
-    if not p:
-        return None
-    if any(k in p for k in ("risiko", "risk", "verlust", "drawdown")):
-        return (
-            "CPU-Quickcheck: Risiko zuerst. Prüfe max_drawdown, daily_loss_limit und open_trades. "
-            "Wenn Drawdown steigt, Trade-Frequenz reduzieren und Stops enger setzen."
-        )
-    if any(k in p for k in ("markt", "market", "regime", "trend")):
-        return (
-            "CPU-Quickcheck: Regime + Volatilität zuerst prüfen. "
-            "Nur bei bestätigtem Trend aggressiv handeln, sonst Positionsgröße drosseln."
-        )
-    if any(k in p for k in ("setup", "konfig", "config", "einstellung")):
-        return (
-            "CPU-Quickcheck Setup: 1) virginie_primary_control aktiv, 2) ai_min_confidence validieren, "
-            "3) stop_loss/take_profit auf aktuelle Volatilität abstimmen."
-        )
-    if len(p.split()) <= 5:
-        return "Beschreibe bitte kurz Symbol, Ziel und Risiko-Toleranz, dann gebe ich dir einen konkreten Plan."
-    return None
+    """Forwards to virginie_chat.cpu_fast_reply (pure)."""
+    return cpu_fast_reply(prompt)
 
 
 def _build_virginie_chat_context(user_id: int) -> str:
-    ai = ai_engine.to_dict() if ai_engine else {}
-    snap = state.snapshot() if state else {}
-    ass = ai.get("assistant_agents", {}) if isinstance(ai, dict) else {}
-    recent = _virginie_chat_history_for_user(user_id)[-8:]
-    recent_lines = []
-    for item in recent:
-        role = "User" if str(item.get("role", "")) == "user" else "VIRGINIE"
-        msg = str(item.get("content", "")).strip().replace("\n", " ")
-        if msg:
-            recent_lines.append(f"- {role}: {msg[:160]}")
-    recent_block = "\n".join(recent_lines) if recent_lines else "- (keine Historie)"
-    return (
-        "Du bist VIRGINIE, die Trading-Assistentin im TREVLIX Admin-Dashboard.\n"
-        "Antwortstil: kurz, konkret, handlungsorientiert, sicherheitsbewusst.\n"
-        "Keine Garantien, stattdessen klare nächste Schritte vorschlagen.\n"
-        f"Aktuelle Bot-Lage: running={bool(snap.get('running', False))}, "
-        f"paper_trading={bool(snap.get('paper_trading', True))}, "
-        f"exchange={snap.get('exchange', 'unbekannt')}, "
-        f"portfolio={snap.get('portfolio_value', 0)}.\n"
-        f"VIRGINIE-Agenten: count={ass.get('registered_agents', 0)}, "
-        f"coverage={ass.get('coverage_pct', 0)}%, "
-        f"last_agent={ass.get('last_agent', '—')}.\n"
-        "Letzte Unterhaltung (gekürzt):\n"
-        f"{recent_block}"
-    )
+    """Forwards to virginie_chat.build_chat_context with module globals."""
+    return build_chat_context(user_id, ai_engine=ai_engine, state=state)
 
 
 def _generate_virginie_chat_reply(user_id: int, user_prompt: str) -> str:
-    prompt = str(user_prompt or "").strip()
-    if not prompt:
-        return "Bitte sende eine konkrete Frage, damit ich dir gezielt helfen kann."
-    status = _virginie_runtime_status()
-    if not status.get("enabled", True):
-        return "VIRGINIE ist aktuell deaktiviert. Aktiviere 'virginie_enabled' in den Settings."
-    cmd = prompt.lower()
-    if cmd in {"/help", "help"}:
-        return (
-            "VIRGINIE Kommandos: /status (Live-Status), /review (letztes Self-Review), "
-            "/plan (Aktionsplan), /edge (Edge-Profil), /help (diese Hilfe). "
-            "Du kannst auch normale Fragen zu Risiko, Setup und Strategie stellen."
-        )
-    if cmd in {"/status", "status"}:
-        agents = status.get("assistant_agents", {})
-        return (
-            f"Status: {'Primary' if status.get('primary_control') else 'Hybrid'} | "
-            f"w={status.get('autonomy_weight', 0):.2f} | "
-            f"Agents={agents.get('registered_agents', 0)} | "
-            f"Coverage={agents.get('coverage_pct', 0)}% | "
-            f"Last={agents.get('last_agent', '—')}"
-        )
-    if cmd in {"/review", "review"}:
-        review = status.get("assistant_review", {})
-        summary = str(review.get("summary", "")).strip() if isinstance(review, dict) else ""
-        return (
-            summary
-            or "Noch kein Self-Review vorhanden. Nach weiteren Entscheidungen erneut prüfen."
-        )
-    if cmd in {"/plan", "plan", "/diagnose", "diagnose"}:
-        advice = _virginie_runtime_advice()
-        action_lines = [
-            f"{i + 1}. [{a.get('priority', 'low')}] {a.get('title', 'Schritt')} – {a.get('detail', '')}"
-            for i, a in enumerate(advice.get("actions", []))
-        ]
-        return "VIRGINIE Aktionsplan:\n" + (
-            "\n".join(action_lines) if action_lines else "Keine Aktionen."
-        )
-    if cmd in {"/edge", "edge"}:
-        edge = _virginie_edge_profile()
-        return (
-            f"VIRGINIE Edge: {edge.get('edge_score', 0)} / 100 | Tier {edge.get('tier')} | "
-            f"Urgency {edge.get('urgency')} | Exchange {edge.get('exchange')} | Sig {edge.get('signature')}"
-        )
-    if bool(CONFIG.get("virginie_cpu_fast_chat", True)):
-        fast_reply = _virginie_cpu_fast_reply(prompt)
-        if fast_reply:
-            return fast_reply
-    context = _build_virginie_chat_context(user_id)
-    try:
-        reply = knowledge_base.query_llm_with_tools(prompt, context)
-        if reply:
-            return str(reply).strip()[:4000]
-    except Exception as exc:
-        log.debug("VIRGINIE chat LLM fallback: %s", exc)
-    return (
-        "Ich konnte die LLM-Antwort gerade nicht abrufen. "
-        "Bitte prüfe die LLM-Konfiguration unter Wissen/LLM-Status und versuche es erneut."
+    """Forwards to virginie_chat.generate_chat_reply with module globals."""
+    return generate_chat_reply(
+        user_id,
+        user_prompt,
+        config=CONFIG,
+        ai_engine=ai_engine,
+        state=state,
+        knowledge_base=knowledge_base,
+        log=log,
     )
 
 
@@ -1449,7 +1245,10 @@ def on_start_bot():
         broadcast=True,
     )
     state.add_activity(
-        "🚀", "TREVLIX gestartet", f"v{BOT_VERSION} · {CONFIG.get('exchange', '').upper()}", "success"
+        "🚀",
+        "TREVLIX gestartet",
+        f"v{BOT_VERSION} · {CONFIG.get('exchange', '').upper()}",
+        "success",
     )
     log.info("🚀 Bot gestartet")
 
@@ -1498,113 +1297,12 @@ def on_update_config(data: dict | None = None):
             {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
         )
         return
-    allowed = {
-        "stop_loss_pct",
-        "take_profit_pct",
-        "max_open_trades",
-        "scan_interval",
-        "paper_trading",
-        "trailing_stop",
-        "ai_min_confidence",
-        "virginie_enabled",
-        "virginie_primary_control",
-        "virginie_autonomy_weight",
-        "virginie_min_score",
-        "virginie_max_risk_penalty",
-        "virginie_cpu_fast_chat",
-        "circuit_breaker_losses",
-        "circuit_breaker_min",
-        "max_spread_pct",
-        "use_fear_greed",
-        "ai_use_kelly",
-        "mtf_enabled",
-        "use_sentiment",
-        "use_news",
-        "use_onchain",
-        "use_dominance",
-        "use_anomaly",
-        "use_dca",
-        "use_partial_tp",
-        "use_shorts",
-        "use_arbitrage",
-        "use_market_regime",
-        "arb_min_spread_pct",
-        "arb_scan_limit",
-        "genetic_enabled",
-        "rl_enabled",
-        "backup_enabled",
-        "portfolio_goal",
-        "discord_daily_report",
-        "discord_report_hour",
-        "risk_per_trade",
-        "news_block_score",
-        "news_boost_score",
-        "dca_max_levels",
-        "dca_drop_pct",
-        "trailing_pct",
-        "lstm_lookback",
-        # Dashboard-spezifische Einstellungen
-        "language",
-        "allow_registration",
-        "break_even_enabled",
-        "break_even_trigger",
-        "break_even_buffer",
-        "partial_tp_pct",
-        "use_grid",
-        "use_rl",
-        "use_lstm",
-        # Exchange selection – allowed for all authenticated users
-        "exchange",
-        "timeframe",
-    }
-    # Typ-Validierung: Wert muss zum bestehenden CONFIG-Typ passen
-    _numeric_keys = {
-        "stop_loss_pct",
-        "take_profit_pct",
-        "ai_min_confidence",
-        "virginie_autonomy_weight",
-        "virginie_min_score",
-        "virginie_max_risk_penalty",
-        "max_spread_pct",
-        "risk_per_trade",
-        "news_block_score",
-        "news_boost_score",
-        "dca_drop_pct",
-        "trailing_pct",
-        "break_even_trigger",
-        "break_even_buffer",
-        "partial_tp_pct",
-        "portfolio_goal",
-        "arb_min_spread_pct",
-    }
-    _int_keys = {
-        "max_open_trades",
-        "scan_interval",
-        "circuit_breaker_losses",
-        "circuit_breaker_min",
-        "dca_max_levels",
-        "lstm_lookback",
-        "discord_report_hour",
-        "arb_scan_limit",
-    }
-    _valid_exchanges = {
-        "cryptocom",
-        "binance",
-        "bybit",
-        "okx",
-        "kucoin",
-        "kraken",
-        "huobi",
-        "coinbase",
-        "bitget",
-        "mexc",
-        "gateio",
-        "nonkyc",
-    }
     updated: dict[str, Any] = {}
     for k, v in data.items():
-        if k not in allowed:
+        if k not in ALLOWED_CONFIG_KEYS:
             continue
+        # State-side-effect keys are handled inline because they touch
+        # trade_mode / state._exchange_reset / _pin_user_exchange.
         if k == "paper_trading":
             desired_paper = bool(v)
             CONFIG[k] = desired_paper
@@ -1613,7 +1311,7 @@ def on_update_config(data: dict | None = None):
             continue
         if k == "exchange":
             ex = normalize_exchange_name(str(v))
-            if ex and ex in _valid_exchanges:
+            if ex and ex in VALID_EXCHANGES:
                 CONFIG["exchange"] = ex
                 state._exchange_reset = True
                 _pin_user_exchange(getattr(request, "user_id", session.get("user_id")), ex)
@@ -1622,33 +1320,16 @@ def on_update_config(data: dict | None = None):
             continue
         if k == "timeframe":
             tf = str(v).strip().lower()
-            if tf in {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"}:
+            if tf in VALID_TIMEFRAMES:
                 CONFIG["timeframe"] = tf
                 updated["timeframe"] = tf
             continue
-        if k in _numeric_keys:
-            v = safe_float(v, CONFIG.get(k, 0.0))
-            if v < 0:
-                continue  # Reject negative numeric values
-        elif k in _int_keys:
-            v = safe_int(v, CONFIG.get(k, 0))
-            if v < 0:
-                continue  # Reject negative int values
-        elif isinstance(CONFIG.get(k), bool):
-            v = bool(v)
-        # Sanity: reject unreasonable values for critical keys
-        if k == "max_open_trades" and (v < 1 or v > 100):
+        # Pure validation + type coercion in app/core/config_validation.
+        coerced = coerce_config_value(k, v, CONFIG)
+        if coerced is None:
             continue
-        if k == "stop_loss_pct" and (v <= 0 or v > 50):
-            continue
-        if k == "take_profit_pct" and (v <= 0 or v > 500):
-            continue
-        if k == "scan_interval" and (v < 5 or v > 3600):
-            continue
-        if k == "risk_per_trade" and (v <= 0 or v > 0.5):
-            continue
-        CONFIG[k] = v
-        updated[k] = v
+        CONFIG[k] = coerced
+        updated[k] = coerced
     # Persistenz: Admin-Settings in der DB speichern, damit sie einen Restart überleben.
     persist_failed = False
     try:
@@ -1770,7 +1451,9 @@ def on_force_train():
     if not _ws_admin_required():
         return
     if ai_engine is None:
-        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_training", "type": "error"})
+        emit(
+            "status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_training", "type": "error"}
+        )
         return
     emit("status", {"msg": "🧠 KI-Training gestartet...", "key": "ws_ai_training", "type": "info"})
     threading.Thread(
@@ -1785,7 +1468,10 @@ def on_force_optimize():
     if not _ws_admin_required():
         return
     if ai_engine is None:
-        emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_optimizing", "type": "error"})
+        emit(
+            "status",
+            {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_optimizing", "type": "error"},
+        )
         return
     emit("status", {"msg": "🔬 Optimierung läuft...", "key": "ws_ai_optimizing", "type": "info"})
     threading.Thread(
@@ -1805,7 +1491,14 @@ def on_force_genetic():
     if not _ws_admin_required():
         return
     if genetic is None:
-        emit("status", {"msg": "❌ Genetischer Optimizer nicht verfügbar", "key": "ws_ai_genetic", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Genetischer Optimizer nicht verfügbar",
+                "key": "ws_ai_genetic",
+                "type": "error",
+            },
+        )
         return
     emit(
         "status",
@@ -1919,8 +1612,14 @@ def on_run_backtest(data: dict | None = None):
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 safe_int(data.get("candles", 500), 500),
-                safe_float(data.get("sl", CONFIG.get("stop_loss_pct", 0.025)), CONFIG.get("stop_loss_pct", 0.025)),
-                safe_float(data.get("tp", CONFIG.get("take_profit_pct", 0.060)), CONFIG.get("take_profit_pct", 0.060)),
+                safe_float(
+                    data.get("sl", CONFIG.get("stop_loss_pct", 0.025)),
+                    CONFIG.get("stop_loss_pct", 0.025),
+                ),
+                safe_float(
+                    data.get("tp", CONFIG.get("take_profit_pct", 0.060)),
+                    CONFIG.get("take_profit_pct", 0.060),
+                ),
                 safe_float(
                     data.get("vote", CONFIG.get("min_vote_score", 0.3)),
                     CONFIG.get("min_vote_score", 0.3),
@@ -2021,7 +1720,10 @@ def on_reset_cb():
     if not _ws_auth_required():
         return
     if risk is None:
-        emit("status", {"msg": "❌ Risk-Manager nicht initialisiert", "key": "ws_cb_reset", "type": "error"})
+        emit(
+            "status",
+            {"msg": "❌ Risk-Manager nicht initialisiert", "key": "ws_cb_reset", "type": "error"},
+        )
         return
     with risk._lock:
         risk.circuit_breaker_until = None
@@ -2040,7 +1742,14 @@ def on_scan_arb():
         return
 
     if arb_scanner is None:
-        emit("status", {"msg": "❌ Arbitrage-Scanner nicht verfügbar", "key": "ws_arb_result", "type": "error"})
+        emit(
+            "status",
+            {
+                "msg": "❌ Arbitrage-Scanner nicht verfügbar",
+                "key": "ws_arb_result",
+                "type": "error",
+            },
+        )
         return
 
     def _arb():
@@ -2589,366 +2298,27 @@ def on_close_exchange_position(data: dict | None = None):
         )
 
 
-def _derive_llm_provider_name(endpoint: str) -> str:
-    """Leitet einen lesbaren Provider-Namen aus der Endpoint-URL ab."""
-    if not endpoint:
-        return "—"
-    ep = endpoint.lower()
-    mapping = {
-        "openai.com": "OpenAI",
-        "anthropic.com": "Anthropic",
-        "groq.com": "Groq",
-        "cerebras.ai": "Cerebras",
-        "openrouter.ai": "OpenRouter",
-        "huggingface.co": "HuggingFace",
-        "together.xyz": "Together",
-        "mistral.ai": "Mistral",
-        "localhost": "Local",
-        "127.0.0.1": "Local",
-        "0.0.0.0": "Local",
-    }
-    for needle, label in mapping.items():
-        if needle in ep:
-            return label
-    return "Custom"
-
-
 def _get_llm_header_status() -> dict[str, Any]:
-    """Günstige LLM-Status-Ermittlung für den Header-Chip (keine Netzwerk-Calls)."""
-    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
-    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
-    out: dict[str, Any] = {
-        "endpoint": llm_endpoint or "—",
-        "model": llm_model,
-        "provider": "—",
-        "status": "⚪ Nicht konfiguriert",
-    }
-    if llm_endpoint:
-        out["provider"] = _derive_llm_provider_name(llm_endpoint)
-        out["status"] = "✅ Konfiguriert"
-    try:
-        multi_llm = getattr(knowledge_base, "_multi_llm", None)
-        if multi_llm:
-            provider_stats = multi_llm.status()
-            if provider_stats:
-                active_ok = [p for p in provider_stats if p.get("available")]
-                if not llm_endpoint:
-                    out["endpoint"] = "multi-provider"
-                if out["model"] in ("", "—"):
-                    out["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
-                primary = (active_ok or provider_stats)[0]
-                out["provider"] = str(primary.get("name", "—")).title()
-                out["status"] = (
-                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
-                    if active_ok
-                    else "❌ Alle Provider offline"
-                )
-    except Exception as e:
-        log.debug("LLM header status failed: %s", e)
-    return out
+    """Header-Chip-LLM-Status. Dünner Wrapper um system_analytics.build_llm_header_status."""
+    return build_llm_header_status(config=CONFIG, knowledge_base=knowledge_base, log=log)
 
 
 def _collect_system_analytics() -> dict[str, Any]:
-    """Collect system analytics data (shared by WS and HTTP)."""
-    import platform
-    import shutil
-
-    data: dict[str, Any] = {}
-    # System info
-    try:
-        import psutil
-
-        mem = psutil.virtual_memory()
-        cpu_pct = psutil.cpu_percent(interval=0.1)
-        boot = datetime.fromtimestamp(psutil.boot_time())
-        uptime_delta = datetime.now() - boot
-        uptime_str = f"{uptime_delta.days}d {uptime_delta.seconds // 3600}h"
-        data["system"] = {
-            "python": platform.python_version(),
-            "platform": f"{platform.system()} {platform.release()}",
-            "cpu": f"{cpu_pct}%",
-            "memory": f"{mem.used // (1024**2)}/{mem.total // (1024**2)} MB ({mem.percent}%)",
-            "disk": "—",
-            "uptime": uptime_str,
-        }
-    except ImportError:
-        data["system"] = {
-            "python": platform.python_version(),
-            "platform": f"{platform.system()} {platform.release()}",
-            "cpu": "—",
-            "memory": "—",
-            "disk": "—",
-            "uptime": "—",
-        }
-    # Disk usage
-    try:
-        disk = shutil.disk_usage("/")
-        data["system"]["disk"] = (
-            f"{disk.used // (1024**3)}/{disk.total // (1024**3)} GB "
-            f"({100 * disk.used // disk.total}%)"
-        )
-    except Exception:
-        pass
-
-    # API status
-    exchange_name = CONFIG.get("exchange", "unknown")
-    discord_configured = bool(CONFIG.get("discord_webhook"))
-    telegram_configured = bool(CONFIG.get("telegram_token"))
-    api_latency = "—"
-    api_connected = "⏸️"
-    try:
-        ex = create_exchange()
-        start_t = time.time()
-        ex.fetch_time()
-        api_latency = f"{int((time.time() - start_t) * 1000)} ms"
-        api_connected = "✅"
-    except Exception:
-        if state.running:
-            api_connected = "⚠️"
-        api_latency = "timeout"
-    data["api"] = {
-        "exchange": exchange_name.upper(),
-        "connected": api_connected,
-        "latency": api_latency,
-        "calls_24h": str(getattr(state, "api_calls_24h", "—")),
-        "discord": "✅" if discord_configured else "❌",
-        "telegram": "✅" if telegram_configured else "❌",
-    }
-
-    # LLM status
-    llm_endpoint = CONFIG.get("llm_endpoint", "") or getattr(knowledge_base, "_llm_endpoint", "")
-    llm_model = CONFIG.get("llm_model", "—") or getattr(knowledge_base, "_llm_model", "—")
-    data["llm"] = {
-        "endpoint": llm_endpoint or "—",
-        "model": llm_model,
-        "provider": "—",
-        "status": "⚪ Nicht konfiguriert",
-        "latency": "—",
-        "queries_24h": "—",
-        "tokens_24h": "—",
-    }
-    if llm_endpoint:
-        # Einzel-Endpoint: Provider aus URL ableiten
-        data["llm"]["provider"] = _derive_llm_provider_name(llm_endpoint)
-        data["llm"]["status"] = "✅ Konfiguriert"
-
-    # Multi-LLM Fallback/Status wenn kein dedizierter Endpoint gesetzt ist
-    try:
-        multi_llm = getattr(knowledge_base, "_multi_llm", None)
-        if multi_llm:
-            provider_stats = multi_llm.status()
-            if provider_stats:
-                total_reqs = sum(int(p.get("requests", 0) or 0) for p in provider_stats)
-                total_tokens = sum(int(p.get("tokens", 0) or 0) for p in provider_stats)
-                active_ok = [p for p in provider_stats if p.get("available")]
-                if not llm_endpoint:
-                    data["llm"]["endpoint"] = "multi-provider"
-                if data["llm"]["model"] in ("", "—"):
-                    data["llm"]["model"] = ", ".join(p.get("name", "?") for p in provider_stats[:3])
-                # Aktiver Provider-Name (erster gesunder, sonst erster insgesamt)
-                primary = (active_ok or provider_stats)[0] if provider_stats else None
-                if primary:
-                    data["llm"]["provider"] = str(primary.get("name", "—")).title()
-                data["llm"]["status"] = (
-                    f"✅ {len(active_ok)}/{len(provider_stats)} Provider online"
-                    if active_ok
-                    else "❌ Alle Provider offline"
-                )
-                data["llm"]["queries_24h"] = str(total_reqs)
-                data["llm"]["tokens_24h"] = str(total_tokens)
-    except Exception as e:
-        log.debug("Multi-LLM status query failed: %s", e)
-
-    if llm_endpoint:
-        try:
-            import urllib.request
-
-            # Kompatibel mit OpenAI-/vLLM-Endpunkten (/models) und Ollama (/api/tags)
-            candidates = [
-                llm_endpoint.rstrip("/") + "/models",
-                llm_endpoint.rstrip("/") + "/api/tags",
-            ]
-            last_exc = None
-            for url in candidates:
-                try:
-                    start_t = time.time()
-                    req = urllib.request.Request(url, method="GET")
-                    req.add_header("Connection", "close")
-                    with urllib.request.urlopen(req, timeout=5):
-                        latency_ms = int((time.time() - start_t) * 1000)
-                        data["llm"]["status"] = "✅ Online"
-                        data["llm"]["latency"] = f"{latency_ms} ms"
-                        last_exc = None
-                        break
-                except Exception as exc:
-                    last_exc = exc
-            if last_exc is not None:
-                data["llm"]["status"] = "❌ Offline"
-        except Exception:
-            data["llm"]["status"] = "❌ Offline"
-
-    # Database status
-    data["db"] = {
-        "pool_size": "—",
-        "active_conn": "—",
-        "utilization": "—",
-        "tables": "—",
-        "size": "—",
-    }
-    try:
-        pool_info = db.pool_stats() if hasattr(db, "pool_stats") else {}
-        data["db"]["pool_size"] = pool_info.get("pool_size", "—")
-        data["db"]["active_conn"] = pool_info.get("in_use", "—")
-        util = pool_info.get("utilization_pct")
-        data["db"]["utilization"] = f"{util}%" if util is not None else "—"
-    except Exception:
-        pass
-    try:
-        with db.get_connection() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()"
-                )
-                row = cur.fetchone()
-                data["db"]["tables"] = row[0] if row else "—"
-                cur.execute(
-                    "SELECT ROUND(SUM(data_length+index_length)/1024/1024,1) "
-                    "FROM information_schema.tables WHERE table_schema=DATABASE()"
-                )
-                row = cur.fetchone()
-                data["db"]["size"] = f"{row[0]} MB" if row and row[0] else "—"
-    except Exception:
-        pass
-
-    # AI Engine metrics
-    try:
-        ai_dict = ai_engine.to_dict()
-        idle_meta = {}
-        try:
-            if hasattr(knowledge_base, "idle_learning_status"):
-                idle_meta = knowledge_base.idle_learning_status()
-        except Exception:
-            idle_meta = {}
-        data["ai"] = {
-            "is_trained": ai_dict.get("is_trained", False),
-            "training_ver": ai_dict.get("training_version", 0),
-            "status_msg": ai_dict.get("status_msg", ""),
-            "progress_pct": ai_dict.get("progress_pct", 0),
-            "wf_accuracy": ai_dict.get("wf_accuracy", 0),
-            "bull_accuracy": ai_dict.get("bull_accuracy", 0),
-            "bear_accuracy": ai_dict.get("bear_accuracy", 0),
-            "samples": ai_dict.get("samples", 0),
-            "bull_samples": ai_dict.get("bull_samples", 0),
-            "bear_samples": ai_dict.get("bear_samples", 0),
-            "allowed_count": ai_dict.get("allowed_count", 0),
-            "blocked_count": ai_dict.get("blocked_count", 0),
-            "weights": ai_dict.get("weights", []),
-            "ai_log": ai_dict.get("ai_log", []),
-            "trained": ai_dict.get("is_trained", False),
-            "accuracy": f"{ai_dict.get('accuracy', 0) * 100:.1f}%",
-            "cv_accuracy": f"{ai_dict.get('cv_accuracy', 0) * 100:.1f}%",
-            "predictions": ai_dict.get("predictions_made", 0),
-            "correct": ai_dict.get("predictions_correct", 0),
-            "version": ai_dict.get("training_version", 0),
-            "assistant_name": ai_dict.get("assistant_name", "AI"),
-            "assistant_version": ai_dict.get("assistant_version", "0.0.0"),
-            "assistant_examples": ai_dict.get("assistant_examples", {}),
-            "assistant_agents": ai_dict.get("assistant_agents", {}),
-            "assistant_review": ai_dict.get("assistant_review", {}),
-            "assistant_primary_control": ai_dict.get("assistant_primary_control", False),
-            "assistant_autonomy_weight": ai_dict.get("assistant_autonomy_weight", 0.7),
-            "last_trained": ai_dict.get("last_trained", "—"),
-            "trades_since_retrain": ai_dict.get("trades_since_retrain", 0),
-            "idle_learning_runs": idle_meta.get("runs", 0),
-            "idle_learning_last_at": idle_meta.get("last_run_at"),
-            "idle_learning_summary": idle_meta.get("last_summary", ""),
-            "idle_learning_error": idle_meta.get("last_error", ""),
-            "llm_providers_used": idle_meta.get("providers_used", 0),
-            "llm_responses_used": idle_meta.get("responses_used", 0),
-            "llm_collaboration_active": bool(
-                idle_meta.get("providers_used", 0) or idle_meta.get("responses_used", 0)
-            ),
-        }
-    except Exception:
-        data["ai"] = {}
-
-    # Risk metrics
-    try:
-        cb = risk.circuit_status()
-        data["risk"] = {
-            "circuit_active": cb.get("active", False),
-            "circuit_losses": cb.get("losses", 0),
-            "circuit_limit": cb.get("limit", 0),
-            "max_drawdown": f"{risk.max_drawdown:.1f}%",
-        }
-    except Exception:
-        data["risk"] = {}
-
-    # Revenue tracking
-    try:
-        rev = revenue_tracker.snapshot()
-        data["revenue"] = {
-            "gross_pnl": round(rev.get("gross_pnl", 0), 2),
-            "net_pnl": round(rev.get("net_pnl", 0), 2),
-            "total_fees": round(rev.get("total_fees", 0), 2),
-            "total_trades": rev.get("total_trades", 0),
-            "roi_pct": f"{rev.get('roi_pct', 0):.2f}%",
-            "max_drawdown": f"{rev.get('max_drawdown_pct', 0):.1f}%",
-            "profit_factor": round(rev.get("profit_factor", 0), 2),
-            "win_rate": f"{rev.get('win_rate', 0):.1f}%",
-        }
-    except Exception:
-        data["revenue"] = {}
-
-    # Performance attribution
-    try:
-        pa_stats = perf_attribution.stats()
-        data["attribution"] = {
-            "total_trades": pa_stats.get("total_trades", 0),
-            "profit_factor": round(pa_stats.get("profit_factor", 0), 2),
-            "expectancy": round(pa_stats.get("expectancy", 0), 2),
-            "sharpe": round(pa_stats.get("sharpe_ratio", 0), 2),
-        }
-    except Exception:
-        data["attribution"] = {}
-
-    # Adaptive weights
-    try:
-        aw = adaptive_weights.to_dict()
-        perf_list = aw.get("performance", [])
-        top_strats = sorted(perf_list, key=lambda x: x.get("weight", 0), reverse=True)[:5]
-        data["strategies"] = {
-            "total": aw.get("strategies_total", 0),
-            "adapted": aw.get("strategies_adapted", 0),
-            "total_votes": aw.get("total_votes", 0),
-            "top": [
-                {
-                    "name": s.get("strategy", "?"),
-                    "weight": round(s.get("weight", 0), 2),
-                    "win_rate": f"{s.get('win_rate', 0):.0f}%",
-                    "trades": s.get("trades", 0),
-                }
-                for s in top_strats
-            ],
-        }
-    except Exception:
-        data["strategies"] = {}
-
-    # Auto-healing status
-    try:
-        data["healing"] = healer.health_snapshot()
-    except Exception:
-        data["healing"] = {}
-
-    # Indicator cache stats
-    try:
-        from services.indicator_cache import cache_stats
-
-        data["cache"] = cache_stats()
-    except Exception:
-        data["cache"] = {}
-
-    return data
+    """System analytics payload. Dünner Wrapper um system_analytics.build_system_analytics."""
+    return build_system_analytics(
+        config=CONFIG,
+        state=state,
+        db=db,
+        ai_engine=ai_engine,
+        knowledge_base=knowledge_base,
+        risk=risk,
+        revenue_tracker=revenue_tracker,
+        perf_attribution=perf_attribution,
+        adaptive_weights=adaptive_weights,
+        healer=healer,
+        log=log,
+        create_exchange=create_exchange,
+    )
 
 
 @socketio.on("request_system_analytics")
@@ -2968,84 +2338,13 @@ def on_request_system_analytics():
 
 
 def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
-    """
-    Monte-Carlo-Simulation des Portfolio-Werts über n_days Tage.
-    Basiert auf den tatsächlichen PnL-Verteilungen aus closed_trades.
-    """
-    trades = state.closed_trades
-    if len(trades) < 5:
-        return {"error": "Mindestens 5 abgeschlossene Trades erforderlich"}
-
-    pnl_pcts = [
-        t.get("pnl", 0) / max(t.get("invested", 1), 1) for t in trades if t.get("invested", 0) > 0
-    ]
-    if not pnl_pcts:
-        return {"error": "Keine PnL-Daten vorhanden"}
-
-    mu = float(np.mean(pnl_pcts))
-    sigma = float(np.std(pnl_pcts))
-    start_value = state.portfolio_value()
-
-    # Tägliche Anzahl Trades (Durchschnitt)
-    if trades:
-        span_days = max(
-            1,
-            (
-                datetime.now()
-                - datetime.fromisoformat(
-                    str(trades[-1].get("opened", datetime.now().isoformat()))[:19]
-                )
-            ).days,
-        )
-        trades_per_day = max(0.1, len(trades) / span_days)
-    else:
-        trades_per_day = 1.0
-
-    results = []
-    rng = np.random.default_rng(42)
-    for _ in range(n_simulations):
-        val = start_value
-        path = [val]
-        for _day in range(n_days):
-            n_trades_today = max(0, int(rng.poisson(trades_per_day)))
-            for _ in range(n_trades_today):
-                pnl_pct = rng.normal(mu, sigma)
-                invested = val * CONFIG.get("risk_per_trade", 0.015)
-                val = max(0, val + invested * pnl_pct)
-            path.append(round(val, 2))
-        results.append(val)
-
-    results_arr = np.array(results)
-    p5, p25, p50, p75, p95 = np.percentile(results_arr, [5, 25, 50, 75, 95])
-
-    # Value at Risk (95% Konfidenz)
-    var_95 = start_value - float(p5)
-    var_pct = var_95 / start_value * 100 if start_value > 0 else 0
-
-    # Probability of profit
-    prob_profit = float(np.mean(results_arr > start_value) * 100)
-    prob_ruin = float(np.mean(results_arr < start_value * 0.5) * 100)
-
-    return {
-        "n_simulations": n_simulations,
-        "n_days": n_days,
-        "start_value": round(start_value, 2),
-        "mu_per_trade": round(mu * 100, 3),
-        "sigma_per_trade": round(sigma * 100, 3),
-        "trades_per_day": round(trades_per_day, 2),
-        "percentile_5": round(float(p5), 2),
-        "percentile_25": round(float(p25), 2),
-        "percentile_50": round(float(p50), 2),
-        "percentile_75": round(float(p75), 2),
-        "percentile_95": round(float(p95), 2),
-        "var_95_usdt": round(var_95, 2),
-        "var_95_pct": round(var_pct, 2),
-        "prob_profit_pct": round(prob_profit, 1),
-        "prob_ruin_pct": round(prob_ruin, 1),
-        "expected_return": round((float(p50) - start_value) / start_value * 100, 2)
-        if start_value > 0
-        else 0.0,
-    }
+    """Monte-Carlo portfolio simulation. Forwards to services.monte_carlo."""
+    return simulate_monte_carlo(
+        state=state,
+        config=CONFIG,
+        n_simulations=n_simulations,
+        n_days=n_days,
+    )
 
 
 # ════════════════════════════════════════════════════════════════════════════════
@@ -3057,40 +2356,9 @@ def run_monte_carlo(n_simulations: int = 10_000, n_days: int = 30) -> dict:
 telegram = TelegramNotifier(CONFIG, BOT_FULL)
 
 
-def _set_env_var(key: str, value: str):
-    """Setzt/aktualisiert eine Variable in der .env Datei (atomarer Schreibvorgang)."""
-    import re as _re
-    import tempfile
-
-    env_path = ".env"
-    if not os.path.exists(env_path):
-        return
-    # Validate key to prevent regex injection
-    if not _re.match(r"^[A-Z_][A-Z0-9_]*$", key):
-        log.warning(f"_set_env_var: Ungültiger Key '{key}'")
-        return
-    # Newline-Injection verhindern
-    value = value.replace("\n", "").replace("\r", "")
-    with open(env_path) as f:
-        txt = f.read()
-    escaped_key = _re.escape(key)
-    if _re.search(f"^{escaped_key}=", txt, _re.M):
-        txt = _re.sub(f"^{escaped_key}=.*$", f"{key}={value}", txt, flags=_re.M)
-    else:
-        txt += f"\n{key}={value}"
-    # Atomic write: write to temp file, then rename
-    env_dir = os.path.dirname(os.path.abspath(env_path))
-    fd, tmp_path = tempfile.mkstemp(dir=env_dir, prefix=".env.tmp.")
-    try:
-        with os.fdopen(fd, "w") as f:
-            f.write(txt)
-        os.replace(tmp_path, env_path)
-    except Exception:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
-        raise
+def _set_env_var(key: str, value: str) -> None:
+    """Atomic mutation of a single .env entry. Forwards to env_writer.set_env_var."""
+    set_env_var(key, value, log=log)
 
 
 # SymbolCooldown importiert aus services.risk
@@ -3317,59 +2585,21 @@ _AUTO_START = os.getenv("AUTO_START", "true").lower() in ("true", "1", "yes")
 
 
 def _has_any_configured_exchange() -> bool:
-    """Prüft, ob mindestens ein aktivierter Exchange mit API-Keys vorhanden ist.
-
-    Im Paper-Trading-Modus ist keine Exchange-Konfiguration erforderlich –
-    dann immer True. Im Live-Modus: mindestens ein User-Exchange in der DB
-    mit ``enabled=1`` und vorhandenem ``api_key``, oder Legacy-ENV-Keys.
-    """
-    if CONFIG.get("paper_trading", True):
-        return True
-    # Legacy Single-Exchange-ENV (API_KEY/API_SECRET) – zählt als konfiguriert.
-    legacy_key = (os.getenv("API_KEY") or "").strip()
-    legacy_secret = (os.getenv("API_SECRET") or "").strip()
-    if legacy_key and legacy_secret:
-        return True
-    try:
-        with db._get_conn() as conn:
-            with conn.cursor() as c:
-                c.execute(
-                    "SELECT COUNT(*) AS n FROM user_exchanges "
-                    "WHERE enabled=1 AND api_key IS NOT NULL AND api_key!=''"
-                )
-                row = c.fetchone() or {}
-                return int(row.get("n", 0) or 0) > 0
-    except Exception as e:  # noqa: BLE001
-        log.debug(f"_has_any_configured_exchange: {e}")
-        return False
+    """Forwards to auto_start.has_any_configured_exchange with module globals."""
+    return has_any_configured_exchange(config=CONFIG, db=db, log=log)
 
 
 def _maybe_auto_start_bot() -> bool:
-    """Startet den Bot-Loop, wenn AUTO_START aktiv ist, der Bot noch nicht
-    läuft und mindestens eine Exchange konfiguriert ist.
-
-    Gibt True zurück, wenn der Bot in diesem Aufruf gestartet wurde.
-    """
-    if not _AUTO_START:
-        return False
-    if not _has_any_configured_exchange():
-        return False
-    # Start atomar unter state._lock prüfen und setzen, damit parallele
-    # HTTP-Calls nicht zwei Bot-Loops gleichzeitig starten.
-    with state._lock:
-        if getattr(state, "running", False):
-            return False
-        state.running = True
-        state.paused = False
-    threading.Thread(target=bot_loop, daemon=True, name="BotLoop").start()
-    log.info("🚀 Bot auto-gestartet (Exchange konfiguriert)")
-    state.add_activity(
-        "🚀",
-        "Auto-Start",
-        f"v{BOT_VERSION} · {CONFIG.get('exchange', '—').upper()}",
-        "success",
+    """Forwards to auto_start.maybe_auto_start_bot with module globals."""
+    return maybe_auto_start_bot(
+        auto_start_enabled=_AUTO_START,
+        config=CONFIG,
+        state=state,
+        db=db,
+        log=log,
+        bot_loop=bot_loop,
+        bot_version=BOT_VERSION,
     )
-    return True
 
 
 # ── API-Blueprint-Registrierung ────────────────────────────────────────────

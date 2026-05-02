@@ -1092,7 +1092,11 @@
 <div class="mob-nav-drawer" id="mobNavDrawer" aria-label="Navigation"></div>
 
 <!-- [#34] Externes JavaScript für besseres Caching -->
+<!-- Reine Helfer (HTML-Escape, _storage, Format, Toast) – muss vor dashboard.js -->
+<script src="/static/js/dashboard_utils.js"></script>
 <script src="/static/js/dashboard.js"></script>
+<!-- Self-contained Widgets (Theme/Pine/Copy-Trading) – nach dashboard.js, weil sie _jwtToken/QI18n nutzen -->
+<script src="/static/js/dashboard_misc.js"></script>
 
 <div id="undoBar" class="undo-bar">
   <span id="undoMsg">Position geschlossen</span>

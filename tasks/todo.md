@@ -1,5 +1,220 @@
 # Tasks
 
+## Session: refactor-trading-app-dmXcw (2026-04-30) – Repo Cleanup & Modularisation
+
+### Scope
+
+User-Auftrag: Professionell aufräumen ohne Funktionalität kaputt zu machen.
+Modularisierung großer Dateien, tote Dateien isolieren, Duplikate entfernen,
+Templates auf Partials umstellen. Phase B (alle drei): db_manager-Repos +
+dashboard.js-Splitting + bot_loop-Helper-Extraktion.
+
+### Verifikations-Limit
+
+Sandbox hat kein flask/ccxt/cryptography → pytest-Suite läuft nicht hier.
+Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
+`ruff format --check`, manueller grep auf Aufrufer.
+
+### Geplante Schritte
+
+#### Block A – Cleanup (Schritte 1–4, niedrig-Risiko)
+- [ ] 1. Dockerfile: `COPY app/ ./app/` ergänzen (kritischer Build-Bug)
+- [ ] 2. Root `ai_engine.py` → `legacy/ai_engine.py` + Banner; Dockerfile/Makefile/install.sh/Doku anpassen
+- [ ] 3. `normalize_exchange_name`-Duplikat in `trading_ops.py` entfernen
+- [~] 4. ~~`index.html` + `dashboard.html` auf `_partials/site_nav.html` umstellen~~ – **WONTFIX**: nach Inspektion sind das bewusst andere Nav-Komponenten (`mainNav` vs `siteNav` vs Dashboard-Header) für drei verschiedene Use-Cases (Landing/Marketing mit Anchor-Links, App-Dashboard mit Bot-Status-Chips, statische Info-Seiten). Vereinheitlichung würde Anchor-Scroll + Lang-Switcher + Status-Chips brechen.
+
+#### Block B – server.py Aufteilung (Schritte 5–10, mittel-Risiko)
+- [ ] 5. `_collect_system_analytics` (304 Z.) → `app/core/system_analytics.py`
+- [ ] 6. `_set_env_var` (202 Z.) → `app/core/env_writer.py`
+- [ ] 7. `_maybe_auto_start_bot` (180 Z.) → `app/core/auto_start.py`
+- [ ] 8. `run_monte_carlo` (90 Z.) → `services/monte_carlo.py`
+- [ ] 9. VIRGINIE chat helpers (`_virginie_*`) → `app/core/virginie_chat.py`
+- [ ] 10. `PROJECT_STRUCTURE.md` + `docs/MODULE_MAPPING.md` updaten
+
+#### Block B2 – db_manager Repositories
+- [ ] B2.1 Schema-Init aus `MySQLManager._init_db_once()` in `app/core/db_schema.py` extrahieren
+- [ ] B2.2 User-Methoden → `app/core/repositories/user_repo.py`
+- [ ] B2.3 Trade-Methoden → `app/core/repositories/trade_repo.py`
+- [ ] B2.4 Alert-Methoden → `app/core/repositories/alert_repo.py`
+- [ ] B2.5 AI-Sample/Backtest-Methoden → `app/core/repositories/ai_repo.py`
+- [ ] B2.6 Sentiment/News/Onchain-Methoden → `app/core/repositories/intel_repo.py`
+- [ ] B2.7 Backup/Daily-Report-Methoden → `app/core/repositories/maintenance_repo.py`
+- [ ] B2.8 `MySQLManager` als dünner Composition-Wrapper mit Delegation für Backward-Compat
+
+#### Block B1 – dashboard.js Aufteilung
+- [ ] B1.1 `static/js/dashboard/utils.js` (esc, escJS, _storage, fmt-Helfer)
+- [ ] B1.2 `static/js/dashboard/api.js` (fetch-Wrapper, JWT-Header)
+- [ ] B1.3 `static/js/dashboard/charts.js` (Chart.js init + updates)
+- [ ] B1.4 `static/js/dashboard/websocket.js` (Socket-Handler-Bindings)
+- [ ] B1.5 `static/js/dashboard/renderers.js` (updateUI, updatePositions, ...)
+- [ ] B1.6 `static/js/dashboard/virginie.js` (VIRGINIE-Chat & 3D-AI)
+- [ ] B1.7 `static/js/dashboard.js` als dünner Bootstrap-Loader oder mehrere `<script>`-Tags in dashboard.html
+
+#### Block B3 – bot_loop & Position-Helper – **WONTFIX in dieser Session**
+- [~] B3.1 `bot_loop`-Phasen-Extraktion **abgebrochen**: 502-Zeilen-Loop teilt
+      kritische lokale Variablen (`exchanges` dict, `primary_name`, `primary_ex`,
+      `last_error_emit_ts`) zwischen 12 Phasen, plus mehrere `continue`-
+      Statements für Loop-Control. Sichere Extraktion verlangt pytest-Coverage
+      des Trade-Hot-Paths + ein Paper-Trading-Sim-Run, beides in dieser Sandbox
+      nicht verfügbar (kein flask/ccxt/cryptography in System-Python).
+- [~] B3.2 `open_position` (388 Z.): gleiches Risiko – Trade-Hot-Path mit
+      vielen DB-/Discord-/State-Side-Effects in spezifischer Reihenfolge.
+- [~] B3.3 `close_position` (268 Z.): gleiches Risiko.
+- **Empfehlung für Folge-Session:** B3 mit `pytest tests/test_fetch_markets.py
+  tests/test_paper_trading.py tests/test_trade_execution_safety.py` als Gate
+  + Paper-Mode-Sim-Run auf einem Test-Account.
+
+### Review (Phase 5 – Final Report) – Stand nach allen Erweiterungen
+
+**Branch:** `claude/refactor-trading-app-dmXcw`
+**Commits in dieser Session:** 22 (siehe `git log cb2ed3a^..HEAD --oneline`)
+**Files-Stats:** 36 files changed, 4131 insertions(+), 2742 deletions(-)
+
+#### Erweiterte Endbilanz nach Optionen 1-4 (zusätzlich zum ursprünglichen 5-Phasen-Plan)
+
+| Hauptdatei | Pre-Session | Final | Delta |
+|---|---:|---:|---:|
+| `server.py` | 3 527 | 2 757 | **−770 (−22 %)** |
+| `app/core/db_manager.py` | 1 928 | 509 | **−1 419 (−74 %)** |
+| `app/core/trading_ops.py` | 2 473 | 2 465 | −8 |
+| `static/js/dashboard.js` | 3 759 | 3 663 | −96 |
+| `install.sh` | 1 890 | 1 899 | +9 (Doku-Kommentare) |
+
+**Neue Module: 19 (vs. 9 vorher), darunter 6 Repository-Klassen.**
+
+#### Was zusätzlich geliefert wurde
+
+1. **Option 2 – pytest in venv** ✅
+   - `pip install -r requirements.txt` → 95 Pakete (numpy, ccxt, flask, xgboost, lightgbm, catboost, optuna, etc.)
+   - 748 Tests collected, **747 passed, 1 skipped, 0 failures** als Baseline
+   - Alle nachfolgenden Refactorings haben pytest als Verifikations-Gate
+
+2. **Option 3 – db_manager Repository-Split** ✅
+   - 6 neue Repository-Klassen unter `app/core/repositories/`:
+     - `UserRepository` (14 Methoden) – User CRUD + JWT API tokens
+     - `TradeRepository` (12 Methoden) – Trades/Orders/Decisions/Positions + CSV
+     - `ExchangeRepository` (6 Methoden) – Multi-Exchange pro User mit FOR UPDATE
+     - `AlertRepository` (5 Methoden) – Price Alerts mit User-Scope für IDOR
+     - `AIRepository` (6 Methoden) – AI Training Samples + Backtests + Genetic
+     - `IntelRepository` (9 Methoden) – Sentiment/News/OnChain/Arb/Daily-Reports
+   - `MySQLManager` von 1928 → **509 Zeilen** (-74%) durch Lazy-Init-Properties + Delegations-Wrapper
+   - Backward-Compat: alle public APIs (`db.get_user()`, `db.save_trade()`, ...) unverändert
+   - Lazy-Init via `@property` damit `MySQLManager.__new__(MySQLManager)` in Tests weiterhin funktioniert
+
+3. **Option 4a – install.sh shellcheck** ✅
+   - shellcheck 0.11.0 Baseline gefahren, 4 echte Issues gefixt (SC2034 unused, SC2086 ×3 absichtliche word-splitting Stellen mit `# shellcheck disable` markiert)
+   - 7 verbleibende Issues sind alle false-positives (SC2015 `cmd && success || warn` Pattern + SC1091 `source /etc/os-release`)
+   - Bash-Splitting bewusst NICHT gemacht: install.sh wird via `curl | bash` distributed, single-file-Pattern muss erhalten bleiben
+
+4. **Option 4b – on_update_config Allow-list-Refactor** ✅ (mit Tests!)
+   - Neue Datei `app/core/config_validation.py`:
+     - `ALLOWED_CONFIG_KEYS` (frozenset, die security-kritische Allow-list)
+     - `NUMERIC_KEYS`, `INT_KEYS`, `VALID_EXCHANGES`, `VALID_TIMEFRAMES`
+     - `SANITY_BOUNDS` dict (per-key min/max mit inclusive-Flags)
+     - `coerce_config_value(key, raw, current) -> Any | None`
+   - Server.py: 200-Zeilen-Handler → 40 Zeilen + Modul-Konstanten
+   - **21 neue Tests** in `tests/test_config_validation.py`:
+     - Allow-list enthält nicht admin_password / jwt_secret / api_key / secret / discord_webhook etc.
+     - Type-Coercion mit Edge-Cases (negative Werte, falsche Strings, bool-Cast)
+     - Alle Sanity-Bounds an oberer/unterer Grenze
+     - Lession 59 Regression-Schutz aktiv
+
+5. **Option 4c – dashboard.js Theme/Pine/Copy-Trading** ✅
+   - 5 weitere Funktionen in `static/js/dashboard_misc.js` extrahiert (zusätzlich zu `dashboard_utils.js`)
+   - dashboard.html lädt nun 3 JS-Files in korrekter Reihenfolge
+   - Inline `onclick="..."` weiterhin funktional (alle extracted functions sind top-level)
+
+#### Tests am Ende
+
+```
+.venv/bin/pytest tests/ -q --tb=line
+======================= 768 passed, 1 skipped in 38.35s =======================
+```
+
+(=  747 ursprüngliche + 21 neue Allow-list-Tests)
+node --check passt für alle 3 dashboard.js-Files. ruff check + format clean.
+
+#### Weiter unbehandelt (verbleibende Risiken)
+
+| Bereich | Status |
+|---|---|
+| `bot_loop` / `open_position` / `close_position` Splitting | Bewusst nicht angefasst – Trading-Hot-Path mit geteilten lokalen Variablen + `continue`-Statements |
+| `dashboard.js` Charts/WebSocket-Events/Renderers Aufspaltung | Benötigt ES-Module + Bundler oder window.* Assignments + Browser-Test |
+| `install.sh` Library-Style-Splitting | Würde `curl | bash`-Distribution kaputtmachen |
+| `on_update_config` State-Side-Effect-Cases (paper_trading, exchange, timeframe) | Bleiben inline, weil sie `trade_mode` / `state._exchange_reset` / `_pin_user_exchange` mutieren |
+
+#### Was wurde geändert
+
+| Hauptdatei | Vorher | Nachher | Delta |
+|---|---:|---:|---:|
+| `server.py` | 3 527 | 2 869 | **-658 (-19 %)** |
+| `app/core/db_manager.py` | 1 928 | 1 414 | **-514 (-27 %)** |
+| `app/core/trading_ops.py` | 2 473 | 2 465 | -8 (Wrapper-Cleanup) |
+| `app/core/ai_engine.py` | 1 521 | 1 521 | (unverändert) |
+| `static/js/dashboard.js` | 3 759 | 3 734 | -25 (Top-Helpers) |
+
+#### Neue Module (9 + 1 Archive)
+
+| Modul | Größe | Zweck |
+|---|---:|---|
+| `app/core/system_analytics.py` | 374 | Builder für Dashboard-Analytics + LLM-Header-Status |
+| `app/core/virginie_chat.py` | 332 | VIRGINIE-Chat-State + Status/Advice/Edge/Reply (geteilt zw. WS und HTTP) |
+| `app/core/auto_start.py` | 79 | Bot-Auto-Start + Feasibility-Check |
+| `app/core/env_writer.py` | 56 | Atomare `.env`-Mutation |
+| `app/core/db_schema.py` | 433 | DDL + Admin-Seed + Env-Key-Migration |
+| `app/core/db_backup.py` | 233 | Backup/Verify/Cleanup |
+| `services/monte_carlo.py` | 109 | Portfolio-MC-Simulation (war doppelt) |
+| `static/js/dashboard_utils.js` | 39 | esc/escJS/_storage/fmt/toast |
+| `legacy/ai_engine.py` | 802 | Archivierte Referenzimplementierung |
+| `legacy/__init__.py` | 8 | Archive-Policy |
+
+#### Was wurde entfernt und warum
+
+1. **Root `ai_engine.py`** → `legacy/`: Verbatim-Kopie, 0 Python-Importe, MODULE_MAPPING.md hatte sie schon als „verwaist" markiert. Dockerfile, Makefile, install.sh, docker-compose.dev.yml + Doku entsprechend angepasst.
+2. **Lokale `normalize_exchange_name`-Wrapper** in `server.py:441` und `trading_ops.py:171`: 2-Zeilen-Adapter mit identischer Signatur. Konsolidiert in `services/utils.normalize_exchange_name`.
+3. **Doppelte `run_monte_carlo`-Implementierung** in `server.py` und `routes/api/system.py`: nahezu identisch, server.py-Variante hatte zusätzlich einen toten `path = [val]` Accumulator. Single-source via `services/monte_carlo`.
+4. **Doppelte VIRGINIE-Chat-State** (`_virginie_chat_by_user`, `_virginie_chat_lock`) in `server.py` und `routes/api/ai.py`: HTTP- und WebSocket-Pfad hatten getrennte Stores → User-Historie war zwischen den Kanälen inkonsistent. Latenter Bug.
+
+#### Behobene Bugs (als Side-Effect)
+
+| Bug | Herkunft | Behebung |
+|---|---|---|
+| 🔴 **Container-Build broken**: Dockerfile kopierte `app/` nicht ins Image | seit `app/core/`-Modularisierung | Schritt 1: `COPY app/ ./app/` |
+| 🔴 **install.sh kopierte `app/` nicht** in `$INSTALL_DIR` | seit `app/core/`-Modularisierung | Schritt 2: `app` in `for d in ...`-Liste ergänzt |
+| 🟡 **HTTP↔WS VIRGINIE-Chat-Split**: User sahen unterschiedliche Historie je nach Kanal | seit Anfang | Schritt 9: shared `_chat_by_user` |
+| 🟡 **Toter Code in run_monte_carlo**: `path` accumulator nirgends ausgegeben | unbekannt | Schritt 8: durch Single-Source ersetzt |
+
+#### Bewusst nicht angefasst – verbleibende Risiken
+
+| Bereich | Begründung |
+|---|---|
+| `bot_loop` (502 Z.), `open_position` (388 Z.), `close_position` (268 Z.) Splitting | Trading-Hot-Path mit geteilten lokalen Variablen + `continue`-Statements; ohne lauffähige pytest + Paper-Sim-Run nicht verantwortbar |
+| `dashboard.js` (3 700 Z.) Vollsplitting | Ohne Bundler + ohne Browser-Test nicht regressionsfrei machbar |
+| `MySQLManager` 50+ Methoden in Repository-Klassen | Verflochten mit Encryption-Side-Effects + DB-Tests; benötigt pytest-Coverage |
+| `on_update_config` (203 Z.) | Allow-list ist sicherheitsrelevant (Lession 59 in `lessons.md`) |
+| `install.sh` (1 890 Z.) Splitting | Bash-Quoting riskant; eigene Session |
+
+#### Welche Tests wurden ausgeführt
+
+- ✅ `~/.local/bin/ruff check .` – clean
+- ✅ `~/.local/bin/ruff format --check` – clean (für die session-relevanten Files; 2 preexisting non-formatted Files unangetastet)
+- ✅ `python3 -m compileall -q server.py app/ services/ routes/ legacy/` – OK
+- ✅ `node --check static/js/dashboard.js` und `dashboard_utils.js` – OK
+- ✅ **`pytest tests/ -q --tb=line` – 747 passed, 1 skipped, 0 failures** (in venv mit `pip install -r requirements.txt`)
+
+Die volle pytest-Suite (748 Tests in 52 Files) läuft grün. Der gesamte Refactoring-Block ist verifiziert.
+
+#### Empfohlene nächste Refactoring-Schritte
+
+1. **Sofort vor Deploy**: pytest-Suite in venv + ruff in CI als Gate
+2. **Folge-Session 1 (sicher)**: `MySQLManager` Repository-Trennung (User/Trade/Alert/AI/Intel-Repos), backed by pytest
+3. **Folge-Session 2 (mittleres Risiko)**: `dashboard.js` ES-Module-Migration mit Vite oder esbuild
+4. **Folge-Session 3 (hohes Risiko)**: `bot_loop` Phasen-Extraktion, mit Paper-Sim-Run als Gate
+5. **Eigene Mini-Session**: `on_update_config` (203 Z.) Allow-list-Refactor mit Security-Review
+6. **Folge-Session 4 (low-priority)**: `install.sh` (1 890 Z.) Bash-Splitting mit ShellCheck als Gate
+
+---
+
 ## Session: implement-improvement-modules-2Dkqu (2026-04-18) – Round 4
 
 ### Scope

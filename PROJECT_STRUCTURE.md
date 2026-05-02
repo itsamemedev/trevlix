@@ -88,9 +88,21 @@ trevlix/
 ├── docker/                    # Nginx Config, MySQL Init, SSL
 ├── docs/                      # Technische Dokumentation
 ├── tasks/                     # Session Tracking (todo.md, lessons.md)
-├── server.py                  # Entry Point (~4000 Zeilen): App-Setup, Routen, WebSocket, Startup
+├── legacy/                    # Archivierte Module (nicht importiert, kein Lint-Zwang)
+│   └── ai_engine.py           # Verwaiste Referenz, ersetzt durch app/core/ai_engine.py
+├── server.py                  # Entry Point (~2800 Zeilen): App-Setup, Routen, WebSocket, Startup
 └── *.md                       # Betriebs- und Projekt-Dokumentation
 ```
+
+### Aus `server.py` extrahierte Module (Refactor-Session 2026-04-30)
+
+| Modul | Zweck |
+|-------|-------|
+| `app/core/system_analytics.py` | Builder für Dashboard-Analytics + LLM-Header-Status (vorher 360 Z. inline) |
+| `app/core/env_writer.py` | Atomare `.env`-Mutation (vorher 36 Z. inline) |
+| `app/core/auto_start.py` | Bot-Auto-Start + Feasibility-Check (vorher 50 Z. inline) |
+| `app/core/virginie_chat.py` | VIRGINIE-Chat-State + Status/Advice/Edge/Reply-Helfer (vorher 260 Z. inline; löst auch HTTP↔WS-Store-Split) |
+| `services/monte_carlo.py` | Portfolio-Monte-Carlo (war als Duplikat in server.py + routes/api/system.py) |
 
 ## Trennung der Verantwortlichkeiten
 
