@@ -64,9 +64,81 @@ Verifikation pro Schritt: `python3 -m compileall`, `ruff check`,
   tests/test_paper_trading.py tests/test_trade_execution_safety.py` als Gate
   + Paper-Mode-Sim-Run auf einem Test-Account.
 
-### Review (wird am Ende ausgefüllt)
+### Review (Phase 5 – Final Report)
 
-(Bericht in Phase 5)
+**Branch:** `claude/refactor-trading-app-dmXcw`
+**Commits in dieser Session:** 14 (siehe `git log f20b03c..HEAD --oneline`)
+**Files-Stats:** 26 files changed, 2030 insertions(+), 1464 deletions(-)
+
+#### Was wurde geändert
+
+| Hauptdatei | Vorher | Nachher | Delta |
+|---|---:|---:|---:|
+| `server.py` | 3 527 | 2 869 | **-658 (-19 %)** |
+| `app/core/db_manager.py` | 1 928 | 1 414 | **-514 (-27 %)** |
+| `app/core/trading_ops.py` | 2 473 | 2 465 | -8 (Wrapper-Cleanup) |
+| `app/core/ai_engine.py` | 1 521 | 1 521 | (unverändert) |
+| `static/js/dashboard.js` | 3 759 | 3 734 | -25 (Top-Helpers) |
+
+#### Neue Module (9 + 1 Archive)
+
+| Modul | Größe | Zweck |
+|---|---:|---|
+| `app/core/system_analytics.py` | 374 | Builder für Dashboard-Analytics + LLM-Header-Status |
+| `app/core/virginie_chat.py` | 332 | VIRGINIE-Chat-State + Status/Advice/Edge/Reply (geteilt zw. WS und HTTP) |
+| `app/core/auto_start.py` | 79 | Bot-Auto-Start + Feasibility-Check |
+| `app/core/env_writer.py` | 56 | Atomare `.env`-Mutation |
+| `app/core/db_schema.py` | 433 | DDL + Admin-Seed + Env-Key-Migration |
+| `app/core/db_backup.py` | 233 | Backup/Verify/Cleanup |
+| `services/monte_carlo.py` | 109 | Portfolio-MC-Simulation (war doppelt) |
+| `static/js/dashboard_utils.js` | 39 | esc/escJS/_storage/fmt/toast |
+| `legacy/ai_engine.py` | 802 | Archivierte Referenzimplementierung |
+| `legacy/__init__.py` | 8 | Archive-Policy |
+
+#### Was wurde entfernt und warum
+
+1. **Root `ai_engine.py`** → `legacy/`: Verbatim-Kopie, 0 Python-Importe, MODULE_MAPPING.md hatte sie schon als „verwaist" markiert. Dockerfile, Makefile, install.sh, docker-compose.dev.yml + Doku entsprechend angepasst.
+2. **Lokale `normalize_exchange_name`-Wrapper** in `server.py:441` und `trading_ops.py:171`: 2-Zeilen-Adapter mit identischer Signatur. Konsolidiert in `services/utils.normalize_exchange_name`.
+3. **Doppelte `run_monte_carlo`-Implementierung** in `server.py` und `routes/api/system.py`: nahezu identisch, server.py-Variante hatte zusätzlich einen toten `path = [val]` Accumulator. Single-source via `services/monte_carlo`.
+4. **Doppelte VIRGINIE-Chat-State** (`_virginie_chat_by_user`, `_virginie_chat_lock`) in `server.py` und `routes/api/ai.py`: HTTP- und WebSocket-Pfad hatten getrennte Stores → User-Historie war zwischen den Kanälen inkonsistent. Latenter Bug.
+
+#### Behobene Bugs (als Side-Effect)
+
+| Bug | Herkunft | Behebung |
+|---|---|---|
+| 🔴 **Container-Build broken**: Dockerfile kopierte `app/` nicht ins Image | seit `app/core/`-Modularisierung | Schritt 1: `COPY app/ ./app/` |
+| 🔴 **install.sh kopierte `app/` nicht** in `$INSTALL_DIR` | seit `app/core/`-Modularisierung | Schritt 2: `app` in `for d in ...`-Liste ergänzt |
+| 🟡 **HTTP↔WS VIRGINIE-Chat-Split**: User sahen unterschiedliche Historie je nach Kanal | seit Anfang | Schritt 9: shared `_chat_by_user` |
+| 🟡 **Toter Code in run_monte_carlo**: `path` accumulator nirgends ausgegeben | unbekannt | Schritt 8: durch Single-Source ersetzt |
+
+#### Bewusst nicht angefasst – verbleibende Risiken
+
+| Bereich | Begründung |
+|---|---|
+| `bot_loop` (502 Z.), `open_position` (388 Z.), `close_position` (268 Z.) Splitting | Trading-Hot-Path mit geteilten lokalen Variablen + `continue`-Statements; ohne lauffähige pytest + Paper-Sim-Run nicht verantwortbar |
+| `dashboard.js` (3 700 Z.) Vollsplitting | Ohne Bundler + ohne Browser-Test nicht regressionsfrei machbar |
+| `MySQLManager` 50+ Methoden in Repository-Klassen | Verflochten mit Encryption-Side-Effects + DB-Tests; benötigt pytest-Coverage |
+| `on_update_config` (203 Z.) | Allow-list ist sicherheitsrelevant (Lession 59 in `lessons.md`) |
+| `install.sh` (1 890 Z.) Splitting | Bash-Quoting riskant; eigene Session |
+
+#### Welche Tests wurden ausgeführt
+
+- ✅ `~/.local/bin/ruff check .` – clean
+- ✅ `~/.local/bin/ruff format --check` – clean (für die session-relevanten Files; 2 preexisting non-formatted Files unangetastet)
+- ✅ `python3 -m compileall -q server.py app/ services/ routes/ legacy/` – OK
+- ✅ `node --check static/js/dashboard.js` und `dashboard_utils.js` – OK
+- ❌ `pytest tests/ --collect-only` – `ImportError: numpy` (Sandbox hat keine pytest-Deps; Test-Suite konnte nicht geladen werden). Nicht behoben in Sandbox.
+
+**Wichtig:** Die volle pytest-Suite (749 Tests in 52 Files) konnte in dieser Sandbox **nicht** ausgeführt werden, weil System-Python kein flask/ccxt/cryptography/numpy hat. Die Verifikation beruht damit ausschließlich auf Syntax-Checks + ruff + manuellem Code-Review. Die Refactorings sind bewusst **nur Delegationen** – jede neue Funktion behält die Original-Semantik und der Original-Aufrufer wird via Wrapper umgeleitet. Trotzdem: vor Deploy unbedingt `pytest tests/ -q --tb=short` in einer venv mit `pip install -r requirements.txt` laufen lassen.
+
+#### Empfohlene nächste Refactoring-Schritte
+
+1. **Sofort vor Deploy**: pytest-Suite in venv + ruff in CI als Gate
+2. **Folge-Session 1 (sicher)**: `MySQLManager` Repository-Trennung (User/Trade/Alert/AI/Intel-Repos), backed by pytest
+3. **Folge-Session 2 (mittleres Risiko)**: `dashboard.js` ES-Module-Migration mit Vite oder esbuild
+4. **Folge-Session 3 (hohes Risiko)**: `bot_loop` Phasen-Extraktion, mit Paper-Sim-Run als Gate
+5. **Eigene Mini-Session**: `on_update_config` (203 Z.) Allow-list-Refactor mit Security-Review
+6. **Folge-Session 4 (low-priority)**: `install.sh` (1 890 Z.) Bash-Splitting mit ShellCheck als Gate
 
 ---
 
