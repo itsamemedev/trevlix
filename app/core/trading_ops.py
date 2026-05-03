@@ -1791,7 +1791,7 @@ def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
         emit_event(
             "status",
             {
-                "msg": f"⚠️ Balance-Sync fehlgeschlagen: {str(exc)[:100]}",
+                "msg": "⚠️ Balance-Sync fehlgeschlagen",
                 "key": "balance_sync_failed",
                 "type": "warning",
             },
@@ -1968,7 +1968,7 @@ def bot_loop():
                             emit_event(
                                 "status",
                                 {
-                                    "msg": f"⚠️ Exchange-Verbindung fehlgeschlagen: {str(exc_err)[:140]}",
+                                    "msg": "⚠️ Exchange-Verbindung fehlgeschlagen",
                                     "key": "ws_exchange_connect_failed",
                                     "type": "warning",
                                 },
@@ -1976,7 +1976,7 @@ def bot_loop():
                             state.add_activity(
                                 "⚠️",
                                 "Exchange-Verbindung fehlgeschlagen",
-                                str(exc_err)[:120],
+                                "connection_failed",
                                 "warning",
                             )
                             last_error_emit_ts = now_ts
@@ -2342,24 +2342,24 @@ def bot_loop():
             exchanges.pop(primary_name, None)
             _heartbeat_sleep(15)
         except ccxt.ExchangeError as e:
-            log.error(f"Exchange-Fehler: {e}")
+            log.error("Exchange-Fehler: %s", e)
             discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
             emit_event(
                 "status",
                 {
-                    "msg": f"❌ Exchange-Fehler: {str(e)[:140]}",
+                    "msg": "❌ Exchange-Fehler",
                     "key": "ws_exchange_error",
                     "type": "error",
                 },
             )
             _heartbeat_sleep(30)
         except Exception as e:
-            log.error(f"Bot-Loop: {e}", exc_info=True)
+            log.error("Bot-Loop: %s", e, exc_info=True)
             discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
             emit_event(
                 "status",
                 {
-                    "msg": f"❌ Bot-Loop Fehler: {str(e)[:140]}",
+                    "msg": "❌ Bot-Loop Fehler",
                     "key": "ws_bot_loop_error",
                     "type": "error",
                 },
@@ -2396,7 +2396,8 @@ def fetch_aggregated_balance() -> dict:
         if primary_inst is not None:
             exchanges_to_check[primary_ex_id] = primary_inst
     except Exception as exc:
-        result["errors"].append(f"{primary_ex_id}: {exc}")
+        log.warning("balance/all – primary exchange connect failed: %s", exc)
+        result["errors"].append(primary_ex_id)
 
     # Alle aktivierten User-Exchanges via DB (korrekt entschlüsselt)
     admin_rows = _get_all_admin_exchanges() or []
@@ -2409,7 +2410,8 @@ def fetch_aggregated_balance() -> dict:
             if inst is not None:
                 exchanges_to_check[ex_id] = inst
         except Exception as exc:
-            result["errors"].append(f"{ex_id}: {exc}")
+            log.warning("balance/all – exchange %s connect failed: %s", ex_id, exc)
+            result["errors"].append(ex_id)
 
     for ex_id, ex in exchanges_to_check.items():
         try:

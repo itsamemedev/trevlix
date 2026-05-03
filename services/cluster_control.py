@@ -392,8 +392,9 @@ class ClusterController:
                 with self._lock:
                     node.metrics = data
             except (requests.RequestException, ValueError) as exc:
+                log.debug("cluster snapshot node %s unreachable: %s", entry.get("name"), exc)
                 entry["status"] = NodeStatus.OFFLINE.value
-                entry["error"] = str(exc)
+                entry["error"] = "unreachable"
 
             per_node.append(entry)
 
