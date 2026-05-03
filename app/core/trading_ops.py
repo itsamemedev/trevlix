@@ -2343,7 +2343,7 @@ def bot_loop():
             _heartbeat_sleep(15)
         except ccxt.ExchangeError as e:
             log.error("Exchange-Fehler: %s", e)
-            discord.error(f"Exchange-Fehler:\n{str(e)[:200]}")
+            discord.error(f"Exchange-Fehler: {type(e).__name__}")
             emit_event(
                 "status",
                 {
@@ -2439,7 +2439,8 @@ def fetch_aggregated_balance() -> dict:
                     continue
             result["total_usdt"] += ex_usdt
         except Exception as e:
-            result["errors"].append(f"{ex_id}: {e}")
+            log.warning("fetch_aggregated_balance [%s]: %s", ex_id, e)
+            result["errors"].append(ex_id)
 
     return result
 
