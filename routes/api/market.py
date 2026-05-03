@@ -606,7 +606,8 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                         deps.config.get("min_vote_score", 0.3),
                     )
                 except Exception as exc:
-                    results[sym] = {"error": str(exc)}
+                    log.warning("backtest_compare failed for %s: %s", sym, exc)
+                    results[sym] = {"error": "backtest_failed"}
             return jsonify(results)
         except Exception as e:
             log.error("API error: %s", e)

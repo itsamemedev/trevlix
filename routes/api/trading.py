@@ -97,6 +97,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     log = deps.log
     auth = deps.api_auth_required
     admin = deps.admin_required
+    limiter = deps.limiter
     body = deps.get_json_body
     si = deps.safe_int
     sf = deps.safe_float
@@ -172,6 +173,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/token", methods=["POST"])
     @auth
+    @limiter.limit("10 per minute")
     def api_create_token():
         label = str(body().get("label", "api")).strip()[:100]
         token = db.create_api_token(request.user_id, label)
@@ -392,6 +394,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/buy", methods=["POST"])
     @auth
+    @limiter.limit("30 per minute")
     def api_trading_manual_buy():
         """Manueller Kauf eines beliebigen Symbols (Altcoin oder Stablecoin)."""
         data = body()
@@ -441,6 +444,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/sell", methods=["POST"])
     @auth
+    @limiter.limit("30 per minute")
     def api_trading_manual_sell():
         """Manueller Verkauf einer offenen Position (Altcoin oder Stablecoin)."""
         data = body()
