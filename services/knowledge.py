@@ -716,7 +716,7 @@ class KnowledgeBase:
                 self._idle_learning["responses_used"] = len(usable)
         except Exception as e:
             with self._lock:
-                self._idle_learning["last_error"] = str(e)[:180]
+                self._idle_learning["last_error"] = "idle_learning_failed"
             log.debug("Idle-Learning-Zyklus: %s", e)
 
     def _query_llm_cached(self, cache_key: str, prompt: str, context: str = "") -> str | None:

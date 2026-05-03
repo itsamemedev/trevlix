@@ -1214,14 +1214,14 @@ def on_start_bot():
             state.add_activity(
                 "⚠️",
                 "Bot-Start im Degraded-Modus",
-                str(preflight_err)[:120],
+                "exchange_connect_failed",
                 "warning",
             )
         else:
             emit(
                 "status",
                 {
-                    "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                    "msg": "❌ Start fehlgeschlagen: Exchange nicht erreichbar",
                     "key": "ws_bot_start_failed_exchange",
                     "type": "error",
                 },
