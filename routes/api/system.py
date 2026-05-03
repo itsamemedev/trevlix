@@ -60,11 +60,21 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
         # K8s-style readiness probe: runs the registered dependency checks
         # and returns 503 on aggregate UNHEALTHY so upstream load balancers
         # stop sending traffic.
+        # detail fields are stripped to avoid leaking internal infra info to
+        # unauthenticated callers (DB hostnames, connection errors, etc.)
         from services.health_check import get_registry
 
         report = get_registry().check()
+        safe_report = {
+            "status": report.get("status"),
+            "timestamp": report.get("timestamp"),
+            "checks": [
+                {"name": c["name"], "status": c["status"], "latency_ms": c["latency_ms"]}
+                for c in report.get("checks", [])
+            ],
+        }
         status = 503 if report.get("status") == "unhealthy" else 200
-        return jsonify(report), status
+        return jsonify(safe_report), status
 
     @bp.route("/api/v1/health/snapshot")
     @auth

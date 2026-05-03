@@ -19,7 +19,6 @@ Umgebungsvariable:
         python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 """
 
-import base64
 import logging
 import os
 import threading
@@ -61,15 +60,11 @@ def _get_fernet() -> "Fernet | None":
         # Fernet erwartet URL-safe base64, 32 Bytes → 44 Zeichen
         return Fernet(key_str.encode())
     except Exception as e:
-        # Falls der Key kein gültiger Fernet-Key ist, versuche ihn zu hashen
-        log.warning(
-            f"ENCRYPTION_KEY ist kein gültiger Fernet-Key ({e}), "
-            "verwende SHA-256-Ableitung. Empfohlen: Generiere einen echten Fernet-Key."
-        )
-        import hashlib
-
-        derived = base64.urlsafe_b64encode(hashlib.sha256(key_str.encode()).digest())
-        return Fernet(derived)
+        raise ValueError(
+            "ENCRYPTION_KEY ist kein gültiger Fernet-Key. "
+            "Generiere einen echten Key mit: "
+            'python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        ) from e
 
 
 def encrypt_value(plaintext: str) -> str:

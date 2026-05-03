@@ -6,7 +6,7 @@ import secrets
 
 _CSP = (
     "default-src 'self'; "
-    "script-src 'self' 'unsafe-inline' 'unsafe-eval' "
+    "script-src 'self' 'unsafe-inline' "
     "cdnjs.cloudflare.com unpkg.com; "
     "style-src 'self' 'unsafe-inline' fonts.googleapis.com; "
     "font-src 'self' fonts.gstatic.com; "

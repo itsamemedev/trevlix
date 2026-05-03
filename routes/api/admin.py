@@ -32,6 +32,7 @@ _PROTECTED_KEYS = frozenset(
         "telegram_token",
         "telegram_chat_id",
         "encryption_key",
+        "backup_dir",
     }
 )
 

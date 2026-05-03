@@ -1544,7 +1544,7 @@ def on_reset_ai():
 @socketio.on("close_position")
 def on_close_position(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("close_position", min_interval=2.0):
         emit(
@@ -1576,7 +1576,8 @@ def on_close_position(data: dict | None = None):
                 broadcast=True,
             )
         except Exception as e:
-            emit("status", {"msg": f"❌ {e}", "type": "error"})
+            log.warning("on_close_position failed for %s: %s", sym, e)
+            emit("status", {"msg": "❌ Position konnte nicht geschlossen werden", "type": "error"})
     elif in_short:
         if short_engine is None:
             emit("status", {"msg": "❌ Short-Engine nicht verfügbar", "type": "error"})
@@ -1627,7 +1628,8 @@ def on_run_backtest(data: dict | None = None):
             )
             emit_event("backtest_result", result)
         except Exception as e:
-            emit_event("backtest_result", {"error": str(e)})
+            log.warning("ws_backtest failed: %s", e)
+            emit_event("backtest_result", {"error": "backtest_failed"})
 
     emit(
         "status",
