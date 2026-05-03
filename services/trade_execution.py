@@ -128,7 +128,7 @@ class TradeExecutionService:
                 return ExecutionResult(False, mode, "Live-Guthaben zu niedrig")
         except Exception as e:
             log.warning("Live-Balance-Prüfung fehlgeschlagen: %s – blockiere Order", e)
-            return ExecutionResult(False, mode, f"Balance-Check fehlgeschlagen: {e}")
+            return ExecutionResult(False, mode, "balance_check_failed")
         # Mark the cooldown BEFORE sending the order: if the exchange call raises
         # (e.g. network timeout) we do not know whether it was accepted, and we
         # must not retry immediately — the symbol cooldown prevents a duplicate.
@@ -142,7 +142,7 @@ class TradeExecutionService:
                 qty,
                 exc,
             )
-            return ExecutionResult(False, mode, f"live_buy_failed:{exc}")
+            return ExecutionResult(False, mode, "live_buy_failed")
         actual_qty = self._safe_float((order or {}).get("filled"), qty)
         actual_price = self._safe_float((order or {}).get("average"), price)
         if price > 0 and actual_price > 0:

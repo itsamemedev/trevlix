@@ -447,7 +447,7 @@ class MCPToolRegistry:
             return result
         except Exception as e:
             log.debug("MCP Tool %s Fehler: %s", tool_name, e)
-            return {"error": str(e)}
+            return {"error": "tool_execution_failed"}
 
     def process_tool_calls(
         self,
@@ -697,7 +697,8 @@ class MCPToolRegistry:
                 )
             return {"trades": simplified, "count": len(simplified)}
         except Exception as e:
-            return {"error": f"Trade-Abfrage fehlgeschlagen: {e}"}
+            log.debug("_tool_trade_history Fehler: %s", e)
+            return {"error": "trade_query_failed"}
 
     def _tool_strategy_performance(self, args: dict[str, Any]) -> dict[str, Any]:
         """Strategie-Performance aus dem Gemeinschaftswissen."""
@@ -744,7 +745,7 @@ class MCPToolRegistry:
             }
         except Exception as exc:
             log.debug("list_agents Fehler: %s", exc)
-            return {"error": f"list_agents fehlgeschlagen: {exc}"}
+            return {"error": "list_agents_failed"}
 
     def _tool_execute_agent_task(self, args: dict[str, Any]) -> dict[str, Any]:
         """LLM delegiert eine Aufgabe an einen VIRGINIE-Agenten."""
@@ -766,7 +767,8 @@ class MCPToolRegistry:
         try:
             from services.virginie import AgentTask  # lazy import, vermeidet Zyklus
         except Exception as exc:
-            return {"error": f"AgentTask-Import fehlgeschlagen: {exc}"}
+            log.debug("AgentTask-Import fehlgeschlagen: %s", exc)
+            return {"error": "agent_unavailable"}
         task = AgentTask(
             task_id=f"llm-{uuid.uuid4().hex[:10]}",
             domain=domain,
@@ -777,7 +779,7 @@ class MCPToolRegistry:
             result = orch.execute(task)
         except Exception as exc:
             log.debug("execute_agent_task Fehler: %s", exc)
-            return {"error": f"Agent-Ausführung fehlgeschlagen: {exc}"}
+            return {"error": "agent_execution_failed"}
         return {
             "task_id": task.task_id,
             "agent": result.agent_name,
@@ -802,7 +804,7 @@ class MCPToolRegistry:
             }
         except Exception as exc:
             log.debug("healing_status Fehler: %s", exc)
-            return {"error": f"healing_status fehlgeschlagen: {exc}"}
+            return {"error": "healing_status_failed"}
 
     def _tool_alert_status(self, _args: dict[str, Any]) -> dict[str, Any]:
         """Alert-Escalation Snapshot."""
@@ -819,7 +821,7 @@ class MCPToolRegistry:
             }
         except Exception as exc:
             log.debug("alert_status Fehler: %s", exc)
-            return {"error": f"alert_status fehlgeschlagen: {exc}"}
+            return {"error": "alert_status_failed"}
 
     def _tool_cluster_status(self, _args: dict[str, Any]) -> dict[str, Any]:
         """Cluster-Controller Snapshot."""
@@ -834,4 +836,4 @@ class MCPToolRegistry:
             }
         except Exception as exc:
             log.debug("cluster_status Fehler: %s", exc)
-            return {"error": f"cluster_status fehlgeschlagen: {exc}"}
+            return {"error": "cluster_status_failed"}

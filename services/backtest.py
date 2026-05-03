@@ -173,4 +173,4 @@ class BacktestEngine:
             return result
         except Exception as e:
             log.exception("Backtest failed for %s", symbol)
-            return {"error": str(e), "symbol": symbol}
+            return {"error": "backtest_failed", "symbol": symbol}

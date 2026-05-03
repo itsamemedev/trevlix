@@ -2296,7 +2296,11 @@ def on_close_exchange_position(data: dict | None = None):
         log.error("close_exchange_position fehlgeschlagen: %s %s: %s", symbol, ex_name, e)
         emit(
             "status",
-            {"msg": f"❌ Fehler beim Schließen: {e}", "key": "ws_close_error", "type": "error"},
+            {
+                "msg": "❌ Position konnte nicht geschlossen werden",
+                "key": "ws_close_error",
+                "type": "error",
+            },
         )
 
 
