@@ -406,6 +406,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "invalid_symbol"}), 400
         if invest <= 0:
             return jsonify({"error": "invest_usdt must be > 0"}), 400
+        if invest > 10_000_000:
+            return jsonify({"error": "invest_usdt exceeds maximum"}), 400
         try:
             ex = deps.create_exchange()
             ticker = ex.fetch_ticker(sym)
@@ -911,6 +913,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "invalid_symbol"}), 400
         if levels > MAX_GRID_LEVELS:
             return jsonify({"error": f"levels must be <= {MAX_GRID_LEVELS}"}), 400
+        if invest > 10_000_000:
+            return jsonify({"error": "invest_usdt exceeds maximum"}), 400
         if invest > 0 and invest / levels < _MIN_CELL_USDT:
             return jsonify(
                 {"error": f"invest / levels must be >= {_MIN_CELL_USDT} USDT per cell"}

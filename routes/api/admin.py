@@ -33,8 +33,27 @@ _PROTECTED_KEYS = frozenset(
         "telegram_chat_id",
         "encryption_key",
         "backup_dir",
+        "paper_trading",
     }
 )
+
+# Max values for critical numeric config keys to prevent mis-configuration.
+_CONFIG_FLOAT_MAX: dict[str, float] = {
+    "risk_per_trade": 0.25,
+    "max_position_pct": 1.0,
+    "stop_loss_pct": 0.5,
+    "take_profit_pct": 1.0,
+    "max_daily_loss_pct": 0.5,
+    "max_drawdown_pct": 1.0,
+    "smart_exit_max_sl_pct": 0.5,
+    "smart_exit_max_tp_pct": 1.0,
+}
+_CONFIG_INT_MAX: dict[str, int] = {
+    "circuit_breaker_losses": 100,
+    "circuit_breaker_min": 10_080,  # 7 days
+    "max_open_positions": 50,
+    "jwt_expiry_hours": 8_760,  # 1 year
+}
 
 
 def create_admin_blueprint(deps: AppDeps) -> Blueprint:
@@ -124,8 +143,10 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
                     v = bool(v)
                 elif isinstance(original, int):
                     v = si(v, original)
+                    v = max(0, min(v, _CONFIG_INT_MAX.get(k, 100_000)))
                 elif isinstance(original, float):
                     v = sf(v, original)
+                    v = max(0.0, min(v, _CONFIG_FLOAT_MAX.get(k, 1_000_000.0)))
                 cfg[k] = v
                 updated.append(k)
         _db_audit(

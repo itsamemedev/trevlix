@@ -1435,11 +1435,11 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
             {"msg": done_msg, "key": done_key, "type": "success"},
         )
     except Exception as e:
-        log.warning(f"{name} failed: {e}")
+        log.warning("%s failed: %s", name, e)
         emit_event(
             "status",
             {
-                "msg": f"❌ {name} fehlgeschlagen: {e}",
+                "msg": f"❌ {name} fehlgeschlagen",
                 "key": f"{done_key}_failed",
                 "type": "error",
             },
@@ -2014,7 +2014,7 @@ def on_rollback_update():
 @socketio.on("start_exchange")
 def on_start_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2041,7 +2041,7 @@ def on_start_exchange(data: dict | None = None):
 @socketio.on("stop_exchange")
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2090,7 +2090,7 @@ def _validate_key_field(value: str, max_len: int, *, allow_empty: bool = False) 
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     # Rate-Limit: Brute-Force-Stuffing von Key-Material verhindern
     # (z.B. wenn ein Angreifer hunderte Keys pro Minute durchprobiert).
