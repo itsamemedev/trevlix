@@ -7,6 +7,59 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.8.0] – 2026-05-03
+
+### Security — Comprehensive Hardening (12-Pass Audit)
+
+#### Information Leakage Elimination
+- **Exception strings no longer returned to clients** — all `str(e)`, `f"...{exc}"`, and `f"...{e}"` patterns in HTTP responses, WebSocket emits, Discord webhooks, and state dicts replaced with generic error codes (`"backtest_failed"`, `"balance_check_failed"`, `"provider_error"`, etc.); exception details logged server-side only
+- **Virginie agent summary sanitized** — `f"Agent execution failed: {exc}"` → `"agent_execution_failed"`; `stats["last_error"]` no longer stores exception text; `last_summary` field removed from HTTP-exposed `status()` dict
+- **Discord webhooks** — all `traceback.format_exc()` and `str(e)` content replaced with `type(e).__name__` only
+- **LLM provider errors** — `_record_error` receives `type(exc).__name__` instead of full exception string
+- **Cluster control** — `entry["error"] = str(exc)` → `"unreachable"` with debug log
+- **Backtest engine** — `{"error": str(e)}` → `{"error": "backtest_failed"}`
+- **Trade execution** — `ExecutionResult` reason fields use generic codes (`"live_buy_failed"`, `"live_sell_failed"`, `"balance_check_failed"`)
+- **MCP tools** — 8 exception-string constructions replaced with generic codes
+- **Knowledge service** — `idle_learning["last_error"] = str(e)[:180]` → `"idle_learning_failed"`
+- **Risk service** — `f"LQ:{e}"` → `"LQ:err"` with guarded debug log
+- **AI engine** — `f"Err:{e}"` in `should_buy()` → `"should_buy_error"`
+- **Trading classes** — MTF and OB exception strings replaced with generic codes; `log` guarded with `if log:` check
+- **Exchange runtime** — `last_err = str(exc)` → `"exchange_connect_failed"`
+- **Backup verification** — `result["error"] = str(e)` → `"verification_failed"`
+- **404 response** — `"path": request.path` removed from JSON error body
+- **Task queue** — `handle.error = f"{type(exc).__name__}: {exc}"` → `type(exc).__name__` only
+
+#### Authentication & Authorization
+- **WebSocket privilege escalation fixed** — `start_exchange`, `stop_exchange`, `save_exchange_keys` promoted from `_ws_auth_required()` to `_ws_admin_required()`; only admin-role sessions can mutate exchange config
+- **JWT empty-secret guard** — `verify_api_token` returns `None` immediately when `jwt_secret` is empty string, preventing token forgery with blank secret
+- **Admin password fallback hardened** — SHA-256 plaintext-derive fallback replaced with `pbkdf2_hash()` in two locations (`db_manager.py`)
+
+#### Encryption
+- **Fernet key validation** — Silent SHA-256 derivation fallback replaced with `raise ValueError(...)` containing actionable message; `import base64` (unused after change) removed
+
+#### Input Validation
+- **Symbol regex enforced** — `r"^[A-Z0-9]{1,15}/[A-Z0-9]{1,15}$"` validated in WebSocket backtest handler before use
+- **Backtest candles capped** — `min(safe_int(...), 2000)` prevents DoS via excessive candle requests
+- **IP whitelist CIDR validation** — `ipaddress.ip_network(entry, strict=False)` rejects malformed IP/CIDR entries
+- **Reserved usernames blocked** — `_RESERVED_USERNAMES` frozenset (`admin`, `root`, `system`, `superuser`, `administrator`, `sysadmin`, `trevlix`) checked in both admin create and public registration
+- **Manual buy/grid invest cap** — `invest_usdt > 10_000_000` rejected at API boundary
+
+#### Rate Limiting
+- **Trading endpoints** — `@limiter.limit("30 per minute")` on buy, sell, and VIRGINIE chat
+- **Token creation** — `@limiter.limit("10 per minute")` on API token create endpoint
+
+#### Protected Configuration
+- **`_PROTECTED_KEYS` expanded** — `backup_dir` and `paper_trading` added; cannot be changed via API
+- **Numeric config bounds** — `_CONFIG_FLOAT_MAX` and `_CONFIG_INT_MAX` dicts clamp admin config values to safe ranges
+
+#### Content Security Policy
+- **`unsafe-eval` removed** from `script-src` directive in `app/core/security.py`
+
+#### Sensitive Data Filtering
+- **`_SETTINGS_SENSITIVE` frozenset** — API keys, secrets, passwords, and webhook URLs filtered from user-settings GET response
+
+---
+
 ## [1.7.0] – 2026-04-07
 
 ### Changed — Major Modularization of server.py

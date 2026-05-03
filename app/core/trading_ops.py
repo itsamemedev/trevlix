@@ -14,7 +14,6 @@ import math
 import os
 import threading
 import time
-import traceback
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
@@ -2355,7 +2354,7 @@ def bot_loop():
             _heartbeat_sleep(30)
         except Exception as e:
             log.error("Bot-Loop: %s", e, exc_info=True)
-            discord.error(f"Loop:\n{traceback.format_exc()[:300]}")
+            discord.error(f"Bot-Loop Fehler: {type(e).__name__}")
             emit_event(
                 "status",
                 {

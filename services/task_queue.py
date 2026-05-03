@@ -171,7 +171,7 @@ class TaskQueue:
             handle.state = "done"
         except Exception as exc:  # noqa: BLE001 - surfaced via handle
             handle.state = "failed"
-            handle.error = f"{type(exc).__name__}: {exc}"
+            handle.error = type(exc).__name__
             log.exception("task %s failed", handle.name)
         finally:
             handle._done.set()

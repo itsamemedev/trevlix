@@ -437,7 +437,7 @@ def test_virginie_orchestrator_catches_agent_handler_exceptions():
 
     assert result.success is False
     assert result.agent_name == "unstable-agent"
-    assert "Agent execution failed" in result.summary
+    assert result.summary == "agent_execution_failed"
     status = orchestrator.status()
     assert status["agent_health"]["unstable-agent"]["failure"] == 1
     assert status["agent_health"]["unstable-agent"]["failure_rate"] == 1.0
