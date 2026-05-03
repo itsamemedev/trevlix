@@ -312,6 +312,12 @@ def create_auth_blueprint(
             return redirect("/register?err=short")
         if not hmac.compare_digest(password, password2):
             return redirect("/register?err=match")
+        _RESERVED = frozenset(
+            {"admin", "root", "system", "superuser", "administrator", "sysadmin", "trevlix"}
+        )
+        if username.lower() in _RESERVED:
+            return redirect("/register?err=uname")
+
         if db.get_user(username):
             return redirect("/register?err=exists")
 

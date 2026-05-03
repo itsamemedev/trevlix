@@ -9,6 +9,8 @@ Führe aus mit:  pytest tests/test_risk.py -v
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
@@ -105,68 +107,79 @@ class TestRiskManager:
         assert rm.sharpe([0.01]) == 0.0
 
 
-class TestKellyCriterion:
-    """Tests für Kelly-Kriterium Positionsgrößenberechnung."""
+class TestDrawdownBreaker:
+    """Tests für Drawdown Circuit Breaker und Peak-Tracking."""
 
-    def test_kelly_positive_edge(self):
-        """Kelly berechnet positive Position bei positivem Vorteil."""
-        win_rate = 0.60
-        avg_win = 0.06
-        avg_loss = 0.025
-        kelly = win_rate - (1 - win_rate) / (avg_win / avg_loss)
-        assert kelly > 0, "Kelly sollte bei 60% Win-Rate positiv sein"
+    def _make_risk(self, max_dd_pct=0.10):
+        from services.risk import RiskManager
 
-    def test_kelly_capped_at_max(self):
-        """Kelly wird auf maximale Position begrenzt."""
-        max_position = 0.20
-        kelly_raw = 1.5
-        kelly_capped = min(kelly_raw, max_position)
-        assert kelly_capped == max_position
+        return RiskManager(
+            {
+                "paper_balance": 10000.0,
+                "circuit_breaker_losses": 5,
+                "circuit_breaker_min": 30,
+                "max_drawdown_pct": max_dd_pct,
+            }
+        )
 
-    def test_kelly_near_zero_at_breakeven(self):
-        """Kelly ist ~0 bei Break-Even (50% Win-Rate, Win=Loss)."""
-        win_rate = 0.50
-        avg_win = 0.025
-        avg_loss = 0.025
-        kelly = win_rate - (1 - win_rate) / (avg_win / avg_loss)
-        assert abs(kelly) < 0.01, f"Kelly bei Break-Even sollte ~0 sein, ist {kelly}"
+    def test_update_peak_tracks_high(self):
+        """update_peak setzt das Peak auf den Höchstwert."""
+        rm = self._make_risk()
+        rm.update_peak(12000.0)
+        assert rm.peak == 12000.0
+        rm.update_peak(11000.0)
+        assert rm.peak == 12000.0  # Peak darf nicht fallen
+
+    def test_update_peak_records_drawdown(self):
+        """update_peak berechnet max_drawdown korrekt."""
+        rm = self._make_risk()
+        rm.update_peak(10000.0)
+        rm.update_peak(9000.0)
+        assert rm.max_drawdown == pytest.approx(10.0, abs=0.01)
+
+    def test_drawdown_breaker_inactive_below_limit(self):
+        """Drawdown-Breaker löst bei kleinem Drawdown nicht aus."""
+        rm = self._make_risk(max_dd_pct=0.10)
+        rm.update_peak(10000.0)
+        assert rm.drawdown_breaker_active(9500.0) is False
+
+    def test_drawdown_breaker_triggers_above_limit(self):
+        """Drawdown-Breaker löst bei >10% Drawdown aus."""
+        rm = self._make_risk(max_dd_pct=0.10)
+        rm.update_peak(10000.0)
+        assert rm.drawdown_breaker_active(8000.0) is True
 
 
-class TestPositionSizing:
-    """Tests für Positionsgrößen-Berechnung."""
+class TestCorrelationFilter:
+    """Tests für den Korrelationsfilter in is_correlated."""
 
-    def test_position_doesnt_exceed_balance(self):
-        """Position darf nicht mehr als Gesamtbalance betragen."""
-        balance = 10000.0
-        risk_per_trade = 0.015
-        max_position_pct = 0.20
-        invest = min(balance * risk_per_trade, balance * max_position_pct)
-        assert invest <= balance
+    def _make_risk(self):
+        from services.risk import RiskManager
 
-    def test_position_positive(self):
-        """Position ist immer positiv."""
-        balance = 5000.0
-        risk_per_trade = 0.015
-        invest = balance * risk_per_trade
-        assert invest > 0
+        return RiskManager({"paper_balance": 10000.0, "max_corr": 0.75})
 
-    def test_dca_size_multiplier_grows(self):
-        """DCA vergrößert Position jedes Level."""
-        base_invest = 100.0
-        dca_mult = 1.5
-        levels = [base_invest * (dca_mult**i) for i in range(4)]
-        for i in range(len(levels) - 1):
-            assert levels[i + 1] > levels[i], "DCA-Größe muss wachsen"
+    def test_no_positions_not_correlated(self):
+        """Kein offenes Symbol → kein Korrelations-Block."""
+        rm = self._make_risk()
+        assert rm.is_correlated("BTC/USDT", []) is False
 
-    def test_dca_max_levels_respected(self):
-        """DCA beachtet maximale Level-Anzahl."""
-        max_levels = 3
-        levels_used = 0
-        for _level in range(max_levels + 5):  # Versuche mehr als erlaubt
-            if levels_used >= max_levels:
-                break
-            levels_used += 1
-        assert levels_used == max_levels
+    def test_insufficient_history_not_correlated(self):
+        """Zu wenig Preis-History → kein Block."""
+        rm = self._make_risk()
+        for p in range(5):
+            rm.update_prices("BTC/USDT", 30000.0 + p)
+            rm.update_prices("ETH/USDT", 2000.0 + p)
+        assert rm.is_correlated("BTC/USDT", ["ETH/USDT"]) is False
+
+    def test_identical_series_handled_gracefully(self):
+        """Identische Preisserien (NaN-Korrelation) werden ohne Absturz behandelt."""
+        rm = self._make_risk()
+        price = 30000.0
+        for _ in range(25):
+            rm.update_prices("BTC/USDT", price)
+            rm.update_prices("ETH/USDT", price)
+        result = rm.is_correlated("BTC/USDT", ["ETH/USDT"])
+        assert isinstance(result, bool)
 
 
 class TestDailyPnlAccumulation:

@@ -878,15 +878,8 @@ class VirginieOrchestrator:
                 agent_name=agent_name,
                 task_id=task.task_id,
                 success=False,
-                summary=f"Agent execution failed: {exc}",
+                summary="agent_execution_failed",
                 data={"error_type": type(exc).__name__},
-            )
-            raw_result = AgentResult(
-                agent_name=raw_result.agent_name,
-                task_id=raw_result.task_id,
-                success=raw_result.success,
-                summary=self._safe_text(raw_result.summary, max_len=240),
-                data=raw_result.data,
             )
         result = AgentResult(
             agent_name=raw_result.agent_name,
@@ -918,7 +911,7 @@ class VirginieOrchestrator:
                 stats["failure"] += 1
                 stats["consecutive_failure"] = int(stats.get("consecutive_failure", 0)) + 1
                 stats["last_failure_ts"] = float(self._time_fn())
-                stats["last_error"] = result.summary
+                stats["last_error"] = "agent_failed"
             self._history.insert(0, result)
             self._history = self._history[:200]
         return result
@@ -953,7 +946,6 @@ class VirginieOrchestrator:
                 "last_task_id": last.task_id if last else None,
                 "last_agent": last.agent_name if last else None,
                 "last_success": last.success if last else None,
-                "last_summary": last.summary if last else None,
                 "coverage_pct": round(coverage_pct, 1),
                 "missing_domains": missing,
                 "required_domains": sorted(self._required_domains),

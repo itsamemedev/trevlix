@@ -97,6 +97,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     log = deps.log
     auth = deps.api_auth_required
     admin = deps.admin_required
+    limiter = deps.limiter
     body = deps.get_json_body
     si = deps.safe_int
     sf = deps.safe_float
@@ -146,8 +147,13 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                 data.get("symbol", "BTC/USDT"),
                 data.get("timeframe", "1h"),
                 min(si(data.get("candles", 500), 500), 5000),
-                sf(data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)),
-                sf(data.get("tp", cfg.get("take_profit_pct", 0.060)), cfg.get("take_profit_pct", 0.060)),
+                sf(
+                    data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
+                ),
+                sf(
+                    data.get("tp", cfg.get("take_profit_pct", 0.060)),
+                    cfg.get("take_profit_pct", 0.060),
+                ),
                 sf(
                     data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
                 ),
@@ -167,8 +173,9 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/token", methods=["POST"])
     @auth
+    @limiter.limit("10 per minute")
     def api_create_token():
-        label = body().get("label", "api")
+        label = str(body().get("label", "api")).strip()[:100]
         token = db.create_api_token(request.user_id, label)
         return jsonify({"token": token, "expires_hours": cfg["jwt_expiry_hours"]})
 
@@ -191,13 +198,18 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     # ── User Settings ─────────────────────────────────────────────────────────
 
+    _SETTINGS_SENSITIVE = frozenset(
+        {"telegram_token", "telegram_chat_id", "discord_webhook", "api_key", "api_secret"}
+    )
+
     @bp.route("/api/v1/user/settings")
     @auth
     def api_user_settings_get():
         settings = db.get_user_settings(request.user_id)
-        settings["paper_trading"] = cfg.get("paper_trading", True)
-        settings["trade_mode"] = "paper" if cfg.get("paper_trading", True) else "live"
-        return jsonify(settings)
+        safe = {k: v for k, v in settings.items() if k not in _SETTINGS_SENSITIVE}
+        safe["paper_trading"] = cfg.get("paper_trading", True)
+        safe["trade_mode"] = "paper" if cfg.get("paper_trading", True) else "live"
+        return jsonify(safe)
 
     # ── Onboarding / Setup-State (per User, geräteübergreifend) ───────────────
 
@@ -382,6 +394,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/buy", methods=["POST"])
     @auth
+    @limiter.limit("30 per minute")
     def api_trading_manual_buy():
         """Manueller Kauf eines beliebigen Symbols (Altcoin oder Stablecoin)."""
         data = body()
@@ -393,6 +406,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "invalid_symbol"}), 400
         if invest <= 0:
             return jsonify({"error": "invest_usdt must be > 0"}), 400
+        if invest > 10_000_000:
+            return jsonify({"error": "invest_usdt exceeds maximum"}), 400
         try:
             ex = deps.create_exchange()
             ticker = ex.fetch_ticker(sym)
@@ -431,6 +446,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/sell", methods=["POST"])
     @auth
+    @limiter.limit("30 per minute")
     def api_trading_manual_sell():
         """Manueller Verkauf einer offenen Position (Altcoin oder Stablecoin)."""
         data = body()
@@ -768,11 +784,12 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             )
         except Exception as exc:
             latency_ms = round((_time.monotonic() - t0) * 1000)
+            log.warning("exchange_test failed for %s: %s", name, exc)
             return jsonify(
                 {
                     "ok": False,
                     "exchange": name,
-                    "error": str(exc)[:200],
+                    "error": "exchange_test_failed",
                     "latency_ms": latency_ms,
                 }
             )
@@ -896,6 +913,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "invalid_symbol"}), 400
         if levels > MAX_GRID_LEVELS:
             return jsonify({"error": f"levels must be <= {MAX_GRID_LEVELS}"}), 400
+        if invest > 10_000_000:
+            return jsonify({"error": "invest_usdt exceeds maximum"}), 400
         if invest > 0 and invest / levels < _MIN_CELL_USDT:
             return jsonify(
                 {"error": f"invest / levels must be >= {_MIN_CELL_USDT} USDT per cell"}

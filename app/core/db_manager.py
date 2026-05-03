@@ -433,6 +433,8 @@ class MySQLManager:
     def verify_api_token(self, token: str) -> int | None:
         """Forwards to UserRepository.verify_api_token."""
         return self.users.verify_api_token(token)
+
+    # ── Misc ────────────────────────────────────────────────────────────────
     def save_backtest(self, result: dict):
         """Forwards to AIRepository.save_backtest."""
         return self.ai.save_backtest(result)

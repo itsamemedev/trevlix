@@ -173,7 +173,9 @@ class MultiTimeframeFilter:
             ok = trend >= 0
             return ok, f"{'✅' if ok else '❌'} 4h RSI:{rsi:.0f}"
         except Exception as e:
-            return True, f"MTF Err:{e}"
+            if log:
+                log.debug("MTF check failed: %s", e)
+            return True, "MTF Err"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -200,7 +202,9 @@ class OrderbookImbalance:
             ) + f" {ratio:.0%}"
             return round(ratio, 3), desc
         except Exception as e:
-            return 0.5, f"OB:{e}"
+            if log:
+                log.debug("OB check failed: %s", e)
+            return 0.5, "OB:err"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

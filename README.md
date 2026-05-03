@@ -9,14 +9,14 @@
    ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝
 ```
 
-**Algorithmic Crypto Trading Bot — v1.7.1**
+**Algorithmic Crypto Trading Bot — v1.8.0**
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://python.org)
 [![Flask](https://img.shields.io/badge/flask-3.0-green.svg)](https://flask.palletsprojects.com)
 [![Socket.io](https://img.shields.io/badge/socket.io-4.7-black.svg)](https://socket.io)
-[![Tests](https://img.shields.io/badge/tests-300+-brightgreen.svg)](tests/)
+[![Tests](https://img.shields.io/badge/tests-748-brightgreen.svg)](tests/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.7.1-brightgreen.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-1.8.0-brightgreen.svg)](CHANGELOG.md)
 
 </div>
 
@@ -301,16 +301,21 @@ Each registered user stores their own exchange API keys in the database (Fernet-
 
 ## Security
 
-- **Fernet Encryption** — All API keys encrypted before storage
-- **bcrypt Hashing** — Secure password storage
+- **Fernet Encryption** — All API keys encrypted before storage; invalid keys raise immediately (no silent fallback)
+- **bcrypt / PBKDF2 Hashing** — Secure password storage with no plaintext fallback
 - **2FA (TOTP)** — Two-factor authentication
-- **JWT Authentication** — Secure API tokens
+- **JWT Authentication** — Secure API tokens; empty-secret short-circuits verification
 - **CSRF Protection** — Token validation on forms
-- **Rate Limiting** — 5 login attempts per IP per 15 min
-- **IP Whitelist** — Access control by IP
-- **Protected Config** — Sensitive keys only via `.env` (not API)
+- **Rate Limiting** — 5 login attempts/IP/15 min; 30 req/min on trading and chat endpoints
+- **IP Whitelist** — CIDR-validated access control by IP
+- **Protected Config** — Sensitive keys only via `.env` (not API); numeric config values clamped to safe bounds
 - **CORS** — Configurable origin restriction
 - **Audit Log** — Full action history
+- **No Exception Leakage** — All error responses use generic codes; exception details stay in server logs only
+- **Admin-only WebSocket** — Exchange management handlers require admin role
+- **CSP Hardened** — `unsafe-eval` removed from Content-Security-Policy
+- **Reserved Usernames** — `admin`, `root`, `system`, etc. blocked at registration
+- **Symbol Validation** — Strict regex enforced on all backtest and trading inputs
 
 ---
 

@@ -42,7 +42,7 @@ def register_system_routes(app, *, base_dir: str, static_dir: str, template_dir:
     @app.errorhandler(404)
     def handle_404(_e):
         if request.path.startswith("/api/"):
-            return jsonify({"error": "Endpunkt nicht gefunden", "path": request.path}), 404
+            return jsonify({"error": "Endpunkt nicht gefunden"}), 404
         if request.path == "/404":
             return send_from_directory(template_dir, "404.html"), 404
         return redirect("/404")

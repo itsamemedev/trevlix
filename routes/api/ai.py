@@ -293,6 +293,7 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
     bp = Blueprint("api_ai", __name__)
 
     auth = deps.api_auth_required
+    limiter = deps.limiter
     si = deps.safe_int
     body = deps.get_json_body
 
@@ -311,6 +312,7 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/virginie/chat", methods=["POST"])
     @auth
+    @limiter.limit("30 per minute")
     def api_virginie_chat_post():
         user_id = int(getattr(request, "user_id", 0) or 0)
         payload = body()

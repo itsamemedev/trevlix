@@ -166,7 +166,7 @@ class MultiLLMProvider:
                     log.info("LLM-Antwort via %s (%d Zeichen)", provider["name"], len(result))
                     return result
             except Exception as exc:
-                self._record_error(provider["name"], str(exc))
+                self._record_error(provider["name"], type(exc).__name__)
                 log.debug("LLM-Provider '%s' fehlgeschlagen: %s", provider["name"], exc)
                 continue
 
@@ -215,13 +215,14 @@ class MultiLLMProvider:
                         }
                     )
             except Exception as exc:
-                self._record_error(provider["name"], str(exc))
+                log.debug("LLM provider %s error: %s", provider.get("name"), exc)
+                self._record_error(provider["name"], type(exc).__name__)
                 result.append(
                     {
                         "provider": provider["name"],
                         "model": provider.get("model", ""),
                         "ok": False,
-                        "error": str(exc),
+                        "error": "provider_error",
                     }
                 )
         return result

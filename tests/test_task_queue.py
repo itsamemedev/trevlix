@@ -54,8 +54,7 @@ class TestTaskQueueBasics:
             handle = q.submit(boom)
             handle.wait(2.0)
             assert handle.state == "failed"
-            assert "ValueError" in handle.error
-            assert "nope" in handle.error
+            assert handle.error == "ValueError"
         finally:
             q.shutdown(timeout=2.0)
 

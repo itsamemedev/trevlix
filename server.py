@@ -50,6 +50,7 @@
 """
 
 import os
+import re
 import secrets
 import threading
 import time
@@ -1213,14 +1214,14 @@ def on_start_bot():
             state.add_activity(
                 "⚠️",
                 "Bot-Start im Degraded-Modus",
-                str(preflight_err)[:120],
+                "exchange_connect_failed",
                 "warning",
             )
         else:
             emit(
                 "status",
                 {
-                    "msg": f"❌ Start fehlgeschlagen: {preflight_err}",
+                    "msg": "❌ Start fehlgeschlagen: Exchange nicht erreichbar",
                     "key": "ws_bot_start_failed_exchange",
                     "type": "error",
                 },
@@ -1435,11 +1436,11 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
             {"msg": done_msg, "key": done_key, "type": "success"},
         )
     except Exception as e:
-        log.warning(f"{name} failed: {e}")
+        log.warning("%s failed: %s", name, e)
         emit_event(
             "status",
             {
-                "msg": f"❌ {name} fehlgeschlagen: {e}",
+                "msg": f"❌ {name} fehlgeschlagen",
                 "key": f"{done_key}_failed",
                 "type": "error",
             },
@@ -1544,7 +1545,7 @@ def on_reset_ai():
 @socketio.on("close_position")
 def on_close_position(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("close_position", min_interval=2.0):
         emit(
@@ -1576,7 +1577,8 @@ def on_close_position(data: dict | None = None):
                 broadcast=True,
             )
         except Exception as e:
-            emit("status", {"msg": f"❌ {e}", "type": "error"})
+            log.warning("on_close_position failed for %s: %s", sym, e)
+            emit("status", {"msg": "❌ Position konnte nicht geschlossen werden", "type": "error"})
     elif in_short:
         if short_engine is None:
             emit("status", {"msg": "❌ Short-Engine nicht verfügbar", "type": "error"})
@@ -1604,14 +1606,22 @@ def on_run_backtest(data: dict | None = None):
     if not _ws_auth_required():
         return
 
+    bt_symbol = str(data.get("symbol", "BTC/USDT") or "BTC/USDT").strip().upper()
+    if not re.match(r"^[A-Z0-9]{1,15}/[A-Z0-9]{1,15}$", bt_symbol):
+        emit(
+            "status", {"msg": "❌ Ungültiges Symbol", "key": "err_invalid_symbol", "type": "error"}
+        )
+        return
+    bt_candles = min(safe_int(data.get("candles", 500), 500), 2000)
+
     def _bt():
         try:
             ex = create_exchange()
             result = bt.run(
                 ex,
-                data.get("symbol", "BTC/USDT"),
+                bt_symbol,
                 data.get("timeframe", "1h"),
-                safe_int(data.get("candles", 500), 500),
+                bt_candles,
                 safe_float(
                     data.get("sl", CONFIG.get("stop_loss_pct", 0.025)),
                     CONFIG.get("stop_loss_pct", 0.025),
@@ -1627,12 +1637,13 @@ def on_run_backtest(data: dict | None = None):
             )
             emit_event("backtest_result", result)
         except Exception as e:
-            emit_event("backtest_result", {"error": str(e)})
+            log.warning("ws_backtest failed: %s", e)
+            emit_event("backtest_result", {"error": "backtest_failed"})
 
     emit(
         "status",
         {
-            "msg": f"⏳ Backtest {data.get('symbol', '?')} läuft...",
+            "msg": f"⏳ Backtest {bt_symbol} läuft...",
             "key": "ws_backtest_running",
             "type": "info",
         },
@@ -2012,7 +2023,7 @@ def on_rollback_update():
 @socketio.on("start_exchange")
 def on_start_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2039,7 +2050,7 @@ def on_start_exchange(data: dict | None = None):
 @socketio.on("stop_exchange")
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
@@ -2088,7 +2099,7 @@ def _validate_key_field(value: str, max_len: int, *, allow_empty: bool = False) 
 @socketio.on("save_exchange_keys")
 def on_save_exchange_keys(data: dict | None = None):
     data = data or {}
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     # Rate-Limit: Brute-Force-Stuffing von Key-Material verhindern
     # (z.B. wenn ein Angreifer hunderte Keys pro Minute durchprobiert).
@@ -2294,7 +2305,11 @@ def on_close_exchange_position(data: dict | None = None):
         log.error("close_exchange_position fehlgeschlagen: %s %s: %s", symbol, ex_name, e)
         emit(
             "status",
-            {"msg": f"❌ Fehler beim Schließen: {e}", "key": "ws_close_error", "type": "error"},
+            {
+                "msg": "❌ Position konnte nicht geschlossen werden",
+                "key": "ws_close_error",
+                "type": "error",
+            },
         )
 
 
