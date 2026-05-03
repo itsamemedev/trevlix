@@ -6,6 +6,7 @@ IP-Whitelist, Telegram, Funding-Rates, News-Filter.
 
 from __future__ import annotations
 
+import ipaddress
 from typing import TYPE_CHECKING
 
 from flask import Blueprint, jsonify, request, session
@@ -223,7 +224,20 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
     @admin
     def api_ip_whitelist_set():
         ips = body().get("ips", [])
-        cfg["ip_whitelist"] = [ip.strip() for ip in ips if ip.strip()]
+        valid: list[str] = []
+        invalid: list[str] = []
+        for raw in ips:
+            entry = raw.strip()
+            if not entry:
+                continue
+            try:
+                ipaddress.ip_network(entry, strict=False)
+                valid.append(entry)
+            except ValueError:
+                invalid.append(entry)
+        if invalid:
+            return jsonify({"error": f"Ungültige IP-Einträge: {invalid}"}), 400
+        cfg["ip_whitelist"] = valid
         _set_env("IP_WHITELIST", ",".join(cfg["ip_whitelist"]))
         _db_audit(session.get("user_id", 0), "ip_whitelist_update", str(cfg["ip_whitelist"]))
         return jsonify({"whitelist": cfg["ip_whitelist"]})

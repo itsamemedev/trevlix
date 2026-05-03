@@ -173,7 +173,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/token", methods=["POST"])
     @auth
     def api_create_token():
-        label = body().get("label", "api")
+        label = str(body().get("label", "api")).strip()[:100]
         token = db.create_api_token(request.user_id, label)
         return jsonify({"token": token, "expires_hours": cfg["jwt_expiry_hours"]})
 
@@ -196,13 +196,18 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     # ── User Settings ─────────────────────────────────────────────────────────
 
+    _SETTINGS_SENSITIVE = frozenset(
+        {"telegram_token", "telegram_chat_id", "discord_webhook", "api_key", "api_secret"}
+    )
+
     @bp.route("/api/v1/user/settings")
     @auth
     def api_user_settings_get():
         settings = db.get_user_settings(request.user_id)
-        settings["paper_trading"] = cfg.get("paper_trading", True)
-        settings["trade_mode"] = "paper" if cfg.get("paper_trading", True) else "live"
-        return jsonify(settings)
+        safe = {k: v for k, v in settings.items() if k not in _SETTINGS_SENSITIVE}
+        safe["paper_trading"] = cfg.get("paper_trading", True)
+        safe["trade_mode"] = "paper" if cfg.get("paper_trading", True) else "live"
+        return jsonify(safe)
 
     # ── Onboarding / Setup-State (per User, geräteübergreifend) ───────────────
 
@@ -773,11 +778,12 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             )
         except Exception as exc:
             latency_ms = round((_time.monotonic() - t0) * 1000)
+            log.warning("exchange_test failed for %s: %s", name, exc)
             return jsonify(
                 {
                     "ok": False,
                     "exchange": name,
-                    "error": str(exc)[:200],
+                    "error": "exchange_test_failed",
                     "latency_ms": latency_ms,
                 }
             )

@@ -265,6 +265,7 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/cluster/nodes", methods=["GET"])
     @auth
+    @admin
     def api_cluster_nodes_list():
         if deps.cluster_ctrl is None:
             return jsonify({"nodes": []})
@@ -337,6 +338,7 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/cluster/metrics")
     @auth
+    @admin
     def api_cluster_metrics():
         return jsonify(deps.cluster_ctrl.get_cluster_metrics() if deps.cluster_ctrl else {})
 

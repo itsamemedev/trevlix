@@ -155,7 +155,7 @@ class UserRepository:
             if m.BCRYPT_AVAILABLE:
                 h = m.bcrypt.hashpw(pw, m.bcrypt.gensalt()).decode()
             else:
-                h = hashlib.sha256(pw).hexdigest()
+                h = pbkdf2_hash(pw)
             with self._m._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute("UPDATE users SET password_hash=%s WHERE id=%s", (h, user_id))
@@ -272,12 +272,13 @@ class UserRepository:
     def verify_api_token(self, token: str) -> int | None:
         m = _module()
         log = m.log
-        if not m.JWT_AVAILABLE or not token:
+        jwt_secret = m.CONFIG.get("jwt_secret", "")
+        if not m.JWT_AVAILABLE or not token or not jwt_secret:
             return None
         try:
             payload = m.pyjwt.decode(
                 token,
-                m.CONFIG.get("jwt_secret", ""),
+                jwt_secret,
                 algorithms=["HS256"],
                 options={"require": ["exp"]},
             )
