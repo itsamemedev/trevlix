@@ -261,7 +261,8 @@ class LiquidityScorer:
                 )
             return True, round(spread, 3), "OK"
         except Exception as e:
-            return True, 0.0, f"LQ:{e}"
+            log.debug("check_liquidity failed: %s", e)
+            return True, 0.0, "LQ:err"
 
 
 class SymbolCooldown:

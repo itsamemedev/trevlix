@@ -1317,7 +1317,7 @@ class AIEngine:
             return allowed, prob, f"{'✅' if allowed else '🚫'} {reason_prefix}:{prob * 100:.1f}%"
         except Exception as e:
             log.warning("should_buy exception – blocking trade: %s", e, exc_info=True)
-            return False, conf, f"Err:{e}"
+            return False, conf, "should_buy_error"
 
     def _predict(self, X_s, features_raw) -> float:
         # Regime-Modell wählen

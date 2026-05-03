@@ -211,7 +211,7 @@ class TradeExecutionService:
                 qty,
                 exc,
             )
-            return ExecutionResult(False, mode, f"live_sell_failed:{exc}")
+            return ExecutionResult(False, mode, "live_sell_failed")
         actual_qty = self._safe_float((order or {}).get("filled"), qty)
         actual_price = self._safe_float((order or {}).get("average"), price)
         if price > 0 and actual_price > 0:
