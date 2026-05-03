@@ -50,6 +50,7 @@
 """
 
 import os
+import re
 import secrets
 import threading
 import time
@@ -1605,14 +1606,22 @@ def on_run_backtest(data: dict | None = None):
     if not _ws_auth_required():
         return
 
+    bt_symbol = str(data.get("symbol", "BTC/USDT") or "BTC/USDT").strip().upper()
+    if not re.match(r"^[A-Z0-9]{1,15}/[A-Z0-9]{1,15}$", bt_symbol):
+        emit(
+            "status", {"msg": "❌ Ungültiges Symbol", "key": "err_invalid_symbol", "type": "error"}
+        )
+        return
+    bt_candles = min(safe_int(data.get("candles", 500), 500), 2000)
+
     def _bt():
         try:
             ex = create_exchange()
             result = bt.run(
                 ex,
-                data.get("symbol", "BTC/USDT"),
+                bt_symbol,
                 data.get("timeframe", "1h"),
-                safe_int(data.get("candles", 500), 500),
+                bt_candles,
                 safe_float(
                     data.get("sl", CONFIG.get("stop_loss_pct", 0.025)),
                     CONFIG.get("stop_loss_pct", 0.025),
@@ -1634,7 +1643,7 @@ def on_run_backtest(data: dict | None = None):
     emit(
         "status",
         {
-            "msg": f"⏳ Backtest {data.get('symbol', '?')} läuft...",
+            "msg": f"⏳ Backtest {bt_symbol} läuft...",
             "key": "ws_backtest_running",
             "type": "info",
         },
