@@ -7,6 +7,7 @@ OHLCV, Portfolio-Optimierung, Backtest-Vergleich, Copy-Trading.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from datetime import datetime
@@ -668,7 +669,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
         # → ausschließlich Admins erlauben.
         path = db.backup()
         if path:
-            return send_file(path, as_attachment=True)
+            with open(path, "rb") as _f:
+                sha256 = hashlib.sha256(_f.read()).hexdigest()
+            resp = send_file(path, as_attachment=True)
+            resp.headers["X-Backup-SHA256"] = sha256
+            return resp
         return jsonify({"error": "Backup fehlgeschlagen"}), 500
 
     return bp

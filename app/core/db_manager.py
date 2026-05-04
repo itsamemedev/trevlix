@@ -159,7 +159,8 @@ class MySQLManager:
                 timeout=int(os.getenv("DB_POOL_TIMEOUT", "30")),
             )
         except Exception as e:
-            log.warning(f"Connection-Pool: {e} – Fallback auf direkte Verbindung")
+            # Log only the exception type to avoid leaking DB credentials in the message
+            log.warning("Connection-Pool: %s – Fallback auf direkte Verbindung", type(e).__name__)
             return None
 
     def _conn(self):
@@ -305,41 +306,50 @@ class MySQLManager:
     def save_trade(self, trade: dict, user_id: int = 1):
         """Forwards to TradeRepository.save_trade."""
         return self.trades.save_trade(trade, user_id)
+
     def save_order(self, order: dict, user_id: int = 1) -> None:
         """Forwards to TradeRepository.save_order."""
         return self.trades.save_order(order, user_id)
+
     def save_trade_decision(self, decision: dict, user_id: int = 1) -> None:
         """Forwards to TradeRepository.save_trade_decision."""
         return self.trades.save_trade_decision(decision, user_id)
+
     def upsert_trade_position(self, position: dict, user_id: int = 1) -> None:
         """Forwards to TradeRepository.upsert_trade_position."""
         return self.trades.upsert_trade_position(position, user_id)
+
     def close_trade_position(
         self, symbol: str, trade_mode: str = "paper", user_id: int = 1
     ) -> None:
         """Forwards to TradeRepository.close_trade_position."""
         return self.trades.close_trade_position(symbol, trade_mode, user_id)
+
     def load_open_positions(
         self, user_id: int | None = None, trade_mode: str | None = None
     ) -> list[dict]:
         """Forwards to TradeRepository.load_open_positions."""
         return self.trades.load_open_positions(user_id, trade_mode)
+
     def load_orders(
         self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
     ) -> list[dict]:
         """Forwards to TradeRepository.load_orders."""
         return self.trades.load_orders(limit, user_id, trade_mode)
+
     def load_trade_decisions(
         self, limit: int = 200, user_id: int | None = None, trade_mode: str | None = None
     ) -> list[dict]:
         """Forwards to TradeRepository.load_trade_decisions."""
         return self.trades.load_trade_decisions(limit, user_id, trade_mode)
+
     @staticmethod
     def _serialize_dates(row: dict, fields: tuple[str, ...]) -> dict:
         """Forwards to trade_repo._serialize_dates."""
         from app.core.repositories.trade_repo import _serialize_dates as _sd
 
         return _sd(row, fields)
+
     def _serialize_dates(row: dict, fields: tuple[str, ...]) -> dict:
         for f in fields:
             if f in row and hasattr(row[f], "isoformat"):
@@ -349,58 +359,75 @@ class MySQLManager:
     def performance_breakdown(self, user_id: int | None = None) -> dict:
         """Forwards to TradeRepository.performance_breakdown."""
         return self.trades.performance_breakdown(user_id)
+
     def load_trades(self, limit=500, symbol=None, year=None, user_id=None) -> list[dict]:
         """Forwards to TradeRepository.load_trades."""
         return self.trades.load_trades(limit=limit, symbol=symbol, year=year, user_id=user_id)
+
     def save_ai_sample(self, features, label: int, regime: str = "bull"):
         """Forwards to AIRepository.save_ai_sample."""
         return self.ai.save_ai_sample(features, label, regime)
+
     def load_ai_samples(self) -> tuple[list, list, list]:
         """Forwards to AIRepository.load_ai_samples."""
         return self.ai.load_ai_samples()
+
     def _decrypt_user_keys(self, user: dict | None) -> dict | None:
         """Forwards to UserRepository._decrypt_user_keys."""
         return self.users._decrypt_user_keys(user)
+
     def get_user(self, username: str) -> dict[str, Any] | None:
         """Forwards to UserRepository.get_user."""
         return self.users.get_user(username)
+
     def get_user_by_id(self, uid: int) -> dict[str, Any] | None:
         """Forwards to UserRepository.get_user_by_id."""
         return self.users.get_user_by_id(uid)
+
     def get_all_users(self) -> list[dict[str, Any]]:
         """Forwards to UserRepository.get_all_users."""
         return self.users.get_all_users()
+
     def create_user(
         self, username: str, password: str, role: str = "user", balance: float = 10000.0
     ) -> bool:
         """Forwards to UserRepository.create_user."""
         return self.users.create_user(username, password, role, balance)
+
     def verify_password(self, stored_hash: str, password: str) -> bool:
         """Forwards to UserRepository.verify_password."""
         return self.users.verify_password(stored_hash, password)
+
     def update_user_login(self, user_id: int) -> None:
         """Forwards to UserRepository.update_user_login."""
         return self.users.update_user_login(user_id)
+
     def update_password(self, user_id: int, new_password: str) -> bool:
         """Forwards to UserRepository.update_password."""
         return self.users.update_password(user_id, new_password)
+
     def update_user_balance(self, user_id: int, balance: float) -> None:
         """Forwards to UserRepository.update_user_balance."""
         return self.users.update_user_balance(user_id, balance)
+
     def update_user_settings(self, user_id: int, settings: dict) -> bool:
         """Forwards to UserRepository.update_user_settings."""
         return self.users.update_user_settings(user_id, settings)
+
     def get_user_settings(self, user_id: int) -> dict:
         """Forwards to UserRepository.get_user_settings."""
         return self.users.get_user_settings(user_id)
+
     def update_user_api_keys(
         self, user_id: int, exchange: str, api_key: str, api_secret: str
     ) -> bool:
         """Forwards to UserRepository.update_user_api_keys."""
         return self.users.update_user_api_keys(user_id, exchange, api_key, api_secret)
+
     def get_user_exchanges(self, user_id: int) -> list[dict]:
         """Forwards to ExchangeRepository.get_user_exchanges."""
         return self.exchanges.get_user_exchanges(user_id)
+
     def upsert_user_exchange(
         self,
         user_id: int,
@@ -415,21 +442,27 @@ class MySQLManager:
         return self.exchanges.upsert_user_exchange(
             user_id, exchange, api_key, api_secret, enabled, is_primary, passphrase
         )
+
     def toggle_user_exchange(self, user_id: int, exchange_id: int, enabled: bool) -> bool:
         """Forwards to ExchangeRepository.toggle_user_exchange."""
         return self.exchanges.toggle_user_exchange(user_id, exchange_id, enabled)
+
     def get_enabled_exchanges(self, user_id: int) -> list[dict]:
         """Forwards to ExchangeRepository.get_enabled_exchanges."""
         return self.exchanges.get_enabled_exchanges(user_id)
+
     def set_primary_exchange(self, user_id: int, exchange: str, enable: bool = True) -> bool:
         """Forwards to ExchangeRepository.set_primary_exchange."""
         return self.exchanges.set_primary_exchange(user_id, exchange, enable)
+
     def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
         """Forwards to ExchangeRepository.delete_user_exchange."""
         return self.exchanges.delete_user_exchange(user_id, exchange_id)
+
     def create_api_token(self, user_id: int, label: str = "default") -> str:
         """Forwards to UserRepository.create_api_token."""
         return self.users.create_api_token(user_id, label)
+
     def verify_api_token(self, token: str) -> int | None:
         """Forwards to UserRepository.verify_api_token."""
         return self.users.verify_api_token(token)
@@ -438,57 +471,75 @@ class MySQLManager:
     def save_backtest(self, result: dict):
         """Forwards to AIRepository.save_backtest."""
         return self.ai.save_backtest(result)
+
     def get_recent_backtests(self, limit=10) -> list[dict]:
         """Forwards to AIRepository.get_recent_backtests."""
         return self.ai.get_recent_backtests(limit)
+
     def add_alert(self, symbol: str, target: float, direction: str, user_id: int = 1) -> int:
         """Forwards to AlertRepository.add_alert."""
         return self.alerts.add_alert(symbol, target, direction, user_id)
+
     def get_active_alerts(self) -> list[dict]:
         """Forwards to AlertRepository.get_active_alerts."""
         return self.alerts.get_active_alerts()
+
     def trigger_alert(self, aid: int):
         """Forwards to AlertRepository.trigger_alert."""
         return self.alerts.trigger_alert(aid)
+
     def delete_alert(self, aid: int, user_id: int | None = None) -> bool:
         """Forwards to AlertRepository.delete_alert."""
         return self.alerts.delete_alert(aid, user_id)
+
     def get_all_alerts(self, user_id: int | None = None) -> list[dict]:
         """Forwards to AlertRepository.get_all_alerts."""
         return self.alerts.get_all_alerts(user_id)
+
     def save_daily_report(self, date_str: str, report: dict):
         """Forwards to IntelRepository.save_daily_report."""
         return self.intel.save_daily_report(date_str, report)
+
     def report_sent_today(self) -> bool:
         """Forwards to IntelRepository.report_sent_today."""
         return self.intel.report_sent_today()
+
     def save_sentiment(self, symbol: str, score: float, source: str):
         """Forwards to IntelRepository.save_sentiment."""
         return self.intel.save_sentiment(symbol, score, source)
+
     def get_sentiment(self, symbol: str) -> float | None:
         """Forwards to IntelRepository.get_sentiment."""
         return self.intel.get_sentiment(symbol)
+
     def save_news(self, symbol: str, score: float, headline: str, count: int):
         """Forwards to IntelRepository.save_news."""
         return self.intel.save_news(symbol, score, headline, count)
+
     def get_news(self, symbol: str) -> dict | None:
         """Forwards to IntelRepository.get_news."""
         return self.intel.get_news(symbol)
+
     def save_onchain(self, symbol: str, whale_score: float, flow_score: float, detail: str):
         """Forwards to IntelRepository.save_onchain."""
         return self.intel.save_onchain(symbol, whale_score, flow_score, detail)
+
     def get_onchain(self, symbol: str) -> dict | None:
         """Forwards to IntelRepository.get_onchain."""
         return self.intel.get_onchain(symbol)
+
     def save_arb(self, arb: dict):
         """Forwards to IntelRepository.save_arb."""
         return self.intel.save_arb(arb)
+
     def save_genetic(self, generation: int, fitness: float, genome: dict):
         """Forwards to AIRepository.save_genetic."""
         return self.ai.save_genetic(generation, fitness, genome)
+
     def export_csv(self, user_id: int | None = None, limit: int = 10000) -> str:
         """Forwards to TradeRepository.export_csv."""
         return self.trades.export_csv(user_id, limit)
+
     def backup(self) -> str | None:
         """Erzeugt ein Backup. Forwards to db_backup.create_backup."""
         from app.core.db_backup import create_backup
@@ -504,6 +555,7 @@ class MySQLManager:
     def save_ai_samples_batch(self, samples):
         """Forwards to AIRepository.save_ai_samples_batch."""
         return self.ai.save_ai_samples_batch(samples)
+
     def cleanup_old_data(self):
         """Forwards to db_backup.cleanup_old_data (retention sweep)."""
         from app.core.db_backup import cleanup_old_data as _cleanup

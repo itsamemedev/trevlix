@@ -7,6 +7,32 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.0] – 2026-05-04
+
+### Security — 13th-Pass Audit & Bug Fixes
+
+#### WebSocket Rate-Limiting Gaps Closed
+- **`add_price_alert`** — missing `_ws_rate_check` added (`min_interval=5.0 s`); prevents DB flooding via rapid alert creation
+- **`delete_price_alert`** — missing `_ws_rate_check` added (`min_interval=2.0 s`)
+- **`manual_backup`** — missing `_ws_rate_check` added (`min_interval=30.0 s`); prevents repeated expensive backup operations
+
+#### Content-Security-Policy Hardened
+- Added `object-src 'none'` — blocks Flash/Java plugin execution
+- Added `base-uri 'self'` — prevents `<base>` tag injection that redirects relative URLs to attacker-controlled origins
+- Added `form-action 'self'` — prevents form hijacking to external targets
+- Added `X-Permitted-Cross-Domain-Policies: none` response header — blocks Adobe Flash/Acrobat cross-domain policy requests
+
+#### Session Security
+- Absolute session lifetime reduced from **8 h → 4 h**; idle timeout unchanged at 30 min (configurable via `SESSION_TIMEOUT_MIN`)
+
+#### Backup Integrity
+- `GET /api/backup/download` now returns `X-Backup-SHA256` response header with hex digest of the archive; clients can verify integrity before extracting
+
+#### Credential Leak Prevention
+- `db_manager._build_pool` exception log now emits only `type(e).__name__` instead of the full exception message, which could contain MySQL host/credentials in connection errors
+
+---
+
 ## [1.8.0] – 2026-05-03
 
 ### Security — Comprehensive Hardening (12-Pass Audit)

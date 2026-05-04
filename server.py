@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.8.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.9.0  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -1656,6 +1656,8 @@ def on_add_alert(data: dict | None = None):
     data = data or {}
     if not _ws_auth_required():
         return
+    if not _ws_rate_check("add_price_alert", min_interval=5.0):
+        return
     uid = session.get("user_id")
     if not uid:
         emit("auth_error", {"msg": "Nicht authentifiziert"})
@@ -1682,6 +1684,8 @@ def on_delete_alert(data: dict | None = None):
     data = data or {}
     if not _ws_auth_required():
         return
+    if not _ws_rate_check("delete_price_alert", min_interval=2.0):
+        return
     uid = session.get("user_id")
     # Scope to current user unless session user is admin (user_id=1 by policy)
     # so a non-admin cannot delete alerts owned by someone else.
@@ -1693,6 +1697,8 @@ def on_delete_alert(data: dict | None = None):
 @socketio.on("manual_backup")
 def on_manual_backup():
     if not _ws_auth_required():
+        return
+    if not _ws_rate_check("manual_backup", min_interval=30.0):
         return
 
     def _bk():

@@ -46,7 +46,7 @@ def handle_session_and_csrf(
         if created:
             try:
                 age = (now - datetime.fromisoformat(created)).total_seconds()
-                if age > 8 * 3600:
+                if age > 4 * 3600:
                     uid = session_obj.get("user_id", 0)
                     session_obj.clear()
                     audit_fn("session_expired", f"user_id={uid} age={age:.0f}s", uid)
