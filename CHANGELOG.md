@@ -7,6 +7,34 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.1] – 2026-05-07
+
+### Security — 14th-Pass Audit: WebSocket Rate-Limit & Privilege Hardening
+
+#### Rate Limits — Complete Coverage Across All WebSocket Handlers
+Fourteen handlers were missing `_ws_rate_check` guards, allowing authenticated (or admin) clients to spam expensive or sensitive operations:
+
+| Handler | Auth level | Interval |
+|---|---|---|
+| `run_backtest` | user | 10 s — CPU/exchange intensive |
+| `send_daily_report` | user | 300 s — prevents Discord/Telegram notification spam |
+| `scan_arbitrage` | user | 30 s — fans out across many exchange API calls |
+| `update_dominance` | user | 30 s — external API |
+| `check_update` | user | 30 s — spawns git subprocess |
+| `save_api_keys` | admin | 3 s — sensitive key mutation |
+| `force_train` | admin | 60 s — full ML training run |
+| `force_optimize` | admin | 60 s — hyperparameter optimization |
+| `force_genetic` | admin | 60 s — genetic algorithm |
+| `reset_ai` | admin | 30 s — wipes trained models |
+| `apply_update` | admin | 60 s — git pull |
+| `rollback_update` | admin | 60 s — git stash |
+| `admin_create_user` | admin | 5 s — user creation |
+
+#### Privilege Escalation Fix
+- `reset_circuit_breaker` upgraded from `_ws_auth_required` → `_ws_admin_required`: any authenticated user could previously clear the circuit breaker (a global loss-limit safety control), bypassing it without admin rights
+
+---
+
 ## [1.9.0] – 2026-05-04
 
 ### Security — 13th-Pass Audit & Bug Fixes

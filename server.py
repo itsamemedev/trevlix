@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.9.0  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.9.1  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -1378,6 +1378,8 @@ def on_save_keys(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
         return
+    if not _ws_rate_check("save_api_keys", min_interval=3.0):
+        return
     # API-Keys werden verschlüsselt im CONFIG gespeichert
     raw_key = data.get("api_key", "")
     raw_secret = data.get("secret", "")
@@ -1451,6 +1453,8 @@ def _run_ai_job(target, name: str, done_key: str, done_msg: str) -> None:
 def on_force_train():
     if not _ws_admin_required():
         return
+    if not _ws_rate_check("force_train", min_interval=60.0):
+        return
     if ai_engine is None:
         emit(
             "status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_training", "type": "error"}
@@ -1467,6 +1471,8 @@ def on_force_train():
 @socketio.on("force_optimize")
 def on_force_optimize():
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("force_optimize", min_interval=60.0):
         return
     if ai_engine is None:
         emit(
@@ -1490,6 +1496,8 @@ def on_force_optimize():
 @socketio.on("force_genetic")
 def on_force_genetic():
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("force_genetic", min_interval=60.0):
         return
     if genetic is None:
         emit(
@@ -1521,6 +1529,8 @@ def on_force_genetic():
 @socketio.on("reset_ai")
 def on_reset_ai():
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("reset_ai", min_interval=30.0):
         return
     if ai_engine is None:
         emit("status", {"msg": "❌ KI nicht initialisiert", "key": "ws_ai_reset", "type": "error"})
@@ -1604,6 +1614,8 @@ def on_close_position(data: dict | None = None):
 def on_run_backtest(data: dict | None = None):
     data = data or {}
     if not _ws_auth_required():
+        return
+    if not _ws_rate_check("run_backtest", min_interval=10.0):
         return
 
     bt_symbol = str(data.get("symbol", "BTC/USDT") or "BTC/USDT").strip().upper()
@@ -1726,6 +1738,8 @@ def on_manual_backup():
 def on_send_report():
     if not _ws_auth_required():
         return
+    if not _ws_rate_check("send_daily_report", min_interval=300.0):
+        return
     threading.Thread(target=daily_sched._send_report, daemon=True).start()
     emit(
         "status", {"msg": "📊 Report wird gesendet...", "key": "ws_report_sending", "type": "info"}
@@ -1734,7 +1748,9 @@ def on_send_report():
 
 @socketio.on("reset_circuit_breaker")
 def on_reset_cb():
-    if not _ws_auth_required():
+    if not _ws_admin_required():
+        return
+    if not _ws_rate_check("reset_circuit_breaker", min_interval=60.0):
         return
     if risk is None:
         emit(
@@ -1756,6 +1772,8 @@ def on_reset_cb():
 @socketio.on("scan_arbitrage")
 def on_scan_arb():
     if not _ws_auth_required():
+        return
+    if not _ws_rate_check("scan_arbitrage", min_interval=30.0):
         return
 
     if arb_scanner is None:
@@ -1787,6 +1805,8 @@ def on_scan_arb():
 def on_update_dominance():
     if not _ws_auth_required():
         return
+    if not _ws_rate_check("update_dominance", min_interval=30.0):
+        return
     if dominance is None:
         return
     threading.Thread(target=dominance.update, daemon=True).start()
@@ -1800,6 +1820,8 @@ def on_update_dominance():
 def on_admin_create_user(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("admin_create_user", min_interval=5.0):
         return
     is_valid, payload, error_key, error_message = validate_admin_user_payload(data or {})
     if not is_valid:
@@ -1923,6 +1945,8 @@ def on_undo_close(data: dict | None = None):
 def on_check_update():
     if not _ws_auth_required():
         return
+    if not _ws_rate_check("check_update", min_interval=30.0):
+        return
     try:
         status = _get_update_status()
         socketio.emit("update_status", status.to_socket_payload())
@@ -1951,6 +1975,8 @@ def on_check_update():
 @socketio.on("apply_update")
 def on_apply_update():
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("apply_update", min_interval=60.0):
         return
     try:
         _apply_update()
@@ -1987,6 +2013,8 @@ def on_apply_update():
 @socketio.on("rollback_update")
 def on_rollback_update():
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("rollback_update", min_interval=60.0):
         return
     try:
         stashed = _rollback_update()
