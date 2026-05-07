@@ -199,8 +199,8 @@ _AI_CONFIG_DEFAULTS: dict[str, float | int | bool] = {
     "virginie_enabled": True,
     "virginie_primary_control": True,
     "virginie_autonomy_weight": 0.7,
-    "virginie_min_score": 0.0,
-    "virginie_max_risk_penalty": 1000.0,
+    "virginie_min_score": 0.5,
+    "virginie_max_risk_penalty": 5.0,
     "virginie_cpu_fast_chat": True,
 }
 
@@ -283,8 +283,8 @@ class AIEngine:
         self._scan_cache: dict[str, dict] = {}  # für RL
         self.virginie = VirginieCore(
             guardrails=VirginieGuardrails(
-                min_score=float(CONFIG.get("virginie_min_score", 0.0)),
-                max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 1000.0)),
+                min_score=float(CONFIG.get("virginie_min_score", 0.5)),
+                max_risk_penalty=float(CONFIG.get("virginie_max_risk_penalty", 5.0)),
             )
         )
         virginie_examples = self.virginie.example_snapshot()
@@ -539,8 +539,9 @@ class AIEngine:
             second_half = len(trades) - half
             if half == 0 or second_half == 0:
                 return False
-            old_wr = sum(1 for t in trades[:half] if t.get("pnl", 0) > 0) / half
-            new_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / second_half
+            # closed_trades is newest-first: [:half]=newest, [half:]=oldest
+            new_wr = sum(1 for t in trades[:half] if t.get("pnl", 0) > 0) / half
+            old_wr = sum(1 for t in trades[half:] if t.get("pnl", 0) > 0) / second_half
             drift_threshold = 0.20  # >20% Abweichung = Drift
             drift = abs(new_wr - old_wr) > drift_threshold
             if drift:
@@ -944,7 +945,8 @@ class AIEngine:
         try:
             if state is None:
                 return
-            trades = state.closed_trades[:]
+            with state._lock:
+                trades = list(state.closed_trades)
             if len(trades) < 15:
                 return
             # Kelly grid
@@ -1208,13 +1210,13 @@ class AIEngine:
         if not hasattr(self, "virginie") or self.virginie is None:
             return
         try:
-            min_score = float(CONFIG.get("virginie_min_score", 0.0))
+            min_score = float(CONFIG.get("virginie_min_score", 0.5))
         except Exception:
-            min_score = 0.0
+            min_score = 0.5
         try:
-            max_risk = float(CONFIG.get("virginie_max_risk_penalty", 1000.0))
+            max_risk = float(CONFIG.get("virginie_max_risk_penalty", 5.0))
         except Exception:
-            max_risk = 1000.0
+            max_risk = 5.0
         current = getattr(self.virginie, "guardrails", None)
         if (
             current is None
@@ -1548,7 +1550,7 @@ class AIEngine:
             threading.Thread(target=self._optimize, daemon=True).start()
         # Genetischer Optimizer nach 30 Trades
         if n % 30 == 0 and state and genetic is not None:
-            genetic.evolve(state.closed_trades)
+            genetic.evolve(list(state.closed_trades))
 
     def to_dict(self) -> dict:
         total = self.blocked_count + self.allowed_count

@@ -86,7 +86,8 @@ def handle_session_and_csrf(
                     except Exception:
                         token = None
                 expected = session_obj.get("_csrf_token")
-                if expected and (not token or not hmac.compare_digest(str(token), str(expected))):
+                # Missing token counts as violation — skip only if not a session-auth'd request
+                if not expected or not token or not hmac.compare_digest(str(token), str(expected)):
                     audit_fn("csrf_violation", request_obj.path, session_obj.get("user_id", 0))
                     abort(403)
     return None

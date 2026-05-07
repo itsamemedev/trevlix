@@ -119,7 +119,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/trades")
     @auth
     def api_trades():
-        limit = min(si(request.args.get("limit", 100), 100), 1000)
+        limit = max(1, min(si(request.args.get("limit", 100), 100), 1000))
         symbol = request.args.get("symbol")
         year = request.args.get("year")
         return jsonify(
@@ -197,6 +197,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                         "UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
                         (token_id, request.user_id),
                     )
+                    if c.rowcount == 0:
+                        return jsonify({"error": "token_not_found"}), 404
             if audit:
                 audit("token_revoked", f"token_id={token_id}", request.user_id)
             return jsonify({"success": True})
@@ -349,6 +351,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/control", methods=["POST"])
     @auth
+    @admin
     def api_trading_control():
         data = body()
         action = str(data.get("action", "start")).lower()
@@ -829,9 +832,9 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     def api_signal():
         """TradingView Webhook → sofortiger Scan."""
         data = body()
-        sym = data.get("symbol", "")
-        action = data.get("action", "buy").lower()
-        if not sym or not st.running:
+        sym = str(data.get("symbol", "") or "").strip().upper()
+        action = str(data.get("action", "buy") or "buy").lower()
+        if not sym or not _valid_symbol(sym) or not st.running:
             return jsonify({"ok": False, "msg": "Bot nicht aktiv"}), 400
 
         def _async():
@@ -890,9 +893,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "sl must be > 0"}), 400
         with st._lock:
             pos = st.positions.get(sym)
-        if not pos:
-            return jsonify({"error": f"No open position: {sym}"}), 404
-        with st._lock:
+            if not pos:
+                return jsonify({"error": f"No open position: {sym}"}), 404
             st.positions[sym]["sl"] = new_sl
         return jsonify({"ok": True, "symbol": sym, "sl": new_sl})
 

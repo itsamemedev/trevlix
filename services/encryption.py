@@ -101,10 +101,10 @@ def decrypt_value(ciphertext: str) -> str:
     except Exception:
         if is_encrypted(ciphertext):
             log.error(
-                "Entschlüsselung fehlgeschlagen für verschlüsselten Wert – falscher ENCRYPTION_KEY? "
-                "Originaler Chiffretext wird zurückgegeben, um Datenverlust zu vermeiden."
+                "Entschlüsselung fehlgeschlagen – falscher ENCRYPTION_KEY? "
+                "Ciphertext wird NICHT zurückgegeben um Auth-Fehler zu vermeiden."
             )
-            return ciphertext
+            raise ValueError("Decryption failed – check ENCRYPTION_KEY") from None
         # Rückwärtskompatibel: falls Wert noch unverschlüsselt (Legacy)
         return ciphertext
 

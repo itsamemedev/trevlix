@@ -7,6 +7,49 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.4] – 2026-05-07
+
+### Security + Bug Fixes — 16th-Pass Audit (4-Agent Deep Bug Hunt)
+
+#### CRITICAL Security Fixes
+- **Privilege escalation — WebSocket:** `on_select_exchange` and `on_start_bot` escalated from `_ws_auth_required()` to `_ws_admin_required()` — any authenticated user could previously redirect the live bot to a different exchange or start/stop it
+- **Missing admin gate — REST:** `POST /api/v1/trading/control` (start/stop bot) was `@auth`-only; now also requires `@admin`
+- **CSRF bypass:** `session_guard.py` CSRF check skipped when `_csrf_token` was absent from session; missing token now always rejects the request
+
+#### HIGH Security + Correctness Fixes
+- **Discord webhook SSRF + rate limit:** `on_update_discord` now validates webhook URL must start with `https://discord.com/api/webhooks/` and adds `_ws_rate_check("update_discord", 5.0)` to prevent replay flooding
+- **Grid rate limit:** `ws_create_grid` missing `_ws_rate_check("create_grid", 10.0)` — now added
+- **Encryption silent failure:** `decrypt_value()` returned the raw ciphertext when decryption failed (wrong ENCRYPTION_KEY), causing encrypted blobs to be passed to exchange SDKs as API credentials; now raises `ValueError` instead
+- **Circuit breaker not extended on drawdown:** if a drawdown breach occurred while a consecutive-loss CB was already running, the CB expiry was not extended — bot could resume trading mid-drawdown; now always sets `max(existing_expiry, new_expiry)`
+- **MACD strategy inverted:** `strat_macd` generated buy signals only on bearish-zone crossovers (`macd_cur < 0`) and missed all bull-market confirmations; fixed to standard zero-line confirmation (`macd_cur > 0`)
+- **Concept drift inverted:** `_detect_concept_drift` had old/new slices swapped (`closed_trades` is newest-first); drift log and weight-reset trigger were comparing in wrong direction
+- **VIRGINIE guardrails disabled by default:** `virginie_min_score=0.0` and `virginie_max_risk_penalty=1000.0` in config defaults meant no trade was ever blocked by guardrails; corrected to `min_score=0.5` and `max_risk_penalty=5.0` matching `VirginieGuardrails` class defaults
+
+#### MEDIUM Fixes — API Routes
+- **Negative pagination limit:** `limit = max(1, min(..., 1000))` applied to `api_trades`
+- **TOCTOU in PATCH positions sl:** merged two separate lock acquisitions into a single `with st._lock:` block to prevent `KeyError` on concurrent close
+- **Token revoke rowcount:** `DELETE /api/v1/token/<id>` now returns 404 if no rows updated (previously always returned 200)
+- **Signal webhook symbol injection:** `POST /api/v1/signal` now validates via `_valid_symbol()` and `.upper()/.strip()` before passing to `scan_symbol`
+- **Exchange toggle bool cast:** `enabled` in `api_admin_exchange_toggle` now `bool()`-cast; endpoint returns 404 if no rows updated
+- **Backtest compare unvalidated:** `candles` now capped `[10, 5000]` and `tf` validated against allowlist; defaults to `1h` on invalid input
+
+#### MEDIUM Fixes — Services
+- **`genetic.evolve()` live list:** `on_sell` now passes `list(state.closed_trades)` snapshot instead of live reference to prevent `RuntimeError: list changed size during iteration`
+- **`_optimize` reads without lock:** wrapped `state.closed_trades[:]` in `with state._lock:`
+- **Knowledge LLM duplicate calls:** `generate_market_context_async` timestamp guard now claims the slot under `self._lock` before spawning the thread, preventing duplicate LLM calls
+- **`DominanceFilter` cache TOCTOU:** captured `(btc_dom, usdt_dom)` tuple under lock before calling `cache.set()` outside it
+- **`task_queue` sentinel leaks:** `task_done()` now called before returning on `None` sentinel, preventing `queue.join()` deadlock
+
+#### MEDIUM Fixes — Frontend
+- **XSS — nav drawer:** `onclick`, `icon`, `label`, `kbd` attributes now wrapped in `esc()` in the mobile nav drawer generator
+- **XSS — heatmap symbol:** `coin.symbol` in heatmap cell `innerHTML` now escaped via `esc()`
+- **Null crash — heatmap:** all `getElementById('heatmapGrid')` accesses guarded with null check + early return
+- **Null crash — update badge:** `ub.parentNode.insertBefore()` now gated on `ub &&`
+- **Missing CSRF on createToken:** `POST /api/v1/token` now sends `X-CSRFToken` header and `_csrf` body field
+- **`_pollBrain` interval leak:** interval handle stored and cleared in `beforeunload`
+- **Tab visibility — gas/Virginie:** `_gasInterval` and `_virginieEdgeTimer` callbacks now skip when `document.hidden`
+- **Duplicate socket.on('update'):** merged `updateAdminKPIs` call into primary handler; removed second registration
+
 ## [1.9.3] – 2026-05-07
 
 ### VIRGINIE Neural Brain Visualization + Brain State API

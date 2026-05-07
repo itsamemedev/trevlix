@@ -65,9 +65,9 @@ function toggleMobileNav(){
     const kbd=nb.querySelector('.nav-kbd')?.textContent||'';
     const isActive=nb.classList.contains('active');
     const oc=nb.getAttribute('onclick')||'';
-    html+=`<div class="drawer-item${isActive?' active':''}" onclick="${oc}">
-      <span class="di-icon">${icon}</span><span>${label}</span>
-      ${kbd?'<span class="di-kbd">'+kbd+'</span>':''}
+    html+=`<div class="drawer-item${isActive?' active':''}" onclick="${esc(oc)}">
+      <span class="di-icon">${esc(icon)}</span><span>${esc(label)}</span>
+      ${kbd?'<span class="di-kbd">'+esc(kbd)+'</span>':''}
     </div>`;
   });
   drawer.innerHTML=html;
@@ -307,7 +307,7 @@ function updateUI(d){
   // Update badge in header
   if(d.update_status?.update_available){
     const ub = document.getElementById('statusBadge');
-    if(!document.getElementById('updateHeaderBadge')){
+    if(ub && !document.getElementById('updateHeaderBadge')){
       const b = document.createElement('div');
       b.id='updateHeaderBadge';
       b.style.cssText='font-size:9px;background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.3);color:var(--green);border-radius:5px;padding:2px 7px;font-family:var(--mono);font-weight:700;cursor:pointer;';
@@ -700,7 +700,7 @@ function initVirginieChat(){
   loadVirginieChatHistory();
   loadVirginieEdgeProfile();
   if(!_virginieEdgeTimer){
-    _virginieEdgeTimer = setInterval(loadVirginieEdgeProfile, 30000);
+    _virginieEdgeTimer = setInterval(()=>{ if(!document.hidden) loadVirginieEdgeProfile(); }, 30000);
   }
 }
 
@@ -1447,15 +1447,17 @@ async function loadHeatmap(sortBy){
   currentHmSort=sortBy;
   document.querySelectorAll('[id^="hmBtn"]').forEach(b=>b.classList.remove('active'));
   const btn=document.getElementById('hmBtn'+sortBy); if(btn) btn.classList.add('active');
-  document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
+  const hmEl=document.getElementById('heatmapGrid');
+  if(!hmEl) return;
+  hmEl.innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
   try{
     const r=await fetch('/api/heatmap'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json();
-    if(data.error){document.getElementById('heatmapGrid').innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error)}</div>`;return;}
+    if(!Array.isArray(data)){hmEl.innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error||'Keine Daten')}</div>`;return;}
     const sorted=[...data].sort((a,b)=>sortBy==='volume'?b.volume-a.volume:sortBy==='news'?b.news_score-a.news_score:b.change-a.change);
-    document.getElementById('heatmapGrid').innerHTML=sorted.slice(0,40).map(coin=>{
+    hmEl.innerHTML=sorted.slice(0,40).map(coin=>{
       const pct=coin.change, int=Math.min(1,Math.abs(pct)/10);
       const bg=pct>=0?`rgba(0,${Math.round(100+130*int)},${Math.round(80*int)},${0.18+0.5*int})`:`rgba(${Math.round(180+75*int)},${Math.round(30*int)},${Math.round(60*int)},${0.18+0.5*int})`;
-      const sym=coin.symbol.replace('/USDT','');
+      const sym=esc(coin.symbol.replace('/USDT',''));
       const nc=coin.news_score>0.3?'🟢':coin.news_score<-0.3?'🔴':'⬜';
       const cls=(coin.in_pos?' inpos':'')+(coin.short?' inshort':'');
       return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${escJS(coin.symbol)}')">
@@ -1464,7 +1466,7 @@ async function loadHeatmap(sortBy){
         <div class="hm-news">${nc}</div>
       </div>`;
     }).join('');
-  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
+  }catch(e){if(hmEl) hmEl.innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
 }
 
 // ── Chart ────────────────────────────────────────────────────────────
@@ -1865,7 +1867,7 @@ function saveDiscord(){
 }
 async function createToken(){
   try{
-    const res=await fetch('/api/v1/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:'dashboard'})});
+    const res=await fetch('/api/v1/token',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken},body:JSON.stringify({label:'dashboard',_csrf:_csrfToken})});
     const data=await res.json();
     const box=document.getElementById('apiTokenBox');
     box.style.display='block'; box.textContent=data.token||'—';
@@ -1946,6 +1948,7 @@ socket.on('auth_error',(d)=>{
 socket.on('update', d=>{
   if(d){
     updateUI(d);
+    updateAdminKPIs(d);
     if(d.user_role) applyStateToRole(d);
     // Initialize exchange selector from server state
     if(d.exchange && !_selectedExchange) {
@@ -2093,7 +2096,7 @@ async function updateGasFees(){
     if(sig) sig.textContent = d.signal===1?'⬆ '+QI18n.t('gas_high'):d.signal===-1?'⬇ '+QI18n.t('gas_low'):'→ '+QI18n.t('gas_normal');
   } catch(e){ console.warn('Gas fees fetch failed:', e); }
 }
-let _gasInterval = setInterval(updateGasFees, 120000);
+let _gasInterval = setInterval(()=>{ if(!document.hidden) updateGasFees(); }, 120000);
 // Cleanup on page unload to prevent memory leak
 window.addEventListener('beforeunload', () => {
   clearInterval(_gasInterval);
@@ -2518,8 +2521,7 @@ function updateAdminKPIs(d) {
   _s('adminClientCount', d.connected_clients || 0);
   _s('adminMarketCount', (d.symbols || []).length || 1);
 }
-// Hook into existing update flow
-socket.on('update', d => { if (d) updateAdminKPIs(d); });
+// updateAdminKPIs is merged into the primary socket.on('update') handler above
 
 // ── Admin: LLM Provider Status ────────────────────────────────────────────────
 async function loadLlmProviderStatus() {
@@ -3818,7 +3820,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   initVirginieChat();
   // Brain state polling – every 3s when tab is visible
   _pollBrain();
-  setInterval(()=>{ if(!document.hidden) _pollBrain(); }, 3000);
+  const _brainInterval = setInterval(()=>{ if(!document.hidden) _pollBrain(); }, 3000);
+  window.addEventListener('beforeunload', ()=>clearInterval(_brainInterval), {once:true});
   const taxYearEl=document.getElementById('taxYear');
   if(taxYearEl) taxYearEl.value=new Date().getFullYear();
   QI18n.init('langSwitcher');

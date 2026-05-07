@@ -838,10 +838,12 @@ class KnowledgeBase:
         """
         if not self.llm_enabled:
             return
-        # Nur alle 15 Minuten neu generieren
+        # Nur alle 15 Minuten neu generieren — guard under lock to prevent duplicate LLM calls
         now = time.time()
-        if now - self._cached_market_analysis_ts < 900:
-            return
+        with self._lock:
+            if now - self._cached_market_analysis_ts < 900:
+                return
+            self._cached_market_analysis_ts = now  # claim slot before releasing
         threading.Thread(
             target=self._generate_market_context,
             args=(regime_is_bull, fg_value, open_positions, iteration),

@@ -197,11 +197,10 @@ def strat_macd(r: Row, p: Row) -> int:
     crossed_up = macd_prev < sig_prev and macd_cur > sig_cur
     crossed_dn = macd_prev > sig_prev and macd_cur < sig_cur
 
-    # Bullish crossover below zero line = stronger signal
-    if crossed_up and macd_cur < 0:
+    # Standard zero-line confirmation: crossover in the confirming zone
+    if crossed_up and macd_cur > 0:
         return 1
-    # Bearish crossover above zero line = stronger signal
-    if crossed_dn and macd_cur > 0:
+    if crossed_dn and macd_cur < 0:
         return -1
     return 0
 

@@ -8,7 +8,7 @@
 ║       ██║   ██║  ██║███████╗ ╚████╔╝ ███████╗██║██╔╝ ██╗                   ║
 ║       ╚═╝   ╚═╝  ╚═╝╚══════╝  ╚═══╝  ╚══════╝╚═╝╚═╝  ╚═╝                   ║
 ║                                                                              ║
-║    Algorithmic Crypto Trading Bot  ·  v1.9.3  ·  trevlix.dev               ║
+║    Algorithmic Crypto Trading Bot  ·  v1.9.4  ·  trevlix.dev               ║
 ║                                                                              ║
 ╠══════════════════════════════════════════════════════════════════════════════╣
 ║  KERN-ENGINE                                                                 ║
@@ -1137,8 +1137,8 @@ def on_virginie_chat(data: dict | None = None) -> None:
 
 @socketio.on("select_exchange")
 def on_select_exchange(data: dict) -> None:
-    """Allow any authenticated user to switch the active exchange for the bot."""
-    if not _ws_auth_required():
+    """Admin-only: switch the active exchange for the bot."""
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("select_exchange", min_interval=2.0):
         emit(
@@ -1184,7 +1184,7 @@ def on_select_exchange(data: dict) -> None:
 
 @socketio.on("start_bot")
 def on_start_bot():
-    if not _ws_auth_required():
+    if not _ws_admin_required():
         return
     if not _ws_rate_check("start_bot", min_interval=3.0):
         emit(
@@ -1405,8 +1405,21 @@ def on_update_discord(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
         return
+    if not _ws_rate_check("update_discord", min_interval=5.0):
+        return
     if data.get("webhook"):
-        CONFIG["discord_webhook"] = data["webhook"]
+        wh = str(data["webhook"]).strip()
+        if not wh.startswith("https://discord.com/api/webhooks/"):
+            emit(
+                "status",
+                {
+                    "msg": "❌ Ungültige Discord-Webhook-URL",
+                    "key": "ws_bad_webhook",
+                    "type": "error",
+                },
+            )
+            return
+        CONFIG["discord_webhook"] = wh
     if "on_buy" in data:
         CONFIG["discord_on_buy"] = bool(data["on_buy"])
     if "on_sell" in data:
@@ -1886,6 +1899,8 @@ grid_engine = GridTradingEngine()
 @socketio.on("create_grid")
 def ws_create_grid(data):
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("create_grid", min_interval=10.0):
         return
     symbol = data.get("symbol", "").strip()
     if not symbol:

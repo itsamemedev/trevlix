@@ -193,7 +193,8 @@ class DominanceFilter:
                 except (ValueError, TypeError):
                     self.usdt_dom = 6.0
                 self.last_update = datetime.now().strftime("%H:%M")
-            self._cache.set("dominance", (self.btc_dom, self.usdt_dom))
+                cached_tuple = (self.btc_dom, self.usdt_dom)  # capture under lock
+            self._cache.set("dominance", cached_tuple)
             log.info(f"Dominanz: BTC={self.btc_dom:.1f}% USDT={self.usdt_dom:.1f}%")
         except requests.HTTPError as e:
             log.warning(f"Dominanz HTTP error: {e}")
