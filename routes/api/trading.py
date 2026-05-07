@@ -140,20 +140,28 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_backtest():
         data = body()
+        sym = str(data.get("symbol", "BTC/USDT") or "BTC/USDT").strip().upper()
+        if not _valid_symbol(sym):
+            return jsonify({"error": "invalid_symbol"}), 400
+        sl_pct = sf(
+            data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
+        )
+        tp_pct = sf(
+            data.get("tp", cfg.get("take_profit_pct", 0.060)), cfg.get("take_profit_pct", 0.060)
+        )
+        if not (0.001 <= sl_pct <= 0.99):
+            return jsonify({"error": "sl must be between 0.001 and 0.99"}), 400
+        if not (0.001 <= tp_pct <= 5.0):
+            return jsonify({"error": "tp must be between 0.001 and 5.0"}), 400
         try:
             ex = deps.create_exchange()
             result = deps.backtest.run(
                 ex,
-                data.get("symbol", "BTC/USDT"),
+                sym,
                 data.get("timeframe", "1h"),
                 min(si(data.get("candles", 500), 500), 5000),
-                sf(
-                    data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
-                ),
-                sf(
-                    data.get("tp", cfg.get("take_profit_pct", 0.060)),
-                    cfg.get("take_profit_pct", 0.060),
-                ),
+                sl_pct,
+                tp_pct,
                 sf(
                     data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
                 ),

@@ -566,17 +566,16 @@ function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
   if(!log) return;
   if(!_virginieChat.messages.length){
-    log.innerHTML='<div style="font-size:10px;color:var(--sub)">Noch kein Chatverlauf. Schreibe VIRGINIE eine erste Nachricht.</div>';
+    log.innerHTML='<div style="font-size:9px;color:rgba(0,180,220,.35);font-family:var(--mono);letter-spacing:.8px;text-align:center;padding:14px 0">[ NO TRANSMISSION HISTORY ]<br><span style="opacity:.6">AWAITING COMMAND INPUT…</span></div>';
     return;
   }
   const rows=_virginieChat.messages.slice(-40).map(m=>{
     const isUser=String(m.role||'')==='user';
-    const bg=isUser?'rgba(110,231,255,.12)':'rgba(212,175,55,.12)';
-    const border=isUser?'rgba(110,231,255,.28)':'rgba(212,175,55,.28)';
-    const who=isUser?'Du':'VIRGINIE';
-    return `<div style="border:1px solid ${border};background:${bg};border-radius:7px;padding:7px 8px">
-      <div style="font-size:9px;color:var(--sub);font-family:var(--mono);margin-bottom:3px">${who}</div>
-      <div style="font-size:11px;line-height:1.45;color:#f5efe1;white-space:pre-wrap">${esc(String(m.content||''))}</div>
+    const cls=isUser?'jv-msg jv-msg-user':'jv-msg jv-msg-ai';
+    const label=isUser?'[ YOU ]':'[ VIRGINIE ]';
+    return `<div class="${cls}">
+      <div class="jv-msg-label">${label}</div>
+      <div class="jv-msg-bubble">${esc(String(m.content||''))}</div>
     </div>`;
   });
   log.innerHTML=rows.join('');

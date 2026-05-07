@@ -7,6 +7,33 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.2] – 2026-05-07
+
+### Security — 15th-Pass Audit + VIRGINIE JARVIS UI Overhaul
+
+#### Security Fixes
+- **CRITICAL — Backtest symbol injection:** `/api/v1/backtest` now validates the `symbol` parameter through `_valid_symbol()` regex before passing it to the exchange; previously raw user input was forwarded unvalidated
+- **HIGH — Backtest sl/tp range:** stop-loss and take-profit percentages are now range-clamped (`sl ∈ [0.001, 0.99]`, `tp ∈ [0.001, 5.0]`) to prevent negative values, zero, or absurdly large numbers reaching the backtest engine
+
+#### VIRGINIE · JARVIS Interface Redesign
+Complete overhaul of the VIRGINIE AI panel into a high-contrast JARVIS-style HUD:
+- **Dark glass panel** — near-black base with cyan `rgba(0,212,255)` border glow and inset lighting
+- **Corner bracket accents** — `::before`/`::after` CSS pseudo-elements add JARVIS-style corner framing
+- **Animated scanline sweep** — `.jv-scan` div moves a translucent band across the panel every 5 s
+- **Animated grid** — background grid drifts vertically (`jv-hline` keyframe); mask fades to edges
+- **Pulsing status dot** — cyan dot with `jv-pulse` keyframe precedes the panel title
+- **Monospace HUD typography** — all labels uppercase, letter-spaced, `var(--mono)` font stack
+- **Chat interface:**
+  - Title renamed `COMMAND INTERFACE`, input placeholder `ENTER COMMAND > _`
+  - Send button: `SEND ▶` with `1px` letter-spacing
+  - User messages: right-aligned `[ YOU ]` bubble — cyan tones, zero-radius top-right corner
+  - VIRGINIE messages: left-aligned `[ VIRGINIE ]` bubble — amber/gold tones, zero-radius top-left corner
+  - Empty state: `[ NO TRANSMISSION HISTORY ]` in monospace
+- **Edge panel** renamed `EDGE INTELLIGENCE` with separator line under title
+- Full light-theme overrides preserved
+
+---
+
 ## [1.9.1] – 2026-05-07
 
 ### Security — 14th-Pass Audit: WebSocket Rate-Limit & Privilege Hardening
