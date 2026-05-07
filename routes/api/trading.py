@@ -119,7 +119,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/trades")
     @auth
     def api_trades():
-        limit = min(si(request.args.get("limit", 100), 100), 1000)
+        limit = max(1, min(si(request.args.get("limit", 100), 100), 1000))
         symbol = request.args.get("symbol")
         year = request.args.get("year")
         return jsonify(
@@ -140,20 +140,28 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_backtest():
         data = body()
+        sym = str(data.get("symbol", "BTC/USDT") or "BTC/USDT").strip().upper()
+        if not _valid_symbol(sym):
+            return jsonify({"error": "invalid_symbol"}), 400
+        sl_pct = sf(
+            data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
+        )
+        tp_pct = sf(
+            data.get("tp", cfg.get("take_profit_pct", 0.060)), cfg.get("take_profit_pct", 0.060)
+        )
+        if not (0.001 <= sl_pct <= 0.99):
+            return jsonify({"error": "sl must be between 0.001 and 0.99"}), 400
+        if not (0.001 <= tp_pct <= 5.0):
+            return jsonify({"error": "tp must be between 0.001 and 5.0"}), 400
         try:
             ex = deps.create_exchange()
             result = deps.backtest.run(
                 ex,
-                data.get("symbol", "BTC/USDT"),
+                sym,
                 data.get("timeframe", "1h"),
                 min(si(data.get("candles", 500), 500), 5000),
-                sf(
-                    data.get("sl", cfg.get("stop_loss_pct", 0.025)), cfg.get("stop_loss_pct", 0.025)
-                ),
-                sf(
-                    data.get("tp", cfg.get("take_profit_pct", 0.060)),
-                    cfg.get("take_profit_pct", 0.060),
-                ),
+                sl_pct,
+                tp_pct,
                 sf(
                     data.get("vote", cfg.get("min_vote_score", 0.3)), cfg.get("min_vote_score", 0.3)
                 ),
@@ -189,6 +197,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
                         "UPDATE api_tokens SET active=0 WHERE id=%s AND user_id=%s",
                         (token_id, request.user_id),
                     )
+                    if c.rowcount == 0:
+                        return jsonify({"error": "token_not_found"}), 404
             if audit:
                 audit("token_revoked", f"token_id={token_id}", request.user_id)
             return jsonify({"success": True})
@@ -341,6 +351,7 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
 
     @bp.route("/api/v1/trading/control", methods=["POST"])
     @auth
+    @admin
     def api_trading_control():
         data = body()
         action = str(data.get("action", "start")).lower()
@@ -821,9 +832,9 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     def api_signal():
         """TradingView Webhook → sofortiger Scan."""
         data = body()
-        sym = data.get("symbol", "")
-        action = data.get("action", "buy").lower()
-        if not sym or not st.running:
+        sym = str(data.get("symbol", "") or "").strip().upper()
+        action = str(data.get("action", "buy") or "buy").lower()
+        if not sym or not _valid_symbol(sym) or not st.running:
             return jsonify({"ok": False, "msg": "Bot nicht aktiv"}), 400
 
         def _async():
@@ -882,9 +893,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             return jsonify({"error": "sl must be > 0"}), 400
         with st._lock:
             pos = st.positions.get(sym)
-        if not pos:
-            return jsonify({"error": f"No open position: {sym}"}), 404
-        with st._lock:
+            if not pos:
+                return jsonify({"error": f"No open position: {sym}"}), 404
             st.positions[sym]["sl"] = new_sl
         return jsonify({"ok": True, "symbol": sym, "sl": new_sl})
 

@@ -356,6 +356,13 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
         stats = deps.get_virginie_forecast_stats() if deps.get_virginie_forecast_stats else {}
         return jsonify({"items": feed, "stats": stats})
 
+    @bp.route("/api/v1/virginie/brain")
+    @auth
+    def api_virginie_brain():
+        if deps.ai_engine is None:
+            return jsonify({"error": "AI engine not available"}), 503
+        return jsonify(deps.ai_engine.brain_state_snapshot())
+
     @bp.route("/api/v1/virginie/forecast-quality")
     @auth
     def api_virginie_forecast_quality():

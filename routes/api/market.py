@@ -7,6 +7,7 @@ OHLCV, Portfolio-Optimierung, Backtest-Vergleich, Copy-Trading.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 from datetime import datetime
@@ -585,10 +586,13 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/backtest/compare", methods=["POST"])
     @auth
     def api_backtest_compare():
+        _VALID_TF = {"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}
         data = body()
         symbols = data.get("symbols", ["BTC/USDT"])
         tf = data.get("timeframe", "1h")
-        candles = si(data.get("candles", 500), 500)
+        if tf not in _VALID_TF:
+            tf = "1h"
+        candles = max(10, min(si(data.get("candles", 500), 500), 5000))
         if deps.backtest is None:
             return jsonify({"error": "Backtest nicht verfügbar"}), 503
         try:
@@ -668,7 +672,11 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
         # → ausschließlich Admins erlauben.
         path = db.backup()
         if path:
-            return send_file(path, as_attachment=True)
+            with open(path, "rb") as _f:
+                sha256 = hashlib.sha256(_f.read()).hexdigest()
+            resp = send_file(path, as_attachment=True)
+            resp.headers["X-Backup-SHA256"] = sha256
+            return resp
         return jsonify({"error": "Backup fehlgeschlagen"}), 500
 
     return bp

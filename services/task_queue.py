@@ -148,6 +148,7 @@ class TaskQueue:
             except queue.Empty:
                 continue
             if item is None:
+                self._queue.task_done()
                 return
             try:
                 self._execute(item)

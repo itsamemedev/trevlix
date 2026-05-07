@@ -187,13 +187,15 @@ def create_admin_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     @admin
     def api_admin_exchange_toggle(exchange_id):
-        enabled = body().get("enabled", False)
+        enabled = bool(body().get("enabled", False))
         try:
             with db._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
                         "UPDATE user_exchanges SET enabled=%s WHERE id=%s", (enabled, exchange_id)
                     )
+                    if c.rowcount == 0:
+                        return jsonify({"error": "exchange_not_found"}), 404
             return jsonify({"ok": True})
         except Exception as e:
             log.error("API error: %s", e)

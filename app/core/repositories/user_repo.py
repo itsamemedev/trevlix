@@ -205,9 +205,7 @@ class UserRepository:
                     settings = m._jloads(row["settings_json"])
                     return settings if isinstance(settings, dict) else {}
                 except (json.JSONDecodeError, TypeError):
-                    log.warning(
-                        f"get_user_settings({user_id}): invalid JSON in settings_json"
-                    )
+                    log.warning(f"get_user_settings({user_id}): invalid JSON in settings_json")
                     return {}
             return {}
         except Exception as e:
@@ -261,8 +259,7 @@ class UserRepository:
                             user_id,
                             token[:500],
                             label,
-                            datetime.now(UTC)
-                            + timedelta(hours=cfg.get("jwt_expiry_hours", 24)),
+                            datetime.now(UTC) + timedelta(hours=cfg.get("jwt_expiry_hours", 24)),
                         ),
                     )
         except Exception as e:

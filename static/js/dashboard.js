@@ -65,9 +65,9 @@ function toggleMobileNav(){
     const kbd=nb.querySelector('.nav-kbd')?.textContent||'';
     const isActive=nb.classList.contains('active');
     const oc=nb.getAttribute('onclick')||'';
-    html+=`<div class="drawer-item${isActive?' active':''}" onclick="${oc}">
-      <span class="di-icon">${icon}</span><span>${label}</span>
-      ${kbd?'<span class="di-kbd">'+kbd+'</span>':''}
+    html+=`<div class="drawer-item${isActive?' active':''}" onclick="${esc(oc)}">
+      <span class="di-icon">${esc(icon)}</span><span>${esc(label)}</span>
+      ${kbd?'<span class="di-kbd">'+esc(kbd)+'</span>':''}
     </div>`;
   });
   drawer.innerHTML=html;
@@ -307,7 +307,7 @@ function updateUI(d){
   // Update badge in header
   if(d.update_status?.update_available){
     const ub = document.getElementById('statusBadge');
-    if(!document.getElementById('updateHeaderBadge')){
+    if(ub && !document.getElementById('updateHeaderBadge')){
       const b = document.createElement('div');
       b.id='updateHeaderBadge';
       b.style.cssText='font-size:9px;background:rgba(0,230,118,.15);border:1px solid rgba(0,230,118,.3);color:var(--green);border-radius:5px;padding:2px 7px;font-family:var(--mono);font-weight:700;cursor:pointer;';
@@ -556,7 +556,18 @@ function updateAI(ai){
 const _ai3dState = {
   ready:false, angle:0, wobble:0,
   wf:0, bull:0, bear:0, samples:0, preds:0, allowed:0, blocked:0,
-  agentCount:0, lastAgent:'—', agentNames:[]
+  agentCount:0, lastAgent:'—', agentNames:[],
+  // Brain visualization state
+  brain:{
+    symbol:'', vote_conf:0, model_prob:0, blended_prob:0,
+    ev_score:0, guardrail_passed:false, regime:'neutral',
+    decision:'IDLE', autonomy_weight:0.7, fast_path:false,
+    wf_accuracy:0, bull_accuracy:0, bear_accuracy:0,
+    allowed_count:0, blocked_count:0, is_trained:false,
+    updated_at:'', error:false
+  },
+  // Particle system for animated neural edges
+  particles:[]
 };
 const _virginieChat = {loaded:false,messages:[],sending:false,pendingMessage:'',socketTimer:null};
 let _virginieEdgeTimer = null;
@@ -566,17 +577,16 @@ function _renderVirginieChat(){
   const log=document.getElementById('ai3dChatLog');
   if(!log) return;
   if(!_virginieChat.messages.length){
-    log.innerHTML='<div style="font-size:10px;color:var(--sub)">Noch kein Chatverlauf. Schreibe VIRGINIE eine erste Nachricht.</div>';
+    log.innerHTML='<div style="font-size:9px;color:rgba(0,180,220,.35);font-family:var(--mono);letter-spacing:.8px;text-align:center;padding:14px 0">[ NO TRANSMISSION HISTORY ]<br><span style="opacity:.6">AWAITING COMMAND INPUT…</span></div>';
     return;
   }
   const rows=_virginieChat.messages.slice(-40).map(m=>{
     const isUser=String(m.role||'')==='user';
-    const bg=isUser?'rgba(110,231,255,.12)':'rgba(212,175,55,.12)';
-    const border=isUser?'rgba(110,231,255,.28)':'rgba(212,175,55,.28)';
-    const who=isUser?'Du':'VIRGINIE';
-    return `<div style="border:1px solid ${border};background:${bg};border-radius:7px;padding:7px 8px">
-      <div style="font-size:9px;color:var(--sub);font-family:var(--mono);margin-bottom:3px">${who}</div>
-      <div style="font-size:11px;line-height:1.45;color:#f5efe1;white-space:pre-wrap">${esc(String(m.content||''))}</div>
+    const cls=isUser?'jv-msg jv-msg-user':'jv-msg jv-msg-ai';
+    const label=isUser?'[ YOU ]':'[ VIRGINIE ]';
+    return `<div class="${cls}">
+      <div class="jv-msg-label">${label}</div>
+      <div class="jv-msg-bubble">${esc(String(m.content||''))}</div>
     </div>`;
   });
   log.innerHTML=rows.join('');
@@ -690,7 +700,7 @@ function initVirginieChat(){
   loadVirginieChatHistory();
   loadVirginieEdgeProfile();
   if(!_virginieEdgeTimer){
-    _virginieEdgeTimer = setInterval(loadVirginieEdgeProfile, 30000);
+    _virginieEdgeTimer = setInterval(()=>{ if(!document.hidden) loadVirginieEdgeProfile(); }, 30000);
   }
 }
 
@@ -845,91 +855,298 @@ function updateAI3DFromAI(ai){
     requestAnimationFrame(_renderAI3D);
   }
 }
+
+function updateAI3DFromBrain(brain){
+  if(!brain) return;
+  const b = _ai3dState.brain;
+  b.symbol = String(brain.symbol||'');
+  b.vote_conf = Number(brain.vote_conf||0);
+  b.model_prob = Number(brain.model_prob||0);
+  b.blended_prob = Number(brain.blended_prob||0);
+  b.ev_score = Number(brain.ev_score||0);
+  b.guardrail_passed = Boolean(brain.guardrail_passed);
+  b.regime = String(brain.regime||'neutral');
+  b.decision = String(brain.decision||'IDLE');
+  b.autonomy_weight = Number(brain.autonomy_weight||0.7);
+  b.fast_path = Boolean(brain.fast_path);
+  b.wf_accuracy = Number(brain.wf_accuracy||0);
+  b.bull_accuracy = Number(brain.bull_accuracy||0);
+  b.bear_accuracy = Number(brain.bear_accuracy||0);
+  b.allowed_count = Number(brain.allowed_count||0);
+  b.blocked_count = Number(brain.blocked_count||0);
+  b.is_trained = Boolean(brain.is_trained);
+  b.updated_at = String(brain.updated_at||'');
+  b.error = false;
+}
+
+function _pollBrain(){
+  fetch('/api/v1/virginie/brain',{headers:{'X-Requested-With':'XMLHttpRequest'}})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{ if(d) updateAI3DFromBrain(d); })
+    .catch(()=>{ _ai3dState.brain.error=true; });
+}
+
+// Neural network brain layout constants
+const _NN = {
+  // Layers: inputs, ml-models, virginie-core, output
+  // Canvas is 560x240
+  L0x:62, L1x:200, L2x:345, L3x:490,
+  inputs:[
+    {lbl:'VOTE',key:'vote_conf'},
+    {lbl:'MODEL',key:'model_prob'},
+    {lbl:'REGIME',key:'regime'},
+    {lbl:'BLEND',key:'blended_prob'},
+    {lbl:'EV',key:'ev_score'},
+    {lbl:'GUARD',key:'guardrail_passed'}
+  ],
+  models:[
+    {lbl:'RF'},
+    {lbl:'XGB'},
+    {lbl:'LSTM'},
+    {lbl:'REG'}
+  ]
+};
+
+function _nnNodeY(layerSize, index, canvasH){
+  const margin=24, usable=canvasH-margin*2;
+  const step = layerSize>1 ? usable/(layerSize-1) : 0;
+  return margin + index*step + (layerSize===1 ? usable/2 : 0);
+}
+
+function _nnColor(decision, alpha){
+  if(decision==='BUY') return `rgba(0,255,136,${alpha})`;
+  if(decision==='BLOCK') return `rgba(255,80,80,${alpha})`;
+  return `rgba(0,200,255,${alpha})`;
+}
+
+function _spawnParticle(x0,y0,x1,y1,col){
+  return {x0,y0,x1,y1,t:Math.random(),speed:0.004+Math.random()*0.006,col,alpha:0.7+Math.random()*0.3};
+}
+
+function _ensureParticles(w,h,decision){
+  const inputs=_NN.inputs, models=_NN.models;
+  const coreY=h/2, outY=h/2;
+  const col=_nnColor(decision,0.9);
+  const needed=inputs.length*models.length + models.length + 1;
+  while(_ai3dState.particles.length < needed){
+    const ii=Math.floor(Math.random()*inputs.length);
+    const mi=Math.floor(Math.random()*models.length);
+    const iy=_nnNodeY(inputs.length,ii,h);
+    const my=_nnNodeY(models.length,mi,h);
+    const choice=Math.random();
+    let p;
+    if(choice<0.5) p=_spawnParticle(_NN.L0x,iy,_NN.L1x,my,col);
+    else if(choice<0.85) p=_spawnParticle(_NN.L1x,my,_NN.L2x,coreY,col);
+    else p=_spawnParticle(_NN.L2x,coreY,_NN.L3x,outY,col);
+    _ai3dState.particles.push(p);
+  }
+  if(_ai3dState.particles.length > needed+30) _ai3dState.particles.splice(0,10);
+}
+
 function _renderAI3D(){
   const c=document.getElementById('ai3dCanvas');
   if(!c){ _ai3dState.ready=false; return; }
   const ctx=c.getContext('2d');
-  const w=c.width,h=c.height;
+  const w=c.width, h=c.height;
+
+  // Dark scanline background
   ctx.clearRect(0,0,w,h);
-  // Background stars
-  for(let i=0;i<26;i++){
-    const x=(i*97 + _ai3dState.angle*13)%w;
-    const y=(i*53 + _ai3dState.angle*7)%h;
-    ctx.fillStyle='rgba(255,210,130,0.08)';
-    ctx.fillRect(x,y,2,2);
+  ctx.fillStyle='rgba(0,0,0,0.88)';
+  ctx.fillRect(0,0,w,h);
+
+  // Subtle grid
+  ctx.strokeStyle='rgba(0,200,255,0.04)';
+  ctx.lineWidth=1;
+  for(let gx=0;gx<w;gx+=40){ ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,h); ctx.stroke(); }
+  for(let gy=0;gy<h;gy+=40){ ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(w,gy); ctx.stroke(); }
+
+  const brain=_ai3dState.brain;
+  const dec=brain.decision||'IDLE';
+  const mainCol=_nnColor(dec,1);
+  const dimCol=_nnColor(dec,0.25);
+  const inputs=_NN.inputs, models=_NN.models;
+  const coreX=_NN.L2x, coreY=h/2;
+  const outX=_NN.L3x, outY=h/2;
+
+  // ── Helper: get signal value 0..1 for each input node ──────────────────────
+  function inputVal(key){
+    if(key==='vote_conf') return Math.min(1,Math.max(0, brain.vote_conf));
+    if(key==='model_prob') return Math.min(1,Math.max(0, brain.model_prob));
+    if(key==='blended_prob') return Math.min(1,Math.max(0, brain.blended_prob));
+    if(key==='ev_score') return Math.min(1,Math.max(0, brain.ev_score));
+    if(key==='regime') return brain.regime==='bull'?0.85:brain.regime==='bear'?0.15:0.5;
+    if(key==='guardrail_passed') return brain.guardrail_passed?1:0;
+    return 0.5;
   }
-  const cx=w*0.34, cy=h*0.55;
-  _ai3dState.angle += 0.015;
-  _ai3dState.wobble = Math.sin(_ai3dState.angle*1.4)*6;
-  // Orbital ring
-  ctx.save();
-  ctx.translate(cx,cy);
-  ctx.rotate(_ai3dState.angle);
-  ctx.strokeStyle='rgba(255,190,80,0.35)';
-  ctx.lineWidth=2;
-  ctx.beginPath(); ctx.ellipse(0,0,90,28,0,0,Math.PI*2); ctx.stroke();
-  ctx.rotate(-_ai3dState.angle*1.8);
-  ctx.strokeStyle='rgba(0,255,180,0.22)';
-  ctx.beginPath(); ctx.ellipse(0,0,74,22,0,0,Math.PI*2); ctx.stroke();
-  ctx.restore();
-  // Agenten-Orbits (VIRGINIE)
-  const agentN = Math.max(0, Math.min(12, _ai3dState.agentCount||0));
-  for(let i=0;i<agentN;i++){
-    const a = _ai3dState.angle + (i*(Math.PI*2/Math.max(agentN,1)));
-    const rx = 70 + (i%3)*12;
-    const ry = 30 + (i%2)*10;
-    const x = cx + Math.cos(a)*rx;
-    const y = cy + Math.sin(a)*ry;
-    ctx.beginPath();
-    ctx.arc(x,y,3.2,0,Math.PI*2);
-    ctx.fillStyle = i===0 ? 'rgba(0,255,136,.9)' : 'rgba(255,196,90,.8)';
-    ctx.fill();
+  function modelVal(i){
+    // RF→vote_conf, XGB→model_prob, LSTM→blended_prob, REG→regime
+    const mv=[brain.vote_conf, brain.model_prob, brain.blended_prob,
+      brain.regime==='bull'?0.8:brain.regime==='bear'?0.2:0.5];
+    return Math.min(1,Math.max(0,mv[i]||0));
   }
-  ctx.fillStyle='rgba(220,200,150,.85)';
-  ctx.font='10px Fira Code, monospace';
-  ctx.fillText(`Agents: ${_ai3dState.agentCount} | Last: ${_ai3dState.lastAgent}`, 12, h-10);
-  // Core sphere
-  const grd=ctx.createRadialGradient(cx-10,cy-16,8,cx,cy,60);
-  grd.addColorStop(0,'rgba(255,236,180,.95)');
-  grd.addColorStop(.5,'rgba(255,180,70,.45)');
-  grd.addColorStop(1,'rgba(255,120,40,.08)');
-  ctx.fillStyle=grd;
-  ctx.beginPath(); ctx.arc(cx,cy+_ai3dState.wobble,52,0,Math.PI*2); ctx.fill();
-  // 3D bars (live metrics)
-  const bars=[
-    {k:'WF',v:_ai3dState.wf,c:'#00ffaa'},
-    {k:'Bull',v:_ai3dState.bull,c:'#6ee7ff'},
-    {k:'Bear',v:_ai3dState.bear,c:'#ff8ca1'},
-    {k:'Allow',v:Math.min(100,_ai3dState.allowed),c:'#c7ff6e'},
-    {k:'Block',v:Math.min(100,_ai3dState.blocked),c:'#ffb36e'}
-  ];
-  const bx=w*0.62, by=h*0.78, bw=28, gap=14, maxH=120;
-  bars.forEach((b,i)=>{
-    const x=bx+i*(bw+gap), bh=Math.max(4, Math.min(maxH,(b.v/100)*maxH));
-    // Front
-    ctx.globalAlpha=0.78;
-    ctx.fillStyle=b.c;
-    ctx.fillRect(x,by-bh,bw,bh);
-    ctx.globalAlpha=1;
-    // Side
-    ctx.fillStyle='rgba(255,255,255,.08)';
-    ctx.beginPath();
-    ctx.moveTo(x+bw,by-bh); ctx.lineTo(x+bw+7,by-bh-5); ctx.lineTo(x+bw+7,by-5); ctx.lineTo(x+bw,by);
-    ctx.closePath(); ctx.fill();
-    // Top
-    ctx.fillStyle='rgba(255,255,255,.16)';
-    ctx.beginPath();
-    ctx.moveTo(x,by-bh); ctx.lineTo(x+7,by-bh-5); ctx.lineTo(x+bw+7,by-bh-5); ctx.lineTo(x+bw,by-bh);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle='rgba(220,225,245,.9)';
-    ctx.font='11px Barlow, sans-serif';
-    ctx.fillText(b.k,x,by+14);
+
+  // ── Edges L0→L1 ─────────────────────────────────────────────────────────────
+  inputs.forEach((inp,ii)=>{
+    const iy=_nnNodeY(inputs.length,ii,h);
+    const iv=inputVal(inp.key);
+    models.forEach((mod,mi)=>{
+      const my=_nnNodeY(models.length,mi,h);
+      ctx.beginPath();
+      ctx.moveTo(_NN.L0x,iy); ctx.lineTo(_NN.L1x,my);
+      ctx.strokeStyle=`rgba(0,200,255,${0.04+iv*0.12})`;
+      ctx.lineWidth=0.7; ctx.stroke();
+    });
   });
-  // Labels
-  ctx.fillStyle='rgba(235,220,180,.85)';
-  ctx.font='12px Fira Code, monospace';
-  ctx.fillText(`samples:${_ai3dState.samples}`, 18, 22);
-  ctx.fillText(`pred:${_ai3dState.preds}`, 18, 40);
+
+  // ── Edges L1→L2 ─────────────────────────────────────────────────────────────
+  models.forEach((mod,mi)=>{
+    const my=_nnNodeY(models.length,mi,h);
+    const mv=modelVal(mi);
+    ctx.beginPath();
+    ctx.moveTo(_NN.L1x,my); ctx.lineTo(coreX,coreY);
+    ctx.strokeStyle=`rgba(0,255,180,${0.06+mv*0.18})`;
+    ctx.lineWidth=0.8+mv*1.2; ctx.stroke();
+  });
+
+  // ── Edge L2→L3 ──────────────────────────────────────────────────────────────
+  const evNorm=Math.min(1,Math.max(0,brain.ev_score));
+  ctx.beginPath();
+  ctx.moveTo(coreX,coreY); ctx.lineTo(outX,outY);
+  const edgeGrd=ctx.createLinearGradient(coreX,coreY,outX,outY);
+  edgeGrd.addColorStop(0, dimCol);
+  edgeGrd.addColorStop(1, mainCol);
+  ctx.strokeStyle=edgeGrd;
+  ctx.lineWidth=2+evNorm*3; ctx.stroke();
+
+  // ── Particles ───────────────────────────────────────────────────────────────
+  _ensureParticles(w,h,dec);
+  _ai3dState.particles.forEach(p=>{
+    p.t += p.speed;
+    if(p.t>1){ p.t=0; p.col=_nnColor(dec,0.9); }
+    const px=p.x0+(p.x1-p.x0)*p.t;
+    const py=p.y0+(p.y1-p.y0)*p.t;
+    const fade=Math.sin(p.t*Math.PI);
+    ctx.beginPath();
+    ctx.arc(px,py,2.2,0,Math.PI*2);
+    ctx.fillStyle=p.col.replace(/[\d.]+\)$/,`${(p.alpha*fade).toFixed(2)})`);
+    ctx.fill();
+  });
+
+  // ── Layer 0: Input nodes ────────────────────────────────────────────────────
+  inputs.forEach((inp,ii)=>{
+    const iy=_nnNodeY(inputs.length,ii,h);
+    const iv=inputVal(inp.key);
+    const grd=ctx.createRadialGradient(_NN.L0x,iy,1,_NN.L0x,iy,11);
+    grd.addColorStop(0,`rgba(0,200,255,${0.4+iv*0.6})`);
+    grd.addColorStop(1,'rgba(0,200,255,0)');
+    ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(_NN.L0x,iy,11,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(_NN.L0x,iy,6,0,Math.PI*2);
+    ctx.fillStyle=`rgba(0,200,255,${0.5+iv*0.5})`; ctx.fill();
+    ctx.fillStyle='rgba(180,240,255,0.9)';
+    ctx.font='bold 8px "Fira Code",monospace';
+    ctx.textAlign='right';
+    ctx.fillText(inp.lbl, _NN.L0x-14, iy+3);
+    // Value bar
+    ctx.fillStyle='rgba(0,200,255,0.15)';
+    ctx.fillRect(_NN.L0x-12,iy-3,10,6);
+    ctx.fillStyle=`rgba(0,200,255,${0.4+iv*0.6})`;
+    ctx.fillRect(_NN.L0x-12,iy-3,10*iv,6);
+  });
+
+  // ── Layer 1: Model nodes ────────────────────────────────────────────────────
+  models.forEach((mod,mi)=>{
+    const my=_nnNodeY(models.length,mi,h);
+    const mv=modelVal(mi);
+    const grd=ctx.createRadialGradient(_NN.L1x,my,2,_NN.L1x,my,14);
+    grd.addColorStop(0,`rgba(0,255,180,${0.45+mv*0.55})`);
+    grd.addColorStop(1,'rgba(0,255,180,0)');
+    ctx.fillStyle=grd;
+    ctx.beginPath(); ctx.arc(_NN.L1x,my,14,0,Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(_NN.L1x,my,7,0,Math.PI*2);
+    ctx.fillStyle=`rgba(0,255,180,${0.6+mv*0.4})`; ctx.fill();
+    ctx.strokeStyle='rgba(0,255,180,0.5)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.arc(_NN.L1x,my,10,0,Math.PI*2); ctx.stroke();
+    ctx.fillStyle='rgba(180,255,220,0.95)';
+    ctx.font='bold 9px "Fira Code",monospace';
+    ctx.textAlign='center';
+    ctx.fillText(mod.lbl, _NN.L1x, my+3);
+    ctx.fillStyle='rgba(0,255,180,0.7)';
+    ctx.font='8px "Fira Code",monospace';
+    ctx.fillText(`${(mv*100).toFixed(0)}%`, _NN.L1x, my+18);
+  });
+
+  // ── Layer 2: VIRGINIE Core ───────────────────────────────────────────────────
+  _ai3dState.angle = (_ai3dState.angle||0)+0.012;
+  const coreR=28;
+  // Rotating halo
+  ctx.save();
+  ctx.translate(coreX,coreY);
+  ctx.rotate(_ai3dState.angle);
+  ctx.strokeStyle=mainCol.replace(/[\d.]+\)$/,'0.35)');
+  ctx.lineWidth=1;
+  ctx.setLineDash([4,6]);
+  ctx.beginPath(); ctx.arc(0,0,coreR+10,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+  // Core glow
+  const cGrd=ctx.createRadialGradient(coreX,coreY,4,coreX,coreY,coreR+8);
+  cGrd.addColorStop(0, mainCol.replace(/[\d.]+\)$/,'0.9)'));
+  cGrd.addColorStop(0.5, mainCol.replace(/[\d.]+\)$/,'0.25)'));
+  cGrd.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=cGrd;
+  ctx.beginPath(); ctx.arc(coreX,coreY,coreR+8,0,Math.PI*2); ctx.fill();
+  // Core circle
+  ctx.beginPath(); ctx.arc(coreX,coreY,coreR,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.6)'; ctx.fill();
+  ctx.strokeStyle=mainCol; ctx.lineWidth=1.5; ctx.stroke();
+  // Core label
+  ctx.fillStyle='rgba(255,255,255,0.95)';
+  ctx.font='bold 8px "Fira Code",monospace';
+  ctx.textAlign='center';
+  ctx.fillText('VIRGINIE', coreX, coreY-6);
+  ctx.fillText('CORE', coreX, coreY+5);
+  // EV score
+  ctx.fillStyle=mainCol;
+  ctx.font='bold 9px "Fira Code",monospace';
+  ctx.fillText(`EV ${brain.ev_score.toFixed(3)}`, coreX, coreY+17);
+  // Blended prob arc
+  const arcPct=Math.min(1,Math.max(0,brain.blended_prob));
+  ctx.beginPath();
+  ctx.arc(coreX,coreY,coreR-4,-Math.PI/2,-Math.PI/2+arcPct*Math.PI*2);
+  ctx.strokeStyle=mainCol; ctx.lineWidth=3; ctx.stroke();
+
+  // ── Layer 3: Output decision node ───────────────────────────────────────────
+  const outR=22;
+  const outGrd=ctx.createRadialGradient(outX,outY,2,outX,outY,outR+6);
+  outGrd.addColorStop(0, mainCol.replace(/[\d.]+\)$/,'0.95)'));
+  outGrd.addColorStop(0.6, mainCol.replace(/[\d.]+\)$/,'0.3)'));
+  outGrd.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=outGrd;
+  ctx.beginPath(); ctx.arc(outX,outY,outR+6,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(outX,outY,outR,0,Math.PI*2);
+  ctx.fillStyle='rgba(0,0,0,0.7)'; ctx.fill();
+  ctx.strokeStyle=mainCol; ctx.lineWidth=2; ctx.stroke();
+  ctx.fillStyle='rgba(255,255,255,0.98)';
+  ctx.font=`bold ${dec==='IDLE'?9:10}px "Fira Code",monospace`;
+  ctx.textAlign='center';
+  ctx.fillText(dec, outX, outY+4);
+
+  // ── Status bar at bottom ─────────────────────────────────────────────────────
+  ctx.fillStyle='rgba(0,200,255,0.5)';
+  ctx.font='8px "Fira Code",monospace';
+  ctx.textAlign='left';
+  const sym=brain.symbol?`[${brain.symbol}]  `:'';
+  const trained=brain.is_trained?'TRAINED':'UNTRAINED';
+  const regime=brain.regime.toUpperCase();
+  const wf=`WF:${brain.wf_accuracy.toFixed(1)}%`;
+  const aw=`w=${brain.autonomy_weight.toFixed(2)}`;
+  ctx.fillText(`${sym}${trained}  ${regime}  ${wf}  ${aw}`, 8, h-6);
+  // Timestamp right
+  ctx.textAlign='right';
+  ctx.fillStyle='rgba(0,200,255,0.3)';
+  ctx.fillText(brain.updated_at||'--:--:--', w-6, h-6);
+
   if(_ai3dState.ready) requestAnimationFrame(_renderAI3D);
 }
 
@@ -1230,15 +1447,17 @@ async function loadHeatmap(sortBy){
   currentHmSort=sortBy;
   document.querySelectorAll('[id^="hmBtn"]').forEach(b=>b.classList.remove('active'));
   const btn=document.getElementById('hmBtn'+sortBy); if(btn) btn.classList.add('active');
-  document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
+  const hmEl=document.getElementById('heatmapGrid');
+  if(!hmEl) return;
+  hmEl.innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
   try{
     const r=await fetch('/api/heatmap'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json();
-    if(data.error){document.getElementById('heatmapGrid').innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error)}</div>`;return;}
+    if(!Array.isArray(data)){hmEl.innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error||'Keine Daten')}</div>`;return;}
     const sorted=[...data].sort((a,b)=>sortBy==='volume'?b.volume-a.volume:sortBy==='news'?b.news_score-a.news_score:b.change-a.change);
-    document.getElementById('heatmapGrid').innerHTML=sorted.slice(0,40).map(coin=>{
+    hmEl.innerHTML=sorted.slice(0,40).map(coin=>{
       const pct=coin.change, int=Math.min(1,Math.abs(pct)/10);
       const bg=pct>=0?`rgba(0,${Math.round(100+130*int)},${Math.round(80*int)},${0.18+0.5*int})`:`rgba(${Math.round(180+75*int)},${Math.round(30*int)},${Math.round(60*int)},${0.18+0.5*int})`;
-      const sym=coin.symbol.replace('/USDT','');
+      const sym=esc(coin.symbol.replace('/USDT',''));
       const nc=coin.news_score>0.3?'🟢':coin.news_score<-0.3?'🔴':'⬜';
       const cls=(coin.in_pos?' inpos':'')+(coin.short?' inshort':'');
       return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${escJS(coin.symbol)}')">
@@ -1247,7 +1466,7 @@ async function loadHeatmap(sortBy){
         <div class="hm-news">${nc}</div>
       </div>`;
     }).join('');
-  }catch(e){document.getElementById('heatmapGrid').innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
+  }catch(e){if(hmEl) hmEl.innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
 }
 
 // ── Chart ────────────────────────────────────────────────────────────
@@ -1648,7 +1867,7 @@ function saveDiscord(){
 }
 async function createToken(){
   try{
-    const res=await fetch('/api/v1/token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({label:'dashboard'})});
+    const res=await fetch('/api/v1/token',{method:'POST',credentials:'include',headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken},body:JSON.stringify({label:'dashboard',_csrf:_csrfToken})});
     const data=await res.json();
     const box=document.getElementById('apiTokenBox');
     box.style.display='block'; box.textContent=data.token||'—';
@@ -1729,6 +1948,7 @@ socket.on('auth_error',(d)=>{
 socket.on('update', d=>{
   if(d){
     updateUI(d);
+    updateAdminKPIs(d);
     if(d.user_role) applyStateToRole(d);
     // Initialize exchange selector from server state
     if(d.exchange && !_selectedExchange) {
@@ -1876,7 +2096,7 @@ async function updateGasFees(){
     if(sig) sig.textContent = d.signal===1?'⬆ '+QI18n.t('gas_high'):d.signal===-1?'⬇ '+QI18n.t('gas_low'):'→ '+QI18n.t('gas_normal');
   } catch(e){ console.warn('Gas fees fetch failed:', e); }
 }
-let _gasInterval = setInterval(updateGasFees, 120000);
+let _gasInterval = setInterval(()=>{ if(!document.hidden) updateGasFees(); }, 120000);
 // Cleanup on page unload to prevent memory leak
 window.addEventListener('beforeunload', () => {
   clearInterval(_gasInterval);
@@ -2301,8 +2521,7 @@ function updateAdminKPIs(d) {
   _s('adminClientCount', d.connected_clients || 0);
   _s('adminMarketCount', (d.symbols || []).length || 1);
 }
-// Hook into existing update flow
-socket.on('update', d => { if (d) updateAdminKPIs(d); });
+// updateAdminKPIs is merged into the primary socket.on('update') handler above
 
 // ── Admin: LLM Provider Status ────────────────────────────────────────────────
 async function loadLlmProviderStatus() {
@@ -3599,6 +3818,10 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   initCharts();
   initVirginieChat();
+  // Brain state polling – every 3s when tab is visible
+  _pollBrain();
+  const _brainInterval = setInterval(()=>{ if(!document.hidden) _pollBrain(); }, 3000);
+  window.addEventListener('beforeunload', ()=>clearInterval(_brainInterval), {once:true});
   const taxYearEl=document.getElementById('taxYear');
   if(taxYearEl) taxYearEl.value=new Date().getFullYear();
   QI18n.init('langSwitcher');

@@ -12,6 +12,9 @@ _CSP = (
     "font-src 'self' fonts.gstatic.com; "
     "img-src 'self' data: blob:; "
     "connect-src 'self' wss: ws:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
     "frame-ancestors 'self';"
 )
 
@@ -25,6 +28,7 @@ def apply_security_headers(response, *, is_secure: bool):
         "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
     )
     response.headers["Content-Security-Policy"] = _CSP
+    response.headers["X-Permitted-Cross-Domain-Policies"] = "none"
     if is_secure:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response

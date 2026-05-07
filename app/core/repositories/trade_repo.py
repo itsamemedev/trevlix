@@ -211,8 +211,7 @@ class TradeRepository:
                     c.execute(q, p)
                     rows = c.fetchall()
             return [
-                _serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at"))
-                for r in rows
+                _serialize_dates(dict(r), ("opened_at", "closed_at", "updated_at")) for r in rows
             ]
         except Exception as e:
             log.error(f"load_open_positions: {e}")

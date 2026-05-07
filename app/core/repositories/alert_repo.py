@@ -95,9 +95,7 @@ class AlertRepository:
                             (user_id,),
                         )
                     else:
-                        c.execute(
-                            "SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50"
-                        )
+                        c.execute("SELECT * FROM price_alerts ORDER BY created_at DESC LIMIT 50")
                     rows = c.fetchall()
             result = []
             for r in rows:

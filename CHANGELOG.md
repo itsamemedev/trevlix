@@ -7,6 +7,141 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.4] – 2026-05-07
+
+### Security + Bug Fixes — 16th-Pass Audit (4-Agent Deep Bug Hunt)
+
+#### CRITICAL Security Fixes
+- **Privilege escalation — WebSocket:** `on_select_exchange` and `on_start_bot` escalated from `_ws_auth_required()` to `_ws_admin_required()` — any authenticated user could previously redirect the live bot to a different exchange or start/stop it
+- **Missing admin gate — REST:** `POST /api/v1/trading/control` (start/stop bot) was `@auth`-only; now also requires `@admin`
+- **CSRF bypass:** `session_guard.py` CSRF check skipped when `_csrf_token` was absent from session; missing token now always rejects the request
+
+#### HIGH Security + Correctness Fixes
+- **Discord webhook SSRF + rate limit:** `on_update_discord` now validates webhook URL must start with `https://discord.com/api/webhooks/` and adds `_ws_rate_check("update_discord", 5.0)` to prevent replay flooding
+- **Grid rate limit:** `ws_create_grid` missing `_ws_rate_check("create_grid", 10.0)` — now added
+- **Encryption silent failure:** `decrypt_value()` returned the raw ciphertext when decryption failed (wrong ENCRYPTION_KEY), causing encrypted blobs to be passed to exchange SDKs as API credentials; now raises `ValueError` instead
+- **Circuit breaker not extended on drawdown:** if a drawdown breach occurred while a consecutive-loss CB was already running, the CB expiry was not extended — bot could resume trading mid-drawdown; now always sets `max(existing_expiry, new_expiry)`
+- **MACD strategy inverted:** `strat_macd` generated buy signals only on bearish-zone crossovers (`macd_cur < 0`) and missed all bull-market confirmations; fixed to standard zero-line confirmation (`macd_cur > 0`)
+- **Concept drift inverted:** `_detect_concept_drift` had old/new slices swapped (`closed_trades` is newest-first); drift log and weight-reset trigger were comparing in wrong direction
+- **VIRGINIE guardrails disabled by default:** `virginie_min_score=0.0` and `virginie_max_risk_penalty=1000.0` in config defaults meant no trade was ever blocked by guardrails; corrected to `min_score=0.5` and `max_risk_penalty=5.0` matching `VirginieGuardrails` class defaults
+
+#### MEDIUM Fixes — API Routes
+- **Negative pagination limit:** `limit = max(1, min(..., 1000))` applied to `api_trades`
+- **TOCTOU in PATCH positions sl:** merged two separate lock acquisitions into a single `with st._lock:` block to prevent `KeyError` on concurrent close
+- **Token revoke rowcount:** `DELETE /api/v1/token/<id>` now returns 404 if no rows updated (previously always returned 200)
+- **Signal webhook symbol injection:** `POST /api/v1/signal` now validates via `_valid_symbol()` and `.upper()/.strip()` before passing to `scan_symbol`
+- **Exchange toggle bool cast:** `enabled` in `api_admin_exchange_toggle` now `bool()`-cast; endpoint returns 404 if no rows updated
+- **Backtest compare unvalidated:** `candles` now capped `[10, 5000]` and `tf` validated against allowlist; defaults to `1h` on invalid input
+
+#### MEDIUM Fixes — Services
+- **`genetic.evolve()` live list:** `on_sell` now passes `list(state.closed_trades)` snapshot instead of live reference to prevent `RuntimeError: list changed size during iteration`
+- **`_optimize` reads without lock:** wrapped `state.closed_trades[:]` in `with state._lock:`
+- **Knowledge LLM duplicate calls:** `generate_market_context_async` timestamp guard now claims the slot under `self._lock` before spawning the thread, preventing duplicate LLM calls
+- **`DominanceFilter` cache TOCTOU:** captured `(btc_dom, usdt_dom)` tuple under lock before calling `cache.set()` outside it
+- **`task_queue` sentinel leaks:** `task_done()` now called before returning on `None` sentinel, preventing `queue.join()` deadlock
+
+#### MEDIUM Fixes — Frontend
+- **XSS — nav drawer:** `onclick`, `icon`, `label`, `kbd` attributes now wrapped in `esc()` in the mobile nav drawer generator
+- **XSS — heatmap symbol:** `coin.symbol` in heatmap cell `innerHTML` now escaped via `esc()`
+- **Null crash — heatmap:** all `getElementById('heatmapGrid')` accesses guarded with null check + early return
+- **Null crash — update badge:** `ub.parentNode.insertBefore()` now gated on `ub &&`
+- **Missing CSRF on createToken:** `POST /api/v1/token` now sends `X-CSRFToken` header and `_csrf` body field
+- **`_pollBrain` interval leak:** interval handle stored and cleared in `beforeunload`
+- **Tab visibility — gas/Virginie:** `_gasInterval` and `_virginieEdgeTimer` callbacks now skip when `document.hidden`
+- **Duplicate socket.on('update'):** merged `updateAdminKPIs` call into primary handler; removed second registration
+
+## [1.9.3] – 2026-05-07
+
+### VIRGINIE Neural Brain Visualization + Brain State API
+
+#### Features
+- **Neural network brain canvas:** Complete rewrite of the VIRGINIE 3D canvas (`_renderAI3D`) as a live neural network diagram — input nodes (VOTE, MODEL, REGIME, BLEND, EV, GUARD), ML model layer (RF, XGB, LSTM, REG), VIRGINIE Core EV node, and a BUY/HOLD/BLOCK output decision node; animated particle pulses flow along edges proportional to signal strength
+- **Brain state API:** New `GET /api/v1/virginie/brain` endpoint exposes real-time internal state: current symbol, vote confidence, model probability, blended probability, EV score, guardrail pass/fail, regime, decision, autonomy weight, fast-path flag, accuracy metrics, and allow/block counts
+- **Live brain state capture:** `AIEngine.should_buy()` now updates `brain_state` on every decision path (primary control, fast-path, full ML path, vote fallback); symbol is forwarded from `trading_ops.py` via new optional `symbol=` keyword argument
+- **Brain polling:** Dashboard polls `/api/v1/virginie/brain` every 3 s (tab-visible only) via `_pollBrain()` + `updateAI3DFromBrain()`; particle colors shift between cyan (idle), green (BUY), red (BLOCK) in real time
+- **Status bar:** Canvas bottom shows current symbol, training state, regime, WF accuracy, autonomy weight, and last-decision timestamp
+
+## [1.9.2] – 2026-05-07
+
+### Security — 15th-Pass Audit + VIRGINIE JARVIS UI Overhaul
+
+#### Security Fixes
+- **CRITICAL — Backtest symbol injection:** `/api/v1/backtest` now validates the `symbol` parameter through `_valid_symbol()` regex before passing it to the exchange; previously raw user input was forwarded unvalidated
+- **HIGH — Backtest sl/tp range:** stop-loss and take-profit percentages are now range-clamped (`sl ∈ [0.001, 0.99]`, `tp ∈ [0.001, 5.0]`) to prevent negative values, zero, or absurdly large numbers reaching the backtest engine
+
+#### VIRGINIE · JARVIS Interface Redesign
+Complete overhaul of the VIRGINIE AI panel into a high-contrast JARVIS-style HUD:
+- **Dark glass panel** — near-black base with cyan `rgba(0,212,255)` border glow and inset lighting
+- **Corner bracket accents** — `::before`/`::after` CSS pseudo-elements add JARVIS-style corner framing
+- **Animated scanline sweep** — `.jv-scan` div moves a translucent band across the panel every 5 s
+- **Animated grid** — background grid drifts vertically (`jv-hline` keyframe); mask fades to edges
+- **Pulsing status dot** — cyan dot with `jv-pulse` keyframe precedes the panel title
+- **Monospace HUD typography** — all labels uppercase, letter-spaced, `var(--mono)` font stack
+- **Chat interface:**
+  - Title renamed `COMMAND INTERFACE`, input placeholder `ENTER COMMAND > _`
+  - Send button: `SEND ▶` with `1px` letter-spacing
+  - User messages: right-aligned `[ YOU ]` bubble — cyan tones, zero-radius top-right corner
+  - VIRGINIE messages: left-aligned `[ VIRGINIE ]` bubble — amber/gold tones, zero-radius top-left corner
+  - Empty state: `[ NO TRANSMISSION HISTORY ]` in monospace
+- **Edge panel** renamed `EDGE INTELLIGENCE` with separator line under title
+- Full light-theme overrides preserved
+
+---
+
+## [1.9.1] – 2026-05-07
+
+### Security — 14th-Pass Audit: WebSocket Rate-Limit & Privilege Hardening
+
+#### Rate Limits — Complete Coverage Across All WebSocket Handlers
+Fourteen handlers were missing `_ws_rate_check` guards, allowing authenticated (or admin) clients to spam expensive or sensitive operations:
+
+| Handler | Auth level | Interval |
+|---|---|---|
+| `run_backtest` | user | 10 s — CPU/exchange intensive |
+| `send_daily_report` | user | 300 s — prevents Discord/Telegram notification spam |
+| `scan_arbitrage` | user | 30 s — fans out across many exchange API calls |
+| `update_dominance` | user | 30 s — external API |
+| `check_update` | user | 30 s — spawns git subprocess |
+| `save_api_keys` | admin | 3 s — sensitive key mutation |
+| `force_train` | admin | 60 s — full ML training run |
+| `force_optimize` | admin | 60 s — hyperparameter optimization |
+| `force_genetic` | admin | 60 s — genetic algorithm |
+| `reset_ai` | admin | 30 s — wipes trained models |
+| `apply_update` | admin | 60 s — git pull |
+| `rollback_update` | admin | 60 s — git stash |
+| `admin_create_user` | admin | 5 s — user creation |
+
+#### Privilege Escalation Fix
+- `reset_circuit_breaker` upgraded from `_ws_auth_required` → `_ws_admin_required`: any authenticated user could previously clear the circuit breaker (a global loss-limit safety control), bypassing it without admin rights
+
+---
+
+## [1.9.0] – 2026-05-04
+
+### Security — 13th-Pass Audit & Bug Fixes
+
+#### WebSocket Rate-Limiting Gaps Closed
+- **`add_price_alert`** — missing `_ws_rate_check` added (`min_interval=5.0 s`); prevents DB flooding via rapid alert creation
+- **`delete_price_alert`** — missing `_ws_rate_check` added (`min_interval=2.0 s`)
+- **`manual_backup`** — missing `_ws_rate_check` added (`min_interval=30.0 s`); prevents repeated expensive backup operations
+
+#### Content-Security-Policy Hardened
+- Added `object-src 'none'` — blocks Flash/Java plugin execution
+- Added `base-uri 'self'` — prevents `<base>` tag injection that redirects relative URLs to attacker-controlled origins
+- Added `form-action 'self'` — prevents form hijacking to external targets
+- Added `X-Permitted-Cross-Domain-Policies: none` response header — blocks Adobe Flash/Acrobat cross-domain policy requests
+
+#### Session Security
+- Absolute session lifetime reduced from **8 h → 4 h**; idle timeout unchanged at 30 min (configurable via `SESSION_TIMEOUT_MIN`)
+
+#### Backup Integrity
+- `GET /api/backup/download` now returns `X-Backup-SHA256` response header with hex digest of the archive; clients can verify integrity before extracting
+
+#### Credential Leak Prevention
+- `db_manager._build_pool` exception log now emits only `type(e).__name__` instead of the full exception message, which could contain MySQL host/credentials in connection errors
+
+---
+
 ## [1.8.0] – 2026-05-03
 
 ### Security — Comprehensive Hardening (12-Pass Audit)

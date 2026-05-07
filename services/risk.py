@@ -121,9 +121,10 @@ class RiskManager:
                 return False
             current_dd = (self.peak - current_balance) / self.peak
             if current_dd > max_dd_pct:
-                if not self.circuit_breaker_until:
-                    mins = self.config.get("circuit_breaker_min", 30) * 2
-                    self.circuit_breaker_until = datetime.now() + timedelta(minutes=mins)
+                mins = self.config.get("circuit_breaker_min", 30) * 2
+                new_until = datetime.now() + timedelta(minutes=mins)
+                if not self.circuit_breaker_until or new_until > self.circuit_breaker_until:
+                    self.circuit_breaker_until = new_until
                     log.warning(
                         f"Drawdown Circuit Breaker: {current_dd * 100:.1f}% > {max_dd_pct * 100:.0f}%"
                     )
