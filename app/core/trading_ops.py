@@ -805,7 +805,7 @@ def open_position(ex, scan: dict):
             log.info(f"🤖 {symbol} RL: Hold")
             return
 
-    allowed, ai_score, ai_reason = ai_engine.should_buy(features, scan["confidence"])
+    allowed, ai_score, ai_reason = ai_engine.should_buy(features, scan["confidence"], symbol=symbol)
     win_prob = ai_engine.win_probability(features) * 100
     log.info(
         "🧠 AI-Entscheidung %s | conf=%.3f | win_prob=%.1f%% | allowed=%s | reason=%s",

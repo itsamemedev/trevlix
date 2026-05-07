@@ -321,6 +321,20 @@ class AIEngine:
                 "compliance",
             ]
         )
+        self.brain_state: dict = {
+            "symbol": "",
+            "vote_conf": 0.0,
+            "model_prob": 0.0,
+            "regime_p": 0.5,
+            "blended_prob": 0.0,
+            "ev_score": 0.0,
+            "guardrail_passed": False,
+            "regime": "neutral",
+            "decision": "IDLE",
+            "autonomy_weight": 0.7,
+            "fast_path": False,
+            "updated_at": "",
+        }
         self._load_from_db()
 
     def _load_from_db(self):
@@ -1212,7 +1226,47 @@ class AIEngine:
                 max_risk_penalty=max_risk,
             )
 
-    def should_buy(self, features, conf) -> tuple[bool, float, str]:
+    def brain_state_snapshot(self) -> dict:
+        """Return current brain state for live neural visualization."""
+        snap = dict(self.brain_state)
+        snap["wf_accuracy"] = round(self.wf_accuracy * 100, 1)
+        snap["bull_accuracy"] = round(self.bull_accuracy * 100, 1)
+        snap["bear_accuracy"] = round(self.bear_accuracy * 100, 1)
+        snap["allowed_count"] = self.allowed_count
+        snap["blocked_count"] = self.blocked_count
+        snap["is_trained"] = self.is_trained
+        return snap
+
+    def _update_brain(
+        self,
+        *,
+        symbol: str,
+        vote_conf: float,
+        model_prob: float,
+        blended_prob: float,
+        ev_score: float,
+        guardrail_passed: bool,
+        regime: str,
+        decision: str,
+        autonomy_weight: float,
+        fast_path: bool,
+    ) -> None:
+        """Update live brain state for neural visualization."""
+        self.brain_state = {
+            "symbol": symbol,
+            "vote_conf": round(float(vote_conf), 4),
+            "model_prob": round(float(model_prob), 4),
+            "blended_prob": round(float(blended_prob), 4),
+            "ev_score": round(float(ev_score), 4),
+            "guardrail_passed": bool(guardrail_passed),
+            "regime": regime,
+            "decision": decision,
+            "autonomy_weight": round(float(autonomy_weight), 3),
+            "fast_path": bool(fast_path),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+        }
+
+    def should_buy(self, features, conf, *, symbol: str = "") -> tuple[bool, float, str]:
         """[26] Erweitert mit VIRGINIE-Guardrails + Conformal Prediction Intervals."""
         virginie_enabled = bool(CONFIG.get("virginie_enabled", True))
         primary_control = bool(CONFIG.get("virginie_primary_control", True))
@@ -1221,6 +1275,9 @@ class AIEngine:
         _tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100  # e.g. 6.0
         _sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100  # e.g. 2.5
         _fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100  # round-trip
+        _regime_str = "neutral"
+        if regime and hasattr(regime, "is_bull"):
+            _regime_str = "bull" if regime.is_bull else "bear"
         if not self.is_trained or not CONFIG.get("ai_enabled"):
             if virginie_enabled and primary_control:
                 _rp = float(max(0.0, (1.0 - conf) * _sl_pts))
@@ -1233,12 +1290,37 @@ class AIEngine:
                 )
                 virginie_decision = self.virginie.select_opportunity_with_report([opportunity])
                 allowed = virginie_decision.selected is not None
+                self._update_brain(
+                    symbol=symbol,
+                    vote_conf=float(conf),
+                    model_prob=float(conf),
+                    blended_prob=float(conf),
+                    ev_score=virginie_decision.total_score,
+                    guardrail_passed=allowed,
+                    regime=_regime_str,
+                    decision="BUY" if allowed else "BLOCK",
+                    autonomy_weight=autonomy_w,
+                    fast_path=False,
+                )
                 return (
                     allowed,
                     conf,
                     f"{'✅' if allowed else '🚫'} VIRGINIE-Primary:{conf * 100:.1f}% | {virginie_decision.reason}",
                 )
-            return conf >= CONFIG.get("min_vote_score", 0.3), conf, "Vote"
+            result_bool = conf >= CONFIG.get("min_vote_score", 0.3)
+            self._update_brain(
+                symbol=symbol,
+                vote_conf=float(conf),
+                model_prob=0.0,
+                blended_prob=float(conf),
+                ev_score=0.0,
+                guardrail_passed=result_bool,
+                regime=_regime_str,
+                decision="BUY" if result_bool else "BLOCK",
+                autonomy_weight=autonomy_w,
+                fast_path=False,
+            )
+            return result_bool, conf, "Vote"
         try:
             if virginie_enabled:
                 self._sync_virginie_guardrails_from_config()
@@ -1263,6 +1345,18 @@ class AIEngine:
                     self.allowed_count += 1
                 else:
                     self.blocked_count += 1
+                self._update_brain(
+                    symbol=symbol,
+                    vote_conf=float(conf),
+                    model_prob=float(conf),
+                    blended_prob=blended_prob,
+                    ev_score=virginie_decision.total_score,
+                    guardrail_passed=allowed,
+                    regime=_regime_str,
+                    decision="BUY" if allowed else "BLOCK",
+                    autonomy_weight=autonomy_w,
+                    fast_path=True,
+                )
                 return (
                     allowed,
                     blended_prob,
@@ -1294,6 +1388,7 @@ class AIEngine:
             else:
                 allowed = allowed_by_model
                 reason_prefix = "AI"
+                virginie_decision = None  # type: ignore[assignment]
 
             self.ai_log.insert(
                 0,
@@ -1308,6 +1403,18 @@ class AIEngine:
                 self.allowed_count += 1
             else:
                 self.blocked_count += 1
+            self._update_brain(
+                symbol=symbol,
+                vote_conf=float(conf),
+                model_prob=float(prob),
+                blended_prob=float(blended_prob if virginie_enabled else prob),
+                ev_score=virginie_decision.total_score if virginie_decision else 0.0,
+                guardrail_passed=allowed,
+                regime=_regime_str,
+                decision="BUY" if allowed else "BLOCK",
+                autonomy_weight=autonomy_w,
+                fast_path=False,
+            )
             if virginie_enabled:
                 return (
                     allowed,

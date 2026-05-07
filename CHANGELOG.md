@@ -7,6 +7,17 @@ Versioning follows [Semantic Versioning](https://semver.org/) — `MAJOR.MINOR.P
 
 ---
 
+## [1.9.3] – 2026-05-07
+
+### VIRGINIE Neural Brain Visualization + Brain State API
+
+#### Features
+- **Neural network brain canvas:** Complete rewrite of the VIRGINIE 3D canvas (`_renderAI3D`) as a live neural network diagram — input nodes (VOTE, MODEL, REGIME, BLEND, EV, GUARD), ML model layer (RF, XGB, LSTM, REG), VIRGINIE Core EV node, and a BUY/HOLD/BLOCK output decision node; animated particle pulses flow along edges proportional to signal strength
+- **Brain state API:** New `GET /api/v1/virginie/brain` endpoint exposes real-time internal state: current symbol, vote confidence, model probability, blended probability, EV score, guardrail pass/fail, regime, decision, autonomy weight, fast-path flag, accuracy metrics, and allow/block counts
+- **Live brain state capture:** `AIEngine.should_buy()` now updates `brain_state` on every decision path (primary control, fast-path, full ML path, vote fallback); symbol is forwarded from `trading_ops.py` via new optional `symbol=` keyword argument
+- **Brain polling:** Dashboard polls `/api/v1/virginie/brain` every 3 s (tab-visible only) via `_pollBrain()` + `updateAI3DFromBrain()`; particle colors shift between cyan (idle), green (BUY), red (BLOCK) in real time
+- **Status bar:** Canvas bottom shows current symbol, training state, regime, WF accuracy, autonomy weight, and last-decision timestamp
+
 ## [1.9.2] – 2026-05-07
 
 ### Security — 15th-Pass Audit + VIRGINIE JARVIS UI Overhaul
