@@ -2074,6 +2074,12 @@ def on_start_exchange(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
         return
+    if not _ws_rate_check("start_exchange", min_interval=2.0):
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
+        return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
         emit(
@@ -2100,6 +2106,12 @@ def on_start_exchange(data: dict | None = None):
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("stop_exchange", min_interval=2.0):
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:

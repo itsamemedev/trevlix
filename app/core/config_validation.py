@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.core.request_helpers import safe_float, safe_int
+from app.core.request_helpers import safe_bool, safe_float, safe_int
 
 # Keys that admin users may update through the WebSocket. Adding a new
 # tunable to the dashboard requires adding it here AND to whichever
@@ -144,7 +144,10 @@ VALID_TIMEFRAMES: frozenset[str] = frozenset(
 SANITY_BOUNDS: dict[str, tuple[float | None, float | None, bool, bool]] = {
     # key: (min, max, min_inclusive, max_inclusive)
     "max_open_trades": (1, 100, True, True),
-    "stop_loss_pct": (0, 50, False, True),
+    # stop_loss_pct is a FRACTION (default 0.025 = 2.5%), consumed as
+    # price * (1 - stop_loss_pct). A value >= 1 yields a zero/negative stop
+    # price — i.e. a disabled stop loss — so cap it well below 1.0.
+    "stop_loss_pct": (0, 0.5, False, True),
     "take_profit_pct": (0, 500, False, True),
     "scan_interval": (5, 3600, True, True),
     "risk_per_trade": (0, 0.5, False, True),
@@ -201,7 +204,10 @@ def coerce_config_value(key: str, raw: Any, current: dict[str, Any]) -> Any | No
         if value < 0:
             return None
     elif isinstance(current.get(key), bool):
-        value = bool(raw)
+        # Use safe_bool, not bool(): a client may send the toggle as a string
+        # ("false"/"0"/"off"), and bool("false") is True — which would silently
+        # ENABLE a feature the operator asked to disable.
+        value = safe_bool(raw, current.get(key, False))
 
     if isinstance(value, (int, float)) and not _passes_sanity(key, float(value)):
         return None

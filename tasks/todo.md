@@ -1,5 +1,46 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 2 — additional bugs found & fixed (782 passed / 1 skipped, ruff clean)
+1. HIGH — API token revocation was a no-op: verify_api_token validated the JWT
+   only cryptographically, never checking the api_tokens.active flag → revoked
+   tokens kept authenticating until JWT exp. Now does a DB lookup, fails closed.
+   (app/core/repositories/user_repo.py)
+2. HIGH — config_validation coerced bool toggles with bool(raw); bool("false")
+   is True, so disabling a feature via a string ENABLED it. → use safe_bool.
+   (app/core/config_validation.py)
+3. HIGH — stop_loss_pct sanity bound was (0, 50]; it's a FRACTION used as
+   price*(1-pct), so any value >= 1 zeroes/inverts the stop loss. The test even
+   enshrined 50 as valid. → bound tightened to (0, 0.5] + test corrected.
+   (app/core/config_validation.py, tests/test_config_validation.py)
+4. MEDIUM — graceful shutdown closed the DB pool BEFORE cleanup_old_data(), which
+   then lazily re-opened (leaked) connections. → run cleanup first.
+   (app/core/lifecycle.py)
+5. MEDIUM — auto_healing _mark_healthy cleared `escalated` but left the failures
+   deque populated → a single failure after recovery instantly re-escalated
+   (alert storm on flapping services). → clear failures/recovery_attempts on
+   recovery. (services/auto_healing.py)
+6. MEDIUM — start_exchange/stop_exchange WS handlers had no rate limit (every
+   other state-changing handler does). → add _ws_rate_check. (server.py)
+7. LOW — Discord/Telegram HTTP-error log paths logged resp.text unredacted
+   (except-path used _redact); Telegram double-parsed resp.json(). → redact +
+   single parse. (services/notifications.py)
+8. LOW — is_admin_password_weak was case-sensitive ("Admin" passed). → normalize
+   case + strip. (app/core/admin_password_policy.py)
+9. LOW — preflight retry log printed `attempt+1` (1-based off-by-one).
+   (app/core/exchange_runtime.py)
+
+Run-2 regression tests: test_token_revocation.py (token active/revoked/deleted/
+tampered + weak-password cases), test_recovery_clears_failure_history,
+test_bool_key_string_false_disables, corrected stop_loss_pct sanity test.
+
+Considered but NOT changed (design/scope): tax_report FIFO/holding-period not
+implemented; performance_attribution Sharpe sqrt(252) on per-trade pnl;
+cluster_control get_cluster_metrics not updating node.status; exchange_factory
+broad-except; redis fallback gap; revenue break-even counted as win.
+
+---
+
+
 ## Baseline
 - Full suite: 29 failed, 739 passed, 1 skipped (fresh checkout)
 - Root cause of failures = STALE TESTS left behind by 16th-pass (d8e4484):

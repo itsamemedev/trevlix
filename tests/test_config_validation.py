@@ -81,6 +81,18 @@ class TestCoerceConfigValue:
         assert coerce_config_value("use_arbitrage", 0, {"use_arbitrage": True}) is False
         assert coerce_config_value("use_arbitrage", "", {"use_arbitrage": True}) is False
 
+    def test_bool_key_string_false_disables(self):
+        # Regression: a string "false"/"no"/"off" must DISABLE the toggle.
+        # bool("false") is True, so the old bool() cast silently enabled it.
+        for falsy in ("false", "False", "0", "no", "off"):
+            assert coerce_config_value("use_arbitrage", falsy, {"use_arbitrage": True}) is False, (
+                falsy
+            )
+        for truthy in ("true", "1", "yes", "on"):
+            assert coerce_config_value("use_arbitrage", truthy, {"use_arbitrage": False}) is True, (
+                truthy
+            )
+
     def test_max_open_trades_sanity_low(self):
         # min=1 inclusive
         assert coerce_config_value("max_open_trades", 0, {"max_open_trades": 5}) is None
@@ -92,11 +104,15 @@ class TestCoerceConfigValue:
         assert coerce_config_value("max_open_trades", 101, {"max_open_trades": 5}) is None
 
     def test_stop_loss_pct_sanity(self):
-        # min=0 exclusive, max=50 inclusive
+        # stop_loss_pct is a fraction (price * (1 - pct)); min=0 exclusive,
+        # max=0.5 inclusive. Values >= 1 would zero/invert the stop loss.
         assert coerce_config_value("stop_loss_pct", 0, {"stop_loss_pct": 0.025}) is None
         assert coerce_config_value("stop_loss_pct", 0.001, {"stop_loss_pct": 0.025}) == 0.001
-        assert coerce_config_value("stop_loss_pct", 50, {"stop_loss_pct": 0.025}) == 50
-        assert coerce_config_value("stop_loss_pct", 50.0001, {"stop_loss_pct": 0.025}) is None
+        assert coerce_config_value("stop_loss_pct", 0.5, {"stop_loss_pct": 0.025}) == 0.5
+        assert coerce_config_value("stop_loss_pct", 0.5001, {"stop_loss_pct": 0.025}) is None
+        # A fraction >= 1 (disabled/inverted stop loss) must be rejected.
+        assert coerce_config_value("stop_loss_pct", 1, {"stop_loss_pct": 0.025}) is None
+        assert coerce_config_value("stop_loss_pct", 50, {"stop_loss_pct": 0.025}) is None
 
     def test_take_profit_pct_sanity(self):
         # min=0 exclusive, max=500 inclusive

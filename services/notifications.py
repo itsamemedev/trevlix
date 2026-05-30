@@ -128,7 +128,9 @@ class DiscordNotifier:
                 ]
             resp = httpx.post(url, json={"embeds": [embed]}, timeout=5)
             if resp.status_code >= 400:
-                log.warning("Discord webhook HTTP %s: %s", resp.status_code, resp.text[:200])
+                log.warning(
+                    "Discord webhook HTTP %s: %s", resp.status_code, _redact(resp.text[:200])
+                )
         except Exception as e:
             log.warning("Discord send failed: %s", _redact(e))
 
@@ -560,9 +562,11 @@ class TelegramNotifier:
                 timeout=5,
             )
             if resp.status_code >= 400:
-                log.warning("Telegram HTTP %s: %s", resp.status_code, resp.text[:200])
-            elif not resp.json().get("ok", True):
-                log.warning("Telegram API error: %s", resp.json().get("description", "unknown"))
+                log.warning("Telegram HTTP %s: %s", resp.status_code, _redact(resp.text[:200]))
+            else:
+                payload = resp.json()
+                if not payload.get("ok", True):
+                    log.warning("Telegram API error: %s", payload.get("description", "unknown"))
         except Exception as e:
             log.warning("Telegram send failed: %s", _redact(e))
 

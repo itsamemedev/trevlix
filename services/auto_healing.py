@@ -437,6 +437,12 @@ class AutoHealingAgent:
             was_down = not tracker.last_status_ok
             tracker.last_status_ok = True
             tracker.escalated = False
+            if was_down:
+                # Recovery closes the incident: clear the failure history so a
+                # later, unrelated failure must accumulate fresh failures before
+                # re-escalating, instead of immediately re-firing off stale ones.
+                tracker.failures.clear()
+                tracker.recovery_attempts = 0
 
         if was_down:
             log.info("Service recovered: %s", service.value)
