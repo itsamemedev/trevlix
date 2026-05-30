@@ -184,8 +184,8 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
     @bp.route("/api/v1/risk/monte-carlo")
     @auth
     def api_monte_carlo():
-        n_sim = min(si(request.args.get("n", 10000), 10000), 50000)
-        n_days = min(si(request.args.get("days", 30), 30), 365)
+        n_sim = max(100, min(si(request.args.get("n", 10000), 10000), 50000))
+        n_days = max(1, min(si(request.args.get("days", 30), 30), 365))
         return jsonify(_run_monte_carlo(deps, n_sim, n_days))
 
     @bp.route("/api/v1/risk/cvar")
@@ -193,7 +193,7 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
     def api_cvar():
         if deps.adv_risk is None:
             return jsonify({"error": "Risiko-Modul nicht verfügbar"}), 503
-        confidence = sf(request.args.get("conf", 0.95), 0.95)
+        confidence = min(0.999, max(0.5, sf(request.args.get("conf", 0.95), 0.95)))
         return jsonify(deps.adv_risk.compute_cvar(st.closed_trades, confidence))
 
     @bp.route("/api/v1/risk/volatility")
@@ -201,7 +201,8 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
     def api_volatility():
         if deps.adv_risk is None:
             return jsonify({"error": "Risiko-Modul nicht verfügbar"}), 503
-        return jsonify(deps.adv_risk.volatility_forecast(si(request.args.get("h", 5), 5)))
+        horizon = max(1, min(si(request.args.get("h", 5), 5), 60))
+        return jsonify(deps.adv_risk.volatility_forecast(horizon))
 
     @bp.route("/api/v1/risk/regime")
     @auth
@@ -216,11 +217,12 @@ def create_system_blueprint(deps: AppDeps) -> Blueprint:
             if st.portfolio_history
             else prices
         )
+        vol = deps.adv_risk.volatility_forecast(1) or {}
         return jsonify(
             {
                 "regime": regime_result,
-                "vol_pct": round(deps.adv_risk._ewma_vol * 100, 3),
-                "risk_level": deps.adv_risk.volatility_forecast(1)["risk_level"],
+                "vol_pct": round(getattr(deps.adv_risk, "_ewma_vol", 0.0) * 100, 3),
+                "risk_level": vol.get("risk_level", "UNKNOWN"),
             }
         )
 

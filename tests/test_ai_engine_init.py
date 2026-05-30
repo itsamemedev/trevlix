@@ -58,7 +58,7 @@ def test_init_ai_engine_merges_required_defaults_for_partial_configs():
     assert ai_engine.CONFIG["virginie_enabled"] is True
     assert ai_engine.CONFIG["virginie_primary_control"] is True
     assert ai_engine.CONFIG["virginie_autonomy_weight"] == 0.7
-    assert ai_engine.CONFIG["virginie_min_score"] == 0.0
+    assert ai_engine.CONFIG["virginie_min_score"] == 0.5
 
 
 def test_should_buy_syncs_virginie_guardrails_after_runtime_config_change(monkeypatch):

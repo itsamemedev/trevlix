@@ -64,6 +64,10 @@ class RiskManager:
             self.peak = max(self.peak, balance)
             self.daily_pnl = 0.0
             self._day = datetime.now().date()
+            # Re-arm the one-shot daily-loss circuit-breaker latch: the day's loss
+            # accounting was just re-baselined, so a fresh breach against the new
+            # baseline must be able to fire the CB / alert again.
+            self._daily_loss_cb_fired = False
 
     def update_peak(self, pv: float) -> None:
         """Aktualisiert den Portfolio-Höchststand und Drawdown.

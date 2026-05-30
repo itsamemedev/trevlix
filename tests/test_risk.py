@@ -255,3 +255,18 @@ class TestDailyLossCircuitBreaker:
         rm._day = date(2000, 1, 1)
         rm._reset_daily_unlocked(10000.0)
         assert not rm._daily_loss_cb_fired
+
+    def test_force_reset_daily_rearms_cb_latch(self):
+        # After a live-balance re-baseline, a fresh breach against the NEW baseline
+        # must be able to re-fire the circuit breaker (latch must be cleared).
+        rm = self._make_risk()
+        rm.daily_start = 10000.0
+        rm.daily_loss_exceeded(9400.0)
+        assert rm._daily_loss_cb_fired
+        rm.circuit_breaker_until = None
+
+        rm.force_reset_daily(20000.0)
+        assert not rm._daily_loss_cb_fired
+        # New breach against the 20000 baseline re-arms the CB.
+        assert rm.daily_loss_exceeded(18000.0)
+        assert rm.circuit_breaker_active()

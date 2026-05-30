@@ -183,15 +183,17 @@ class TestMACD:
     def test_bullish_crossover(self):
         from services.strategies import strat_macd
 
-        prev = {"macd": -5, "macd_signal": -3}
-        curr = {"macd": -2, "macd_signal": -3}  # MACD crosses above signal, below 0
+        # Standard zero-line confirmation: bullish crossover ABOVE the zero line.
+        prev = {"macd": 1, "macd_signal": 2}  # MACD below signal
+        curr = {"macd": 3, "macd_signal": 2}  # MACD crosses above signal, above 0
         assert strat_macd(curr, prev) == 1
 
     def test_bearish_crossover(self):
         from services.strategies import strat_macd
 
-        prev = {"macd": 5, "macd_signal": 3}
-        curr = {"macd": 2, "macd_signal": 3}  # MACD crosses below signal, above 0
+        # Standard zero-line confirmation: bearish crossover BELOW the zero line.
+        prev = {"macd": -1, "macd_signal": -2}  # MACD above signal
+        curr = {"macd": -3, "macd_signal": -2}  # MACD crosses below signal, below 0
         assert strat_macd(curr, prev) == -1
 
 

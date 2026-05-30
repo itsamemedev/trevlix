@@ -134,6 +134,13 @@ class TTLCache(Generic[V]):
                 return cached
             value = producer()
             self.set(key, value, ttl=ttl)
+            # Drop the per-key producer lock to keep ``_producer_locks`` bounded.
+            # Threads already blocked on this lock hold their own reference, so
+            # they still serialize correctly; any later caller simply creates a
+            # fresh lock (and will hit the cached value immediately).
+            with self._producer_lock_guard:
+                if self._producer_locks.get(key) is lock:
+                    del self._producer_locks[key]
             return value
 
     def stats(self) -> dict[str, int | float]:

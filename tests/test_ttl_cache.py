@@ -147,6 +147,14 @@ class TestTTLCacheGetOrSet:
             t.join()
         assert calls["n"] == 1
 
+    def test_get_or_set_does_not_leak_producer_locks(self):
+        # Each distinct key formerly created a permanent producer lock; ensure the
+        # per-key lock is released after production so the map stays bounded.
+        c: TTLCache[int] = TTLCache(ttl_seconds=10, max_size=1000)
+        for i in range(500):
+            c.get_or_set(f"key-{i}", lambda i=i: i)
+        assert len(c._producer_locks) == 0
+
 
 class TestTTLCacheStats:
     def test_hit_miss_counts(self):

@@ -165,3 +165,14 @@ class TestKnowledgeBase:
         status = kb.idle_learning_status()
         assert status["runs"] == 0
         assert "last_run_ts" in status
+
+    def test_market_context_failure_releases_throttle_slot(self, kb):
+        # A transient LLM failure must NOT keep the 15-minute throttle slot claimed,
+        # otherwise market-context regeneration is suppressed for the full window.
+        kb._mcp_registry = None
+        kb._query_llm_cached = lambda *a, **k: None  # simulate LLM failure / no answer
+        kb._cached_market_analysis_ts = 999999.0  # pretend slot was just claimed
+
+        kb._generate_market_context(regime_is_bull=True, fg_value=50, open_positions=0, iteration=1)
+
+        assert kb._cached_market_analysis_ts == 0.0

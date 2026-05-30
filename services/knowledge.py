@@ -687,6 +687,10 @@ class KnowledgeBase:
                 final_answer = self.query_llm(prompt, context)
 
             if not final_answer:
+                # Release the throttle slot so a transient LLM failure does not
+                # suppress idle-learning for the full min_interval window.
+                with self._lock:
+                    self._idle_learning["last_run_ts"] = 0.0
                 return
 
             insight_key = f"idle_collab_{int(time.time())}"
@@ -717,6 +721,7 @@ class KnowledgeBase:
         except Exception as e:
             with self._lock:
                 self._idle_learning["last_error"] = "idle_learning_failed"
+                self._idle_learning["last_run_ts"] = 0.0
             log.debug("Idle-Learning-Zyklus: %s", e)
 
     def _query_llm_cached(self, cache_key: str, prompt: str, context: str = "") -> str | None:
@@ -892,6 +897,10 @@ class KnowledgeBase:
             else:
                 answer = self._query_llm_cached("market_context", prompt, context)
             if not answer:
+                # Release the throttle slot so a transient LLM failure does not
+                # suppress regeneration for the full 15-minute window.
+                with self._lock:
+                    self._cached_market_analysis_ts = 0.0
                 return
 
             self._cached_market_analysis = answer
@@ -913,6 +922,8 @@ class KnowledgeBase:
             log.info(f"🤖 LLM Marktanalyse: {answer[:80]}...")
 
         except Exception as e:
+            with self._lock:
+                self._cached_market_analysis_ts = 0.0
             log.debug(f"LLM Marktanalyse: {e}")
 
     def analyze_training_async(

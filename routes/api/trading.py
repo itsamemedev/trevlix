@@ -314,6 +314,14 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             "max_daily_loss_pct",
         }
         filtered = {k: v for k, v in data.items() if k in _ALLOWED}
+        # paper_trading flips the GLOBAL trade mode (shared TradeMode + CONFIG),
+        # not a per-user setting — restrict it to admins, matching the guard on
+        # POST /api/v1/trading/mode. Otherwise any authenticated user could enable
+        # real-money live trading for the whole bot via this user-scoped endpoint.
+        if "paper_trading" in filtered:
+            user = db.get_user_by_id(request.user_id)
+            if not user or user.get("role") != "admin":
+                return jsonify({"error": "Nur Admin darf den Trading-Modus wechseln"}), 403
         current = db.get_user_settings(request.user_id)
         current.update(filtered)
         if "paper_trading" in filtered:
