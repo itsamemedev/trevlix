@@ -176,13 +176,49 @@ def get_update_status() -> UpdateStatus:
     )
 
 
+def _rollback_ref_path() -> Path:
+    """File holding the pre-update commit so rollback survives a restart."""
+    return _repo_root() / ".trevlix_rollback_ref"
+
+
+def _current_commit() -> str:
+    proc = _run_git(["rev-parse", "HEAD"], timeout=5, check=False)
+    return proc.stdout.strip() if proc.returncode == 0 else ""
+
+
 def apply_update() -> None:
+    # Record the current commit BEFORE pulling so rollback_update() can restore
+    # it (the prior implementation only `git stash`ed, which never reverted the
+    # pulled commits). Persisted to a file to survive the post-update restart.
+    pre_commit = _current_commit()
+    if pre_commit:
+        try:
+            _rollback_ref_path().write_text(pre_commit, encoding="utf-8")
+        except OSError as exc:
+            log.warning("could not persist rollback ref: %s", exc)
     _run_git(["pull", "--ff-only"], timeout=30, check=True)
 
 
 def rollback_update() -> bool:
-    stash_proc = _run_git(["stash"], timeout=15, check=False)
-    if stash_proc.returncode != 0:
-        log.warning("git stash failed: %s", stash_proc.stderr.strip())
+    """Revert the repo to the commit recorded before the last apply_update().
+
+    Returns True if a hard reset to the recorded commit succeeded.
+    """
+    ref_path = _rollback_ref_path()
+    try:
+        target = ref_path.read_text(encoding="utf-8").strip()
+    except OSError:
+        target = ""
+    if not target:
+        log.warning("rollback_update: no recorded pre-update commit to restore")
         return False
+    reset_proc = _run_git(["reset", "--hard", target], timeout=30, check=False)
+    if reset_proc.returncode != 0:
+        log.warning("git reset --hard %s failed: %s", target, reset_proc.stderr.strip())
+        return False
+    try:
+        ref_path.unlink()
+    except OSError:
+        pass
+    log.info("rollback_update: repo reset to %s", target)
     return True

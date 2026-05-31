@@ -102,3 +102,6 @@ npm-debug.log*
 # SSL-Zertifikate (nur .gitkeep behalten)
 docker/ssl/*
 !docker/ssl/.gitkeep
+
+# Updater rollback ref (records pre-update commit)
+.trevlix_rollback_ref

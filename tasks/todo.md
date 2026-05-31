@@ -26,20 +26,25 @@ sinks (no XSS), socket handlers de-duplicated, all setInterval cleared on
 beforeunload, no secrets logged. LOW: `clr` local shadows global helper in
 _renderVirginieForecastFeed (harmless) — left as-is.
 
-REAL findings deferred (could NOT safely edit — severe terminal/file-read
-corruption this session made unverifiable edits too risky for these paths):
-- llm_providers.py: chat()/chat_all() only call _apply_cooldown on non-200 HTTP
-  responses; a timing-out/connection-refused provider raises and is retried every
-  call (up to ~30s each) on the analysis path with no backoff. Fix = apply a
-  cooldown in the except branch. [MEDIUM]
-- llm_providers.py: _health[name]["tokens"] is read by status()/system_analytics
-  but never written → dashboard tokens_24h is always 0. Fix = parse
-  usage.total_tokens in _call_provider (or drop the field). [MEDIUM]
-- prometheus_metrics.py: db._pool.available/.pool_size read without try/except —
-  one error breaks the whole /metrics endpoint. Wrap per-metric. [LOW]
-- git_ops.rollback_update only `git stash`es (never reverts the pulled commits or
-  pops the stash) — an admin "rollback" does not roll back. [LOW]
-(All four verified as genuine by subagent; carried over to a follow-up session.)
+## RUN 5 — cleared the deferred backlog (793 passed / 1 skipped, ruff clean)
+Fixed:
+1. MEDIUM — llm_providers: transport-level failures (timeout/DNS/conn-refused)
+   raised before any HTTP status, so _apply_cooldown never fired and a hard-down
+   provider was retried every call (up to ~30s each). Added _cooldown_for() +
+   _TRANSPORT_ERROR_COOLDOWN_SECONDS in both chat()/chat_all() except branches;
+   chat_all() now also skips providers already in cooldown.
+2. MEDIUM — llm_providers: _health["tokens"] was read by status()/analytics but
+   never written → dashboard tokens always 0. Now parses usage.total_tokens in
+   _call_provider and accumulates under the lock (+ "tokens":0 in health init).
+3. LOW — prometheus_metrics: state and db._pool reads now wrapped in try/except so
+   a single attribute/state error can't take down the whole /metrics endpoint.
+4. LOW — git_ops.rollback_update only `git stash`ed (never reverted the pull).
+   apply_update() now records the pre-pull commit to .trevlix_rollback_ref
+   (gitignored, survives restart) and rollback_update() does `git reset --hard`
+   to it. server.py rollback message updated to match real behaviour.
+
+Run-5 tests: test_git_ops_rollback.py (apply records ref, rollback resets/handles
+missing ref/reset failure; llm transport cooldown + token accumulation).
 
 
 ## RUN 3 — deferred items revisited + new domains (782 passed / 1 skipped, ruff clean)

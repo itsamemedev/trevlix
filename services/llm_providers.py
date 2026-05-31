@@ -74,6 +74,10 @@ _CACHE_MAX_SIZE = 200
 _DEFAULT_TEMPERATURE = 0.3
 _RATE_LIMIT_COOLDOWN_SECONDS = 120
 _CLIENT_ERROR_COOLDOWN_SECONDS = 600
+# Transport-level failures (timeout, DNS, connection refused) raise before any
+# HTTP status is available; cool the provider down briefly so a hard-down/timeout
+# provider is not retried on every call (each retry can block up to _REQUEST_TIMEOUT).
+_TRANSPORT_ERROR_COOLDOWN_SECONDS = 60
 
 
 class MultiLLMProvider:
@@ -109,6 +113,7 @@ class MultiLLMProvider:
                     "cooldown_until": 0.0,
                     "requests": 0,
                     "errors": 0,
+                    "tokens": 0,
                 }
                 log.debug("LLM-Provider '%s' konfiguriert", cfg["name"])
 
@@ -167,6 +172,9 @@ class MultiLLMProvider:
                     return result
             except Exception as exc:
                 self._record_error(provider["name"], type(exc).__name__)
+                # Transport-level failure (no HTTP status) — back off so we don't
+                # re-hit a hard-down/timeout provider (up to _REQUEST_TIMEOUT) every call.
+                self._cooldown_for(provider["name"], _TRANSPORT_ERROR_COOLDOWN_SECONDS)
                 log.debug("LLM-Provider '%s' fehlgeschlagen: %s", provider["name"], exc)
                 continue
 
@@ -187,6 +195,16 @@ class MultiLLMProvider:
         """
         result: list[dict[str, Any]] = []
         for provider in self._providers:
+            if self._is_in_cooldown(provider["name"]):
+                result.append(
+                    {
+                        "provider": provider["name"],
+                        "model": provider.get("model", ""),
+                        "ok": False,
+                        "error": "cooldown",
+                    }
+                )
+                continue
             try:
                 answer = self._call_provider(
                     provider=provider,
@@ -217,6 +235,7 @@ class MultiLLMProvider:
             except Exception as exc:
                 log.debug("LLM provider %s error: %s", provider.get("name"), exc)
                 self._record_error(provider["name"], type(exc).__name__)
+                self._cooldown_for(provider["name"], _TRANSPORT_ERROR_COOLDOWN_SECONDS)
                 result.append(
                     {
                         "provider": provider["name"],
@@ -328,10 +347,16 @@ class MultiLLMProvider:
 
         answer = choices[0].get("message", {}).get("content", "")
         if answer:
+            usage = data.get("usage") or {}
+            try:
+                total_tokens = int(usage.get("total_tokens", 0) or 0)
+            except (TypeError, ValueError):
+                total_tokens = 0
             with self._lock:
                 self._health[provider["name"]]["last_success"] = time.time()
                 self._health[provider["name"]]["available"] = True
                 self._health[provider["name"]]["cooldown_until"] = 0.0
+                self._health[provider["name"]]["tokens"] += total_tokens
             return answer
 
         return None
@@ -354,8 +379,13 @@ class MultiLLMProvider:
 
         if not cooldown:
             return
+        self._cooldown_for(name, cooldown)
 
-        until = time.time() + cooldown
+    def _cooldown_for(self, name: str, seconds: float) -> None:
+        """Setzt einen Cooldown von *seconds* Sekunden fuer einen Provider."""
+        if seconds <= 0:
+            return
+        until = time.time() + seconds
         with self._lock:
             if name in self._health:
                 self._health[name]["cooldown_until"] = until
