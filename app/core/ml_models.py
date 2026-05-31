@@ -292,7 +292,7 @@ class GeneticOptimizer:
             population[0] = {
                 "sl": float(CONFIG.get("stop_loss_pct", 0.025)),
                 "tp": float(CONFIG.get("take_profit_pct", 0.060)),
-                "vote": CONFIG.get("min_vote_score", 0.3),
+                "vote": CONFIG.get("min_vote_score", 0.50),
                 "rsi_buy": 35,
                 "rsi_sell": 65,
                 "ema_fast": 8,

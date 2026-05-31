@@ -778,8 +778,8 @@ class ShortEngine:
             return False
         if invest <= 0 or invest > state.balance:
             return False
-        sl = price * (1 + CONFIG.get("stop_loss_pct", 0.03))
-        tp = price * (1 - CONFIG.get("take_profit_pct", 0.05))
+        sl = price * (1 + CONFIG.get("stop_loss_pct", 0.025))
+        tp = price * (1 - CONFIG.get("take_profit_pct", 0.06))
         try:
             ex = self._get_ex()
             qty = invest / price

@@ -172,7 +172,9 @@ if PYDANTIC_AVAILABLE:
         @classmethod
         def validate_timeframe(cls, v: str) -> str:
             """Prüft ob der Timeframe ein gültiger CCXT-Wert ist."""
-            valid = {"1m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}
+            # Keep in sync with app/core/config_validation.VALID_TIMEFRAMES and
+            # services/utils — 3m/8h were missing and crashed on otherwise-valid input.
+            valid = {"1m", "3m", "5m", "15m", "30m", "1h", "2h", "4h", "6h", "8h", "12h", "1d"}
             if v not in valid:
                 raise ValueError(f"Ungültiger Timeframe '{v}'. Erlaubt: {valid}")
             return v
@@ -193,6 +195,7 @@ if PYDANTIC_AVAILABLE:
                 "bitget",
                 "mexc",
                 "gateio",
+                "nonkyc",
             }
             if v not in supported:
                 raise ValueError(f"Nicht unterstützte Exchange '{v}'. Erlaubt: {supported}")
