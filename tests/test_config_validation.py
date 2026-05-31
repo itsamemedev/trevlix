@@ -115,10 +115,13 @@ class TestCoerceConfigValue:
         assert coerce_config_value("stop_loss_pct", 50, {"stop_loss_pct": 0.025}) is None
 
     def test_take_profit_pct_sanity(self):
-        # min=0 exclusive, max=500 inclusive
+        # take_profit_pct is a fraction (price * (1 + pct)); min=0 exclusive,
+        # max=1.0 inclusive (matches the Pydantic schema le=1.0).
         assert coerce_config_value("take_profit_pct", 0, {"take_profit_pct": 0.06}) is None
-        assert coerce_config_value("take_profit_pct", 500, {"take_profit_pct": 0.06}) == 500
-        assert coerce_config_value("take_profit_pct", 500.1, {"take_profit_pct": 0.06}) is None
+        assert coerce_config_value("take_profit_pct", 1.0, {"take_profit_pct": 0.06}) == 1.0
+        assert coerce_config_value("take_profit_pct", 1.0001, {"take_profit_pct": 0.06}) is None
+        # An absurd fraction (TP effectively disabled) must be rejected.
+        assert coerce_config_value("take_profit_pct", 500, {"take_profit_pct": 0.06}) is None
 
     def test_scan_interval_sanity(self):
         # min=5 inclusive, max=3600 inclusive

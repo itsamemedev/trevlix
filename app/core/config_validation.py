@@ -148,7 +148,10 @@ SANITY_BOUNDS: dict[str, tuple[float | None, float | None, bool, bool]] = {
     # price * (1 - stop_loss_pct). A value >= 1 yields a zero/negative stop
     # price — i.e. a disabled stop loss — so cap it well below 1.0.
     "stop_loss_pct": (0, 0.5, False, True),
-    "take_profit_pct": (0, 500, False, True),
+    # take_profit_pct is also a FRACTION (default 0.06 = 6%), consumed as
+    # price * (1 + take_profit_pct). Cap at 1.0 (100%) to match the Pydantic
+    # schema (le=1.0); a value like 500 (50,000%) just disables the TP.
+    "take_profit_pct": (0, 1.0, False, True),
     "scan_interval": (5, 3600, True, True),
     "risk_per_trade": (0, 0.5, False, True),
 }

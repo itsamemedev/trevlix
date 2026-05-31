@@ -1,5 +1,43 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 3 — deferred items revisited + new domains (782 passed / 1 skipped, ruff clean)
+Fixed (genuine, verified via Read):
+1. performance_attribution.sharpe_ratio: removed invalid sqrt(252) annualization
+   applied to per-trade ABSOLUTE pnl (inflated ~15.9x) → correct per-trade Sharpe;
+   dropped now-unused math import.
+2. config_validation: take_profit_pct bound (0,500]→(0,1.0] (it's a fraction,
+   matches Pydantic le=1.0); the 500 bound effectively disabled the TP. + test.
+3. services/config.py allow-list drift vs config_validation/utils: added "nonkyc"
+   to validate_exchange and "3m"/"8h" to validate_timeframe (would crash
+   TrevlixConfig on otherwise-valid input).
+4. ml_models._seed_genome: duplicate "vote" dict key removed; default 0.3→0.50
+   to match documented min_vote_score (genome mutation floor is 0.4).
+5. trading_classes short smart-exit EXCEPTION fallback used 0.03/0.05; aligned to
+   the documented 0.025/0.06 defaults used by the normal path.
+
+False positives — verified and intentionally NOT changed:
+- monte_carlo span anchor: closed_trades is newest-first (insert(0)), so trades[-1]
+  is the OLDEST → span = now - oldest is CORRECT (subagent had ordering backwards).
+- backtest open-position: already force-closes at the final candle (total_pnl and
+  final_balance ARE consistent).
+- tax_report holding period: IS applied (taxable = held_days < 365).
+- grid total_trades: counts individual fills; a separate completed_round_trips
+  exists — the distinction is intentional.
+- risk.is_short_too_expensive: already uses `rate < -max_rate` (correct funding
+  convention) — run-1 flag was a misread.
+- manual_sell long-only: shorts are closed via close-position (handles both) —
+  intentional ("sell" = close long).
+
+Documented, NOT changed (low impact / risk vs reward):
+- ai_engine allowed_count/blocked_count/brain_state mutated in should_buy() without
+  self._lock — LOW impact (display counters; _update_brain is pure). Hot path; not
+  touched on unreliable terminal reads this session.
+- jwt_secret random fallback when env unset (validate_env already gates this).
+- frontend JS/templates subagent hit a session limit before returning — to cover.
+
+---
+
+
 ## RUN 2 — additional bugs found & fixed (782 passed / 1 skipped, ruff clean)
 1. HIGH — API token revocation was a no-op: verify_api_token validated the JWT
    only cryptographically, never checking the api_tokens.active flag → revoked
