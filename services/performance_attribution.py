@@ -16,7 +16,6 @@ Verwendung:
 """
 
 import logging
-import math
 import threading
 from collections import defaultdict
 from datetime import datetime
@@ -290,13 +289,19 @@ class PerformanceAttribution:
         return round(total_pnl / total_trades, 2) if total_trades > 0 else 0.0
 
     def sharpe_ratio(self, risk_free: float = 0.0) -> float:
-        """Berechnet die annualisierte Sharpe Ratio.
+        """Berechnet die Sharpe Ratio pro Trade (risk-adjusted return).
+
+        ``pnl_list`` enthält absolute Per-Trade-PnL ohne Zeitstempel, daher
+        ist eine Tages-Annualisierung (``sqrt(252)``) nicht korrekt anwendbar –
+        das setzt genau einen Trade pro Tag voraus und überhöht die Kennzahl
+        sonst um ~15.9x. Wir liefern deshalb die Per-Trade-Sharpe
+        ``mean(excess) / std(excess)``.
 
         Args:
-            risk_free: Risikofreier Zinssatz (Default: 0).
+            risk_free: Risikofreier Per-Trade-Referenzwert (Default: 0).
 
         Returns:
-            Sharpe Ratio (annualisiert auf 252 Handelstage).
+            Per-Trade Sharpe Ratio.
         """
         with self._lock:
             all_pnl = []
@@ -310,7 +315,7 @@ class PerformanceAttribution:
         std = float(np.std(excess))
         if std == 0:
             return 0.0
-        return round(float(np.mean(excess) / std * math.sqrt(252)), 2)
+        return round(float(np.mean(excess) / std), 2)
 
     def full_report(self) -> dict[str, Any]:
         """Erstellt einen vollständigen Performance-Attribution-Report.

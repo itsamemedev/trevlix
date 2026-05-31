@@ -130,6 +130,28 @@ class BacktestEngine:
                 if pos is not None and pos.get("entry") and pos["entry"] > 0:
                     equity_val += pos["inv"] * (1 + (price - pos["entry"]) / pos["entry"])
                 equity.append({"time": str(row.name)[:16], "value": round(equity_val, 2)})
+            # Force-close any position still open on the final candle so that
+            # total_pnl (closed trades only) stays consistent with the
+            # mark-to-market final_balance / return_pct derived from equity[-1].
+            if pos is not None and pos.get("entry") and pos["entry"] > 0:
+                last_row = df.iloc[-1]
+                last_price = float(last_row["close"])
+                pp = (last_price - pos["entry"]) / pos["entry"]
+                pnl = pos["inv"] * pp - pos["inv"] * self._fee_rate * 2
+                cap += pos["inv"] + pnl
+                trades.append(
+                    {
+                        "time": str(last_row.name)[:16],
+                        "entry": round(pos["entry"], 4),
+                        "exit": round(last_price, 4),
+                        "pnl": round(pnl, 2),
+                        "won": pnl > 0,
+                        "reason": "EOD",  # end-of-data forced close
+                    }
+                )
+                pos = None
+                if equity:
+                    equity[-1]["value"] = round(cap, 2)
             if not trades:
                 return {
                     "error": "Keine Trades – Threshold zu hoch",

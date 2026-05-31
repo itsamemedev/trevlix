@@ -15,6 +15,8 @@ import io
 import json
 from typing import TYPE_CHECKING
 
+from app.core.tax_export import csv_safe_cell
+
 if TYPE_CHECKING:
     from app.core.db_manager import MySQLManager
 
@@ -407,5 +409,5 @@ class TradeRepository:
         w = csv.DictWriter(buf, fieldnames=fields, extrasaction="ignore")
         w.writeheader()
         if trades:
-            w.writerows(trades)
+            w.writerows({k: csv_safe_cell(v) for k, v in r.items()} for r in trades)
         return buf.getvalue()

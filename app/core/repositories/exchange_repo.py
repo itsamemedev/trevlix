@@ -138,7 +138,7 @@ class ExchangeRepository:
                         "UPDATE user_exchanges SET enabled=%s WHERE id=%s AND user_id=%s",
                         (enabled, exchange_id, user_id),
                     )
-            return True
+                    return c.rowcount > 0
         except Exception as e:
             log.error(f"toggle_user_exchange: {e}")
             return False
@@ -224,7 +224,7 @@ class ExchangeRepository:
                         "DELETE FROM user_exchanges WHERE id=%s AND user_id=%s",
                         (exchange_id, user_id),
                     )
-            return True
+                    return c.rowcount > 0
         except Exception as e:
             log.error(f"delete_user_exchange: {e}")
             return False

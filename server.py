@@ -2032,17 +2032,17 @@ def on_rollback_update():
     if not _ws_rate_check("rollback_update", min_interval=60.0):
         return
     try:
-        stashed = _rollback_update()
+        rolled_back = _rollback_update()
         emit(
             "status",
             {
                 "msg": (
-                    "↩ Rollback: git stash angewendet"
-                    if stashed
-                    else "⚠ Rollback: git stash konnte nicht angewendet werden"
+                    "↩ Rollback: vorherige Version wiederhergestellt – Neustart"
+                    if rolled_back
+                    else "⚠ Rollback nicht möglich (kein gespeicherter Stand)"
                 ),
-                "key": "ws_rollback_done" if stashed else "ws_rollback_partial",
-                "type": "info" if stashed else "warning",
+                "key": "ws_rollback_done" if rolled_back else "ws_rollback_partial",
+                "type": "info" if rolled_back else "warning",
             },
             broadcast=True,
         )
@@ -2074,6 +2074,12 @@ def on_start_exchange(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
         return
+    if not _ws_rate_check("start_exchange", min_interval=2.0):
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
+        return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:
         emit(
@@ -2100,6 +2106,12 @@ def on_start_exchange(data: dict | None = None):
 def on_stop_exchange(data: dict | None = None):
     data = data or {}
     if not _ws_admin_required():
+        return
+    if not _ws_rate_check("stop_exchange", min_interval=2.0):
+        emit(
+            "status",
+            {"msg": "⏳ Zu schnell – bitte warten", "key": "ws_rate_limit", "type": "warning"},
+        )
         return
     ex_name = normalize_exchange_name((data or {}).get("exchange", ""))
     if not ex_name:

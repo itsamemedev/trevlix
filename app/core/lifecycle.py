@@ -27,17 +27,19 @@ def build_graceful_shutdown_handler(
         except Exception as exc:  # noqa: BLE001
             log.debug(f"Cluster shutdown: {exc}")
 
-        try:
-            if db is not None and db._pool is not None:
-                db._pool.close_all()
-        except Exception as exc:  # noqa: BLE001
-            log.debug(f"Pool-Close bei Shutdown: {exc}")
-
+        # Run DB-dependent cleanup BEFORE tearing down the pool — otherwise
+        # cleanup_old_data() lazily re-opens connections that are never closed.
         try:
             if db is not None:
                 db.cleanup_old_data()
         except Exception as exc:  # noqa: BLE001
             log.debug(f"Cleanup bei Shutdown: {exc}")
+
+        try:
+            if db is not None and db._pool is not None:
+                db._pool.close_all()
+        except Exception as exc:  # noqa: BLE001
+            log.debug(f"Pool-Close bei Shutdown: {exc}")
 
         try:
             socketio.stop()

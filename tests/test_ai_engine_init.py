@@ -58,7 +58,7 @@ def test_init_ai_engine_merges_required_defaults_for_partial_configs():
     assert ai_engine.CONFIG["virginie_enabled"] is True
     assert ai_engine.CONFIG["virginie_primary_control"] is True
     assert ai_engine.CONFIG["virginie_autonomy_weight"] == 0.7
-    assert ai_engine.CONFIG["virginie_min_score"] == 0.0
+    assert ai_engine.CONFIG["virginie_min_score"] == 0.5
 
 
 def test_should_buy_syncs_virginie_guardrails_after_runtime_config_change(monkeypatch):
@@ -95,6 +95,26 @@ def test_should_buy_syncs_virginie_guardrails_after_runtime_config_change(monkey
     finally:
         ai_engine.CONFIG.clear()
         ai_engine.CONFIG.update(old_cfg)
+
+
+def test_brain_state_snapshot_includes_model_availability(monkeypatch):
+    class _DummyDB:
+        def load_ai_samples(self):
+            return [], [], []
+
+    monkeypatch.setattr(ai_engine.AIEngine, "_load_from_db", lambda self: None)
+    engine = ai_engine.AIEngine(db_ref=_DummyDB())
+
+    snap = engine.brain_state_snapshot()
+    # Enriched fields for the neural visualization must be present and typed.
+    assert "models" in snap
+    assert set(snap["models"]) == {"rf", "xgb", "lstm", "regime"}
+    assert all(isinstance(v, bool) for v in snap["models"].values())
+    assert "training_ver" in snap
+    assert "samples" in snap
+    assert "blocked_pct" in snap
+    # regime_p was a dead field (never updated, unused by the UI) — it's gone now.
+    assert "regime_p" not in snap
 
 
 def test_should_buy_uses_virginie_primary_control_when_model_not_trained(monkeypatch):

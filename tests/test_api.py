@@ -6,11 +6,38 @@ Tests für API-Endpunkte, Auth-Decorators, Health-Check.
 
 import os
 import sys
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
+from flask.testing import FlaskClient
+from werkzeug.datastructures import Headers
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+# Fixed CSRF token used by the test client. Session-authenticated state-changing
+# requests require a matching token (see app/core/session_guard.py); the client
+# below seeds it into the session and attaches the header automatically so tests
+# exercise the real endpoints rather than hard-coding CSRF bookkeeping everywhere.
+_TEST_CSRF_TOKEN = "test-csrf-token-fixed-value"
+
+
+class _CsrfTestClient(FlaskClient):
+    """Test client that auto-supplies the CSRF token for unsafe methods."""
+
+    @contextmanager
+    def session_transaction(self, *args, **kwargs):
+        with super().session_transaction(*args, **kwargs) as sess:
+            sess.setdefault("_csrf_token", _TEST_CSRF_TOKEN)
+            yield sess
+
+    def open(self, *args, **kwargs):
+        if str(kwargs.get("method", "")).upper() in ("POST", "PUT", "DELETE", "PATCH"):
+            headers = Headers(kwargs.get("headers") or {})
+            if "X-CSRFToken" not in headers and "X-CSRF-Token" not in headers:
+                headers["X-CSRFToken"] = _TEST_CSRF_TOKEN
+            kwargs["headers"] = headers
+        return super().open(*args, **kwargs)
 
 
 @pytest.fixture
@@ -27,6 +54,7 @@ def app_client():
         from server import app
 
         app.config["TESTING"] = True
+        app.test_client_class = _CsrfTestClient
         with app.test_client() as client:
             yield client
     except Exception as e:
@@ -211,12 +239,47 @@ class TestSecurityHeaders:
         assert "Permissions-Policy" in resp.headers
 
 
+class TestTradeModePrivilege:
+    """Non-admins must not be able to flip the global trade mode to live."""
+
+    def test_user_settings_paper_trading_requires_admin(self, app_client, monkeypatch):
+        import server
+        from server import CONFIG
+
+        # Non-admin user tries to enable live trading via the user-scoped endpoint.
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "user"})
+        CONFIG["paper_trading"] = True
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/user/settings", json={"paper_trading": False})
+        assert resp.status_code == 403
+        # Global mode must remain paper — escalation blocked.
+        assert CONFIG.get("paper_trading") is True
+
+    def test_user_settings_non_mode_fields_still_work_for_non_admin(self, app_client, monkeypatch):
+        import server
+
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "user"})
+        monkeypatch.setattr(server.db, "get_user_settings", lambda _uid: {})
+        monkeypatch.setattr(server.db, "update_user_settings", lambda _uid, _s: True)
+        with app_client.session_transaction() as sess:
+            sess["user_id"] = 1
+
+        resp = app_client.post("/api/v1/user/settings", json={"risk_per_trade": 0.01})
+        assert resp.status_code == 200
+
+
 class TestTradingControl:
     """Tests für Trading-Control API."""
 
-    def test_trading_control_start_sets_running_and_enabled(self, app_client):
+    def test_trading_control_start_sets_running_and_enabled(self, app_client, monkeypatch):
+        import server
         from server import state, trade_mode
 
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "admin"})
+        # Don't spawn the real bot loop thread in tests — just assert state flips.
+        monkeypatch.setattr(server._api_deps, "bot_loop_fn", lambda: None)
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1
 
@@ -233,9 +296,11 @@ class TestTradingControl:
         assert trade_mode.enabled is True
         assert state.running is True
 
-    def test_trading_control_stop_sets_running_false_and_disables(self, app_client):
+    def test_trading_control_stop_sets_running_false_and_disables(self, app_client, monkeypatch):
+        import server
         from server import state, trade_mode
 
+        monkeypatch.setattr(server.db, "get_user_by_id", lambda _uid: {"id": 1, "role": "admin"})
         with app_client.session_transaction() as sess:
             sess["user_id"] = 1
 

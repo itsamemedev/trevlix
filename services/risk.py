@@ -64,6 +64,10 @@ class RiskManager:
             self.peak = max(self.peak, balance)
             self.daily_pnl = 0.0
             self._day = datetime.now().date()
+            # Re-arm the one-shot daily-loss circuit-breaker latch: the day's loss
+            # accounting was just re-baselined, so a fresh breach against the new
+            # baseline must be able to fire the CB / alert again.
+            self._daily_loss_cb_fired = False
 
     def update_peak(self, pv: float) -> None:
         """Aktualisiert den Portfolio-Höchststand und Drawdown.
@@ -341,13 +345,24 @@ class FundingRateTracker:
             return self._rates.get(symbol)
 
     def is_short_too_expensive(self, symbol: str) -> bool:
+        """Whether opening a short is too costly given the funding rate.
+
+        Funding sign convention (Bybit linear perps, our data source):
+          * positive rate → longs pay shorts → a short *receives* funding (cheap)
+          * negative rate → shorts pay longs → a short *pays* funding (expensive)
+
+        A short is therefore "too expensive" when funding is strongly NEGATIVE,
+        i.e. ``rate < -max_rate``. The previous ``rate > max_rate`` was inverted:
+        it blocked the most profitable (positive-funding) shorts and allowed the
+        costly ones.
+        """
         if not self.config.get("funding_rate_filter"):
             return False
         rate = self.get_rate(symbol)
         if rate is None:
             return False
         max_rate = self.config.get("funding_rate_max", 0.001)
-        return rate > max_rate
+        return rate < -max_rate
 
     def top_rates(self, n: int = 10) -> list:
         with self._lock:

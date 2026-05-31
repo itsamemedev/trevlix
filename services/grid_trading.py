@@ -63,7 +63,11 @@ class GridTradingEngine:
                 "filled_buys": {},
                 "filled_sells": {},
                 "total_pnl": 0.0,
+                # total_trades counts completed round-trips (sells); buy/sell
+                # fills are tracked separately so a round-trip isn't counted twice.
                 "total_trades": 0,
+                "buy_fills": 0,
+                "sell_fills": 0,
                 "created": datetime.now().isoformat(),
             }
         log.info(f"[GRID] {symbol}: {levels} Stufen zwischen {lower}–{upper} · {step:.4f}/Stufe")
@@ -110,7 +114,7 @@ class GridTradingEngine:
                 qty = invest / current_price
                 grid["filled_buys"][buy_price] = {"qty": qty, "price": current_price}
                 balance_ref[0] -= invest
-                grid["total_trades"] += 1
+                grid["buy_fills"] += 1
                 actions.append(
                     {
                         "action": "BUY",
@@ -129,7 +133,9 @@ class GridTradingEngine:
                 pnl = (current_price - buy_info["price"]) * buy_info["qty"]
                 balance_ref[0] += buy_info["qty"] * current_price
                 grid["total_pnl"] = round(grid["total_pnl"] + pnl, 4)
+                # A sell completes a round-trip → count it as one trade.
                 grid["total_trades"] += 1
+                grid["sell_fills"] += 1
                 grid["filled_sells"][sell_price] = {"pnl": pnl}
                 actions.append(
                     {

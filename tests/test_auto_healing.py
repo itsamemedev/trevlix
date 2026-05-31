@@ -158,6 +158,29 @@ class TestAutoHealingAgent:
         assert tracker.last_status_ok is True
         assert tracker.escalated is False
 
+    def test_recovery_clears_failure_history(self) -> None:
+        """Regression: recovery must clear stale failures so a single later
+        failure does not immediately re-escalate off old incident data."""
+        notifier = Mock()
+        agent = self._make_agent(notifier=notifier)
+
+        # Build up to the escalation threshold.
+        for _ in range(_ESCALATION_LIMIT):
+            agent._record_failure(ServiceName.DATABASE, Severity.ERROR, "down")
+        tracker = agent._trackers[ServiceName.DATABASE]
+        assert tracker.escalated is True
+
+        # Service recovers -> incident closed, history cleared.
+        agent._mark_healthy(ServiceName.DATABASE)
+        assert len(tracker.failures) == 0
+        assert tracker.recovery_attempts == 0
+
+        # A single new failure must NOT re-escalate immediately.
+        notifier.reset_mock()
+        agent._record_failure(ServiceName.DATABASE, Severity.ERROR, "blip")
+        assert tracker.escalated is False
+        assert not [c for c in notifier.call_args_list if "ESCALATION" in str(c)]
+
     def test_db_recovery_attempt(self) -> None:
         """Verify database recovery is attempted when DB check fails."""
         agent = self._make_agent()

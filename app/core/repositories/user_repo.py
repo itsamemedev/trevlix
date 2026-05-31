@@ -280,7 +280,24 @@ class UserRepository:
                 options={"require": ["exp"]},
             )
             sub = payload.get("sub")
-            return int(sub) if sub is not None else None
+            if sub is None:
+                return None
+            uid = int(sub)
+            # A token can be valid cryptographically but revoked (active=0) or
+            # deleted in the DB. Enforce revocation here — otherwise the revoke
+            # endpoint is a no-op and revoked tokens keep authenticating until
+            # their JWT exp elapses. Fail closed if the row is missing/inactive.
+            with self._m._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "SELECT active FROM api_tokens WHERE token=%s AND user_id=%s",
+                        (token[:500], uid),
+                    )
+                    row = c.fetchone()
+            if not row or not row.get("active"):
+                log.debug("verify_api_token: revoked or unknown token")
+                return None
+            return uid
         except m.pyjwt.ExpiredSignatureError:
             log.info("verify_api_token: Token abgelaufen")
             return None

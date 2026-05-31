@@ -874,7 +874,14 @@ function updateAI3DFromBrain(brain){
   b.bear_accuracy = Number(brain.bear_accuracy||0);
   b.allowed_count = Number(brain.allowed_count||0);
   b.blocked_count = Number(brain.blocked_count||0);
+  b.blocked_pct = Number(brain.blocked_pct||0);
   b.is_trained = Boolean(brain.is_trained);
+  b.training_ver = Number(brain.training_ver||0);
+  b.samples = Number(brain.samples||0);
+  b.min_samples = Number(brain.min_samples||0);
+  b.lstm_acc = Number(brain.lstm_acc||0);
+  // Per-model live availability (lights up the RF/XGB/LSTM/REG nodes).
+  b.models = brain.models || {rf:false,xgb:false,lstm:false,regime:false};
   b.updated_at = String(brain.updated_at||'');
   b.error = false;
 }
@@ -984,6 +991,11 @@ function _renderAI3D(){
       brain.regime==='bull'?0.8:brain.regime==='bear'?0.2:0.5];
     return Math.min(1,Math.max(0,mv[i]||0));
   }
+  function modelOnline(i){
+    // Real per-model availability from the backend (RF, XGB, LSTM, REG).
+    const m = brain.models || {};
+    return [!!m.rf, !!m.xgb, !!m.lstm, !!m.regime][i];
+  }
 
   // ── Edges L0→L1 ─────────────────────────────────────────────────────────────
   inputs.forEach((inp,ii)=>{
@@ -1058,22 +1070,25 @@ function _renderAI3D(){
   models.forEach((mod,mi)=>{
     const my=_nnNodeY(models.length,mi,h);
     const mv=modelVal(mi);
+    const online=modelOnline(mi);
+    // Online models glow green by confidence; offline models are dim gray.
+    const baseRGB = online ? '0,255,180' : '110,125,150';
     const grd=ctx.createRadialGradient(_NN.L1x,my,2,_NN.L1x,my,14);
-    grd.addColorStop(0,`rgba(0,255,180,${0.45+mv*0.55})`);
-    grd.addColorStop(1,'rgba(0,255,180,0)');
+    grd.addColorStop(0,`rgba(${baseRGB},${online?(0.45+mv*0.55):0.25})`);
+    grd.addColorStop(1,`rgba(${baseRGB},0)`);
     ctx.fillStyle=grd;
     ctx.beginPath(); ctx.arc(_NN.L1x,my,14,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(_NN.L1x,my,7,0,Math.PI*2);
-    ctx.fillStyle=`rgba(0,255,180,${0.6+mv*0.4})`; ctx.fill();
-    ctx.strokeStyle='rgba(0,255,180,0.5)'; ctx.lineWidth=1;
+    ctx.fillStyle=`rgba(${baseRGB},${online?(0.6+mv*0.4):0.35})`; ctx.fill();
+    ctx.strokeStyle=`rgba(${baseRGB},0.5)`; ctx.lineWidth=1;
     ctx.beginPath(); ctx.arc(_NN.L1x,my,10,0,Math.PI*2); ctx.stroke();
-    ctx.fillStyle='rgba(180,255,220,0.95)';
+    ctx.fillStyle = online ? 'rgba(180,255,220,0.95)' : 'rgba(170,185,205,0.85)';
     ctx.font='bold 9px "Fira Code",monospace';
     ctx.textAlign='center';
     ctx.fillText(mod.lbl, _NN.L1x, my+3);
-    ctx.fillStyle='rgba(0,255,180,0.7)';
+    ctx.fillStyle = online ? 'rgba(0,255,180,0.7)' : 'rgba(150,165,190,0.6)';
     ctx.font='8px "Fira Code",monospace';
-    ctx.fillText(`${(mv*100).toFixed(0)}%`, _NN.L1x, my+18);
+    ctx.fillText(online ? `${(mv*100).toFixed(0)}%` : 'OFF', _NN.L1x, my+18);
   });
 
   // ── Layer 2: VIRGINIE Core ───────────────────────────────────────────────────
@@ -1137,11 +1152,12 @@ function _renderAI3D(){
   ctx.font='8px "Fira Code",monospace';
   ctx.textAlign='left';
   const sym=brain.symbol?`[${brain.symbol}]  `:'';
-  const trained=brain.is_trained?'TRAINED':'UNTRAINED';
+  const trained=brain.is_trained?`v${brain.training_ver||0}`:`LEARN ${brain.samples||0}/${brain.min_samples||0}`;
   const regime=brain.regime.toUpperCase();
   const wf=`WF:${brain.wf_accuracy.toFixed(1)}%`;
   const aw=`w=${brain.autonomy_weight.toFixed(2)}`;
-  ctx.fillText(`${sym}${trained}  ${regime}  ${wf}  ${aw}`, 8, h-6);
+  const blk=`BLK:${(brain.blocked_pct||0).toFixed(0)}%`;
+  ctx.fillText(`${sym}${trained}  ${regime}  ${wf}  ${blk}  ${aw}`, 8, h-6);
   // Timestamp right
   ctx.textAlign='right';
   ctx.fillStyle='rgba(0,200,255,0.3)';
@@ -1471,10 +1487,14 @@ async function loadHeatmap(sortBy){
 
 // ── Chart ────────────────────────────────────────────────────────────
 async function loadChart(){
-  const sym=document.getElementById('chartSym').value.trim().replace('-','/').toUpperCase();
-  const tf=document.getElementById('chartTf').value;
-  document.getElementById('chartBadge').textContent=sym+' '+tf;
+  const symEl=document.getElementById('chartSym');
+  const tfEl=document.getElementById('chartTf');
   const chartEl=document.getElementById('tvChart');
+  if(!symEl||!tfEl||!chartEl) return;
+  const sym=symEl.value.trim().replace('-','/').toUpperCase();
+  const tf=tfEl.value;
+  const badgeEl=document.getElementById('chartBadge');
+  if(badgeEl) badgeEl.textContent=sym+' '+tf;
   chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--sub);font-size:12px">⏳ Lade Chart...</div>';
   try{
     const _r2=await fetch(`/api/ohlcv/${encodeURIComponent(sym.replace('/','-'))}?tf=${encodeURIComponent(tf)}&limit=200`); if(!_r2.ok) throw new Error('HTTP '+_r2.status); const data=await _r2.json();
@@ -1580,7 +1600,7 @@ function runBacktest(){
 }
 async function loadBtHistory(){
   try{
-    const _rb=await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
+    const _rb=await fetch('/api/backtest/history',{headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
     if(!data||!data.length){
       const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
       const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
@@ -2155,7 +2175,7 @@ async function loadSystemAnalytics() {
   } else {
     // HTTP fallback when socket is disconnected
     try{
-      const r=await fetch('/api/v1/system-analytics',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      const r=await fetch('/api/v1/system-analytics',{headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
       if(r.ok){ const d=await r.json(); socket.listeners('system_analytics').forEach(fn=>fn(d)); }
       else { toast('⚠️ Analytics: '+r.status,'warning'); }
     }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
@@ -2528,7 +2548,7 @@ async function loadLlmProviderStatus() {
   const el = document.getElementById('adminLlmProviders');
   if (!el) return;
   try {
-    const r = await fetch('/api/v1/llm-status', {headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}});
+    const r = await fetch('/api/v1/knowledge/llm-status', {headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}});
     if (!r.ok) { el.innerHTML = '<div style="color:#8a6a3a;font-size:12px">Status nicht verfuegbar</div>'; return; }
     const d = await r.json();
     const providers = d.multi_llm_providers || d.providers || [];
@@ -2563,7 +2583,7 @@ async function loadLlmProviderStatus() {
 async function loadUsers() {
   const el = document.getElementById('userList');
   try {
-    const r = await fetch('/api/v1/admin/users', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    const r = await fetch('/api/v1/admin/users', {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const users = d.users || d || [];
     if (!users.length) { if(el) el.innerHTML='<div class="empty">'+QI18n.t('empty_no_users')+'</div>'; return; }
@@ -2637,7 +2657,7 @@ socket.on('ai_model_updated', data => {
 async function loadSharedAIStatus() {
   try {
     const r = await fetch('/api/v1/ai/shared/status',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.error) return;
 
@@ -2722,13 +2742,13 @@ async function syncSharedModel(event) {
   btn.textContent = '⏳';
   try {
     const r = await fetch('/api/v1/ai/shared/force-sync', {
-      method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
-    if (d.updated) {
-      toast(`✅ ${QI18n.t('msg_model_synced')} v${d.version} (${d.accuracy}% WF)`, 'success');
+    if (d.ok || d.updated) {
+      toast('✅ ' + QI18n.t('msg_model_synced'), 'success');
       loadSharedAIStatus();
     } else {
-      toast(QI18n.t('msg_no_new_model'), 'info');
+      toast(d.error || QI18n.t('msg_no_new_model'), 'info');
     }
   } catch(e) { toast(QI18n.t('msg_sync_error'), 'error'); }
   btn.textContent = '↻ Sync';
@@ -2738,10 +2758,11 @@ async function adminTrainGlobal() {
   if (!confirm(QI18n.t('confirm_global_train'))) return;
   try {
     const r = await fetch('/api/v1/ai/shared/train', {
-      method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
-    if (d.started) {
-      toast(`🧠 ${QI18n.t('msg_training_started')}: ${d.samples_total} Samples (${d.new_samples})`, 'success');
+    if (d.ok || d.started) {
+      toast('🧠 ' + (d.msg || QI18n.t('msg_training_started')), 'success');
+      setTimeout(loadSharedAIStatus, 2000);
     } else {
       toast(d.error || QI18n.t('toast_error'), 'error');
     }
@@ -2777,7 +2798,7 @@ async function runMonteCarlo() {
   document.getElementById('mcEmpty')?.style    && (document.getElementById('mcEmpty').style.display='none');
   try {
     const r = await fetch(`/api/v1/risk/monte-carlo?n=${encodeURIComponent(n)}&days=${encodeURIComponent(days)}`,
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ toast(QI18n.t('err_generic'),'error'); return; }
     const d = await r.json();
     if (d.error) { toast(d.error,'warning'); return; }
@@ -2811,7 +2832,7 @@ async function loadFundingRates() {
   if(!el) return;
   try {
     const r = await fetch('/api/v1/funding-rates?n=15',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; return; }
     const d = await r.json();
     const rates = d.top_rates || [];
@@ -2832,7 +2853,7 @@ async function saveFundingConfig() {
   const maxRate = parseFloat(document.getElementById('fundingMaxRate')?.value || '0.1') / 100;
   try {
     const r = await fetch('/api/v1/funding-rates/config', {
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({enabled, max_rate: maxRate})
     });
     if(r.ok) toast(QI18n.t('msg_funding_saved'),'success');
@@ -2847,7 +2868,7 @@ async function loadCooldowns() {
   const el = document.getElementById('cooldownList');
   try {
     const r = await fetch('/api/v1/cooldowns',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const cds = d.cooldowns || {};
     if (!Object.keys(cds).length) {
@@ -2865,7 +2886,7 @@ async function loadCooldowns() {
 async function clearCooldown(symbol) {
   try {
     await fetch('/api/v1/cooldowns/'+encodeURIComponent(symbol), {
-      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'DELETE', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     loadCooldowns();
     toast(`${symbol} ${QI18n.t('msg_cooldown_cleared')}`, 'info');
   } catch(e){ toast(QI18n.t('err_network'),'error'); }
@@ -2890,7 +2911,7 @@ async function loadGrids() {
   const el = document.getElementById('gridList');
   if (!el) return;
   try {
-    const r = await fetch('/api/v1/grid', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    const r = await fetch('/api/v1/grid', {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const grids = d.grids || [];
     if (!grids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--sub)">'+QI18n.t('empty_no_grids')+'</div>'; return; }
@@ -2910,7 +2931,7 @@ async function deleteGrid(symbol) {
   if (!confirm(QI18n.t('confirm_delete_grid').replace('{sym}',symbol))) return;
   try {
     const r = await fetch('/api/v1/grid/'+encodeURIComponent(symbol), {
-      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'DELETE', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||QI18n.t('err_delete'),'error'); return; }
     loadGrids(); toast(`Grid ${symbol} ${QI18n.t('msg_grid_deleted')}`, 'info');
   } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
@@ -2924,7 +2945,7 @@ async function saveTelegram() {
   const chat_id = document.getElementById('tgChatId')?.value?.trim();
   if (!token || !chat_id) { toast(QI18n.t('err_token_chatid'),'warning'); return; }
   const r = await fetch('/api/v1/telegram/configure', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({token, chat_id})
   });
   const d = await r.json();
@@ -2939,7 +2960,7 @@ async function saveIpWhitelist() {
   const ips = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   if (!confirm(QI18n.t('confirm_set_ips').replace('{n}',ips.length))) return;
   const r = await fetch('/api/v1/admin/ip-whitelist', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({ips})
   });
   const d = await r.json();
@@ -2948,7 +2969,7 @@ async function saveIpWhitelist() {
 async function loadIpWhitelist() {
   try {
     const r = await fetch('/api/v1/admin/ip-whitelist',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const el = document.getElementById('ipWhitelist');
     if (el && d.whitelist) el.value = d.whitelist.join('\n');
@@ -2963,7 +2984,7 @@ async function saveNewsFilter() {
   const blockScore     = parseFloat(document.getElementById('newsBlockScore')?.value || '-0.4');
   const requirePositive= document.getElementById('newsRequirePositive')?.checked || false;
   const r = await fetch('/api/v1/config/news-filter', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({min_score: minScore, block_score: blockScore, require_positive: requirePositive})
   });
   const d = await r.json();
@@ -2972,7 +2993,7 @@ async function saveNewsFilter() {
 async function loadNewsFilter() {
   try {
     const r = await fetch('/api/v1/config/news-filter',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (document.getElementById('newsMinScore'))    document.getElementById('newsMinScore').value = d.news_sentiment_min;
     if (document.getElementById('newsBlockScore'))  document.getElementById('newsBlockScore').value = d.news_block_score;
@@ -3001,7 +3022,7 @@ async function loadAuditLog() {
   const el = document.getElementById('auditLogList');
   try {
     const r = await fetch('/api/v1/admin/audit-log',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const logs = d.logs || [];
     if (!logs.length) { el.innerHTML='<div class="empty">'+QI18n.t('empty_no_entries')+'</div>'; return; }
@@ -3026,8 +3047,11 @@ async function loadAuditLog() {
 // Load data when switching to risk/admin tabs
 onNav(id => {
   if (id === 'risk') { loadFundingRates(); loadCooldowns(); }
-  if (id === 'admin') { loadAuditLog(); loadGrids(); loadIpWhitelist(); loadAdminBlockerInsights(); }
-  if (id === 'settings') { loadNewsFilter(); }
+  if (id === 'admin') {
+    loadAuditLog(); loadGrids(); loadIpWhitelist(); loadAdminBlockerInsights();
+    loadSharedAIStatus(); loadLlmProviderStatus();
+  }
+  if (id === 'settings') { loadNewsFilter(); loadFundingRates(); }
 });
 // Initial data load
 setTimeout(() => { loadFundingRates(); }, 3000);
@@ -3060,7 +3084,7 @@ document.addEventListener('click', e => {
 async function loadFeatureImportance(){
   try {
     const r = await fetch('/api/v1/ai/feature-importance',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if(d.error){ toast(d.error,'warning'); return; }
     const fiCard = document.getElementById('featureImportanceCard');
@@ -3110,26 +3134,25 @@ async function runMarkowitz(){
   try {
     const r = await fetch('/api/v1/portfolio/optimize',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({symbols:syms})
     });
     const d = await r.json();
     if(d.error){ toast(d.error,'error'); return; }
+    // Backend returns: symbols[], equal_weights[], expected_returns[] (daily), note.
+    const symsOut = d.symbols || [];
+    const weights = d.equal_weights || [];
+    const expRet  = d.expected_returns || [];
     if(el) el.innerHTML = `
-      <div style="padding:10px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);border-radius:8px;margin-bottom:8px">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--jade)">${d.exp_return}%</div><div style="font-size:9px;color:var(--sub)">Erw. Rendite</div></div>
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--amber)">${d.exp_volatility}%</div><div style="font-size:9px;color:var(--sub)">Volatilität</div></div>
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--blue)">${d.sharpe_ratio}</div><div style="font-size:9px;color:var(--sub)">Sharpe</div></div>
-        </div>
-      </div>
-      ${d.symbols.map((s,i)=>`
+      ${d.note ? `<div style="font-size:10px;color:var(--sub);margin-bottom:8px">ℹ️ ${esc(String(d.note))}</div>` : ''}
+      ${symsOut.map((s,i)=>`
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
           <span style="font-size:12px;flex:1">${esc(String(s))}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:${(expRet[i]||0)>=0?'var(--jade)':'var(--red)'};min-width:60px;text-align:right">${((expRet[i]||0)*100).toFixed(2)}%/d</span>
           <div style="flex:2;height:6px;background:var(--bg3);border-radius:3px">
-            <div style="width:${((d.weights[i]??0)*100).toFixed(1)}%;height:100%;border-radius:3px;background:var(--jade)"></div>
+            <div style="width:${((weights[i]??0)*100).toFixed(1)}%;height:100%;border-radius:3px;background:var(--jade)"></div>
           </div>
-          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${d.allocations[s]??0}%</span>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${((weights[i]??0)*100).toFixed(1)}%</span>
         </div>`).join('')}`;
   } catch(e){ toast(QI18n.t('msg_markowitz_error')+': '+e.message,'error'); }
 }
@@ -3145,14 +3168,14 @@ async function runCompareBacktest(){
   try {
     const r = await fetch('/api/v1/backtest/compare',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({symbols:syms,timeframe:tf,candles:can})
     });
     const d = await r.json();
     if(d.error){ toast(d.error,'error'); return; }
     const results = d.results||{};
-    const cols = ['return_pct','win_rate','sharpe_ratio','max_drawdown','total_trades'];
-    const labels= ['Return%','Win-Rate','Sharpe','MaxDD%','Trades'];
+    const cols = ['return_pct','win_rate','profit_factor','max_drawdown','total_trades'];
+    const labels= ['Return%','Win-Rate','PF','MaxDD%','Trades'];
     if(el) el.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse">
       <tr>${['Symbol',...labels].map(h=>`<th style="padding:6px 8px;text-align:${h==='Symbol'?'left':'right'};color:var(--sub);font-family:var(--mono);letter-spacing:1px;font-size:9px;text-transform:uppercase">${h}</th>`).join('')}</tr>
       ${syms.map(s=>{
@@ -3183,7 +3206,7 @@ async function adjustSL(symbol, entryPrice){
   try {
     const r = await fetch('/api/v1/positions/'+encodeURIComponent(symbol)+'/sl',{
       method:'PATCH',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({sl_pct: pct})
     });
     const d = await r.json();
@@ -3619,7 +3642,7 @@ function mexToggleCard(id) {
 async function mexRefreshBalance(id) {
   try{
     const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/balance?refresh=1', {
-      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+      headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok){
       const j = await r.json().catch(()=>({}));
@@ -3709,7 +3732,7 @@ async function mexReloadSnapshot(forceRefresh) {
   try{
     const url = '/api/v1/exchanges' + (forceRefresh ? '?refresh=1' : '');
     const r = await fetch(url, {
-      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+      headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok) return;
     const payload = await r.json();
@@ -3769,7 +3792,7 @@ async function mexLoadTrades() {
   const el = document.getElementById('mex-trades-list');
   try {
     const r = await fetch('/api/v1/exchanges/combined/trades',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const trades = d.trades || [];
     if (!trades.length) {

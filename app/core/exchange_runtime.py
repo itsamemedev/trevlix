@@ -96,7 +96,7 @@ def preflight_exchange_markets(
                 return markets, None
             last_err = "keine Märkte geladen"
         except Exception as exc:
-            log.debug("preflight attempt %d failed: %s", attempt + 1, exc)
+            log.debug("preflight attempt %d failed: %s", attempt, exc)
             last_err = "exchange_connect_failed"
         if attempt < max_attempts:
             time.sleep(min(2**attempt, 10))
