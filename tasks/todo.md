@@ -1,5 +1,29 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 4 — frontend/untouched-module sweep (786 passed / 1 skipped, ruff clean)
+Fixed:
+1. HIGH — CSV formula injection in BOTH authenticated CSV download paths
+   (app/core/tax_export.py + app/core/repositories/trade_repo.py:export_csv).
+   symbol/reason fields written verbatim → cells starting with = + - @ TAB CR run
+   as formulas in Excel/LibreOffice (data exfil / RCE on the victim). Added
+   csv_safe_cell() (quote-prefix) applied to every exported cell. + tests.
+
+REAL findings deferred (could NOT safely edit — severe terminal/file-read
+corruption this session made unverifiable edits too risky for these paths):
+- llm_providers.py: chat()/chat_all() only call _apply_cooldown on non-200 HTTP
+  responses; a timing-out/connection-refused provider raises and is retried every
+  call (up to ~30s each) on the analysis path with no backoff. Fix = apply a
+  cooldown in the except branch. [MEDIUM]
+- llm_providers.py: _health[name]["tokens"] is read by status()/system_analytics
+  but never written → dashboard tokens_24h is always 0. Fix = parse
+  usage.total_tokens in _call_provider (or drop the field). [MEDIUM]
+- prometheus_metrics.py: db._pool.available/.pool_size read without try/except —
+  one error breaks the whole /metrics endpoint. Wrap per-metric. [LOW]
+- git_ops.rollback_update only `git stash`es (never reverts the pulled commits or
+  pops the stash) — an admin "rollback" does not roll back. [LOW]
+(All four verified as genuine by subagent; carried over to a follow-up session.)
+
+
 ## RUN 3 — deferred items revisited + new domains (782 passed / 1 skipped, ruff clean)
 Fixed (verified via grep + ast parse + full suite):
 1. performance_attribution.sharpe_ratio: removed invalid sqrt(252) annualization
