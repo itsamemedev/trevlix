@@ -325,7 +325,6 @@ class AIEngine:
             "symbol": "",
             "vote_conf": 0.0,
             "model_prob": 0.0,
-            "regime_p": 0.5,
             "blended_prob": 0.0,
             "ev_score": 0.0,
             "guardrail_passed": False,
@@ -869,6 +868,18 @@ class AIEngine:
             # Modelle auf Disk persistieren (Neustart = kein Cold-Start)
             self._save_models()
             emit_event("ai_update", self.to_dict())
+            # Notify dashboards that a NEW model version is live (toast + badge).
+            # The frontend listens on 'ai_model_updated' (version/accuracy fields).
+            if emit_event is not None:
+                emit_event(
+                    "ai_model_updated",
+                    {
+                        "version": self.training_ver,
+                        "wf_accuracy": round(wf_acc * 100, 1),
+                        "bull_accuracy": round(bull_acc * 100, 1),
+                        "bear_accuracy": round(bear_acc * 100, 1),
+                    },
+                )
             # Autonome LLM-Analyse: Training-Ergebnisse interpretieren
             if knowledge_base is not None:
                 knowledge_base.analyze_training_async(
@@ -1229,14 +1240,32 @@ class AIEngine:
             )
 
     def brain_state_snapshot(self) -> dict:
-        """Return current brain state for live neural visualization."""
+        """Return current brain state for live neural visualization.
+
+        Enriched with the real per-model availability/accuracy so the neural
+        viz can light up the RF / XGB / LSTM / REG nodes from actual state
+        instead of placeholders.
+        """
         snap = dict(self.brain_state)
         snap["wf_accuracy"] = round(self.wf_accuracy * 100, 1)
         snap["bull_accuracy"] = round(self.bull_accuracy * 100, 1)
         snap["bear_accuracy"] = round(self.bear_accuracy * 100, 1)
         snap["allowed_count"] = self.allowed_count
         snap["blocked_count"] = self.blocked_count
+        total = self.allowed_count + self.blocked_count
+        snap["blocked_pct"] = round(self.blocked_count / total * 100, 1) if total else 0.0
         snap["is_trained"] = self.is_trained
+        snap["training_ver"] = self.training_ver
+        snap["samples"] = len(self.X_raw)
+        snap["min_samples"] = CONFIG.get("ai_min_samples", 20)
+        # Per-model live availability for the neural-net node layer.
+        snap["models"] = {
+            "rf": self.global_model is not None,
+            "xgb": bool(XGB_AVAILABLE) and self.global_model is not None,
+            "lstm": self.lstm_model is not None,
+            "regime": self.bull_model is not None or self.bear_model is not None,
+        }
+        snap["lstm_acc"] = round(self.lstm_acc * 100, 1)
         return snap
 
     def _update_brain(

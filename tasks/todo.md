@@ -1,5 +1,52 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 7 — Dashboard coverage audit + brain visualization extension (808 passed)
+Full static cross-check: 110 HTTP routes + 35 socket handlers (backend) vs 55
+fetch() calls + all socket emits/listeners + 178 onclick handlers (frontend).
+
+FIXED (real wiring bugs):
+1. dashboard.js loadLlmProviderStatus fetched `/api/v1/llm-status` → 404 (the route
+   is `/api/v1/knowledge/llm-status`). Admin LLM-provider panel was always "Status
+   nicht verfügbar". Corrected the URL.
+2. Frontend listened on socket `ai_model_updated` (toast + version badge + reload)
+   but the backend NEVER emitted it. AIEngine._train now emits ai_model_updated
+   {version, wf/bull/bear accuracy} after a successful (re)train.
+3. brain_state had a dead `regime_p` field (init-only, never updated, unused by UI)
+   → removed.
+
+BRAIN VISUALIZATION EXTENDED (requested):
+- brain_state_snapshot() enriched with real per-model availability
+  (models.rf/xgb/lstm/regime), training_ver, samples/min_samples, blocked_pct,
+  lstm_acc — no change to the hot should_buy path.
+- Neural viz: RF/XGB/LSTM/REG nodes now light up green when the model is actually
+  loaded and dim gray ("OFF") when not; status bar shows version/learning-progress,
+  regime, WF accuracy, block-rate and autonomy weight.
+- New test: test_brain_state_snapshot_includes_model_availability.
+
+AUDIT FINDING — orphaned backend features with NO dashboard UI (endpoint + JS
+function exist, but no button AND no target DOM container in dashboard.html;
+verified via grep). These are fully dead in the UI:
+  - loadTax            GET  /api/tax_report            (Tax report panel)
+  - runMonteCarlo      GET  /api/v1/risk/monte-carlo   (Monte-Carlo risk sim)
+  - runMarkowitz       POST /api/v1/portfolio/optimize (Portfolio optimizer)
+  - runCompareBacktest POST /api/v1/backtest/compare   (Multi-symbol backtest)
+  - saveTelegram       POST /api/v1/telegram/configure (Telegram settings)
+  - saveIpWhitelist    POST /api/v1/admin/ip-whitelist (IP allowlist editor)
+  - saveNewsFilter     POST /api/v1/config/news-filter (News-filter config save)
+  - saveFundingConfig  POST /api/v1/funding-rates/config (Funding filter config)
+  - syncSharedModel    POST /api/v1/ai/shared/force-sync
+  - adminTrainGlobal   POST /api/v1/ai/shared/train
+  - loadHeatmap        GET  /api/heatmap               (legacy; live heatmap comes
+                                                        via socket 'update' instead)
+  - switchTradingMode  POST /api/v1/trading/mode       (superseded by togglePaperMode)
+  Dead socket emitters (defined, never wired to a control): runBacktest
+  (run_backtest), sendReport (send_daily_report), refreshDom (update_dominance),
+  scanArb (scan_arbitrage).
+  → Each needs a UI panel (inputs + button + result container) wired into an
+    existing nav section to become usable. NOT built this run (no live browser to
+    verify layout); listed for a dedicated UI pass. All dashboard.html onclick/
+    onchange handlers that DO exist resolve to real JS functions (0 missing).
+
 ## RUN 6 — resolved the design/scope backlog (807 passed / 1 skipped, ruff clean)
 All previously "deferred — needs spec/judgement" items investigated and fixed:
 1. tax_report: now applies the German § 23 EStG 1-year holding-period rule. Gains

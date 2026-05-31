@@ -874,7 +874,14 @@ function updateAI3DFromBrain(brain){
   b.bear_accuracy = Number(brain.bear_accuracy||0);
   b.allowed_count = Number(brain.allowed_count||0);
   b.blocked_count = Number(brain.blocked_count||0);
+  b.blocked_pct = Number(brain.blocked_pct||0);
   b.is_trained = Boolean(brain.is_trained);
+  b.training_ver = Number(brain.training_ver||0);
+  b.samples = Number(brain.samples||0);
+  b.min_samples = Number(brain.min_samples||0);
+  b.lstm_acc = Number(brain.lstm_acc||0);
+  // Per-model live availability (lights up the RF/XGB/LSTM/REG nodes).
+  b.models = brain.models || {rf:false,xgb:false,lstm:false,regime:false};
   b.updated_at = String(brain.updated_at||'');
   b.error = false;
 }
@@ -984,6 +991,11 @@ function _renderAI3D(){
       brain.regime==='bull'?0.8:brain.regime==='bear'?0.2:0.5];
     return Math.min(1,Math.max(0,mv[i]||0));
   }
+  function modelOnline(i){
+    // Real per-model availability from the backend (RF, XGB, LSTM, REG).
+    const m = brain.models || {};
+    return [!!m.rf, !!m.xgb, !!m.lstm, !!m.regime][i];
+  }
 
   // ── Edges L0→L1 ─────────────────────────────────────────────────────────────
   inputs.forEach((inp,ii)=>{
@@ -1058,22 +1070,25 @@ function _renderAI3D(){
   models.forEach((mod,mi)=>{
     const my=_nnNodeY(models.length,mi,h);
     const mv=modelVal(mi);
+    const online=modelOnline(mi);
+    // Online models glow green by confidence; offline models are dim gray.
+    const baseRGB = online ? '0,255,180' : '110,125,150';
     const grd=ctx.createRadialGradient(_NN.L1x,my,2,_NN.L1x,my,14);
-    grd.addColorStop(0,`rgba(0,255,180,${0.45+mv*0.55})`);
-    grd.addColorStop(1,'rgba(0,255,180,0)');
+    grd.addColorStop(0,`rgba(${baseRGB},${online?(0.45+mv*0.55):0.25})`);
+    grd.addColorStop(1,`rgba(${baseRGB},0)`);
     ctx.fillStyle=grd;
     ctx.beginPath(); ctx.arc(_NN.L1x,my,14,0,Math.PI*2); ctx.fill();
     ctx.beginPath(); ctx.arc(_NN.L1x,my,7,0,Math.PI*2);
-    ctx.fillStyle=`rgba(0,255,180,${0.6+mv*0.4})`; ctx.fill();
-    ctx.strokeStyle='rgba(0,255,180,0.5)'; ctx.lineWidth=1;
+    ctx.fillStyle=`rgba(${baseRGB},${online?(0.6+mv*0.4):0.35})`; ctx.fill();
+    ctx.strokeStyle=`rgba(${baseRGB},0.5)`; ctx.lineWidth=1;
     ctx.beginPath(); ctx.arc(_NN.L1x,my,10,0,Math.PI*2); ctx.stroke();
-    ctx.fillStyle='rgba(180,255,220,0.95)';
+    ctx.fillStyle = online ? 'rgba(180,255,220,0.95)' : 'rgba(170,185,205,0.85)';
     ctx.font='bold 9px "Fira Code",monospace';
     ctx.textAlign='center';
     ctx.fillText(mod.lbl, _NN.L1x, my+3);
-    ctx.fillStyle='rgba(0,255,180,0.7)';
+    ctx.fillStyle = online ? 'rgba(0,255,180,0.7)' : 'rgba(150,165,190,0.6)';
     ctx.font='8px "Fira Code",monospace';
-    ctx.fillText(`${(mv*100).toFixed(0)}%`, _NN.L1x, my+18);
+    ctx.fillText(online ? `${(mv*100).toFixed(0)}%` : 'OFF', _NN.L1x, my+18);
   });
 
   // ── Layer 2: VIRGINIE Core ───────────────────────────────────────────────────
@@ -1137,11 +1152,12 @@ function _renderAI3D(){
   ctx.font='8px "Fira Code",monospace';
   ctx.textAlign='left';
   const sym=brain.symbol?`[${brain.symbol}]  `:'';
-  const trained=brain.is_trained?'TRAINED':'UNTRAINED';
+  const trained=brain.is_trained?`v${brain.training_ver||0}`:`LEARN ${brain.samples||0}/${brain.min_samples||0}`;
   const regime=brain.regime.toUpperCase();
   const wf=`WF:${brain.wf_accuracy.toFixed(1)}%`;
   const aw=`w=${brain.autonomy_weight.toFixed(2)}`;
-  ctx.fillText(`${sym}${trained}  ${regime}  ${wf}  ${aw}`, 8, h-6);
+  const blk=`BLK:${(brain.blocked_pct||0).toFixed(0)}%`;
+  ctx.fillText(`${sym}${trained}  ${regime}  ${wf}  ${blk}  ${aw}`, 8, h-6);
   // Timestamp right
   ctx.textAlign='right';
   ctx.fillStyle='rgba(0,200,255,0.3)';
@@ -2532,7 +2548,7 @@ async function loadLlmProviderStatus() {
   const el = document.getElementById('adminLlmProviders');
   if (!el) return;
   try {
-    const r = await fetch('/api/v1/llm-status', {headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}});
+    const r = await fetch('/api/v1/knowledge/llm-status', {headers: {'Authorization': 'Bearer ' + (_jwtToken || '')}});
     if (!r.ok) { el.innerHTML = '<div style="color:#8a6a3a;font-size:12px">Status nicht verfuegbar</div>'; return; }
     const d = await r.json();
     const providers = d.multi_llm_providers || d.providers || [];
