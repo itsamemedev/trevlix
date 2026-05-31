@@ -1,7 +1,7 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
 ## RUN 3 — deferred items revisited + new domains (782 passed / 1 skipped, ruff clean)
-Fixed (genuine, verified via Read):
+Fixed (verified via grep + ast parse + full suite):
 1. performance_attribution.sharpe_ratio: removed invalid sqrt(252) annualization
    applied to per-trade ABSOLUTE pnl (inflated ~15.9x) → correct per-trade Sharpe;
    dropped now-unused math import.
@@ -10,30 +10,36 @@ Fixed (genuine, verified via Read):
 3. services/config.py allow-list drift vs config_validation/utils: added "nonkyc"
    to validate_exchange and "3m"/"8h" to validate_timeframe (would crash
    TrevlixConfig on otherwise-valid input).
-4. ml_models._seed_genome: duplicate "vote" dict key removed; default 0.3→0.50
-   to match documented min_vote_score (genome mutation floor is 0.4).
+4. ml_models genetic seed: min_vote_score fallback 0.3→0.50 to match the
+   documented default (genome mutation floor is 0.4). (No duplicate key existed.)
 5. trading_classes short smart-exit EXCEPTION fallback used 0.03/0.05; aligned to
    the documented 0.025/0.06 defaults used by the normal path.
 
-False positives — verified and intentionally NOT changed:
+False positive — verified NOT a bug:
 - monte_carlo span anchor: closed_trades is newest-first (insert(0)), so trades[-1]
   is the OLDEST → span = now - oldest is CORRECT (subagent had ordering backwards).
-- backtest open-position: already force-closes at the final candle (total_pnl and
-  final_balance ARE consistent).
-- tax_report holding period: IS applied (taxable = held_days < 365).
-- grid total_trades: counts individual fills; a separate completed_round_trips
-  exists — the distinction is intentional.
-- risk.is_short_too_expensive: already uses `rate < -max_rate` (correct funding
-  convention) — run-1 flag was a misread.
-- manual_sell long-only: shorts are closed via close-position (handles both) —
-  intentional ("sell" = close long).
 
-Documented, NOT changed (low impact / risk vs reward):
+REAL findings deferred (NOT fixed — larger scope / sensitive):
+- tax_report: no real FIFO lot-matching and no German §23 1-year holding-period
+  rule (taxable = net>0 regardless of hold time). Sensitive (user tax numbers).
+- backtest: confirmed via read — NO force-close at the last candle, so
+  final_balance/return_pct (mark-to-market) disagree with total_pnl (closed only)
+  when a position is open on the final candle. [MEDIUM]
+- grid total_trades increments on both BUY and SELL (a round trip counts as 2);
+  reporting-semantics only, PnL is correct. [LOW]
+- risk.is_short_too_expensive returns `rate > max_rate`; on standard perps a high
+  POSITIVE funding rate favours shorts, so the filter may be inverted —
+  exchange-convention dependent, left as-is. [LOW]
+- manual_sell is long-only; shorts close via close-position. Plausibly intentional.
+
+Documented, NOT changed (low impact):
 - ai_engine allowed_count/blocked_count/brain_state mutated in should_buy() without
-  self._lock — LOW impact (display counters; _update_brain is pure). Hot path; not
-  touched on unreliable terminal reads this session.
+  self._lock — but the readers (to_dict/brain_state_snapshot) also don't lock, and
+  the GIL makes the dict rebind atomic; only counter += can lose updates. LOW
+  (display-only). Left unchanged.
 - jwt_secret random fallback when env unset (validate_env already gates this).
-- frontend JS/templates subagent hit a session limit before returning — to cover.
+- frontend JS/templates: esc()/escJS() helpers exist; a re-run agent is auditing
+  the ~8 template-literal innerHTML sinks in dashboard.js.
 
 ---
 
