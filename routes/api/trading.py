@@ -475,14 +475,20 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         if not _valid_symbol(sym):
             return jsonify({"error": "invalid_symbol"}), 400
         with st._lock:
-            pos = st.positions.get(sym)
-        if not pos:
+            in_long = sym in st.positions
+            in_short = sym in st.short_positions
+        if not in_long and not in_short:
             return jsonify({"error": f"Keine offene Position für {sym}"}), 404
         try:
-            ex = deps.create_exchange()
-            deps.close_position(ex, sym, "Manuell verkauft")
-            log.info("Manueller Verkauf: %s", sym)
-            return jsonify({"ok": True, "symbol": sym})
+            # Mirror close-position: a manual sell closes a long, or covers a short.
+            if in_long:
+                ex = deps.create_exchange()
+                deps.close_position(ex, sym, "Manuell verkauft")
+                log.info("Manueller Verkauf (long): %s", sym)
+                return jsonify({"ok": True, "symbol": sym, "side": "long"})
+            deps.short_engine.close_short(sym, "Manuell verkauft")
+            log.info("Manueller Verkauf (short): %s", sym)
+            return jsonify({"ok": True, "symbol": sym, "side": "short"})
         except Exception as e:
             log.warning("api_trading_manual_sell: %s", e)
             return jsonify({"error": "manual_sell_failed"}), 500

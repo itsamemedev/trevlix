@@ -1,5 +1,29 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 6 — resolved the design/scope backlog (807 passed / 1 skipped, ruff clean)
+All previously "deferred — needs spec/judgement" items investigated and fixed:
+1. tax_report: now applies the German § 23 EStG 1-year holding-period rule. Gains
+   on positions held > 365 days are reported as tax-free (separate `tax_free`
+   bucket + `tax_free_gains`/`tax_free_count` summary) and excluded from
+   `taxable_gains`. Holding period derived from opened/closed; unparseable dates
+   conservatively fall back to taxable. (Round-trip trades already carry realized
+   pnl, so no cross-leg FIFO needed at this layer — documented in the module.)
+2. backtest: force-close any position still open on the final candle (reason
+   "EOD") so total_pnl (realized) equals the mark-to-market final_balance /
+   return_pct. Previously they disagreed when a position was open at the end.
+3. grid total_trades: now counts completed round-trips (sells) only; added
+   separate buy_fills/sell_fills counters (exposed in status()). Previously a
+   round-trip counted as 2 trades.
+4. risk.is_short_too_expensive: sign was inverted for the Bybit perp convention
+   (positive funding = shorts receive, negative = shorts pay). Now blocks shorts
+   on strongly NEGATIVE funding (rate < -max_rate) instead of positive.
+5. manual_sell (/api/v1/trading/sell): now closes shorts too (covers via
+   short_engine.close_short), mirroring close-position; was long-only (404 on a
+   symbol held only as a short).
+
+Run-6 tests: test_tax_report.py, test_backtest_consistency.py,
+test_grid_trade_count.py, test_funding_rate_filter.py.
+
 ## RUN 4 — frontend/untouched-module sweep (787 passed / 1 skipped, ruff clean)
 Fixed:
 1. HIGH — CSV formula injection in BOTH authenticated CSV download paths
