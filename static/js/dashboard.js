@@ -1471,10 +1471,14 @@ async function loadHeatmap(sortBy){
 
 // ── Chart ────────────────────────────────────────────────────────────
 async function loadChart(){
-  const sym=document.getElementById('chartSym').value.trim().replace('-','/').toUpperCase();
-  const tf=document.getElementById('chartTf').value;
-  document.getElementById('chartBadge').textContent=sym+' '+tf;
+  const symEl=document.getElementById('chartSym');
+  const tfEl=document.getElementById('chartTf');
   const chartEl=document.getElementById('tvChart');
+  if(!symEl||!tfEl||!chartEl) return;
+  const sym=symEl.value.trim().replace('-','/').toUpperCase();
+  const tf=tfEl.value;
+  const badgeEl=document.getElementById('chartBadge');
+  if(badgeEl) badgeEl.textContent=sym+' '+tf;
   chartEl.innerHTML='<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--sub);font-size:12px">⏳ Lade Chart...</div>';
   try{
     const _r2=await fetch(`/api/ohlcv/${encodeURIComponent(sym.replace('/','-'))}?tf=${encodeURIComponent(tf)}&limit=200`); if(!_r2.ok) throw new Error('HTTP '+_r2.status); const data=await _r2.json();
@@ -1580,7 +1584,7 @@ function runBacktest(){
 }
 async function loadBtHistory(){
   try{
-    const _rb=await fetch('/api/backtest/history',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
+    const _rb=await fetch('/api/backtest/history',{headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
     if(!data||!data.length){
       const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
       const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
@@ -2155,7 +2159,7 @@ async function loadSystemAnalytics() {
   } else {
     // HTTP fallback when socket is disconnected
     try{
-      const r=await fetch('/api/v1/system-analytics',{headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      const r=await fetch('/api/v1/system-analytics',{headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
       if(r.ok){ const d=await r.json(); socket.listeners('system_analytics').forEach(fn=>fn(d)); }
       else { toast('⚠️ Analytics: '+r.status,'warning'); }
     }catch(e){ toast('⚠️ '+QI18n.t('conn_disconnected'),'warning'); }
@@ -2563,7 +2567,7 @@ async function loadLlmProviderStatus() {
 async function loadUsers() {
   const el = document.getElementById('userList');
   try {
-    const r = await fetch('/api/v1/admin/users', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    const r = await fetch('/api/v1/admin/users', {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const users = d.users || d || [];
     if (!users.length) { if(el) el.innerHTML='<div class="empty">'+QI18n.t('empty_no_users')+'</div>'; return; }
@@ -2637,7 +2641,7 @@ socket.on('ai_model_updated', data => {
 async function loadSharedAIStatus() {
   try {
     const r = await fetch('/api/v1/ai/shared/status',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.error) return;
 
@@ -2722,7 +2726,7 @@ async function syncSharedModel(event) {
   btn.textContent = '⏳';
   try {
     const r = await fetch('/api/v1/ai/shared/force-sync', {
-      method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.updated) {
       toast(`✅ ${QI18n.t('msg_model_synced')} v${d.version} (${d.accuracy}% WF)`, 'success');
@@ -2738,7 +2742,7 @@ async function adminTrainGlobal() {
   if (!confirm(QI18n.t('confirm_global_train'))) return;
   try {
     const r = await fetch('/api/v1/ai/shared/train', {
-      method:'POST', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (d.started) {
       toast(`🧠 ${QI18n.t('msg_training_started')}: ${d.samples_total} Samples (${d.new_samples})`, 'success');
@@ -2777,7 +2781,7 @@ async function runMonteCarlo() {
   document.getElementById('mcEmpty')?.style    && (document.getElementById('mcEmpty').style.display='none');
   try {
     const r = await fetch(`/api/v1/risk/monte-carlo?n=${encodeURIComponent(n)}&days=${encodeURIComponent(days)}`,
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ toast(QI18n.t('err_generic'),'error'); return; }
     const d = await r.json();
     if (d.error) { toast(d.error,'warning'); return; }
@@ -2811,7 +2815,7 @@ async function loadFundingRates() {
   if(!el) return;
   try {
     const r = await fetch('/api/v1/funding-rates?n=15',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ el.innerHTML='<div class="empty">'+QI18n.t('empty_error')+'</div>'; return; }
     const d = await r.json();
     const rates = d.top_rates || [];
@@ -2832,7 +2836,7 @@ async function saveFundingConfig() {
   const maxRate = parseFloat(document.getElementById('fundingMaxRate')?.value || '0.1') / 100;
   try {
     const r = await fetch('/api/v1/funding-rates/config', {
-      method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({enabled, max_rate: maxRate})
     });
     if(r.ok) toast(QI18n.t('msg_funding_saved'),'success');
@@ -2847,7 +2851,7 @@ async function loadCooldowns() {
   const el = document.getElementById('cooldownList');
   try {
     const r = await fetch('/api/v1/cooldowns',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const cds = d.cooldowns || {};
     if (!Object.keys(cds).length) {
@@ -2865,7 +2869,7 @@ async function loadCooldowns() {
 async function clearCooldown(symbol) {
   try {
     await fetch('/api/v1/cooldowns/'+encodeURIComponent(symbol), {
-      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'DELETE', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     loadCooldowns();
     toast(`${symbol} ${QI18n.t('msg_cooldown_cleared')}`, 'info');
   } catch(e){ toast(QI18n.t('err_network'),'error'); }
@@ -2890,7 +2894,7 @@ async function loadGrids() {
   const el = document.getElementById('gridList');
   if (!el) return;
   try {
-    const r = await fetch('/api/v1/grid', {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+    const r = await fetch('/api/v1/grid', {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const grids = d.grids || [];
     if (!grids.length) { el.innerHTML = '<div style="font-size:12px;color:var(--sub)">'+QI18n.t('empty_no_grids')+'</div>'; return; }
@@ -2910,7 +2914,7 @@ async function deleteGrid(symbol) {
   if (!confirm(QI18n.t('confirm_delete_grid').replace('{sym}',symbol))) return;
   try {
     const r = await fetch('/api/v1/grid/'+encodeURIComponent(symbol), {
-      method:'DELETE', headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      method:'DELETE', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     if(!r.ok){ const d=await r.json().catch(()=>({})); toast(d.error||QI18n.t('err_delete'),'error'); return; }
     loadGrids(); toast(`Grid ${symbol} ${QI18n.t('msg_grid_deleted')}`, 'info');
   } catch(e){ toast(QI18n.t('err_network')+': '+e.message,'error'); }
@@ -2924,7 +2928,7 @@ async function saveTelegram() {
   const chat_id = document.getElementById('tgChatId')?.value?.trim();
   if (!token || !chat_id) { toast(QI18n.t('err_token_chatid'),'warning'); return; }
   const r = await fetch('/api/v1/telegram/configure', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({token, chat_id})
   });
   const d = await r.json();
@@ -2939,7 +2943,7 @@ async function saveIpWhitelist() {
   const ips = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   if (!confirm(QI18n.t('confirm_set_ips').replace('{n}',ips.length))) return;
   const r = await fetch('/api/v1/admin/ip-whitelist', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({ips})
   });
   const d = await r.json();
@@ -2948,7 +2952,7 @@ async function saveIpWhitelist() {
 async function loadIpWhitelist() {
   try {
     const r = await fetch('/api/v1/admin/ip-whitelist',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const el = document.getElementById('ipWhitelist');
     if (el && d.whitelist) el.value = d.whitelist.join('\n');
@@ -2963,7 +2967,7 @@ async function saveNewsFilter() {
   const blockScore     = parseFloat(document.getElementById('newsBlockScore')?.value || '-0.4');
   const requirePositive= document.getElementById('newsRequirePositive')?.checked || false;
   const r = await fetch('/api/v1/config/news-filter', {
-    method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+    method:'POST', headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
     body: JSON.stringify({min_score: minScore, block_score: blockScore, require_positive: requirePositive})
   });
   const d = await r.json();
@@ -2972,7 +2976,7 @@ async function saveNewsFilter() {
 async function loadNewsFilter() {
   try {
     const r = await fetch('/api/v1/config/news-filter',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if (document.getElementById('newsMinScore'))    document.getElementById('newsMinScore').value = d.news_sentiment_min;
     if (document.getElementById('newsBlockScore'))  document.getElementById('newsBlockScore').value = d.news_block_score;
@@ -3001,7 +3005,7 @@ async function loadAuditLog() {
   const el = document.getElementById('auditLogList');
   try {
     const r = await fetch('/api/v1/admin/audit-log',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const logs = d.logs || [];
     if (!logs.length) { el.innerHTML='<div class="empty">'+QI18n.t('empty_no_entries')+'</div>'; return; }
@@ -3060,7 +3064,7 @@ document.addEventListener('click', e => {
 async function loadFeatureImportance(){
   try {
     const r = await fetch('/api/v1/ai/feature-importance',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     if(d.error){ toast(d.error,'warning'); return; }
     const fiCard = document.getElementById('featureImportanceCard');
@@ -3110,7 +3114,7 @@ async function runMarkowitz(){
   try {
     const r = await fetch('/api/v1/portfolio/optimize',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({symbols:syms})
     });
     const d = await r.json();
@@ -3145,7 +3149,7 @@ async function runCompareBacktest(){
   try {
     const r = await fetch('/api/v1/backtest/compare',{
       method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({symbols:syms,timeframe:tf,candles:can})
     });
     const d = await r.json();
@@ -3183,7 +3187,7 @@ async function adjustSL(symbol, entryPrice){
   try {
     const r = await fetch('/api/v1/positions/'+encodeURIComponent(symbol)+'/sl',{
       method:'PATCH',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(_jwtToken||'')},
+      headers:{'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
       body: JSON.stringify({sl_pct: pct})
     });
     const d = await r.json();
@@ -3619,7 +3623,7 @@ function mexToggleCard(id) {
 async function mexRefreshBalance(id) {
   try{
     const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/balance?refresh=1', {
-      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+      headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok){
       const j = await r.json().catch(()=>({}));
@@ -3709,7 +3713,7 @@ async function mexReloadSnapshot(forceRefresh) {
   try{
     const url = '/api/v1/exchanges' + (forceRefresh ? '?refresh=1' : '');
     const r = await fetch(url, {
-      headers:{'Authorization':'Bearer '+(_jwtToken||'')}
+      headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}
     });
     if(!r.ok) return;
     const payload = await r.json();
@@ -3769,7 +3773,7 @@ async function mexLoadTrades() {
   const el = document.getElementById('mex-trades-list');
   try {
     const r = await fetch('/api/v1/exchanges/combined/trades',
-      {headers:{'Authorization':'Bearer '+(_jwtToken||'')}});
+      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
     const trades = d.trades || [];
     if (!trades.length) {

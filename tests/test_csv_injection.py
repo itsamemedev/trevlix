@@ -38,3 +38,20 @@ def test_tax_rows_to_csv_neutralises_injection():
 def test_tax_rows_to_csv_empty():
     assert tax_rows_to_csv([]) == ""
     assert tax_rows_to_csv(None) == ""
+
+
+def test_trade_repo_export_csv_sanitises_and_imports():
+    # Guards against the import regression where csv_safe_cell was referenced in
+    # export_csv but never imported (would crash at runtime), and confirms the
+    # sanitiser is actually applied to trade rows.
+    from app.core.repositories.trade_repo import TradeRepository
+
+    repo = TradeRepository.__new__(TradeRepository)
+    repo.load_trades = lambda limit=10000, user_id=None: [
+        {"id": 1, "symbol": "=cmd|'/c calc'!A1", "reason": "+evil", "pnl": 1.0},
+        {"id": 2, "symbol": "BTC/USDT", "reason": "TP", "pnl": -2.0},
+    ]
+    out = repo.export_csv()
+    assert "'=cmd" in out
+    assert "'+evil" in out
+    assert "BTC/USDT" in out

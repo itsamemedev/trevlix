@@ -15,6 +15,8 @@ import io
 import json
 from typing import TYPE_CHECKING
 
+from app.core.tax_export import csv_safe_cell
+
 if TYPE_CHECKING:
     from app.core.db_manager import MySQLManager
 

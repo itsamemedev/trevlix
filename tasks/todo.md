@@ -1,12 +1,30 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
-## RUN 4 — frontend/untouched-module sweep (786 passed / 1 skipped, ruff clean)
+## RUN 4 — frontend/untouched-module sweep (787 passed / 1 skipped, ruff clean)
 Fixed:
 1. HIGH — CSV formula injection in BOTH authenticated CSV download paths
    (app/core/tax_export.py + app/core/repositories/trade_repo.py:export_csv).
    symbol/reason fields written verbatim → cells starting with = + - @ TAB CR run
    as formulas in Excel/LibreOffice (data exfil / RCE on the victim). Added
    csv_safe_cell() (quote-prefix) applied to every exported cell. + tests.
+   FOLLOW-UP: the csv_safe_cell import was missing in trade_repo.py (would crash
+   export_csv at runtime, F821) — added import + a test that exercises export_csv.
+2. HIGH — CSRF missing on 26 state-changing dashboard.js fetch() calls. They sent
+   only 'Authorization: Bearer '+(_jwtToken||'') with NO X-CSRFToken; per
+   session_guard.py session-cookie POST/PUT/DELETE/PATCH require a CSRF token, so
+   these 403'd for every normal cookie-auth user (adjustSL, clearCooldown,
+   deleteGrid, saveTelegram, saveIpWhitelist, saveNewsFilter, adminForceSync,
+   adminTrainGlobal, saveFundingConfig, runMarkowitz, backtest compare, …).
+   Injected 'X-CSRFToken':_csrfToken into the shared header literal (harmless on
+   the GETs that share it; backend ignores CSRF for safe methods).
+3. MEDIUM — loadChart() dereferenced chartSym/chartTf/tvChart before the try block
+   (unlike the guarded style used everywhere else) → whole handler threw on a
+   partial render. Added early null guards + guarded the badge write.
+
+Frontend items checked & OK (subagent): esc()/escJS() applied to all dynamic
+sinks (no XSS), socket handlers de-duplicated, all setInterval cleared on
+beforeunload, no secrets logged. LOW: `clr` local shadows global helper in
+_renderVirginieForecastFeed (harmless) — left as-is.
 
 REAL findings deferred (could NOT safely edit — severe terminal/file-read
 corruption this session made unverifiable edits too risky for these paths):
