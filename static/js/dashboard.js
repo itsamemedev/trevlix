@@ -2744,11 +2744,11 @@ async function syncSharedModel(event) {
     const r = await fetch('/api/v1/ai/shared/force-sync', {
       method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
-    if (d.updated) {
-      toast(`✅ ${QI18n.t('msg_model_synced')} v${d.version} (${d.accuracy}% WF)`, 'success');
+    if (d.ok || d.updated) {
+      toast('✅ ' + QI18n.t('msg_model_synced'), 'success');
       loadSharedAIStatus();
     } else {
-      toast(QI18n.t('msg_no_new_model'), 'info');
+      toast(d.error || QI18n.t('msg_no_new_model'), 'info');
     }
   } catch(e) { toast(QI18n.t('msg_sync_error'), 'error'); }
   btn.textContent = '↻ Sync';
@@ -2760,8 +2760,9 @@ async function adminTrainGlobal() {
     const r = await fetch('/api/v1/ai/shared/train', {
       method:'POST', headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
     const d = await r.json();
-    if (d.started) {
-      toast(`🧠 ${QI18n.t('msg_training_started')}: ${d.samples_total} Samples (${d.new_samples})`, 'success');
+    if (d.ok || d.started) {
+      toast('🧠 ' + (d.msg || QI18n.t('msg_training_started')), 'success');
+      setTimeout(loadSharedAIStatus, 2000);
     } else {
       toast(d.error || QI18n.t('toast_error'), 'error');
     }
@@ -3046,8 +3047,11 @@ async function loadAuditLog() {
 // Load data when switching to risk/admin tabs
 onNav(id => {
   if (id === 'risk') { loadFundingRates(); loadCooldowns(); }
-  if (id === 'admin') { loadAuditLog(); loadGrids(); loadIpWhitelist(); loadAdminBlockerInsights(); }
-  if (id === 'settings') { loadNewsFilter(); }
+  if (id === 'admin') {
+    loadAuditLog(); loadGrids(); loadIpWhitelist(); loadAdminBlockerInsights();
+    loadSharedAIStatus(); loadLlmProviderStatus();
+  }
+  if (id === 'settings') { loadNewsFilter(); loadFundingRates(); }
 });
 // Initial data load
 setTimeout(() => { loadFundingRates(); }, 3000);
@@ -3135,21 +3139,20 @@ async function runMarkowitz(){
     });
     const d = await r.json();
     if(d.error){ toast(d.error,'error'); return; }
+    // Backend returns: symbols[], equal_weights[], expected_returns[] (daily), note.
+    const symsOut = d.symbols || [];
+    const weights = d.equal_weights || [];
+    const expRet  = d.expected_returns || [];
     if(el) el.innerHTML = `
-      <div style="padding:10px;background:rgba(0,255,136,.05);border:1px solid rgba(0,255,136,.15);border-radius:8px;margin-bottom:8px">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;text-align:center">
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--jade)">${d.exp_return}%</div><div style="font-size:9px;color:var(--sub)">Erw. Rendite</div></div>
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--amber)">${d.exp_volatility}%</div><div style="font-size:9px;color:var(--sub)">Volatilität</div></div>
-          <div><div style="font-family:var(--mono);font-size:14px;color:var(--blue)">${d.sharpe_ratio}</div><div style="font-size:9px;color:var(--sub)">Sharpe</div></div>
-        </div>
-      </div>
-      ${d.symbols.map((s,i)=>`
+      ${d.note ? `<div style="font-size:10px;color:var(--sub);margin-bottom:8px">ℹ️ ${esc(String(d.note))}</div>` : ''}
+      ${symsOut.map((s,i)=>`
         <div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--muted)">
           <span style="font-size:12px;flex:1">${esc(String(s))}</span>
+          <span style="font-family:var(--mono);font-size:10px;color:${(expRet[i]||0)>=0?'var(--jade)':'var(--red)'};min-width:60px;text-align:right">${((expRet[i]||0)*100).toFixed(2)}%/d</span>
           <div style="flex:2;height:6px;background:var(--bg3);border-radius:3px">
-            <div style="width:${((d.weights[i]??0)*100).toFixed(1)}%;height:100%;border-radius:3px;background:var(--jade)"></div>
+            <div style="width:${((weights[i]??0)*100).toFixed(1)}%;height:100%;border-radius:3px;background:var(--jade)"></div>
           </div>
-          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${d.allocations[s]??0}%</span>
+          <span style="font-family:var(--mono);font-size:12px;color:var(--jade);min-width:45px;text-align:right">${((weights[i]??0)*100).toFixed(1)}%</span>
         </div>`).join('')}`;
   } catch(e){ toast(QI18n.t('msg_markowitz_error')+': '+e.message,'error'); }
 }
@@ -3171,8 +3174,8 @@ async function runCompareBacktest(){
     const d = await r.json();
     if(d.error){ toast(d.error,'error'); return; }
     const results = d.results||{};
-    const cols = ['return_pct','win_rate','sharpe_ratio','max_drawdown','total_trades'];
-    const labels= ['Return%','Win-Rate','Sharpe','MaxDD%','Trades'];
+    const cols = ['return_pct','win_rate','profit_factor','max_drawdown','total_trades'];
+    const labels= ['Return%','Win-Rate','PF','MaxDD%','Trades'];
     if(el) el.innerHTML = `<div style="overflow-x:auto"><table style="width:100%;font-size:11px;border-collapse:collapse">
       <tr>${['Symbol',...labels].map(h=>`<th style="padding:6px 8px;text-align:${h==='Symbol'?'left':'right'};color:var(--sub);font-family:var(--mono);letter-spacing:1px;font-size:9px;text-transform:uppercase">${h}</th>`).join('')}</tr>
       ${syms.map(s=>{

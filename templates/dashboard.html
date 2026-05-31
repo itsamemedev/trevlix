@@ -540,6 +540,85 @@
       <div class="empty"><div class="empty-ico">📰</div><span data-i18n="chart_hint">Lade Chart um News zu sehen</span></div>
     </div>
   </div>
+
+  <!-- ══ Multi-Symbol Backtest-Vergleich ══ -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title">⚖️ Backtest-Vergleich</span></div>
+    <div class="card-body" style="padding-top:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="compareSymbols" value="BTC/USDT, ETH/USDT, SOL/USDT" class="s-input" style="flex:1;min-width:160px;text-align:left" placeholder="BTC/USDT, ETH/USDT">
+        <select id="compareTf" class="s-select" style="flex-shrink:0">
+          <option value="15m">15m</option><option value="1h" selected>1h</option><option value="4h">4h</option><option value="1d">1d</option>
+        </select>
+        <input id="compareCandles" type="number" value="500" min="100" max="5000" step="100" class="s-input" style="width:90px">
+        <button onclick="runCompareBacktest()" class="btn btn-purple" style="padding:8px 14px;font-size:12px">▶ Vergleichen</button>
+      </div>
+      <div id="compareResults"><div class="empty"><div class="empty-ico">⚖️</div><span>Symbole eingeben & vergleichen</span></div></div>
+    </div>
+  </div>
+
+  <!-- ══ Portfolio-Optimierung (Markowitz) ══ -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title">📐 Portfolio-Optimierung</span></div>
+    <div class="card-body" style="padding-top:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="markowitzSymbols" value="BTC/USDT, ETH/USDT, SOL/USDT" class="s-input" style="flex:1;min-width:160px;text-align:left" placeholder="min. 2 Symbole">
+        <button onclick="runMarkowitz()" class="btn btn-info" style="padding:8px 14px;font-size:12px">📊 Optimieren</button>
+      </div>
+      <div id="markowitzResults"><div class="empty"><div class="empty-ico">📐</div><span>min. 2 Symbole für effiziente Allokation</span></div></div>
+    </div>
+  </div>
+
+  <!-- ══ Monte-Carlo-Risikosimulation ══ -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title">🎲 Monte-Carlo-Simulation</span></div>
+    <div class="card-body" style="padding-top:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="mcSims" type="number" value="10000" min="100" max="50000" step="1000" class="s-input" style="width:100px" title="Simulationen">
+        <input id="mcDays" type="number" value="30" min="1" max="365" step="1" class="s-input" style="width:80px" title="Tage">
+        <button onclick="runMonteCarlo()" class="btn btn-teal" style="padding:8px 14px;font-size:12px;flex:1">🎲 Simulieren</button>
+      </div>
+      <div id="mcLoading" style="display:none;text-align:center;padding:14px;color:var(--sub);font-size:12px">⏳ Simuliere…</div>
+      <div id="mcEmpty" class="empty"><div class="empty-ico">🎲</div><span>Portfolio-Pfade simulieren</span></div>
+      <div id="mcResults" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px">
+          <div class="kv"><span class="kv-label">P5</span><span class="kv-value" id="mcP5">—</span></div>
+          <div class="kv"><span class="kv-label">Median (P50)</span><span class="kv-value" id="mcP50">—</span></div>
+          <div class="kv"><span class="kv-label">P95</span><span class="kv-value" id="mcP95">—</span></div>
+          <div class="kv"><span class="kv-label">Gewinn-Wahrsch.</span><span class="kv-value" id="mcProbProfit">—</span></div>
+          <div class="kv"><span class="kv-label">VaR 95%</span><span class="kv-value" id="mcVaR95">—</span></div>
+        </div>
+        <div style="font-size:9px;color:var(--sub);display:flex;justify-content:space-between"><span id="mcBarMin">—</span><span id="mcBarExpected">—</span><span id="mcBarMax">—</span></div>
+        <div style="height:8px;background:var(--bg3);border-radius:4px;margin-top:4px;position:relative">
+          <div id="mcBar" style="position:absolute;top:0;left:0;height:100%;width:50%;background:linear-gradient(90deg,var(--red),var(--amber),var(--jade));border-radius:4px"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ Steuer-Report ══ -->
+  <div class="card">
+    <div class="card-hd"><span class="card-title">🧾 Steuer-Report</span></div>
+    <div class="card-body" style="padding-top:10px">
+      <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <input id="taxYear" type="number" value="2026" min="2020" max="2099" class="s-input" style="width:100px">
+        <select id="taxMethod" class="s-select" style="flex-shrink:0"><option value="fifo">FIFO</option><option value="lifo">LIFO</option></select>
+        <button onclick="loadTax()" class="btn btn-gold" style="padding:8px 14px;font-size:12px;flex:1">🧾 Bericht erstellen</button>
+      </div>
+      <div id="taxWarnBar" class="alert-bar info" style="display:none;margin-bottom:8px"><span>⚠️</span><span id="taxWarnTxt"></span></div>
+      <div id="taxResult" style="display:none">
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px">
+          <div class="kv"><span class="kv-label">Gewinne</span><span class="kv-value" id="taxGains">—</span></div>
+          <div class="kv"><span class="kv-label">Verluste</span><span class="kv-value" id="taxLosses">—</span></div>
+          <div class="kv"><span class="kv-label">Netto</span><span class="kv-value" id="taxNet">—</span></div>
+          <div class="kv"><span class="kv-label">Steuerbar</span><span class="kv-value" id="taxTaxable">—</span></div>
+          <div class="kv"><span class="kv-label">Gebühren</span><span class="kv-value" id="taxFees">—</span></div>
+          <div class="kv"><span class="kv-label">Trades</span><span class="kv-value" id="taxCount">—</span></div>
+        </div>
+        <div id="taxTable" style="max-height:200px;overflow-y:auto"></div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- Backtest, Steuer, Log sections removed - moved to Admin -->
@@ -692,6 +771,30 @@
       <button class="btn btn-red admin-only" style="padding:9px;font-size:11px;width:100%" onclick="rollbackUpdate()"><span data-i18n="btn_rollback">↩ Rollback (.bak wiederherstellen)</span></button>
       <div id="updateChangelog" style="display:none;margin-top:10px;background:var(--bg2);border-radius:8px;padding:12px;font-size:11px;font-family:var(--mono);color:var(--sub);max-height:120px;overflow-y:auto;white-space:pre-wrap"></div>
     </div>
+
+    <!-- ══ Telegram-Benachrichtigungen ══ -->
+    <div class="s-section admin-only"><div class="s-section-title">📲 Telegram-Benachrichtigungen</div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Bot-Token</div><div class="s-help">Von @BotFather</div></div><input type="text" class="s-input" id="tgToken" placeholder="123456:ABC-DEF…" style="width:170px"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Chat-ID</div><div class="s-help">Ziel-Chat für Alerts</div></div><input type="text" class="s-input" id="tgChatId" placeholder="-1001234567890" style="width:170px"></div>
+      <button class="btn btn-info" style="padding:9px;font-size:11px;width:100%;margin-top:6px" onclick="saveTelegram()">📲 Telegram speichern & testen</button>
+    </div>
+
+    <!-- ══ News-Sentiment-Filter ══ -->
+    <div class="s-section admin-only"><div class="s-section-title">📰 News-Filter</div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Min. Sentiment-Score</div><div class="s-help">Unter diesem Wert: vorsichtig</div></div><input type="number" class="s-input" id="newsMinScore" value="-0.2" min="-1" max="1" step="0.05"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Block-Score</div><div class="s-help">Unter diesem Wert: kein Einstieg</div></div><input type="number" class="s-input" id="newsBlockScore" value="-0.4" min="-1" max="1" step="0.05"></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Nur bei positivem Sentiment</div></div><label class="toggle"><input type="checkbox" id="newsRequirePositive"><span class="tslider"></span></label></div>
+      <button class="btn btn-info" style="padding:9px;font-size:11px;width:100%;margin-top:6px" onclick="saveNewsFilter()">📰 News-Filter speichern</button>
+    </div>
+
+    <!-- ══ Funding-Rate-Filter (Shorts) ══ -->
+    <div class="s-section admin-only"><div class="s-section-title">💸 Funding-Rate-Filter</div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Filter aktiv</div><div class="s-help">Teure Shorts überspringen</div></div><label class="toggle"><input type="checkbox" id="fundingEnabled"><span class="tslider"></span></label></div>
+      <div class="s-row"><div class="s-label"><div class="s-name">Max. Funding-Rate %</div><div class="s-help">Schwelle (z.B. 0.1%)</div></div><input type="number" class="s-input" id="fundingMaxRate" value="0.1" min="0" max="5" step="0.01"></div>
+      <button class="btn btn-info" style="padding:9px;font-size:11px;width:100%;margin-top:6px" onclick="saveFundingConfig()">💸 Funding-Filter speichern</button>
+      <div id="fundingList" style="margin-top:8px;max-height:160px;overflow-y:auto"></div>
+    </div>
+
 <button class="save-btn admin-only" onclick="saveSettings()"><span data-i18n="settings_title">💾 Alle Einstellungen speichern</span></button>
     <button onclick="showWizard()" style="width:100%;padding:12px;border-radius:10px;background:var(--bg3);border:1px solid var(--line);color:var(--sub);cursor:pointer;font-family:var(--font);font-size:12px;font-weight:700;margin-top:8px"><span data-i18n="btn_wizard">🧙 Einrichtungs-Assistent</span></button>
   </div></div>
@@ -705,8 +808,11 @@
       <div class="admin-sec-hd">
         <div class="admin-sec-title">Admin Dashboard <span class="admin-badge">Admin</span></div>
         <div class="admin-sec-sub">TREVLIX Control Center · System · AI · Logs · v1.5.3</div>
-        <div style="margin-top:8px;display:flex;gap:6px">
+        <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-gold" style="padding:6px 14px;font-size:11px" onclick="loadSystemAnalytics()">System-Info</button>
+          <button class="btn btn-gold-outline" style="padding:6px 14px;font-size:11px" onclick="sendReport()">📊 Tagesreport</button>
+          <button class="btn btn-gold-outline" style="padding:6px 14px;font-size:11px" onclick="refreshDom()">🌐 Dominanz aktualisieren</button>
+          <button class="btn btn-gold-outline" style="padding:6px 14px;font-size:11px" onclick="scanArb()">🔀 Arbitrage scannen</button>
         </div>
       </div>
 
@@ -831,6 +937,34 @@
         <div class="card-hd"><div class="card-title">LLM Providers</div></div>
         <div class="card-body" id="adminLlmProviders">
           <div class="empty"><div class="empty-ico" style="filter:grayscale(1) brightness(1.5)">🤖</div><span>Laden...</span></div>
+        </div>
+      </div>
+
+      <!-- Shared / Global AI Model -->
+      <div class="admin-card">
+        <div class="card-hd"><div class="card-title">🧠 Globales KI-Modell <span class="card-badge" id="sharedAIVersionBadge">v—</span></div></div>
+        <div class="card-body">
+          <div class="kv-grid">
+            <div class="kv"><span class="kv-label">WF-Accuracy</span><span class="kv-value" id="sharedWF">—</span></div>
+            <div class="kv"><span class="kv-label">Bull / Bear</span><span class="kv-value"><span id="sharedBull">—</span> / <span id="sharedBear">—</span></span></div>
+            <div class="kv"><span class="kv-label">Samples</span><span class="kv-value" id="sharedSamples">—</span></div>
+            <div class="kv"><span class="kv-label">Status</span><span class="kv-value" id="sharedAIStatus" style="font-size:10px">—</span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:10px;color:var(--sub)"><span id="sharedSyncDot" style="width:8px;height:8px;border-radius:50%;background:var(--sub)"></span><span id="sharedSyncText">—</span></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px">
+            <button class="btn btn-gold-outline" style="padding:9px;font-size:11px" onclick="syncSharedModel(event)">↻ Sync</button>
+            <button class="btn btn-gold" style="padding:9px;font-size:11px" onclick="adminTrainGlobal()">🧠 Global trainieren</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- IP Whitelist -->
+      <div class="admin-card">
+        <div class="card-hd"><div class="card-title">🔒 IP-Whitelist</div></div>
+        <div class="card-body">
+          <div class="s-help" style="margin-bottom:6px">Eine IP/CIDR pro Zeile. Leer = keine Beschränkung.</div>
+          <textarea id="ipWhitelist" rows="5" class="s-input" style="width:100%;text-align:left;font-family:var(--mono);resize:vertical" placeholder="203.0.113.4&#10;198.51.100.0/24"></textarea>
+          <button class="btn btn-gold" style="width:100%;padding:9px;font-size:11px;margin-top:6px" onclick="saveIpWhitelist()">🔒 Whitelist speichern</button>
         </div>
       </div>
 

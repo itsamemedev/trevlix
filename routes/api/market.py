@@ -612,7 +612,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 except Exception as exc:
                     log.warning("backtest_compare failed for %s: %s", sym, exc)
                     results[sym] = {"error": "backtest_failed"}
-            return jsonify(results)
+            return jsonify({"results": results, "symbols": list(results.keys())})
         except Exception as e:
             log.error("API error: %s", e)
             return jsonify({"error": "Internal server error"}), 500

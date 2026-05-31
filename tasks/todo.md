@@ -1,5 +1,37 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 8 — Built UI panels for orphaned backend features (808 passed, ruff clean)
+Wired all 10 high-value orphaned features (endpoint+JS existed, no UI) into real
+dashboard panels, plus 3 admin quick-actions. Also fixed response-shape mismatches
+discovered while wiring.
+
+NEW UI PANELS (chart section): Backtest-Vergleich, Portfolio-Optimierung,
+Monte-Carlo-Simulation, Steuer-Report — full input + button + result containers.
+NEW UI PANELS (settings, admin-gated): Telegram-Konfig, News-Filter, Funding-Filter.
+NEW UI PANELS (admin): Globales-KI-Modell (Sync/Train + status), IP-Whitelist.
+NEW admin quick-actions: Tagesreport (send_daily_report), Dominanz (update_dominance),
+Arbitrage-Scan (scan_arbitrage) — previously dead socket emitters.
+
+Nav auto-load wiring: admin → loadSharedAIStatus + loadLlmProviderStatus;
+settings → loadFundingRates (in addition to existing loadNewsFilter/loadIpWhitelist).
+
+RESPONSE-SHAPE FIXES found during wiring:
+- /api/v1/backtest/compare returned the results map at top level but JS read
+  d.results → wrapped as {results, symbols}; JS column 'sharpe_ratio' (not produced
+  by backtest.run) → 'profit_factor'.
+- runMarkowitz expected exp_return/weights/allocations; backend returns
+  symbols/equal_weights/expected_returns/note → JS render aligned to real fields.
+- syncSharedModel/adminTrainGlobal expected d.updated/d.started; backend returns
+  {ok,...} → JS aligned (+ reload status after train).
+- Shared-AI card IDs aligned to the IDs loadSharedAIStatus actually writes
+  (sharedWF/sharedSamples/sharedAIStatus/sharedSyncDot/...).
+
+Not wired (intentionally): loadHeatmap (live heatmap already arrives via socket
+'update'), switchTradingMode (superseded by togglePaperMode), runBacktest
+(superseded by the new multi-symbol Backtest-Vergleich panel).
+
+Verified: node --check OK, div-balance 0, 808 passed/1 skipped, ruff clean.
+
 ## RUN 7 — Dashboard coverage audit + brain visualization extension (808 passed)
 Full static cross-check: 110 HTTP routes + 35 socket handlers (backend) vs 55
 fetch() calls + all socket emits/listeners + 178 onclick handlers (frontend).
