@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -348,6 +349,42 @@ class BackupScheduler:
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# EXCHANGE ACCOUNT (per-exchange, per-mode trading state)
+# ═══════════════════════════════════════════════════════════════════════════════
+class ExchangeAccount:
+    """Eigenständiges Handelskonto pro Exchange.
+
+    Ermöglicht, dass mehrere Exchanges gleichzeitig und unabhängig voneinander
+    handeln – jede mit eigenem Kapital, eigenen offenen Positionen und eigenem
+    Modus (``paper`` oder ``live``). So kann z. B. Binance live laufen, während
+    Bybit im Paper-Modus testet, ohne dass sich die Konten beeinflussen.
+
+    Die historische Single-Account-API auf :class:`BotState` (``balance``,
+    ``positions`` …) bleibt als Facade über das Primärkonto erhalten, damit
+    bestehende Aufrufer unverändert funktionieren.
+    """
+
+    __slots__ = (
+        "name",
+        "mode",
+        "balance",
+        "initial_balance",
+        "positions",
+        "short_positions",
+        "prices",
+    )
+
+    def __init__(self, name: str, mode: str, balance: float):
+        self.name = str(name)
+        self.mode = "live" if str(mode).lower() == "live" else "paper"
+        self.balance = float(balance)
+        self.initial_balance = float(balance)
+        self.positions: dict[str, dict] = {}
+        self.short_positions: dict[str, dict] = {}
+        self.prices: dict[str, float] = {}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # BOT STATE (Multi-User aware)
 # ═══════════════════════════════════════════════════════════════════════════════
 class BotState:
@@ -356,11 +393,21 @@ class BotState:
         self._lock = threading.RLock()  # [Verbesserung #4] Thread-Safety
         self.running = False
         self.paused = False
-        self.balance = CONFIG.get("paper_balance", 10000)
-        self.initial_balance = CONFIG.get("paper_balance", 10000)
-        self.positions: dict[str, dict] = {}
-        self.short_positions: dict[str, dict] = {}
-        self.prices: dict[str, float] = {}
+        # Per-Exchange-Konten. Standardmäßig existiert ein Primärkonto, das den
+        # bisherigen Single-Account-Zustand abbildet; weitere Konten werden vom
+        # Bot-Loop bei der Exchange-Reconciliation angelegt.
+        self._primary_account = str(CONFIG.get("exchange", "default") or "default").lower()
+        _primary_mode = "live" if not CONFIG.get("paper_trading", True) else "paper"
+        self.accounts: dict[str, ExchangeAccount] = {
+            self._primary_account: ExchangeAccount(
+                self._primary_account, _primary_mode, CONFIG.get("paper_balance", 10000)
+            )
+        }
+        # Thread-lokaler „aktiver Account": Während der Bot-Loop eine Exchange
+        # verarbeitet (``with state.use_account(name)``), zeigt die Legacy-Facade
+        # in DIESEM Thread auf das jeweilige Konto. API-/Socket-Threads setzen
+        # ihn nie und sehen damit weiterhin das Primärkonto – keine Races.
+        self._active = threading.local()
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
@@ -386,24 +433,155 @@ class BotState:
         except Exception as e:
             log.debug(f"Load trades: {e}")
 
-    def portfolio_value(self):
+    # ── Account management ────────────────────────────────────────────────────
+    @property
+    def primary_account(self) -> ExchangeAccount:
+        """Das Primärkonto, auf das die Legacy-Single-Account-Facade zeigt."""
+        acc = self.accounts.get(self._primary_account)
+        if acc is None:
+            with self._lock:
+                acc = self.accounts.get(self._primary_account)
+                if acc is None:
+                    if self.accounts:
+                        self._primary_account = next(iter(self.accounts))
+                        acc = self.accounts[self._primary_account]
+                    else:
+                        acc = ExchangeAccount(
+                            self._primary_account, "paper", CONFIG.get("paper_balance", 10000)
+                        )
+                        self.accounts[self._primary_account] = acc
+        return acc
+
+    def get_account(
+        self, name: str, *, mode: str | None = None, create: bool = True
+    ) -> ExchangeAccount:
+        """Liefert (und erstellt bei Bedarf) das Konto einer Exchange."""
+        key = str(name or "default").lower()
         with self._lock:
-            pos_copy = dict(self.positions)
-            short_copy = dict(self.short_positions)
-            prices_copy = dict(self.prices)
-        longs = sum(
-            p.get("qty", 0) * (prices_copy.get(s) or p.get("entry", 0))
-            for s, p in pos_copy.items()
-            if p.get("qty", 0) > 0
-        )
-        shorts = sum(safe_float(p.get("pnl_unrealized"), 0.0) for p in short_copy.values())
-        return self.balance + longs + shorts
+            acc = self.accounts.get(key)
+            if acc is None and create:
+                acc = ExchangeAccount(
+                    key,
+                    mode or ("live" if not CONFIG.get("paper_trading", True) else "paper"),
+                    CONFIG.get("paper_balance", 10000),
+                )
+                self.accounts[key] = acc
+            elif acc is not None and mode is not None:
+                acc.mode = "live" if str(mode).lower() == "live" else "paper"
+            return acc
+
+    def set_primary_account(self, name: str) -> None:
+        key = str(name or "default").lower()
+        with self._lock:
+            if key in self.accounts:
+                self._primary_account = key
+
+    def list_accounts(self) -> list[ExchangeAccount]:
+        with self._lock:
+            return list(self.accounts.values())
+
+    def _current_account(self) -> ExchangeAccount:
+        """Konto, auf das die Facade IM AKTUELLEN THREAD zeigt.
+
+        Bot-Loop-Thread: das per ``use_account`` gesetzte Exchange-Konto.
+        Alle anderen Threads (API/Socket): das Primärkonto.
+        """
+        name = getattr(self._active, "name", None)
+        if name is not None:
+            acc = self.accounts.get(name)
+            if acc is not None:
+                return acc
+        return self.primary_account
+
+    @contextmanager
+    def use_account(self, name: str, *, mode: str | None = None):
+        """Aktiviert für die Dauer des Blocks ein Exchange-Konto in diesem Thread."""
+        acc = self.get_account(name, mode=mode, create=True)
+        prev = getattr(self._active, "name", None)
+        self._active.name = acc.name
+        try:
+            yield acc
+        finally:
+            self._active.name = prev
+
+    def current_exchange(self) -> str:
+        """Name des im aktuellen Thread aktiven Kontos (Bot-Loop: die gerade
+        verarbeitete Exchange; sonst das Primärkonto)."""
+        return self._current_account().name
+
+    def current_mode(self) -> str:
+        """Modus (``paper``/``live``) für den aktuellen Thread.
+
+        Bot-Loop-Thread (``use_account`` aktiv): der pro Exchange aus der DB
+        gesetzte Konto-Modus. Alle anderen Threads/Aufrufer (manuelle API-Trades,
+        Tests): der globale ``paper_trading``-Schalter – so bleibt der globale
+        Umschalter unverändert wirksam.
+        """
+        name = getattr(self._active, "name", None)
+        if name is not None:
+            acc = self.accounts.get(name)
+            if acc is not None:
+                return acc.mode
+        return "live" if not CONFIG.get("paper_trading", True) else "paper"
+
+    # ── Legacy single-account facade (routes to the active/primary account) ───
+    @property
+    def balance(self) -> float:
+        return self._current_account().balance
+
+    @balance.setter
+    def balance(self, value) -> None:
+        self._current_account().balance = value
+
+    @property
+    def initial_balance(self) -> float:
+        return self._current_account().initial_balance
+
+    @initial_balance.setter
+    def initial_balance(self, value) -> None:
+        self._current_account().initial_balance = value
+
+    @property
+    def positions(self) -> dict[str, dict]:
+        return self._current_account().positions
+
+    @property
+    def short_positions(self) -> dict[str, dict]:
+        return self._current_account().short_positions
+
+    @property
+    def prices(self) -> dict[str, float]:
+        return self._current_account().prices
+
+    def total_balance(self) -> float:
+        """Freies Kapital über alle Konten summiert."""
+        return sum(acc.balance for acc in self.list_accounts())
+
+    def total_initial_balance(self) -> float:
+        return sum(acc.initial_balance for acc in self.list_accounts())
+
+    def portfolio_value(self):
+        total = 0.0
+        for acc in self.list_accounts():
+            with self._lock:
+                pos_copy = dict(acc.positions)
+                short_copy = dict(acc.short_positions)
+                prices_copy = dict(acc.prices)
+            longs = sum(
+                p.get("qty", 0) * (prices_copy.get(s) or p.get("entry", 0))
+                for s, p in pos_copy.items()
+                if p.get("qty", 0) > 0
+            )
+            shorts = sum(safe_float(p.get("pnl_unrealized"), 0.0) for p in short_copy.values())
+            total += acc.balance + longs + shorts
+        return total
 
     def return_pct(self):
         pv = self.portfolio_value()
-        if self.initial_balance <= 0:
+        init = self.total_initial_balance()
+        if init <= 0:
             return 0.0
-        return (pv - self.initial_balance) / self.initial_balance * 100
+        return (pv - init) / init * 100
 
     def win_rate(self):
         with self._lock:
@@ -457,30 +635,40 @@ class BotState:
         today = datetime.now().strftime("%Y-%m-%d")
         with self._lock:
             closed_copy = list(self.closed_trades)
-            pos_copy = dict(self.positions)
-            short_copy = dict(self.short_positions)
-            prices_snap = dict(self.prices)
+            # Snapshot jedes Kontos einzeln, damit gleiche Symbole auf
+            # verschiedenen Exchanges nicht kollidieren.
+            accounts_snap = [
+                (
+                    acc.name,
+                    acc.mode,
+                    acc.balance,
+                    acc.initial_balance,
+                    dict(acc.positions),
+                    dict(acc.short_positions),
+                    dict(acc.prices),
+                )
+                for acc in self.accounts.values()
+            ]
         trades_today = [t for t in closed_copy if str(t.get("closed", ""))[:10] == today]
         daily_pnl = sum(t.get("pnl", 0) for t in trades_today)
 
-        open_pos = [
-            {
+        # Merged price map (für Top-Level "prices" + abwärtskompatible Reader).
+        prices_snap: dict[str, float] = {}
+        for _a in accounts_snap:
+            prices_snap.update(_a[6])
+
+        def _long_row(sym, p, prices, acc_name, acc_mode):
+            cur = prices.get(sym, p.get("entry", 0))
+            entry = p.get("entry", 0)
+            return {
                 "symbol": sym,
-                "entry": round(p.get("entry", 0), 4),
-                "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
+                "exchange": acc_name,
+                "mode": acc_mode,
+                "entry": round(entry, 4),
+                "current": round(cur, 4),
                 "qty": round(p.get("qty", 0), 4),
-                "pnl": round(
-                    (prices_snap.get(sym, p.get("entry", 0)) - p.get("entry", 0)) * p.get("qty", 0),
-                    2,
-                ),
-                "pnl_pct": round(
-                    (prices_snap.get(sym, p.get("entry", 0)) - p.get("entry", 0))
-                    / p.get("entry", 0)
-                    * 100
-                    if p.get("entry", 0) > 0
-                    else 0.0,
-                    2,
-                ),
+                "pnl": round((cur - entry) * p.get("qty", 0), 2),
+                "pnl_pct": round((cur - entry) / entry * 100 if entry > 0 else 0.0, 2),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
                 "invested": round(p.get("invested", 0), 2),
@@ -496,39 +684,66 @@ class BotState:
                 "dna_boost": p.get("dna_boost", 1.0),
                 "exit_regime": p.get("exit_regime", ""),
             }
-            for sym, p in pos_copy.items()
-        ] + [
-            {
+
+        def _short_row(sym, p, prices, acc_name, acc_mode):
+            cur = prices.get(sym) or p.get("entry", 0)
+            entry = p.get("entry", 0)
+            return {
                 "symbol": sym,
-                "entry": round(p.get("entry", 0), 4),
-                "current": round(prices_snap.get(sym, p.get("entry", 0)), 4),
+                "exchange": acc_name,
+                "mode": acc_mode,
+                "entry": round(entry, 4),
+                "current": round(cur, 4),
                 "qty": round(p.get("qty", 0), 4),
                 "pnl": round(
-                    p.get("invested", 0)
-                    * (
-                        (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
-                        / p.get("entry", 0)
-                    )
-                    * CONFIG.get("short_leverage", 2)
-                    if p.get("entry", 0) > 0
+                    p.get("invested", 0) * ((entry - cur) / entry) * CONFIG.get("short_leverage", 2)
+                    if entry > 0
                     else 0.0,
                     2,
                 ),
-                "pnl_pct": round(
-                    (p.get("entry", 0) - (prices_snap.get(sym) or p.get("entry", 0)))
-                    / p.get("entry", 0)
-                    * 100
-                    if p.get("entry", 0) > 0
-                    else 0.0,
-                    2,
-                ),
+                "pnl_pct": round((entry - cur) / entry * 100 if entry > 0 else 0.0, 2),
                 "sl": round(p.get("sl", 0), 4),
                 "tp": round(p.get("tp", 0), 4),
                 "invested": round(p.get("invested", 0), 2),
                 "trade_type": "short",
             }
-            for sym, p in short_copy.items()
-        ]
+
+        open_pos: list[dict] = []
+        exchanges_breakdown: list[dict] = []
+        for (
+            acc_name,
+            acc_mode,
+            acc_bal,
+            acc_init,
+            pos_copy,
+            short_copy,
+            acc_prices,
+        ) in accounts_snap:
+            acc_rows = [
+                _long_row(s, p, acc_prices, acc_name, acc_mode) for s, p in pos_copy.items()
+            ]
+            acc_rows += [
+                _short_row(s, p, acc_prices, acc_name, acc_mode) for s, p in short_copy.items()
+            ]
+            open_pos += acc_rows
+            acc_value = acc_bal + sum(
+                p.get("qty", 0) * (acc_prices.get(s) or p.get("entry", 0))
+                for s, p in pos_copy.items()
+                if p.get("qty", 0) > 0
+            )
+            exchanges_breakdown.append(
+                {
+                    "exchange": acc_name,
+                    "mode": acc_mode,
+                    "balance": round(acc_bal, 2),
+                    "initial_balance": round(acc_init, 2),
+                    "value": round(acc_value, 2),
+                    "open_trades": len(acc_rows),
+                    "return_pct": round((acc_value - acc_init) / acc_init * 100, 2)
+                    if acc_init > 0
+                    else 0.0,
+                }
+            )
 
         # Goal ETA
         goal = CONFIG.get("portfolio_goal", 0)
@@ -559,8 +774,8 @@ class BotState:
             "running": self.running,
             "paused": self.paused,
             "portfolio_value": round(pv, 2),
-            "balance": round(self.balance, 2),
-            "initial_balance": self.initial_balance,
+            "balance": round(self.total_balance(), 2),
+            "initial_balance": round(self.total_initial_balance(), 2),
             "return_pct": round(self.return_pct(), 2),
             "total_pnl": round(self.total_pnl(), 2),
             "win_rate": round(self.win_rate(), 1),
@@ -629,6 +844,7 @@ class BotState:
             "iteration": self.iteration,
             "prices": {s: round(p, 4) for s, p in prices_snap.items()},
             "exchange_balances": dict(self.exchange_balances),
+            "exchanges_breakdown": exchanges_breakdown,
         }
 
 

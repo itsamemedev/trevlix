@@ -223,16 +223,32 @@ class BuyAlgorithm:
             "trend_breakout": "Breakout",
         }
 
-        # Schwellenwert: 0.35 = moderate Bestätigung erforderlich
+        # Zwei Wege zum Kauf:
+        #  1) moderate Gesamt-Bestätigung über alle Sub-Strategien (gewichteter
+        #     Schnitt ≥ 0.35), oder
+        #  2) eine einzelne Sub-Strategie bestätigt klar (≥ 0.55).
+        # Hintergrund: Die drei Sub-Strategien haben sich gegenseitig
+        # ausschließende Einstiegsbedingungen (Momentum vs. Mean-Reversion vs.
+        # Breakout). In der Praxis feuert meist nur eine. Ein perfektes
+        # Einzelsignal ergibt im Schnitt nur 1/3 ≈ 0.333 und blieb damit unter
+        # dem 0.35-Schwellenwert hängen – der Bot gab also Kaufempfehlungen aus,
+        # ohne je zu kaufen. Der max-Pfad behebt das, ohne schwache Signale
+        # durchzulassen.
         threshold = 0.35
-        should_buy = weighted >= threshold
+        strong_threshold = 0.55
+        max_score = max(m_score, mr_score, tb_score)
+        should_buy = weighted >= threshold or max_score >= strong_threshold
 
+        gate = "Ø" if weighted >= threshold else ("MAX" if should_buy else "—")
         reason = (
             f"BuyAlgo:{dominant_labels[dominant]} "
-            f"({m_score:.0%}|{mr_score:.0%}|{tb_score:.0%}) → {weighted:.0%}"
+            f"({m_score:.0%}|{mr_score:.0%}|{tb_score:.0%}) → {weighted:.0%} [{gate}]"
         )
 
-        return should_buy, round(weighted, 3), reason
+        # Confidence spiegelt die tatsächliche Signalstärke: bei reinem
+        # Einzelsignal die dominante Score, sonst den gewichteten Schnitt.
+        confidence = max(weighted, max_score) if should_buy else weighted
+        return should_buy, round(confidence, 3), reason
 
     # ── Selbstlernen ──────────────────────────────────────────────────────────
 

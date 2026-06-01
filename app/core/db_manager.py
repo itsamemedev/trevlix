@@ -455,6 +455,10 @@ class MySQLManager:
         """Forwards to ExchangeRepository.set_primary_exchange."""
         return self.exchanges.set_primary_exchange(user_id, exchange, enable)
 
+    def set_exchange_mode(self, user_id: int, exchange: str, mode: str) -> bool:
+        """Forwards to ExchangeRepository.set_exchange_mode."""
+        return self.exchanges.set_exchange_mode(user_id, exchange, mode)
+
     def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
         """Forwards to ExchangeRepository.delete_user_exchange."""
         return self.exchanges.delete_user_exchange(user_id, exchange_id)

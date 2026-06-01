@@ -1,5 +1,82 @@
 # Intensive Bug Hunt — v1.9.4 baseline
 
+## RUN 10 — Virginie buys, independent multi-exchange + per-exchange paper/live, dashboard gaps (818 passed)
+
+THREE reported issues, all addressed:
+
+### 1. Virginie recommended BUY but never bought
+Root cause: open_position emitted the recommendation, then a silent gate
+(BuyAlgorithm.evaluate) averaged 3 mutually-exclusive sub-strategies ÷3 vs 0.35.
+A perfect single-strategy signal = 1.0/3 ≈ 0.333 < 0.35 → always blocked.
+Fix: buy if blended ≥ 0.35 OR a single sub-strategy strongly confirms (≥ 0.55);
+neutral still blocked. Verified single oversold/breakout signals now execute.
+
+### 2. Independent simultaneous exchanges + independent paper/live (full refactor)
+Decisions taken with user: mode PER exchange; full refactor in one PR.
+- ExchangeAccount per exchange (own balance/positions/short/prices/mode).
+  BotState.accounts dict; legacy state.balance/positions/... = facade over a
+  thread-local "active account" (use_account) → primary for API/test threads.
+  Aggregates (portfolio_value/return_pct/total_balance/snapshot) sum across
+  accounts; positions tagged with exchange + mode; snapshot.exchanges_breakdown.
+- bot_loop now manages + scans + trades EVERY enabled exchange (was: only the
+  single primary), each inside `with state.use_account(name)` so all trading
+  logic targets that exchange's account. Extracted _scan_and_trade(ex).
+- Per-exchange mode: _account_mode_from_cfg (DB row `mode`, else global flag);
+  live loads credentials, paper doesn't; _sync_live_balance writes the
+  exchange's own account; reconciliation creates/prunes accounts + sets primary.
+- Trades/positions attributed to the executing account, not global config.
+- DB: nullable `mode` column on user_exchanges (db_schema migration + init.sql);
+  ExchangeRepository.set_exchange_mode; POST /api/v1/user/exchanges/<ex>/mode.
+- _build_exchange_update + /api/v1/exchanges report real per-account stats.
+- UI: mode badge (LIVE/PAPER) + Paper/Live/Global selector per exchange card.
+- New tests/test_multi_exchange_accounts.py (10 tests).
+- Known scope: risk manager (circuit breaker / daily loss) and the scanned
+  market list remain global/shared across accounts; per-exchange risk is a
+  future refinement.
+
+### 3. "Etliches wird im Dashboard nicht angezeigt"
+- Grid panel: /api/v1/grid called non-existent list_grids() (500) + bare list;
+  now {"grids": grid_engine.status()}.
+- Shared-AI panel: endpoint returned 5 keys; mapped real local-AI to_dict() to
+  the version/accuracy/sample keys the panel reads.
+- Admin KPIs: read d.iteration_count/d.symbols; snapshot has iteration/markets.
+- Per-exchange stats now visible (was single-active only).
+
+All: 818 passed/1 skipped, ruff check + format clean.
+
+## RUN 9 — Dashboard function audit + dead-code removal (node --check OK, ruff clean)
+Full static audit of the dashboard surface confirming everything still works, then
+removed orphaned dead code (no behaviour change for the user).
+
+AUDIT RESULTS (all green):
+- 45 fetch() endpoints in dashboard JS → every one maps to a registered Flask route.
+- 29 socket emit events → every one has a backend @socketio.on handler.
+- 68 HTML onX= handlers → every one resolves to a defined JS function.
+- 0 duplicate function definitions across dashboard.js / _misc / _utils / inline HTML.
+
+DEAD CODE REMOVED (static/js/dashboard.js, -235 lines) — all confirmed orphaned
+(no caller + the backing DOM elements were already deleted from the template):
+- Price-alert cluster: addAlert, deleteAlert, renderAlerts, socket.on('price_alert'),
+  the renderAlerts() call in updateUI, and 'price_alert' in the _socketEvents list
+  (UI elements alertSym/alertTarget/alertList/alertCount no longer exist).
+- Single-run backtest cluster: runBacktest, loadBtHistory, socket.on('backtest_result'),
+  'backtest_result' in _socketEvents, and orphaned var btChartInst
+  (replaced by the multi-symbol Backtest-Vergleich panel; bt* element IDs all gone).
+- onTabSwitch + _origOnTabSwitch (never invoked — nav() uses _navHooks instead) plus
+  the two no-op wrappers loadModelHistory / loadContributors, and 2 stale NOTE comments.
+- loadFeatureImportance + showReliabilityDiagram (featureImportanceCard/fiList UI gone;
+  only caller was the dead onTabSwitch).
+- loadHeatmap + orphaned var currentHmSort (heatmap section removed from template).
+- exportTaxCSV (no button), saveKeys (legacy nav alias to a removed section),
+  saveBreakEven (beeTrigger/beeBuffer/beeEnabled inputs no longer exist),
+  switchTradingMode (superseded by togglePaperMode, never called).
+
+These were the items RUN 8 listed as "Not wired (intentionally)" — now removed per the
+explicit request to delete dead code rather than carry it.
+
+Verified: node --check static/js/dashboard.js OK, re-audit shows 0 dead functions
+(only the _initState IIFE, which is self-invoking), 0 dangling references, ruff clean.
+
 ## RUN 8 — Built UI panels for orphaned backend features (808 passed, ruff clean)
 Wired all 10 high-value orphaned features (endpoint+JS existed, no UI) into real
 dashboard panels, plus 3 admin quick-actions. Also fixed response-shape mismatches

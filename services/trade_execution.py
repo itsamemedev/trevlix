@@ -33,6 +33,18 @@ class TradeExecutionService:
         self._mode_manager = mode_manager
 
     def _mode(self) -> str:
+        # Per-exchange mode: the BotState facade resolves to the account being
+        # processed in the current (bot-loop) thread, so paper/live is decided
+        # per exchange rather than by one global flag. Falls back to the global
+        # config flag for direct/test callers without a multi-account state.
+        st = self._state
+        if st is not None:
+            getter = getattr(st, "current_mode", None)
+            if callable(getter):
+                try:
+                    return getter()
+                except Exception:
+                    pass
         return "live" if not self._config.get("paper_trading", True) else "paper"
 
     @staticmethod

@@ -713,6 +713,40 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
             pass
         return jsonify({"ok": True, "primary": name})
 
+    @bp.route("/api/v1/user/exchanges/<exchange>/mode", methods=["POST"])
+    @auth
+    def api_user_exchange_set_mode(exchange):
+        """Setzt den Handelsmodus (paper/live) einer einzelnen Exchange.
+
+        Erlaubt unabhängige Modi pro Exchange: z. B. eine Exchange live, eine
+        andere paper. ``mode`` leer/„global" lässt die Exchange den globalen
+        ``paper_trading``-Schalter erben.
+        """
+        name = (norm_ex(exchange) if norm_ex else str(exchange).strip().lower()) or ""
+        if name not in _VALID_EXCHANGES:
+            return jsonify({"error": "Ungültige Exchange"}), 400
+        data = body() or {}
+        raw = str(data.get("mode", "")).strip().lower()
+        mode = raw if raw in ("paper", "live") else None
+        ok = db.set_exchange_mode(request.user_id, name, mode)
+        if not ok:
+            return jsonify({"error": "Exchange nicht konfiguriert"}), 404
+        if audit:
+            audit("exchange_set_mode", f"Exchange: {name} → {mode or 'global'}", request.user_id)
+        # Modus-Wechsel erfordert Neuverbindung: Live lädt Credentials, Paper
+        # verbindet ohne. Signalisiere dem Bot-Loop eine Reconciliation.
+        try:
+            deps.state._exchange_reset = True
+        except Exception:  # pragma: no cover - defensive
+            pass
+        try:
+            from routes.api.market import invalidate_balance_cache
+
+            invalidate_balance_cache(request.user_id, name)
+        except Exception:  # pragma: no cover
+            pass
+        return jsonify({"ok": True, "exchange": name, "mode": mode or "global"})
+
     @bp.route("/api/v1/user/exchanges/<exchange>", methods=["DELETE"])
     @auth
     def api_user_exchange_delete_by_name(exchange):
@@ -918,8 +952,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_grid_list():
         if deps.grid_engine is None:
-            return jsonify([])
-        return jsonify(deps.grid_engine.list_grids())
+            return jsonify({"grids": []})
+        return jsonify({"grids": deps.grid_engine.status()})
 
     @bp.route("/api/v1/grid", methods=["POST"])
     @auth

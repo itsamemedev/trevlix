@@ -582,8 +582,8 @@ def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None 
                 "confidence": (scan or {}).get("confidence", 0),
                 "ai_score": (scan or {}).get("ai_score", 0),
                 "win_prob": (scan or {}).get("win_prob", 0),
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "payload": payload,
             }
         )
@@ -963,6 +963,9 @@ def open_position(ex, scan: dict):
         "ai_score": round(ai_score * 100, 1),
         "win_prob": round(win_prob, 1),
         "regime": "bull" if (regime and regime.is_bull) else "bear",
+        # Account-Zuordnung: auf welcher Exchange / in welchem Modus eröffnet.
+        "exchange": state.current_exchange(),
+        "trade_mode": state.current_mode(),
         "dca_level": 0,
         "partial_sold": 0,
         "news_score": round(news_score, 3),
@@ -1006,8 +1009,8 @@ def open_position(ex, scan: dict):
                 "invested": invest - fee,
                 "stop_loss": sl,
                 "take_profit": tp,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "opened_at": pos_data.get("opened"),
                 "meta": {
                     "confidence": scan.get("confidence", 0),
@@ -1027,8 +1030,8 @@ def open_position(ex, scan: dict):
                 "qty": qty,
                 "cost": invest,
                 "fees": fee,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": "entry",
                 "meta": {"ai_reason": ai_reason, "algo_reason": algo_reason},
@@ -1262,8 +1265,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "qty": close_qty,
                 "cost": close_invest,
                 "fees": fee,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": reason,
                 "meta": {"partial": is_partial},
@@ -1381,14 +1384,16 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
         "invested": round(invest, 2),
         "opened": pos.get("opened", ""),
         "closed": datetime.now().isoformat(),
-        "exchange": CONFIG.get("exchange", "cryptocom"),
+        # Attribute to the account that actually held the position (the active
+        # account in the bot-loop thread), not the global config exchange/mode.
+        "exchange": pos.get("exchange") or state.current_exchange(),
         "regime": pos.get("regime", "bull"),
         "trade_type": "long",
         "partial_sold": partial_sold,
         "dca_level": dca_level,
         "news_score": round(pos.get("news_score", 0), 3),
         "onchain_score": round(pos.get("onchain_score", 0), 3),
-        "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+        "trade_mode": pos.get("trade_mode") or state.current_mode(),
         "fees": round(invest * get_exchange_fee_rate(), 8),
     }
     # Trade DNA Fingerprint anhängen (für historische Analyse)
@@ -1764,17 +1769,34 @@ def _maybe_generate_market_context() -> None:
         log.warning(f"Market context generation failed: {exc}")
 
 
-def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
-    """Fetch free quote-currency balance from exchange and update state.balance.
+def _account_mode_from_cfg(cfg: dict) -> str:
+    """Resolve an exchange's trading mode (per-exchange, falls back to global).
 
-    Tracks balance per exchange in state.exchange_balances and keeps
-    state.balance as the aggregate across all configured exchanges.
-    Only active in live mode. Returns True on successful sync.
+    Once the ``user_exchanges`` row carries an explicit ``mode`` it is honoured,
+    so one exchange can be live while another runs paper. Without it, the global
+    ``paper_trading`` flag decides (backward compatible).
     """
-    if CONFIG.get("paper_trading", True) or ex is None:
+    m = str(cfg.get("mode", "") or "").lower()
+    if m in ("paper", "live"):
+        return m
+    return "live" if not CONFIG.get("paper_trading", True) else "paper"
+
+
+def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
+    """Fetch free quote-currency balance and update that exchange's account.
+
+    Only live-mode accounts sync from the exchange; paper accounts keep their
+    simulated balance. Per-exchange balances are also mirrored into
+    ``state.exchange_balances`` for the dashboard. Returns True on success.
+    """
+    if ex is None:
         return False
     # Read exchange name from instance attribute set during creation, fall back to "_default"
     name = exchange_name or getattr(ex, "_trevlix_name", "_default")
+    acc = state.get_account(name, create=False)
+    mode = acc.mode if acc is not None else _account_mode_from_cfg({})
+    if mode != "live":
+        return False
     quote = CONFIG.get("quote_currency", "USDT")
     try:
         bal = _factory_safe_fetch_balance(ex)
@@ -1782,7 +1804,8 @@ def _sync_live_balance(ex, exchange_name: str | None = None) -> bool:
         if live_free >= 0:
             with state._lock:
                 state.exchange_balances[name] = live_free
-                state.balance = max(sum(state.exchange_balances.values()), 0)
+                _acc = state.get_account(name, mode="live", create=True)
+                _acc.balance = live_free
             log.debug("Live-Balance sync [%s]: %.2f %s", name, live_free, quote)
             return True
     except Exception as exc:
@@ -1817,7 +1840,9 @@ def _get_all_admin_exchanges() -> list[dict]:
 def _create_exchange_from_db_config(cfg: dict):
     """Create a CCXT exchange instance from a user_exchanges DB row."""
     name = cfg["exchange"]
-    if CONFIG.get("paper_trading", True):
+    # Credentials are only loaded for live-mode exchanges; paper exchanges
+    # connect credential-less against public endpoints.
+    if _account_mode_from_cfg(cfg) != "live":
         api_key = api_secret = passphrase = ""
     else:
         api_key = cfg.get("api_key", "") or ""
@@ -1837,25 +1862,56 @@ def _create_exchange_from_db_config(cfg: dict):
 
 
 def _build_exchange_update() -> dict:
-    """Build multi-exchange status payload for the exchange_update WebSocket event."""
+    """Build multi-exchange status payload for the exchange_update WebSocket event.
+
+    Reports REAL per-exchange figures from each independent account (balance,
+    value, open positions, mode, trade count / win-rate / PnL filtered by the
+    exchange the trade was executed on) instead of placeholder zeros.
+    """
     with state._lock:
-        ex_bals = dict(state.exchange_balances)
+        closed = list(state.closed_trades)
+        accounts = [
+            (
+                acc.name,
+                acc.mode,
+                acc.balance,
+                acc.initial_balance,
+                dict(acc.positions),
+                dict(acc.short_positions),
+                dict(acc.prices),
+            )
+            for acc in state.accounts.values()
+        ]
+    markets_count = len(state.markets)
     exs: dict = {}
-    for name, bal in ex_bals.items():
+    combined_pv = 0.0
+    for name, mode, bal, init, pos, shorts, prices in accounts:
+        longs_val = sum(
+            p.get("qty", 0) * (prices.get(s) or p.get("entry", 0))
+            for s, p in pos.items()
+            if p.get("qty", 0) > 0
+        )
+        acc_pv = bal + longs_val
+        combined_pv += acc_pv
+        acc_trades = [t for t in closed if t.get("exchange") == name]
+        wins = sum(1 for t in acc_trades if t.get("pnl", 0) > 0)
         exs[name] = {
             "enabled": True,
             "running": state.running,
-            "portfolio_value": round(bal, 2),
-            "return_pct": 0.0,
-            "trade_count": 0,
-            "open_trades": 0,
-            "win_rate": 0.0,
-            "total_pnl": 0.0,
-            "markets_count": len(state.markets),
+            "mode": mode,
+            "balance": round(bal, 2),
+            "portfolio_value": round(acc_pv, 2),
+            "return_pct": round((acc_pv - init) / init * 100, 2) if init > 0 else 0.0,
+            "trade_count": len(acc_trades),
+            "open_trades": len(pos) + len(shorts),
+            "win_rate": round(wins / len(acc_trades) * 100, 1) if acc_trades else 0.0,
+            "total_pnl": round(sum(t.get("pnl", 0) for t in acc_trades), 2),
+            "markets_count": markets_count,
             "last_scan": state.last_scan,
-            "positions": [],
+            "positions": list(pos.keys()),
         }
-    combined_pv = sum(ex_bals.values()) if ex_bals else state.balance
+    if not exs:
+        combined_pv = state.total_balance()
     return {
         "exchanges": exs,
         "combined_pv": round(combined_pv, 2),
@@ -1863,6 +1919,179 @@ def _build_exchange_update() -> dict:
         "total_pv": round(combined_pv, 2),
         "total_pnl": round(state.total_pnl(), 2),
     }
+
+
+def _scan_and_trade(ex):
+    """Scan markets and open positions for ONE exchange account.
+
+    Must be called within ``with state.use_account(name)`` so every
+    ``state.*`` access targets this exchange's independent account
+    (own balance, positions and paper/live mode)."""
+    # Short-Signale – parallelisiert mit ThreadPoolExecutor
+    if not regime.is_bull and CONFIG.get("use_shorts"):
+        short_candidates = [
+            sym
+            for sym in state.markets[:20]
+            if sym not in state.short_positions
+            and sym not in state.positions
+            and not funding_tracker.is_short_too_expensive(sym)
+        ]
+        if short_candidates:
+            with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as short_pool:
+                short_futures = {
+                    short_pool.submit(scan_symbol, ex, sym): sym for sym in short_candidates
+                }
+                for fut in as_completed(short_futures):
+                    try:
+                        scan = fut.result()
+                        if not scan:
+                            continue
+                        if scan["signal"] != -1:
+                            continue
+                        if scan.get("confidence", 0) < CONFIG.get("min_vote_score", 0.3):
+                            continue
+                        if len(state.short_positions) >= CONFIG.get("max_open_trades", 5):
+                            continue
+                        if risk.circuit_breaker_active():
+                            continue
+                        if risk.daily_loss_exceeded(state.balance):
+                            continue
+                        if anomaly is not None and anomaly.is_anomaly:
+                            continue
+                        discord.signal_opportunity(
+                            scan["symbol"],
+                            "sell",
+                            float(scan.get("confidence", 0.0)),
+                            float(scan.get("price", 0.0)),
+                            news_score=float(scan.get("news_score", 0.0)),
+                            note="Short-Kandidat erkannt (Signal -1)",
+                        )
+                        invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
+                        short_engine.open_short(scan["symbol"], invest, scan["price"])
+                    except Exception as se:
+                        log.debug(f"Short-Scan: {se}")
+
+    # Frische Indikatoren für offene Positionen holen (verbessert Sell-Algo)
+    _open_syms = list(state.positions.keys())
+    if _open_syms:
+        with ThreadPoolExecutor(max_workers=min(4, len(_open_syms))) as _pos_pool:
+            _pos_futures = {_pos_pool.submit(scan_symbol, ex, s): s for s in _open_syms}
+            for _pf in as_completed(_pos_futures):
+                try:
+                    _fresh = _pf.result()
+                    if _fresh and _fresh.get("symbol") in state.positions:
+                        with state._lock:
+                            _p = state.positions.get(_fresh["symbol"])
+                            if _p:
+                                for _k in (
+                                    "rsi",
+                                    "stoch_rsi",
+                                    "bb_pct",
+                                    "vol_ratio",
+                                    "ema_alignment",
+                                    "macd_hist_slope",
+                                    "roc10",
+                                    "atr_pct",
+                                    "price_vs_ema21",
+                                ):
+                                    if _k in _fresh:
+                                        _p[_k] = _fresh[_k]
+                except Exception:
+                    pass
+
+    # Long-Signale
+    if (
+        len(state.positions) < CONFIG.get("max_open_trades", 5)
+        and not risk.daily_loss_exceeded(state.balance)
+        and not risk.circuit_breaker_active()
+    ):
+        _all_scan_results: list = []
+        with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
+            futures = {
+                pool.submit(scan_symbol, ex, s): s
+                for s in state.markets
+                if s not in state.positions
+            }
+            for fut in as_completed(futures):
+                try:
+                    res = fut.result()
+                except Exception as scan_err:
+                    log.debug(f"Scan-Future: {scan_err}")
+                    continue
+                if res:
+                    _all_scan_results.append(res)
+                # VIRGINIE primary-control: also evaluate borderline signals
+                _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+                    "virginie_primary_control", True
+                )
+                _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.60))
+                _signal_ok = res and (
+                    res["signal"] == 1
+                    or (
+                        _virginie_primary
+                        and res.get("signal", 0) >= 0
+                        and res.get("confidence", 0) >= _virginie_threshold
+                    )
+                )
+                if _signal_ok:
+                    if len(state.positions) >= CONFIG.get("max_open_trades", 5):
+                        continue
+                    open_position(ex, res)
+
+        # VIRGINIE self-supply: evaluate top candidates when ML emits no buy signal
+        _vp_enabled = CONFIG.get("virginie_enabled", True) and CONFIG.get(
+            "virginie_primary_control", True
+        )
+        if (
+            _vp_enabled
+            and ai_engine is not None
+            and hasattr(ai_engine, "virginie")
+            and ai_engine.virginie is not None
+            and len(state.positions) < CONFIG.get("max_open_trades", 5)
+            and _all_scan_results
+        ):
+            from services.virginie import Opportunity
+
+            _top_n = int(CONFIG.get("virginie_scan_top_n", 5))
+            _vss_candidates = sorted(
+                [r for r in _all_scan_results if r.get("signal") != 1],
+                key=lambda x: float(x.get("confidence", 0)),
+                reverse=True,
+            )[:_top_n]
+            if _vss_candidates:
+                _vss_tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100
+                _vss_sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100
+                _vss_fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100
+                _vss_opps = [
+                    Opportunity(
+                        key=r["symbol"],
+                        success_probability=float(r.get("confidence", 0)),
+                        expected_profit=_vss_tp_pts,
+                        cost=_vss_fee_pts,
+                        risk_penalty=float(
+                            max(0.0, (1.0 - float(r.get("confidence", 0))) * _vss_sl_pts)
+                        ),
+                    )
+                    for r in _vss_candidates
+                ]
+                try:
+                    _vss_dec = ai_engine.virginie.select_opportunity_with_report(_vss_opps)
+                    if _vss_dec and _vss_dec.selected:
+                        _chosen = next(
+                            (r for r in _vss_candidates if r["symbol"] == _vss_dec.selected.key),
+                            None,
+                        )
+                        if _chosen and len(state.positions) < CONFIG.get("max_open_trades", 5):
+                            log.info(
+                                "🤖 VIRGINIE self-supply: %s conf=%.2f ev=%.4f reason=%s",
+                                _vss_dec.selected.key,
+                                float(_chosen.get("confidence", 0)),
+                                float(_vss_dec.base_score),
+                                _vss_dec.reason,
+                            )
+                            open_position(ex, _chosen)
+                except Exception as _vsse:
+                    log.debug("VIRGINIE self-supply error: %s", _vsse)
 
 
 def bot_loop():
@@ -1889,10 +2118,12 @@ def bot_loop():
 
             if admin_ex_configs:
                 target_names = {c["exchange"] for c in admin_ex_configs}
-                # Drop exchanges no longer active in DB
+                # Drop exchanges no longer active in DB (incl. their account)
                 for name in [n for n in list(exchanges) if n not in target_names]:
                     log.info("Exchange %s deaktiviert – entfernt", name)
                     state.exchange_balances.pop(name, None)
+                    with state._lock:
+                        state.accounts.pop(name, None)
                     exchanges.pop(name)
                     if primary_name == name:
                         primary_name = None
@@ -1927,17 +2158,33 @@ def bot_loop():
                                 last_error_emit_ts = now_ts
                             continue
                         exchanges[name] = inst
+                        # Create the per-exchange account with its configured mode.
+                        _cfg = next((c for c in admin_ex_configs if c["exchange"] == name), {})
+                        _acc = state.get_account(
+                            name, mode=_account_mode_from_cfg(_cfg), create=True
+                        )
                         if _sync_live_balance(inst, name):
                             with state._lock:
-                                if not state.initial_balance or state.initial_balance <= 0:
-                                    state.initial_balance = state.balance
-                            risk.force_reset_daily(state.balance)
+                                if not _acc.initial_balance or _acc.initial_balance <= 0:
+                                    _acc.initial_balance = _acc.balance
+                            risk.force_reset_daily(state.total_balance())
                         log.info(
-                            "Exchange %s verbunden (Balance: %.2f %s)",
+                            "Exchange %s verbunden (%s, Balance: %.2f %s)",
                             name,
-                            state.exchange_balances.get(name, 0),
+                            _acc.mode,
+                            _acc.balance,
                             CONFIG.get("quote_currency", "USDT"),
                         )
+                # Reconcile modes for already-connected exchanges + prune stale
+                # accounts so totals never include phantom/disabled exchanges.
+                for c in admin_ex_configs:
+                    if c["exchange"] in exchanges:
+                        state.get_account(
+                            c["exchange"], mode=_account_mode_from_cfg(c), create=True
+                        )
+                with state._lock:
+                    for _stale in [n for n in list(state.accounts) if n not in exchanges]:
+                        state.accounts.pop(_stale, None)
                 # Determine primary exchange (is_primary=1, else first available)
                 primary_name = next(
                     (
@@ -1947,6 +2194,8 @@ def bot_loop():
                     ),
                     next(iter(exchanges), None),
                 )
+                if primary_name:
+                    state.set_primary_account(primary_name)
                 primary_ex = exchanges.get(primary_name) if primary_name else None
             else:
                 # Fall back to single CONFIG exchange when no DB exchanges configured
@@ -1956,10 +2205,14 @@ def bot_loop():
                         inst._trevlix_name = "_default"  # type: ignore[attr-defined]
                         exchanges["_default"] = inst
                         primary_name = "_default"
+                        _acc = state.get_account(
+                            "_default", mode=_account_mode_from_cfg({}), create=True
+                        )
+                        state.set_primary_account("_default")
                         if _sync_live_balance(inst, "_default"):
                             with state._lock:
-                                state.initial_balance = state.balance
-                            risk.force_reset_daily(state.balance)
+                                _acc.initial_balance = _acc.balance
+                            risk.force_reset_daily(state.total_balance())
                     except Exception as exc_err:
                         log.error("Exchange-Verbindung fehlgeschlagen: %s", exc_err)
                         now_ts = time.time()
@@ -1983,6 +2236,10 @@ def bot_loop():
                         continue
                 if not primary_name or primary_name not in exchanges:
                     primary_name = "_default"
+                with state._lock:
+                    for _stale in [n for n in list(state.accounts) if n not in exchanges]:
+                        state.accounts.pop(_stale, None)
+                state.set_primary_account("_default")
                 primary_ex = exchanges.get("_default")
 
             if primary_ex is None:
@@ -2022,9 +2279,14 @@ def bot_loop():
                 emit_event("exchange_update", _build_exchange_update())
                 _maybe_generate_market_context()
 
-            # ── Position management & trading (primary exchange) ─────────────
-            manage_positions(primary_ex)
-            short_engine.update_shorts()
+            # ── Position management per exchange (each on its own account) ───
+            # use_account repoints the state facade to the exchange's account in
+            # THIS thread, so manage_positions/short_engine operate on the right
+            # balance & positions without any further plumbing.
+            for _ex_name, _ex_inst in list(exchanges.items()):
+                with state.use_account(_ex_name):
+                    manage_positions(_ex_inst)
+                    short_engine.update_shorts()
             # Grid Trading: update active grids with current prices
             if grid_engine.grids:
                 # Snapshot under lock to avoid racing with concurrent trades.
@@ -2131,180 +2393,10 @@ def bot_loop():
                     {"time": datetime.now().strftime("%H:%M"), "value": round(pv, 2)}
                 )
 
-            # Short-Signale – parallelisiert mit ThreadPoolExecutor
-            if not regime.is_bull and CONFIG.get("use_shorts"):
-                short_candidates = [
-                    sym
-                    for sym in state.markets[:20]
-                    if sym not in state.short_positions
-                    and sym not in state.positions
-                    and not funding_tracker.is_short_too_expensive(sym)
-                ]
-                if short_candidates:
-                    with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as short_pool:
-                        short_futures = {
-                            short_pool.submit(scan_symbol, primary_ex, sym): sym
-                            for sym in short_candidates
-                        }
-                        for fut in as_completed(short_futures):
-                            try:
-                                scan = fut.result()
-                                if not scan:
-                                    continue
-                                if scan["signal"] != -1:
-                                    continue
-                                if scan.get("confidence", 0) < CONFIG.get("min_vote_score", 0.3):
-                                    continue
-                                if len(state.short_positions) >= CONFIG.get("max_open_trades", 5):
-                                    continue
-                                if risk.circuit_breaker_active():
-                                    continue
-                                if risk.daily_loss_exceeded(state.balance):
-                                    continue
-                                if anomaly is not None and anomaly.is_anomaly:
-                                    continue
-                                discord.signal_opportunity(
-                                    scan["symbol"],
-                                    "sell",
-                                    float(scan.get("confidence", 0.0)),
-                                    float(scan.get("price", 0.0)),
-                                    news_score=float(scan.get("news_score", 0.0)),
-                                    note="Short-Kandidat erkannt (Signal -1)",
-                                )
-                                invest = state.balance * CONFIG.get("risk_per_trade", 0.015)
-                                short_engine.open_short(scan["symbol"], invest, scan["price"])
-                            except Exception as se:
-                                log.debug(f"Short-Scan: {se}")
-
-            # Frische Indikatoren für offene Positionen holen (verbessert Sell-Algo)
-            _open_syms = list(state.positions.keys())
-            if _open_syms:
-                with ThreadPoolExecutor(max_workers=min(4, len(_open_syms))) as _pos_pool:
-                    _pos_futures = {
-                        _pos_pool.submit(scan_symbol, primary_ex, s): s for s in _open_syms
-                    }
-                    for _pf in as_completed(_pos_futures):
-                        try:
-                            _fresh = _pf.result()
-                            if _fresh and _fresh.get("symbol") in state.positions:
-                                with state._lock:
-                                    _p = state.positions.get(_fresh["symbol"])
-                                    if _p:
-                                        for _k in (
-                                            "rsi",
-                                            "stoch_rsi",
-                                            "bb_pct",
-                                            "vol_ratio",
-                                            "ema_alignment",
-                                            "macd_hist_slope",
-                                            "roc10",
-                                            "atr_pct",
-                                            "price_vs_ema21",
-                                        ):
-                                            if _k in _fresh:
-                                                _p[_k] = _fresh[_k]
-                        except Exception:
-                            pass
-
-            # Long-Signale
-            if (
-                len(state.positions) < CONFIG.get("max_open_trades", 5)
-                and not risk.daily_loss_exceeded(state.balance)
-                and not risk.circuit_breaker_active()
-            ):
-                _all_scan_results: list = []
-                with ThreadPoolExecutor(max_workers=CONFIG.get("max_workers", 4)) as pool:
-                    futures = {
-                        pool.submit(scan_symbol, primary_ex, s): s
-                        for s in state.markets
-                        if s not in state.positions
-                    }
-                    for fut in as_completed(futures):
-                        try:
-                            res = fut.result()
-                        except Exception as scan_err:
-                            log.debug(f"Scan-Future: {scan_err}")
-                            continue
-                        if res:
-                            _all_scan_results.append(res)
-                        # VIRGINIE primary-control: also evaluate borderline signals
-                        _virginie_primary = CONFIG.get("virginie_enabled", True) and CONFIG.get(
-                            "virginie_primary_control", True
-                        )
-                        _virginie_threshold = float(CONFIG.get("virginie_open_threshold", 0.60))
-                        _signal_ok = res and (
-                            res["signal"] == 1
-                            or (
-                                _virginie_primary
-                                and res.get("signal", 0) >= 0
-                                and res.get("confidence", 0) >= _virginie_threshold
-                            )
-                        )
-                        if _signal_ok:
-                            if len(state.positions) >= CONFIG.get("max_open_trades", 5):
-                                continue
-                            open_position(primary_ex, res)
-
-                # VIRGINIE self-supply: evaluate top candidates when ML emits no buy signal
-                _vp_enabled = CONFIG.get("virginie_enabled", True) and CONFIG.get(
-                    "virginie_primary_control", True
-                )
-                if (
-                    _vp_enabled
-                    and ai_engine is not None
-                    and hasattr(ai_engine, "virginie")
-                    and ai_engine.virginie is not None
-                    and len(state.positions) < CONFIG.get("max_open_trades", 5)
-                    and _all_scan_results
-                ):
-                    from services.virginie import Opportunity
-
-                    _top_n = int(CONFIG.get("virginie_scan_top_n", 5))
-                    _vss_candidates = sorted(
-                        [r for r in _all_scan_results if r.get("signal") != 1],
-                        key=lambda x: float(x.get("confidence", 0)),
-                        reverse=True,
-                    )[:_top_n]
-                    if _vss_candidates:
-                        _vss_tp_pts = float(CONFIG.get("take_profit_pct", 0.06)) * 100
-                        _vss_sl_pts = float(CONFIG.get("stop_loss_pct", 0.025)) * 100
-                        _vss_fee_pts = float(CONFIG.get("fee_rate", 0.0004)) * 2 * 100
-                        _vss_opps = [
-                            Opportunity(
-                                key=r["symbol"],
-                                success_probability=float(r.get("confidence", 0)),
-                                expected_profit=_vss_tp_pts,
-                                cost=_vss_fee_pts,
-                                risk_penalty=float(
-                                    max(0.0, (1.0 - float(r.get("confidence", 0))) * _vss_sl_pts)
-                                ),
-                            )
-                            for r in _vss_candidates
-                        ]
-                        try:
-                            _vss_dec = ai_engine.virginie.select_opportunity_with_report(_vss_opps)
-                            if _vss_dec and _vss_dec.selected:
-                                _chosen = next(
-                                    (
-                                        r
-                                        for r in _vss_candidates
-                                        if r["symbol"] == _vss_dec.selected.key
-                                    ),
-                                    None,
-                                )
-                                if _chosen and len(state.positions) < CONFIG.get(
-                                    "max_open_trades", 5
-                                ):
-                                    log.info(
-                                        "🤖 VIRGINIE self-supply: %s conf=%.2f ev=%.4f reason=%s",
-                                        _vss_dec.selected.key,
-                                        float(_chosen.get("confidence", 0)),
-                                        float(_vss_dec.base_score),
-                                        _vss_dec.reason,
-                                    )
-                                    open_position(primary_ex, _chosen)
-                        except Exception as _vsse:
-                            log.debug("VIRGINIE self-supply error: %s", _vsse)
+            # ── Signal scanning & trading per exchange ───────────────────────
+            for _ex_name, _ex_inst in list(exchanges.items()):
+                with state.use_account(_ex_name):
+                    _scan_and_trade(_ex_inst)
 
             emit_event("update", state.snapshot())
 

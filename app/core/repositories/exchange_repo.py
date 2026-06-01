@@ -33,7 +33,7 @@ class ExchangeRepository:
             with self._m._get_conn() as conn:
                 with conn.cursor() as c:
                     c.execute(
-                        "SELECT id, exchange, enabled, is_primary, created_at, "
+                        "SELECT id, exchange, enabled, is_primary, mode, created_at, "
                         "(api_key IS NOT NULL AND api_key!='') AS has_key, "
                         "(passphrase IS NOT NULL AND passphrase!='') AS has_passphrase "
                         "FROM user_exchanges WHERE user_id=%s "
@@ -213,6 +213,28 @@ class ExchangeRepository:
                     conn.autocommit(True)
         except Exception as e:
             log.error(f"set_primary_exchange({user_id}, {exchange}): {e}")
+            return False
+
+    def set_exchange_mode(self, user_id: int, exchange: str, mode: str) -> bool:
+        """Setzt den Handelsmodus (``paper``/``live``) einer einzelnen Exchange.
+
+        Ermöglicht, dass Exchanges unabhängig voneinander im Paper- oder
+        Live-Modus laufen. ``None``/leer bedeutet „globalen Schalter erben".
+        """
+        log = _module().log
+        m = str(mode).lower() if mode else None
+        if m not in ("paper", "live", None):
+            m = None
+        try:
+            with self._m._get_conn() as conn:
+                with conn.cursor() as c:
+                    c.execute(
+                        "UPDATE user_exchanges SET mode=%s WHERE user_id=%s AND exchange=%s",
+                        (m, user_id, exchange),
+                    )
+                    return c.rowcount > 0
+        except Exception as e:
+            log.error(f"set_exchange_mode({user_id}, {exchange}, {mode}): {e}")
             return False
 
     def delete_user_exchange(self, user_id: int, exchange_id: int) -> bool:
