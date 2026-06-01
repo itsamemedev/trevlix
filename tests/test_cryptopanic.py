@@ -9,7 +9,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from services.cryptopanic import (
-    _API_V1_FALLBACK_URL,
     _API_V2_URL,
     BEARISH_WORDS,
     BULLISH_WORDS,
@@ -72,8 +71,13 @@ class TestApiV2Url:
         url = _API_V2_URL.format(plan="pro")
         assert url == "https://cryptopanic.com/api/pro/v2/posts/"
 
-    def test_v1_fallback_url(self):
-        assert _API_V1_FALLBACK_URL == "https://cryptopanic.com/api/v1/posts/"
+    def test_free_plan_has_no_fallback_url(self):
+        client = CryptoPanicClient(token="t", plan="free")
+        assert client._fallback_url is None
+
+    def test_paid_plan_falls_back_to_free_v2(self):
+        client = CryptoPanicClient(token="t", plan="developer")
+        assert client._fallback_url == "https://cryptopanic.com/api/free/v2/posts/"
 
 
 # ── Sentiment-Analyse ────────────────────────────────────────────────────────
@@ -215,7 +219,8 @@ class TestFetchPosts:
         assert "pro/v2/posts" in call_args[0][0]
 
     @patch("services.cryptopanic.httpx.get")
-    def test_fetch_posts_falls_back_to_v1_when_v2_returns_404(self, mock_get):
+    def test_free_plan_404_returns_empty_without_v1_fallback(self, mock_get):
+        """Es gibt keine v1-API: ein 404 auf free/v2 darf NICHT auf v1 fallen."""
         import httpx as hx
 
         req_v2 = hx.Request("GET", "https://cryptopanic.com/api/free/v2/posts/")
@@ -223,19 +228,17 @@ class TestFetchPosts:
         resp_404.raise_for_status.side_effect = hx.HTTPStatusError(
             "not found", request=req_v2, response=hx.Response(404, request=req_v2)
         )
-
-        resp_v1 = MagicMock()
-        resp_v1.raise_for_status = MagicMock()
-        resp_v1.json.return_value = {"results": [{"title": "Legacy endpoint works"}]}
-
-        mock_get.side_effect = [resp_404, resp_v1]
+        mock_get.return_value = resp_404
 
         client = CryptoPanicClient(token="test-token", plan="free")
         posts = client.fetch_posts("")
 
-        assert posts and posts[0]["title"] == "Legacy endpoint works"
+        assert posts == []
+        # Nur ein einziger Call (free/v2), kein v1-Request
+        assert mock_get.call_count == 1
         assert "free/v2/posts" in mock_get.call_args_list[0][0][0]
-        assert "/api/v1/posts/" in mock_get.call_args_list[1][0][0]
+        for call in mock_get.call_args_list:
+            assert "/api/v1/" not in call[0][0]
 
     @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_passes_parameters(self, mock_get):
@@ -326,7 +329,7 @@ class TestFetchPosts:
 
     @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_chains_v2_404_to_free_when_currency_fallback_also_404(self, mock_get):
-        """developer/v2 404 mit + ohne currencies → muss auf free/v2/ weiterfallen (v1 ist deprecated)."""
+        """developer/v2 404 mit + ohne currencies → muss auf free/v2/ weiterfallen (kein v1)."""
         import httpx as hx
 
         req_v2 = hx.Request("GET", "https://cryptopanic.com/api/developer/v2/posts/")
@@ -339,32 +342,35 @@ class TestFetchPosts:
         ok_resp.raise_for_status = MagicMock()
         ok_resp.json.return_value = {"results": [{"title": "free/v2 news"}]}
 
-        # Erwartete Aufrufreihenfolge:
+        # Erwartete Aufrufreihenfolge (currencies wird nach dem ersten 404
+        # dauerhaft deaktiviert, daher kein erneuter currencies-Versuch auf free/v2):
         # 1) developer/v2 mit currencies=RENDER → 404
         # 2) developer/v2 ohne currencies → 404
-        # 3) free/v2 mit currencies=RENDER → 404  (use_currency_filter war vor Loop True)
-        # 4) free/v2 ohne currencies → 200
+        # 3) free/v2 ohne currencies → 200
         resp_404_a = MagicMock()
         resp_404_a.raise_for_status.side_effect = err_404
         resp_404_b = MagicMock()
         resp_404_b.raise_for_status.side_effect = err_404
-        resp_404_c = MagicMock()
-        resp_404_c.raise_for_status.side_effect = err_404
 
-        mock_get.side_effect = [resp_404_a, resp_404_b, resp_404_c, ok_resp]
+        mock_get.side_effect = [resp_404_a, resp_404_b, ok_resp]
 
         client = CryptoPanicClient(token="test-token", plan="developer")
         posts = client.fetch_posts("RENDER")
 
         assert posts
         assert posts[0]["title"] == "free/v2 news"
-        assert mock_get.call_count == 4
+        assert mock_get.call_count == 3
         assert "developer/v2/posts" in mock_get.call_args_list[0][0][0]
+        assert "currencies" in mock_get.call_args_list[0].kwargs["params"]
         assert "developer/v2/posts" in mock_get.call_args_list[1][0][0]
+        assert "currencies" not in mock_get.call_args_list[1].kwargs["params"]
         assert "free/v2/posts" in mock_get.call_args_list[2][0][0]
-        assert "free/v2/posts" in mock_get.call_args_list[3][0][0]
+        assert "currencies" not in mock_get.call_args_list[2].kwargs["params"]
         # Nachfolgende Calls sollten direkt auf free/v2 gehen
         assert "free/v2/posts/" in client._active_url
+        # Es darf nie ein v1-Endpunkt angefragt werden
+        for call in mock_get.call_args_list:
+            assert "/api/v1/" not in call[0][0]
 
     @patch("services.cryptopanic.httpx.get")
     def test_fetch_posts_skips_currency_filter_after_known_404(self, mock_get):

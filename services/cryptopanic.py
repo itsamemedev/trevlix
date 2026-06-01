@@ -1,14 +1,22 @@
 """
-TREVLIX – CryptoPanic News Sentiment Service (API v2 + v1 Fallback)
-====================================================================
+TREVLIX – CryptoPanic News Sentiment Service (API v2)
+=====================================================
 Analysiert Crypto-Nachrichten von CryptoPanic für Sentiment-Signale.
 
 API Basis-URL:
     https://cryptopanic.com/api/{plan}/v2/posts/
-Fallback (legacy):
-    https://cryptopanic.com/api/v1/posts/
+
+CryptoPanic betreibt **ausschließlich** die v2-API – eine v1-API existiert
+nicht (mehr) und liefert 404. Es gibt daher keinen v1-Fallback. Plans ohne
+plan-spezifischen Zugriff fallen auf den öffentlichen ``free/v2/``-Endpunkt
+zurück.
 
 Unterstützte Plans: free, pro, developer
+
+Rate-Limiting (laut Doku: 5 req/s free, 10 req/s paid):
+    - Mindestabstand zwischen API-Calls pro Plan (``_PLAN_MIN_REQUEST_INTERVAL``)
+    - Beachtung von ``Retry-After`` (429) und ``X-RateLimit-*`` Headern
+    - 30-Minuten-Cache + DB-Cache reduzieren die Call-Frequenz zusätzlich
 """
 
 import logging
@@ -69,22 +77,26 @@ BEARISH_WORDS: list[str] = [
     "drop",
 ]
 
-# CryptoPanic API v2 Basis-URL + v1 Fallback
+# CryptoPanic API v2 Basis-URL (es gibt keine v1-API)
 _API_V2_URL = "https://cryptopanic.com/api/{plan}/v2/posts/"
-_API_V1_FALLBACK_URL = "https://cryptopanic.com/api/v1/posts/"
 
 # Standard-Timeout für API-Requests
 _REQUEST_TIMEOUT = 10
 
 # Cache-Dauer in Sekunden (30 Minuten)
 CACHE_TTL = 1800
+# Fallback-Pause, falls ein 429 keinen verwertbaren Retry-After-Header liefert
 _RATE_LIMIT_FALLBACK_SECONDS = 60
+# Wie lange eine als nicht-indexiert erkannte Currency übersprungen wird
 _UNSUPPORTED_CURRENCY_TTL_SECONDS = 6 * 3600
+# Mindestabstand zwischen zwei API-Calls (defensiv unter den Doku-Limits von
+# 5 req/s free bzw. 10 req/s paid – schont zusätzlich das Tageskontingent).
 _PLAN_MIN_REQUEST_INTERVAL = {
     "free": 2.0,
     "pro": 0.8,
     "developer": 0.3,
 }
+_DEFAULT_MIN_REQUEST_INTERVAL = 1.0
 
 
 class CryptoPanicClient:
@@ -103,15 +115,20 @@ class CryptoPanicClient:
         self.token = token
         self.plan = plan if plan else "free"
         self._base_url = _API_V2_URL.format(plan=self.plan)
-        # Non-free plans fall back to free/v2/ before legacy v1 (v1 is deprecated and returns 404)
-        _free_v2_url = _API_V2_URL.format(plan="free")
-        self._fallback_url = _free_v2_url if self.plan != "free" else _API_V1_FALLBACK_URL
+        # Es existiert keine v1-API. Plan-spezifische Endpunkte (pro/developer)
+        # fallen auf den öffentlichen free/v2/-Endpunkt zurück; free hat keinen
+        # weiteren Fallback.
+        self._fallback_url: str | None = (
+            _API_V2_URL.format(plan="free") if self.plan != "free" else None
+        )
         self._active_url = self._base_url
         self._cache: TTLCache[dict] = TTLCache(ttl_seconds=CACHE_TTL, max_size=200)
         self._rate_limited_until: float = 0.0
         self._last_fetch_was_rate_limited: bool = False
         self._last_api_call_at: float = 0.0
-        self._min_request_interval: float = _PLAN_MIN_REQUEST_INTERVAL.get(self.plan, 1.0)
+        self._min_request_interval: float = _PLAN_MIN_REQUEST_INTERVAL.get(
+            self.plan, _DEFAULT_MIN_REQUEST_INTERVAL
+        )
         self._unsupported_currencies: dict[str, float] = {}
 
     def _normalize_coin(self, symbol: str) -> str:
@@ -183,21 +200,51 @@ class CryptoPanicClient:
                 return False, [], None
             return False, [], status
         except httpx.RequestError as e:
+            # Auch ein fehlgeschlagener Versuch zählt für das Throttling.
+            self._last_api_call_at = time.time()
             log.debug("CryptoPanic Netzwerk-Fehler für %s: %s", currency, e)
             return False, [], None
         except (ValueError, KeyError) as e:
             log.debug("CryptoPanic Parse-Fehler für %s: %s", currency, e)
             return False, [], None
 
+    def _rate_limit_ok(self) -> bool:
+        """
+        Prüft, ob aktuell ein API-Call erlaubt ist.
+
+        Berücksichtigt sowohl eine aktive 429-/Header-Pause (``_rate_limited_until``)
+        als auch den planabhängigen Mindestabstand zwischen Calls. Gibt ``False``
+        zurück, wenn der Call übersprungen werden soll (Cache/neutraler Score).
+        """
+        now = time.time()
+        if now < self._rate_limited_until:
+            wait_s = int(self._rate_limited_until - now)
+            log.debug("CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe", wait_s)
+            return False
+        if (
+            self._last_api_call_at > 0
+            and (now - self._last_api_call_at) < self._min_request_interval
+        ):
+            return False
+        return True
+
+    def _candidate_urls(self) -> list[str]:
+        """Aktive v2-URL zuerst, danach ggf. der öffentliche free/v2/-Fallback."""
+        urls = [self._active_url]
+        if self._fallback_url and self._fallback_url not in urls:
+            urls.append(self._fallback_url)
+        return urls
+
     def fetch_posts(
         self, currency: str, filter_type: str = "hot", kind: str = "news", regions: str = "en"
     ) -> list:
         """
-        Holt Posts von der CryptoPanic API.
+        Holt Posts von der CryptoPanic v2-API.
 
-        Versucht zunächst die aktive URL (standardmäßig v2). Bei 404/410 wird der
-        currencies-Filter entfernt und bei Bedarf auf v1 zurückgefallen, damit auch
-        Accounts ohne v2-Zugriff und nicht-indexierte Coins Ergebnisse liefern.
+        Versucht zunächst die aktive (plan-spezifische) v2-URL. Bei 404/410 wird
+        der currencies-Filter entfernt (nicht-indexierte Coins) und – nur bei
+        bezahlten Plans – auf den öffentlichen free/v2/-Endpunkt zurückgefallen.
+        Eine v1-API existiert nicht und wird daher nicht angefragt.
 
         Args:
             currency: Währungskürzel (z.B. "BTC", "ETH")
@@ -212,24 +259,13 @@ class CryptoPanicClient:
             return []
         self._last_fetch_was_rate_limited = False
 
-        now = time.time()
-        if now < self._rate_limited_until:
-            self._last_fetch_was_rate_limited = True
-            wait_s = int(self._rate_limited_until - now)
-            log.debug(
-                "CryptoPanic Rate-Limit aktiv (%ss verbleibend) – überspringe %s", wait_s, currency
-            )
-            return []
-        if (
-            self._last_api_call_at > 0
-            and (now - self._last_api_call_at) < self._min_request_interval
-        ):
+        if not self._rate_limit_ok():
             self._last_fetch_was_rate_limited = True
             return []
 
         currency_norm = str(currency or "").upper().strip()
         unsupported_until = self._unsupported_currencies.get(currency_norm, 0.0)
-        use_currency_filter = bool(currency_norm) and now >= unsupported_until
+        use_currency_filter = bool(currency_norm) and time.time() >= unsupported_until
 
         base_params = {
             "auth_token": self.token,
@@ -239,14 +275,8 @@ class CryptoPanicClient:
             "public": "true",
         }
 
-        # Kandidaten-URLs: aktuelle URL zuerst, dann ggf. v1-Legacy.
-        urls_to_try: list[str] = [self._active_url]
-        if self._active_url != self._fallback_url:
-            urls_to_try.append(self._fallback_url)
-
         not_found_seen = False
-        currency_fallback_used = False
-        for url in urls_to_try:
+        for url in self._candidate_urls():
             # 1. Versuch: mit currencies-Filter (falls aktiv)
             if use_currency_filter:
                 params = {**base_params, "currencies": currency_norm}
@@ -259,11 +289,16 @@ class CryptoPanicClient:
                     return []
                 if err_status in (404, 410):
                     not_found_seen = True
-                    # currencies-Filter nicht unterstützt → ohne erneut versuchen
+                    # currencies nicht indexiert → für eine Weile merken und ab
+                    # sofort ohne currencies-Filter weiterversuchen.
                     self._unsupported_currencies[currency_norm] = (
                         time.time() + _UNSUPPORTED_CURRENCY_TTL_SECONDS
                     )
-                    currency_fallback_used = True
+                    use_currency_filter = False
+                    log.info(
+                        "CryptoPanic: currencies=%s nicht indexiert – nutze Fallback ohne currencies",
+                        currency_norm,
+                    )
                 else:
                     log.warning(
                         "CryptoPanic HTTP-Fehler %s für %s auf %s", err_status, currency, url
@@ -273,25 +308,20 @@ class CryptoPanicClient:
             # 2. Versuch: ohne currencies-Filter
             success, results, err_status = self._request_posts(url, base_params, currency)
             if success:
-                if currency_fallback_used:
-                    log.info(
-                        "CryptoPanic: currencies=%s nicht unterstützt – nutze Fallback ohne currencies",
-                        currency_norm,
-                    )
                 self._promote_url(url)
                 return results
             if err_status is None:
                 return []
             if err_status in (404, 410):
                 not_found_seen = True
-                # Nächste URL (v1) versuchen
+                # Nächste Kandidaten-URL (free/v2) versuchen
                 continue
             log.warning("CryptoPanic HTTP-Fehler %s für %s auf %s", err_status, currency, url)
             return []
 
         if not_found_seen:
             log.warning(
-                "CryptoPanic: v2 und v1 Endpunkte lieferten 404/410 für %s – keine News verfügbar",
+                "CryptoPanic: v2-Endpunkt lieferte 404/410 für %s – keine News verfügbar",
                 currency,
             )
         return []
@@ -300,7 +330,10 @@ class CryptoPanicClient:
         """Setzt die übergebene URL als aktive URL für nachfolgende Requests."""
         if url != self._active_url:
             if url == self._fallback_url:
-                log.info("CryptoPanic: v2 Endpoint nicht verfügbar – fallback auf v1 aktiviert")
+                log.info(
+                    "CryptoPanic: plan-spezifischer v2-Endpoint nicht verfügbar – "
+                    "fallback auf free/v2/ aktiviert"
+                )
             self._active_url = url
 
     def analyze_sentiment(self, posts: list) -> tuple[float, str, int]:
