@@ -85,7 +85,7 @@ def build_default_config(secret_factory: Callable[[str], Any]) -> dict[str, Any]
         "max_position_pct": 0.20,
         "fee_rate": 0.0004,
         "min_vote_score": 0.50,
-        "use_market_regime": True,
+        "use_market_regime": False,
         "btc_regime_tf": "4h",
         "use_vol_filter": True,
         "paper_trading": True,
