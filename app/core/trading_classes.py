@@ -504,6 +504,11 @@ class BotState:
         finally:
             self._active.name = prev
 
+    def current_exchange(self) -> str:
+        """Name des im aktuellen Thread aktiven Kontos (Bot-Loop: die gerade
+        verarbeitete Exchange; sonst das Primärkonto)."""
+        return self._current_account().name
+
     def current_mode(self) -> str:
         """Modus (``paper``/``live``) für den aktuellen Thread.
 

@@ -270,6 +270,7 @@ CREATE TABLE IF NOT EXISTS user_exchanges (
     passphrase  VARCHAR(500),
     enabled     TINYINT DEFAULT 0,
     is_primary  TINYINT DEFAULT 0,
+    mode        VARCHAR(10) DEFAULT NULL,
     created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uq_user_exchange(user_id, exchange),
     INDEX idx_user(user_id),

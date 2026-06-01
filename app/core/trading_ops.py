@@ -582,8 +582,8 @@ def _record_decision(symbol: str, decision: str, reason: str, scan: dict | None 
                 "confidence": (scan or {}).get("confidence", 0),
                 "ai_score": (scan or {}).get("ai_score", 0),
                 "win_prob": (scan or {}).get("win_prob", 0),
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "payload": payload,
             }
         )
@@ -963,6 +963,9 @@ def open_position(ex, scan: dict):
         "ai_score": round(ai_score * 100, 1),
         "win_prob": round(win_prob, 1),
         "regime": "bull" if (regime and regime.is_bull) else "bear",
+        # Account-Zuordnung: auf welcher Exchange / in welchem Modus eröffnet.
+        "exchange": state.current_exchange(),
+        "trade_mode": state.current_mode(),
         "dca_level": 0,
         "partial_sold": 0,
         "news_score": round(news_score, 3),
@@ -1006,8 +1009,8 @@ def open_position(ex, scan: dict):
                 "invested": invest - fee,
                 "stop_loss": sl,
                 "take_profit": tp,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "opened_at": pos_data.get("opened"),
                 "meta": {
                     "confidence": scan.get("confidence", 0),
@@ -1027,8 +1030,8 @@ def open_position(ex, scan: dict):
                 "qty": qty,
                 "cost": invest,
                 "fees": fee,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": "entry",
                 "meta": {"ai_reason": ai_reason, "algo_reason": algo_reason},
@@ -1262,8 +1265,8 @@ def close_position(ex, symbol, reason, partial_ratio=1.0):
                 "qty": close_qty,
                 "cost": close_invest,
                 "fees": fee,
-                "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
-                "exchange": CONFIG.get("exchange", "cryptocom"),
+                "trade_mode": state.current_mode(),
+                "exchange": state.current_exchange(),
                 "exchange_order_id": (order_resp or {}).get("id", ""),
                 "reason": reason,
                 "meta": {"partial": is_partial},
@@ -1381,14 +1384,16 @@ def _make_trade(symbol, pos, price, qty, invest, pnl, pnl_pct, reason, dca_level
         "invested": round(invest, 2),
         "opened": pos.get("opened", ""),
         "closed": datetime.now().isoformat(),
-        "exchange": CONFIG.get("exchange", "cryptocom"),
+        # Attribute to the account that actually held the position (the active
+        # account in the bot-loop thread), not the global config exchange/mode.
+        "exchange": pos.get("exchange") or state.current_exchange(),
         "regime": pos.get("regime", "bull"),
         "trade_type": "long",
         "partial_sold": partial_sold,
         "dca_level": dca_level,
         "news_score": round(pos.get("news_score", 0), 3),
         "onchain_score": round(pos.get("onchain_score", 0), 3),
-        "trade_mode": "live" if not CONFIG.get("paper_trading", True) else "paper",
+        "trade_mode": pos.get("trade_mode") or state.current_mode(),
         "fees": round(invest * get_exchange_fee_rate(), 8),
     }
     # Trade DNA Fingerprint anhängen (für historische Analyse)
@@ -1857,25 +1862,56 @@ def _create_exchange_from_db_config(cfg: dict):
 
 
 def _build_exchange_update() -> dict:
-    """Build multi-exchange status payload for the exchange_update WebSocket event."""
+    """Build multi-exchange status payload for the exchange_update WebSocket event.
+
+    Reports REAL per-exchange figures from each independent account (balance,
+    value, open positions, mode, trade count / win-rate / PnL filtered by the
+    exchange the trade was executed on) instead of placeholder zeros.
+    """
     with state._lock:
-        ex_bals = dict(state.exchange_balances)
+        closed = list(state.closed_trades)
+        accounts = [
+            (
+                acc.name,
+                acc.mode,
+                acc.balance,
+                acc.initial_balance,
+                dict(acc.positions),
+                dict(acc.short_positions),
+                dict(acc.prices),
+            )
+            for acc in state.accounts.values()
+        ]
+    markets_count = len(state.markets)
     exs: dict = {}
-    for name, bal in ex_bals.items():
+    combined_pv = 0.0
+    for name, mode, bal, init, pos, shorts, prices in accounts:
+        longs_val = sum(
+            p.get("qty", 0) * (prices.get(s) or p.get("entry", 0))
+            for s, p in pos.items()
+            if p.get("qty", 0) > 0
+        )
+        acc_pv = bal + longs_val
+        combined_pv += acc_pv
+        acc_trades = [t for t in closed if t.get("exchange") == name]
+        wins = sum(1 for t in acc_trades if t.get("pnl", 0) > 0)
         exs[name] = {
             "enabled": True,
             "running": state.running,
-            "portfolio_value": round(bal, 2),
-            "return_pct": 0.0,
-            "trade_count": 0,
-            "open_trades": 0,
-            "win_rate": 0.0,
-            "total_pnl": 0.0,
-            "markets_count": len(state.markets),
+            "mode": mode,
+            "balance": round(bal, 2),
+            "portfolio_value": round(acc_pv, 2),
+            "return_pct": round((acc_pv - init) / init * 100, 2) if init > 0 else 0.0,
+            "trade_count": len(acc_trades),
+            "open_trades": len(pos) + len(shorts),
+            "win_rate": round(wins / len(acc_trades) * 100, 1) if acc_trades else 0.0,
+            "total_pnl": round(sum(t.get("pnl", 0) for t in acc_trades), 2),
+            "markets_count": markets_count,
             "last_scan": state.last_scan,
-            "positions": [],
+            "positions": list(pos.keys()),
         }
-    combined_pv = sum(ex_bals.values()) if ex_bals else state.balance
+    if not exs:
+        combined_pv = state.total_balance()
     return {
         "exchanges": exs,
         "combined_pv": round(combined_pv, 2),

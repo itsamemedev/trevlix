@@ -259,6 +259,7 @@ def apply_schema(
         passphrase VARCHAR(500),
         enabled TINYINT DEFAULT 0,
         is_primary TINYINT DEFAULT 0,
+        mode VARCHAR(10) DEFAULT NULL,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         UNIQUE KEY uq_user_exchange(user_id, exchange),
         INDEX idx_user(user_id),
@@ -278,6 +279,22 @@ def apply_schema(
             )
         except Exception as e:
             log.debug("user_exchanges passphrase migration: %s", e)
+    # Per-exchange trading mode (NULL = inherit global paper_trading flag, so
+    # existing rows keep their previous behaviour until explicitly set).
+    c.execute(
+        "SELECT COUNT(*) AS n FROM information_schema.columns "
+        "WHERE table_schema=%s AND table_name='user_exchanges' "
+        "AND column_name='mode'",
+        (config["mysql_db"],),
+    )
+    row = c.fetchone() or {}
+    if int(row.get("n", 0) or 0) == 0:
+        try:
+            c.execute(
+                "ALTER TABLE user_exchanges ADD COLUMN mode VARCHAR(10) DEFAULT NULL AFTER is_primary"
+            )
+        except Exception as e:
+            log.debug("user_exchanges mode migration: %s", e)
 
     # ── Knowledge / DNA / revenue / healing / cluster / alerts ──────────────
     c.execute("""CREATE TABLE IF NOT EXISTS shared_knowledge (
