@@ -18,12 +18,13 @@ from typing import Any
 
 
 def has_any_configured_exchange(*, config: dict[str, Any], db: Any, log: Any) -> bool:
-    """Return True if at least one usable exchange configuration exists.
+    """Return True if the bot can connect to an exchange.
 
-    Paper-trading mode never requires real keys, so this short-circuits
-    to True. Live mode accepts either the legacy single-exchange ENV
-    pair (``API_KEY``/``API_SECRET``) or any enabled row in
-    ``user_exchanges`` with a non-empty ``api_key``.
+    Public market-data endpoints (OHLCV, tickers, order book) are
+    available on all major exchanges without API credentials, so the bot
+    can always start for signal scanning and notifications.  Actual order
+    placement is guarded separately in ``trade_execution`` and will fail
+    gracefully with a clear message if no credentials are present.
     """
     if config.get("paper_trading", True):
         return True
@@ -39,10 +40,17 @@ def has_any_configured_exchange(*, config: dict[str, Any], db: Any, log: Any) ->
                     "WHERE enabled=1 AND api_key IS NOT NULL AND api_key!=''"
                 )
                 row = c.fetchone() or {}
-                return int(row.get("n", 0) or 0) > 0
+                if int(row.get("n", 0) or 0) > 0:
+                    return True
     except Exception as e:  # noqa: BLE001 – feasibility checks must not raise
         log.debug("has_any_configured_exchange: %s", e)
-        return False
+    # No API keys configured – start anyway using public market data.
+    # Trades will be skipped until credentials are added under 'Exchanges'.
+    log.info(
+        "ℹ️  Keine API-Keys konfiguriert – Bot startet im Signal-Modus "
+        "(Marktdaten öffentlich). Trades werden aktiviert sobald Keys eingetragen sind."
+    )
+    return True
 
 
 def maybe_auto_start_bot(

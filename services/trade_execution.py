@@ -121,6 +121,13 @@ class TradeExecutionService:
                     "slippage_bps": slippage_bps,
                 },
             )
+        if not getattr(ex, "apiKey", None) and not getattr(ex, "secret", None):
+            return ExecutionResult(
+                False,
+                mode,
+                "Kein API-Key konfiguriert – Trade nicht möglich. "
+                "Keys unter 'Exchanges' im Dashboard eintragen.",
+            )
         try:
             bal = safe_fetch_balance(ex)
             free = self._safe_float((bal.get("USDT") or {}).get("free"), 0.0)
@@ -199,6 +206,13 @@ class TradeExecutionService:
                 fee=fee,
                 executed_at=datetime.now().isoformat(),
                 meta={"effective_proceeds": effective_proceeds, "slippage_bps": slippage_bps},
+            )
+        if not getattr(ex, "apiKey", None) and not getattr(ex, "secret", None):
+            return ExecutionResult(
+                False,
+                mode,
+                "Kein API-Key konfiguriert – Trade nicht möglich. "
+                "Keys unter 'Exchanges' im Dashboard eintragen.",
             )
         # Mark cooldown BEFORE sending the order (see execute_buy for rationale).
         self._safe_mark_order(symbol)

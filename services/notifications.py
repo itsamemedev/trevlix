@@ -80,6 +80,7 @@ class DiscordNotifier:
         self._bot_full = bot_full
         self._signal_lock = threading.Lock()
         self._signal_last_sent: dict[str, float] = {}
+        self._webhook_warned = False
 
     def _cfg(self, key: str, default=None):
         return self._config.get(key, default)
@@ -100,6 +101,12 @@ class DiscordNotifier:
     ) -> None:
         url = self._cfg("discord_webhook", "")
         if not url or not isinstance(url, str):
+            if not self._webhook_warned:
+                self._webhook_warned = True
+                log.warning(
+                    "Discord webhook not configured – notifications disabled. "
+                    "Set the DISCORD_WEBHOOK environment variable."
+                )
             return
         url = url.strip()
         if not url.startswith("https://"):
