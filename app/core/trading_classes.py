@@ -11,6 +11,7 @@ from __future__ import annotations
 import threading
 import time
 from collections import deque
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -402,6 +403,11 @@ class BotState:
                 self._primary_account, _primary_mode, CONFIG.get("paper_balance", 10000)
             )
         }
+        # Thread-lokaler „aktiver Account": Während der Bot-Loop eine Exchange
+        # verarbeitet (``with state.use_account(name)``), zeigt die Legacy-Facade
+        # in DIESEM Thread auf das jeweilige Konto. API-/Socket-Threads setzen
+        # ihn nie und sehen damit weiterhin das Primärkonto – keine Races.
+        self._active = threading.local()
         self.closed_trades: list[dict] = []
         self.markets: list[str] = []
         # [Verbesserung #4] deque statt list – thread-safe + automatische Begrenzung
@@ -474,34 +480,73 @@ class BotState:
         with self._lock:
             return list(self.accounts.values())
 
-    # ── Legacy single-account facade (routes to the primary account) ──────────
+    def _current_account(self) -> ExchangeAccount:
+        """Konto, auf das die Facade IM AKTUELLEN THREAD zeigt.
+
+        Bot-Loop-Thread: das per ``use_account`` gesetzte Exchange-Konto.
+        Alle anderen Threads (API/Socket): das Primärkonto.
+        """
+        name = getattr(self._active, "name", None)
+        if name is not None:
+            acc = self.accounts.get(name)
+            if acc is not None:
+                return acc
+        return self.primary_account
+
+    @contextmanager
+    def use_account(self, name: str, *, mode: str | None = None):
+        """Aktiviert für die Dauer des Blocks ein Exchange-Konto in diesem Thread."""
+        acc = self.get_account(name, mode=mode, create=True)
+        prev = getattr(self._active, "name", None)
+        self._active.name = acc.name
+        try:
+            yield acc
+        finally:
+            self._active.name = prev
+
+    def current_mode(self) -> str:
+        """Modus (``paper``/``live``) für den aktuellen Thread.
+
+        Bot-Loop-Thread (``use_account`` aktiv): der pro Exchange aus der DB
+        gesetzte Konto-Modus. Alle anderen Threads/Aufrufer (manuelle API-Trades,
+        Tests): der globale ``paper_trading``-Schalter – so bleibt der globale
+        Umschalter unverändert wirksam.
+        """
+        name = getattr(self._active, "name", None)
+        if name is not None:
+            acc = self.accounts.get(name)
+            if acc is not None:
+                return acc.mode
+        return "live" if not CONFIG.get("paper_trading", True) else "paper"
+
+    # ── Legacy single-account facade (routes to the active/primary account) ───
     @property
     def balance(self) -> float:
-        return self.primary_account.balance
+        return self._current_account().balance
 
     @balance.setter
     def balance(self, value) -> None:
-        self.primary_account.balance = value
+        self._current_account().balance = value
 
     @property
     def initial_balance(self) -> float:
-        return self.primary_account.initial_balance
+        return self._current_account().initial_balance
 
     @initial_balance.setter
     def initial_balance(self, value) -> None:
-        self.primary_account.initial_balance = value
+        self._current_account().initial_balance = value
 
     @property
     def positions(self) -> dict[str, dict]:
-        return self.primary_account.positions
+        return self._current_account().positions
 
     @property
     def short_positions(self) -> dict[str, dict]:
-        return self.primary_account.short_positions
+        return self._current_account().short_positions
 
     @property
     def prices(self) -> dict[str, float]:
-        return self.primary_account.prices
+        return self._current_account().prices
 
     def total_balance(self) -> float:
         """Freies Kapital über alle Konten summiert."""
