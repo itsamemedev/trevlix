@@ -24,9 +24,9 @@ const socket = TrevlixSocket.init({
   reconnectionDelayMax: 30000,
   timeout: 20000,
 });
-let portChart=null, hourChart=null, pnlChart=null, btChartInst=null;
+let portChart=null, hourChart=null, pnlChart=null;
 let lastData=null, allTrades=[], tradeFilter='all';
-let logEntries=[], logPaused=false, currentHmSort='change';
+let logEntries=[], logPaused=false;
 let wizStep=0, wizEx='cryptocom';
 
 // ── Nav ──────────────────────────────────────────────────────────────
@@ -301,7 +301,6 @@ function updateUI(d){
   // Signals + activity
   updateSignals(d.signal_log||[]);
   updateActivity(d.activity_log||[]);
-  if(d.price_alerts) renderAlerts(d.price_alerts);
   if(d.arb_log) renderArbLog(d.arb_log);
   if(d.ai) updateAI(d.ai);
   // Update badge in header
@@ -1250,18 +1249,6 @@ function updateActivity(acts){
   }).join('');
 }
 
-function renderAlerts(alerts){
-  const ac=document.getElementById('alertCount'); if(ac) ac.textContent=alerts.filter(a=>!a.triggered).length;
-  const el=document.getElementById('alertList');
-  if(!el) return;
-  if(!alerts.length){el.innerHTML='<div class="empty" style="padding:8px">'+QI18n.t('empty_no_alerts')+'</div>';return;}
-  el.innerHTML=alerts.map(a=>`<div class="alert-item" style="${a.triggered?'opacity:.4':''}">
-    <div style="font-size:16px">${a.triggered?'✅':'🔔'}</div>
-    <div style="flex:1"><div style="font-size:12px;font-weight:700">${esc(String(a.symbol||''))}</div>
-      <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${a.direction==='above'?QI18n.t('dir_above'):QI18n.t('dir_below')} ${esc(String(a.target_price||''))}</div></div>
-    ${!a.triggered?`<button onclick="deleteAlert(${parseInt(a.id,10)||0})" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:16px;padding:4px">🗑</button>`:''}`).join('');
-}
-
 function renderArbLog(arb){
   const cnt=(arb||[]).length;
   const acb=document.getElementById('arbCountBadge'); if(acb) acb.textContent=cnt;
@@ -1430,15 +1417,6 @@ async function refreshTradingInsights(force=false){
   }
 }
 
-async function switchTradingMode(mode){
-  try{
-    const data = await _postTradingEndpoint('/api/v1/trading/mode',{mode});
-    toast(`🧭 Trading Mode: ${(data.mode||mode).toUpperCase()}`,'success');
-    refreshTradingInsights(true);
-    if(socket && socket.connected) socket.emit('request_state');
-  }catch(e){ toast('❌ Mode-Wechsel fehlgeschlagen: '+e,'error'); }
-}
-
 async function executeTradingControl(action, opts={}){
   const preferSocket = Boolean(opts.preferSocket);
   if(preferSocket){
@@ -1456,33 +1434,6 @@ async function apiTradingControl(action){
   const ok = await executeTradingControl(action, {preferSocket:false});
   if(!ok) return;
   toast(action==='start'?'▶ Trading gestartet':'■ Trading gestoppt','success');
-}
-
-// ── Heatmap ──────────────────────────────────────────────────────────
-async function loadHeatmap(sortBy){
-  currentHmSort=sortBy;
-  document.querySelectorAll('[id^="hmBtn"]').forEach(b=>b.classList.remove('active'));
-  const btn=document.getElementById('hmBtn'+sortBy); if(btn) btn.classList.add('active');
-  const hmEl=document.getElementById('heatmapGrid');
-  if(!hmEl) return;
-  hmEl.innerHTML='<div class="empty" style="grid-column:span 5;padding:16px">⏳ Lade...</div>';
-  try{
-    const r=await fetch('/api/heatmap'); if(!r.ok) throw new Error('HTTP '+r.status); const data=await r.json();
-    if(!Array.isArray(data)){hmEl.innerHTML=`<div class="empty" style="grid-column:span 5">${esc(data.error||'Keine Daten')}</div>`;return;}
-    const sorted=[...data].sort((a,b)=>sortBy==='volume'?b.volume-a.volume:sortBy==='news'?b.news_score-a.news_score:b.change-a.change);
-    hmEl.innerHTML=sorted.slice(0,40).map(coin=>{
-      const pct=coin.change, int=Math.min(1,Math.abs(pct)/10);
-      const bg=pct>=0?`rgba(0,${Math.round(100+130*int)},${Math.round(80*int)},${0.18+0.5*int})`:`rgba(${Math.round(180+75*int)},${Math.round(30*int)},${Math.round(60*int)},${0.18+0.5*int})`;
-      const sym=esc(coin.symbol.replace('/USDT',''));
-      const nc=coin.news_score>0.3?'🟢':coin.news_score<-0.3?'🔴':'⬜';
-      const cls=(coin.in_pos?' inpos':'')+(coin.short?' inshort':'');
-      return `<div class="hm-cell${cls}" style="background:${bg}" onclick="openChart('${escJS(coin.symbol)}')">
-        <div class="hm-symbol">${sym}</div>
-        <div class="hm-pct">${pct>=0?'+':''}${pct.toFixed(1)}%</div>
-        <div class="hm-news">${nc}</div>
-      </div>`;
-    }).join('');
-  }catch(e){if(hmEl) hmEl.innerHTML='<div class="empty" style="grid-column:span 5">'+QI18n.t('err_generic')+': '+esc(String(e))+'</div>';}
 }
 
 // ── Chart ────────────────────────────────────────────────────────────
@@ -1578,63 +1529,6 @@ function renderTVChart(data, el){
   }
 }
 
-// ── Backtest ─────────────────────────────────────────────────────────
-function runBacktest(){
-  const candles=parseInt(document.getElementById('btCandles')?.value, 10);
-  const sl=parseFloat(document.getElementById('btSL')?.value);
-  const tp=parseFloat(document.getElementById('btTP')?.value);
-  const vote=parseFloat(document.getElementById('btVote')?.value);
-  if(isNaN(candles)||isNaN(sl)||isNaN(tp)||isNaN(vote)){toast(QI18n.t('err_generic'),'warning');return;}
-  if(!socket.connected){toast('⚠️ '+QI18n.t('conn_disconnected'),'warning');return;}
-  const bts=document.getElementById('btStatus'); if(bts) bts.textContent=QI18n.t('running_bt');
-  const btb=document.getElementById('btBtn'); if(btb) btb.disabled=true;
-  const btr=document.getElementById('btResultSection'); if(btr) btr.style.display='none';
-  socket.emit('run_backtest',{
-    symbol:(document.getElementById('btSym')?.value||'').trim(),
-    timeframe:document.getElementById('btTf')?.value||'1h',
-    candles:candles,
-    sl:sl/100,
-    tp:tp/100,
-    vote:vote/100,
-  });
-}
-async function loadBtHistory(){
-  try{
-    const _rb=await fetch('/api/backtest/history',{headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}}); if(!_rb.ok) throw new Error('HTTP '+_rb.status); const data=await _rb.json();
-    if(!data||!data.length){
-      const el1=document.getElementById('btHistory'); if(el1) el1.innerHTML='<div class="empty" style="padding:8px">—</div>';
-      const el2=document.getElementById('btHistoryList'); if(el2) el2.innerHTML='<div class="empty"><div class="empty-ico">📊</div>'+QI18n.t('empty_no_backtests')+'</div>';
-      return;
-    }
-    // Compact view (home/backtest tab inline)
-    const el1=document.getElementById('btHistory');
-    if(el1) el1.innerHTML=data.map(r=>`<div style="background:var(--bg2);border-radius:8px;padding:10px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center">
-      <div><div style="font-size:12px;font-weight:700">${esc(String(r.symbol||''))} ${esc(String(r.timeframe||''))}</div>
-        <div style="font-size:10px;color:var(--sub)">${esc(String(r.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(r.total_trades||''))} Trades</div></div>
-      <div style="text-align:right">
-        <div style="font-size:13px;font-weight:700;font-family:var(--mono);color:${(r.win_rate||0)>50?'var(--green)':'var(--red)'}">${(r.win_rate||0).toFixed(1)}%</div>
-        <div style="font-size:10px;font-family:var(--mono);color:${(r.total_pnl||0)>=0?'var(--green)':'var(--red)'}">${fmtS(r.total_pnl||0)} USDT</div>
-      </div></div>`).join('');
-    // Detailed view (backtest history list)
-    const el2=document.getElementById('btHistoryList');
-    if(el2) el2.innerHTML=data.slice(0,10).map(b=>`
-      <div style="padding:8px 0;border-bottom:1px solid var(--muted);display:grid;grid-template-columns:1fr auto auto;gap:8px;align-items:center">
-        <div>
-          <div style="font-size:12px;font-weight:600;color:var(--txt)">${esc(String(b.symbol||''))} · ${esc(String(b.timeframe||''))}</div>
-          <div style="font-size:10px;color:var(--sub);font-family:var(--mono)">${esc(String(b.total_trades||''))} Trades · ${esc(String(b.candles||''))} ${QI18n.t('candles_label')} · ${esc(String(b.run_date?.slice(0,10)||''))}</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-family:var(--mono);font-size:13px;color:${b.return_pct>0?'var(--jade)':'var(--red)'}">${b.return_pct}%</div>
-          <div style="font-size:10px;color:var(--sub)">WR: ${b.win_rate}%</div>
-        </div>
-        <div style="text-align:right">
-          <div style="font-size:10px;color:var(--dim)">Sharpe</div>
-          <div style="font-family:var(--mono);font-size:12px;color:var(--blue)">${b.sharpe_ratio||'—'}</div>
-        </div>
-      </div>`).join('');
-  }catch(e){ console.warn('Backtest history load failed:', e); }
-}
-
 // ── Tax ──────────────────────────────────────────────────────────────
 async function loadTax(){
   const taxYearEl=document.getElementById('taxYear');
@@ -1678,7 +1572,6 @@ async function loadTax(){
         <span style="color:var(--green);text-align:right">${fmtS(g.net_pnl)}</span></div>`).join('')||'<div class="empty" style="padding:8px">—</div>';
   }catch(e){toast(QI18n.t('err_generic')+': '+e,'error');}
 }
-function exportTaxCSV(){const y=document.getElementById('taxYear')?.value||new Date().getFullYear();window.open(`/api/tax_report?year=${encodeURIComponent(y)}&format=csv`);}
 function exportCSV(){window.open('/api/export/csv');}
 function exportJSON(){window.open('/api/export/json');}
 
@@ -1801,15 +1694,6 @@ function sendReport(){_emitSafe('send_daily_report');}
 function resetCB(){_emitSafe('reset_circuit_breaker');}
 function refreshDom(){if(_emitSafe('update_dominance')) toast(QI18n.t('dominance')+'...','info');}
 function scanArb(){if(_emitSafe('scan_arbitrage')) toast(QI18n.t('btn_arbitrage')+'...','info');}
-function addAlert(){
-  const sym=document.getElementById('alertSym').value.trim().toUpperCase();
-  const target=parseFloat(document.getElementById('alertTarget').value);
-  const dir=document.getElementById('alertDir').value;
-  if(!sym||isNaN(target)||target<=0){toast(QI18n.t('err_symbol_price'),'error');return;}
-  _emitSafe('add_price_alert',{symbol:sym,target,direction:dir});
-  document.getElementById('alertTarget').value='';
-}
-function deleteAlert(id){_emitSafe('delete_price_alert',{id});}
 
 // ── Settings ─────────────────────────────────────────────────────────
 
@@ -1876,11 +1760,6 @@ function saveSettings(){
     exchange:document.getElementById('sExchange')?.value||undefined,
   });
 }
-function saveKeys(){
-  // Legacy-Alias: API-Key-Verwaltung ist jetzt unter Exchanges (#sec-exchanges).
-  const nbEx=document.getElementById('nb-ex');
-  if(typeof nav==='function'&&nbEx){nav('exchanges',nbEx);}
-}
 function saveDiscord(){
   _emitSafe('update_discord',{webhook:document.getElementById('sDiscord').value,
     report_hour:parseInt(document.getElementById('sReportHour').value, 10)});
@@ -1916,7 +1795,7 @@ function wizFinish(){
 // ── Socket events (with listener cleanup to prevent duplicates on reconnect) ──
 // Remove all previous listeners before registering to prevent accumulation
 const _socketEvents = ['connect','connect_error','disconnect','auth_error',
-  'update','ai_update','genetic_update','status','trade','price_alert','backtest_result',
+  'update','ai_update','genetic_update','status','trade',
   'update_status','update_result','system_analytics','healing_update','revenue_update',
   'cluster_update','ai_model_updated','exchange_update','virginie_chat_message','virginie_chat_error','virginie_forecast'];
 _socketEvents.forEach(ev => socket.off(ev));
@@ -2010,38 +1889,6 @@ socket.on('trade', d=>{
   addLog(msg, d.type==='buy'?'success':(won?'success':'error'), 'trade');
   toast(msg, d.type==='buy'?'success':(won?'success':'warning'));
   _checkPush(d);
-});
-socket.on('price_alert', d=>{
-  if(!d) return;
-  toast(`🔔 Alert: ${d.symbol} @ ${d.price}`,'warning');
-  addLog(`🔔 ${QI18n.t('alert_triggered')}: ${d.symbol}`,'warning','system');
-});
-socket.on('backtest_result', d=>{
-  const btBtnEl=document.getElementById('btBtn');
-  const btStatusEl=document.getElementById('btStatus');
-  const btResultSectionEl=document.getElementById('btResultSection');
-  const btBadgeEl=document.getElementById('btBadge');
-  if(btBtnEl) btBtnEl.disabled=false;
-  if(!d) return;
-  if(d.error){if(btStatusEl) btStatusEl.textContent='❌ '+d.error;toast(d.error,'error');return;}
-  if(btStatusEl) btStatusEl.textContent='';
-  if(btResultSectionEl) btResultSectionEl.style.display='block';
-  if(btBadgeEl) btBadgeEl.textContent=d.symbol+' '+d.timeframe;
-  const btEl=document.getElementById('btWR'); if(btEl){btEl.textContent=d.win_rate+'%';btEl.style.color=d.win_rate>50?'var(--green)':'var(--red)';}
-  const btPnl=document.getElementById('btPnl'); if(btPnl){btPnl.textContent=fmtS(d.total_pnl);btPnl.style.color=clr(d.total_pnl);}
-  const btPF=document.getElementById('btPF'); if(btPF){btPF.textContent=d.profit_factor;btPF.style.color=d.profit_factor>1.2?'var(--green)':'var(--red)';}
-  const btDDEl=document.getElementById('btDD'); if(btDDEl) btDDEl.textContent=d.max_drawdown+'%';
-  if(btChartInst){try{btChartInst.destroy();}catch(e){} btChartInst=null;}
-  if(d.equity_curve?.length){
-    const cc=d.return_pct>=0?'#00ff88':'#ef4444';
-    const btChartEl=document.getElementById('btChart');
-    if(btChartEl) btChartInst=new Chart(btChartEl,{type:'line',
-      data:{labels:d.equity_curve.map(e=>e.time?.slice(5,16)||''),
-        datasets:[{data:d.equity_curve.map(e=>e.value),borderColor:cc,backgroundColor:cc==='#00ff88'?'rgba(0,255,136,.06)':'rgba(255,61,113,.06)',borderWidth:2,fill:true,tension:.4,pointRadius:0}]},
-      options:cBase});
-  }
-  toast(`✅ Backtest: ${QI18n.t('stat_winrate')} ${d.win_rate}% | PnL ${fmtS(d.total_pnl)} USDT`,'success');
-  addLog(`Backtest ${d.symbol}: ${QI18n.t('stat_winrate')} ${d.win_rate}% PnL ${fmtS(d.total_pnl)}`,'success','system');
 });
 socket.on('virginie_chat_message', d=>{
   _appendVirginieChatMessage(d);
@@ -2769,20 +2616,6 @@ async function adminTrainGlobal() {
   } catch(e) { toast(QI18n.t('msg_training_error'), 'error'); }
 }
 
-async function loadModelHistory() { await loadSharedAIStatus(); }
-async function loadContributors()  { await loadSharedAIStatus(); }
-
-// Load on AI tab
-const _origOnTabSwitch = typeof onTabSwitch === 'function' ? onTabSwitch : null;
-function onTabSwitch(section) {
-  if (_origOnTabSwitch) _origOnTabSwitch(section);
-  if (section === 'ai') {
-    setTimeout(loadSharedAIStatus, 200);
-    setTimeout(loadFeatureImportance, 500);
-  }
-  if (section === 'backtest') setTimeout(loadBtHistory, 300);
-}
-
 // Initial load
 setTimeout(loadSharedAIStatus, 2000);
 
@@ -3002,20 +2835,6 @@ async function loadNewsFilter() {
 }
 
 // ════════════════════════════════════════════════════════════════
-// BREAK-EVEN SAVE
-// ════════════════════════════════════════════════════════════════
-function saveBreakEven() {
-  const trigger = parseFloat(document.getElementById('beeTrigger')?.value || '1.5') / 100;
-  const buffer  = parseFloat(document.getElementById('beeBuffer')?.value  || '0.1') / 100;
-  const enabled = document.getElementById('beeEnabled')?.checked;
-  if(_emitSafe('update_config', {
-    break_even_enabled: enabled,
-    break_even_trigger: trigger,
-    break_even_buffer:  buffer,
-  })) toast('✅ '+QI18n.t('msg_breakeven_saved'), 'success');
-}
-
-// ════════════════════════════════════════════════════════════════
 // AUDIT LOG
 // ════════════════════════════════════════════════════════════════
 async function loadAuditLog() {
@@ -3079,51 +2898,6 @@ document.addEventListener('click', e => {
   if(h && !h.contains(e.target) && e.target.id!=='shortcutHelp')
     h.classList.remove('show');
 });
-
-// ── Feature Importance ─────────────────────────────────────────────────────
-async function loadFeatureImportance(){
-  try {
-    const r = await fetch('/api/v1/ai/feature-importance',
-      {headers:{'X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')}});
-    const d = await r.json();
-    if(d.error){ toast(d.error,'warning'); return; }
-    const fiCard = document.getElementById('featureImportanceCard');
-    if(fiCard) fiCard.style.display='';
-    const acc = document.getElementById('fi-accuracy');
-    if(acc) acc.textContent = `WF: ${d.wf_accuracy}%`;
-    const list = document.getElementById('fiList');
-    if(!list) return;
-    const names = d.feature_names || [];
-    const imps  = d.importances   || [];
-    const max   = imps.length > 0 ? Math.max(...imps, 0.001) : 1;
-    list.innerHTML = names.map((n,i)=>{
-      const v = imps[i]||0;
-      const w = Math.round(v/max*100);
-      return `<div style="margin-bottom:5px">
-        <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px">
-          <span style="color:var(--txt)">${esc(n)}</span>
-          <span style="font-family:var(--mono);color:var(--jade)">${(v*100).toFixed(2)}%</span>
-        </div>
-        <div style="height:4px;background:var(--bg3);border-radius:2px">
-          <div style="width:${w}%;height:100%;border-radius:2px;
-            background:linear-gradient(90deg,var(--jade),var(--blue))"></div>
-        </div></div>`;
-    }).join('');
-    // Strategy weights
-    const ws = d.strategy_weights || [];
-    if(ws.length){
-      list.innerHTML += '<div style="margin-top:14px;font-family:var(--mono);font-size:9px;color:var(--sub);letter-spacing:2px;margin-bottom:6px">STRATEGIE-GEWICHTE</div>' +
-        ws.map(w=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:4px 0;border-bottom:1px solid var(--muted)">
-          <span>${esc(String(w.name||''))}</span>
-          <span style="color:var(--jade)">${esc(String(w.weight||''))}× &nbsp; WR: ${esc(String(w.win_rate||''))}%</span>
-        </div>`).join('');
-    }
-  } catch(e){ toast(QI18n.t('msg_fi_error'),'error'); }
-}
-
-function showReliabilityDiagram(){
-  toast(QI18n.t('msg_calibration'),'info');
-}
 
 // ── Markowitz Optimization ─────────────────────────────────────────────────
 async function runMarkowitz(){
@@ -3190,9 +2964,6 @@ async function runCompareBacktest(){
       </table></div>`;
   } catch(e){ toast(QI18n.t('msg_compare_error'),'error'); }
 }
-
-// ── Backtest History ────────────────────────────────────────────────────────
-// NOTE: loadBtHistory is defined above (merged version that populates both #btHistory and #btHistoryList)
 
 // ── Manual SL/TP Adjustment ─────────────────────────────────────────────────
 async function adjustSL(symbol, entryPrice){
@@ -3273,9 +3044,6 @@ function _checkPush(data){
     });
   }
 }
-
-// NOTE: onTabSwitch is already defined above (line ~1113) with loadSharedAIStatus + loadFeatureImportance + loadBtHistory.
-// Do NOT redefine it here — the earlier definition already covers all tab switch logic.
 
 // Restore push pref
 if(_storage.get('trevlix_push')==='1' && 'Notification' in window && Notification.permission==='granted'){
