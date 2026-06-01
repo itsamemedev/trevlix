@@ -387,6 +387,14 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 ex_name = str(pos.get("exchange") or active_exchange or "").lower()
                 if ex_name:
                     pos_by_exchange.setdefault(ex_name, []).append(pos)
+            # Per-account runtime breakdown – lets EACH connected exchange show
+            # its own value/return/open-trades/mode (independent accounts),
+            # not just the single "active" one.
+            breakdown = {
+                str(b.get("exchange", "")).lower(): b
+                for b in (runtime.get("exchanges_breakdown") or [])
+            }
+            bot_running = bool(runtime.get("running", False))
 
             paper = bool(cfg.get("paper_trading", True))
             quote = str(cfg.get("quote_currency", "USDT")).upper()
@@ -409,6 +417,20 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 enabled = bool(ex.get("enabled"))
                 is_primary = bool(ex.get("is_primary"))
                 has_key = bool(ex.get("has_key"))
+                bd = breakdown.get(ex_name)
+                # An exchange "runs" when the bot loop is active and this
+                # exchange has a live account (appears in the breakdown), or –
+                # for older snapshots without a breakdown – it is the active one.
+                acc_running = bot_running and (bd is not None or is_active)
+                # Effective per-exchange mode: explicit override > runtime
+                # account mode > global flag.
+                stored_mode = str(ex.get("mode") or "").lower()
+                if stored_mode in ("paper", "live"):
+                    eff_mode = stored_mode
+                elif bd and str(bd.get("mode") or "").lower() in ("paper", "live"):
+                    eff_mode = str(bd.get("mode")).lower()
+                else:
+                    eff_mode = "paper" if paper else "live"
 
                 # Portfolio-Wert aus Live-Balance (nur für aktivierte Exchanges
                 # mit konfigurierten Keys). Für die aktive Exchange wird
@@ -430,12 +452,14 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                     stale = bool(snap.get("stale"))
                     fetched_at = str(snap.get("fetched_at") or now_iso)
 
+                # Prefer this exchange's own account value from the breakdown.
+                pv_account = float(bd.get("value", 0) or 0) if bd else 0.0
                 pv_runtime = float(runtime.get("portfolio_value", 0) or 0) if is_active else 0.0
-                portfolio_value = max(pv_live, pv_runtime)
+                portfolio_value = max(pv_live, pv_account, pv_runtime)
 
-                if is_active and runtime.get("running"):
+                if acc_running:
                     status_detail = "Live-Runtime aktiv"
-                elif paper:
+                elif eff_mode == "paper":
                     status_detail = "Paper-Trading aktiv"
                 elif not enabled:
                     status_detail = "Nicht aktiviert"
@@ -454,20 +478,28 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 elif not error_msg and not has_key and not paper:
                     error_msg = "API-Keys erforderlich"
 
+                open_trades_acc = (
+                    int(bd.get("open_trades", 0) or 0)
+                    if bd
+                    else len(pos_by_exchange.get(ex_name, []))
+                )
                 ex_map[ex_name] = {
                     "enabled": enabled,
                     "is_primary": is_primary,
                     "has_key": has_key,
                     "has_passphrase": bool(ex.get("has_passphrase")),
-                    "running": bool(runtime.get("running", False)) if is_active else False,
+                    "mode": eff_mode,
+                    "running": acc_running,
                     "portfolio_value": round(portfolio_value, 2),
-                    "return_pct": float(runtime.get("return_pct", 0) or 0) if is_active else 0.0,
+                    "return_pct": float(bd.get("return_pct", 0) or 0)
+                    if bd
+                    else (float(runtime.get("return_pct", 0) or 0) if is_active else 0.0),
                     "trade_count": int(runtime.get("total_trades", 0) or 0) if is_active else 0,
-                    "open_trades": len(pos_by_exchange.get(ex_name, [])),
+                    "open_trades": open_trades_acc,
                     "win_rate": float(runtime.get("win_rate", 0) or 0) if is_active else 0.0,
                     "total_pnl": float(runtime.get("total_pnl", 0) or 0) if is_active else 0.0,
-                    "markets_count": len(runtime_markets) if is_active else 0,
-                    "symbol_count": len(runtime_markets) if is_active else 0,
+                    "markets_count": len(runtime_markets) if (is_active or acc_running) else 0,
+                    "symbol_count": len(runtime_markets) if (is_active or acc_running) else 0,
                     "last_scan": str(runtime.get("last_scan") or now_iso),
                     "positions": pos_by_exchange.get(ex_name, []),
                     "balances": balances,

@@ -3171,6 +3171,7 @@ function _mexRenderCard(id, label, ex, activeEx) {
   const enabled = !!ex.enabled;
   const hasKey = !!ex.has_key;
   const isPrimary = !!ex.is_primary;
+  const mode = String(ex.mode || '').toLowerCase();
   const expanded = _mexExpanded.has(id);
   const pv = Number(ex.portfolio_value || 0);
   const ret = Number(ex.return_pct || 0);
@@ -3200,6 +3201,12 @@ function _mexRenderCard(id, label, ex, activeEx) {
   const primaryBadge = isPrimary
     ? `<span class="pill" style="padding:2px 6px;font-size:9px;background:rgba(212,175,55,.15);color:var(--yellow);border:1px solid rgba(212,175,55,.3)">${QI18n.t('mex_primary_badge')}</span>`
     : '';
+  // Per-exchange mode badge (independent paper/live per exchange).
+  const modeBadge = mode === 'live'
+    ? '<span class="pill" style="padding:2px 6px;font-size:9px;background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3)">● LIVE</span>'
+    : mode === 'paper'
+      ? '<span class="pill" style="padding:2px 6px;font-size:9px;background:rgba(96,165,250,.15);color:#60a5fa;border:1px solid rgba(96,165,250,.3)">◐ PAPER</span>'
+      : '';
 
   const chevron = expanded ? '▼' : '▶';
 
@@ -3211,7 +3218,7 @@ function _mexRenderCard(id, label, ex, activeEx) {
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
             <span style="font-weight:800;font-size:14px;color:#e8f4ff">${esc(label)}</span>
-            ${primaryBadge}
+            ${primaryBadge}${modeBadge}
           </div>
           <div style="font-size:10px;color:var(--sub);font-family:var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
             ${fmt(pv)} USDT · ${marketCount} Märkte${statusDetail ? ` · ${esc(statusDetail)}` : ''}
@@ -3282,6 +3289,19 @@ function _mexRenderCard(id, label, ex, activeEx) {
     ? `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(255,255,255,.05);border:1px solid var(--line);color:var(--txt)" onclick="mexRefreshBalance('${escJS(id)}')" title="${esc(QI18n.t('mex_refresh_balance'))}">⟳</button>`
     : '';
   const deleteBtn = `<button class="btn" style="padding:8px 10px;font-size:11px;background:rgba(239,68,68,.08);border:1px solid rgba(239,68,68,.2);color:#ef4444" onclick="mexDelete('${escJS(id)}')" title="${esc(QI18n.t('mex_delete_config'))}">🗑</button>`;
+  // Per-exchange paper/live selector (Global = inherit the global switch).
+  const _modeBtn = (m, lbl) => {
+    const on = (m === '') ? !['paper', 'live'].includes(mode) : (mode === m);
+    const style = on
+      ? 'background:rgba(0,255,136,.15);border:1px solid var(--jade);color:var(--jade)'
+      : 'background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--sub)';
+    return `<button class="btn" style="flex:1;padding:6px;font-size:10px;${style}" onclick="mexSetMode('${escJS(id)}','${m}')">${lbl}</button>`;
+  };
+  const modeSel = `
+    <div style="display:flex;gap:4px;align-items:center;margin-top:12px">
+      <span style="font-size:10px;color:var(--sub);font-family:var(--mono);white-space:nowrap">Modus:</span>
+      ${_modeBtn('paper', '📝 Paper')}${_modeBtn('live', '🔴 Live')}${_modeBtn('', '🌐 Global')}
+    </div>`;
 
   return `
     <div class="card" data-exchange="${escJS(id)}" style="border-color:${running?'rgba(0,255,136,.15)':enabled?'rgba(245,158,11,.1)':'rgba(255,255,255,.05)'}">
@@ -3318,6 +3338,8 @@ function _mexRenderCard(id, label, ex, activeEx) {
         ${posHtml}` : ''}
 
         <div id="mex-inline-keys-${escJS(id)}" style="display:none;margin-bottom:12px"></div>
+
+        ${modeSel}
 
         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px">
           ${runBtn}
@@ -3521,6 +3543,29 @@ async function mexRefreshAll() {
 
 function mexStart(name)  { _emitSafe('start_exchange',  {exchange: name}); }
 function mexStop(name)   { _emitSafe('stop_exchange',   {exchange: name}); }
+
+async function mexSetMode(id, mode) {
+  // mode: 'paper' | 'live' | '' (global). Each exchange trades independently
+  // in its own mode.
+  try {
+    const r = await fetch('/api/v1/user/exchanges/' + encodeURIComponent(id) + '/mode', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json','X-CSRFToken':_csrfToken,'Authorization':'Bearer '+(_jwtToken||'')},
+      body: JSON.stringify({mode})
+    });
+    const d = await r.json();
+    if (d && d.ok) {
+      const shown = d.mode === 'global' ? 'Global' : String(d.mode||'').toUpperCase();
+      toast('🧭 ' + (MEX_NAMES[id] || id.toUpperCase()) + ' → ' + shown, 'success');
+      _mexExpanded.add(id);
+      setTimeout(() => mexReloadSnapshot(true), 400);
+    } else {
+      toast((d && d.error) || QI18n.t('err_generic'), 'error');
+    }
+  } catch (e) {
+    toast(QI18n.t('err_network') + ': ' + e.message, 'error');
+  }
+}
 
 function mexSetupKeys(name, opts) {
   document.getElementById('mex-key-exchange').value = name;
