@@ -44,6 +44,10 @@ class _RaisingMode(_Mode):
 
 class _FakeEx:
     def __init__(self, *, raise_on_buy: bool = False, raise_on_sell: bool = False):
+        # Live-Order-Pfad verlangt konfigurierte Credentials; ohne sie greift
+        # der API-Key-Guard und blockiert die Order.
+        self.apiKey = "test-key"
+        self.secret = "test-secret"
         self.raise_on_buy = raise_on_buy
         self.raise_on_sell = raise_on_sell
         self.buys = 0
