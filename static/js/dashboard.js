@@ -2382,11 +2382,14 @@ function updateAdminKPIs(d) {
   _s('adminWinRate', fmt(wr, 1) + '%');
   const wrEl = document.getElementById('adminWinRate');
   if (wrEl) wrEl.style.color = wr >= 50 ? '#00e676' : wr > 0 ? '#ffb400' : '#8a8a8a';
-  _s('adminIterCount2', (d.iteration_count || 0) + ' Iterationen');
+  // Snapshot keys are `iteration` and `markets` (not iteration_count/symbols).
+  const iter = d.iteration || d.iteration_count || 0;
+  const markets = Array.isArray(d.markets) ? d.markets.length : (d.markets || (d.symbols || []).length || 0);
+  _s('adminIterCount2', iter + ' Iterationen');
   // Bot controls mini-stats
-  _s('adminIterCount', d.iteration_count || 0);
+  _s('adminIterCount', iter);
   _s('adminClientCount', d.connected_clients || 0);
-  _s('adminMarketCount', (d.symbols || []).length || 1);
+  _s('adminMarketCount', markets || 1);
 }
 // updateAdminKPIs is merged into the primary socket.on('update') handler above
 

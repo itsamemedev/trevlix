@@ -466,13 +466,33 @@ def create_ai_blueprint(deps: AppDeps) -> Blueprint:
         if deps.ai_engine is None:
             return jsonify({"enabled": False})
         ai = deps.ai_engine.to_dict()
+        # Es gibt (noch) kein föderiertes/geteiltes Modell – das Panel zeigt das
+        # reale lokale Modell. Wir mappen die to_dict()-Schlüssel auf die Namen,
+        # die das Dashboard (loadSharedAIStatus) erwartet, damit Version,
+        # Genauigkeiten und Sample-Zahlen tatsächlich angezeigt werden statt
+        # durchgängig „—“ / 0 %.
+        version = int(ai.get("training_ver", 0) or 0)
+        n_samples = int(ai.get("samples", 0) or 0)
         return jsonify(
             {
                 "shared_enabled": bool(ai.get("shared_enabled", False)),
                 "is_trained": bool(ai.get("is_trained", False)),
+                "status_msg": ai.get("status_msg") or "—",
+                "shared_version": version,
+                "local_version": version,
+                "is_up_to_date": True,
+                "last_trained": ai.get("last_trained"),
                 "wf_accuracy": float(ai.get("wf_accuracy", 0) or 0),
+                "bull_accuracy": float(ai.get("bull_accuracy", 0) or 0),
+                "bear_accuracy": float(ai.get("bear_accuracy", 0) or 0),
+                "lstm_accuracy": float(ai.get("lstm_acc", 0) or 0),
                 "drift_score": float(ai.get("drift_score", 0) or 0),
-                "samples": int(ai.get("samples", 0) or 0),
+                "samples": n_samples,
+                "n_samples": n_samples,
+                "n_samples_bull": int(ai.get("bull_samples", 0) or 0),
+                "n_samples_bear": int(ai.get("bear_samples", 0) or 0),
+                "models": [],
+                "contributors": [],
             }
         )
 

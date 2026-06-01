@@ -918,8 +918,8 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
     @auth
     def api_grid_list():
         if deps.grid_engine is None:
-            return jsonify([])
-        return jsonify(deps.grid_engine.list_grids())
+            return jsonify({"grids": []})
+        return jsonify({"grids": deps.grid_engine.status()})
 
     @bp.route("/api/v1/grid", methods=["POST"])
     @auth
