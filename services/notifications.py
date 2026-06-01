@@ -509,7 +509,6 @@ class TelegramNotifier:
     def __init__(self, config: dict, bot_full: str = "TREVLIX"):
         self._config = config
         self._bot_full = bot_full
-        self._token_warned = False
 
     def _market_link(self, symbol: str | None) -> str:
         """Liefert eine HTML-Zeile mit klickbarem Markt-Link, oder leeren String."""
@@ -558,14 +557,6 @@ class TelegramNotifier:
         token = self._token()
         chat_id = self._chat_id()
         if not token or not chat_id:
-            if not self._token_warned:
-                self._token_warned = True
-                missing = "TELEGRAM_TOKEN" if not token else "TELEGRAM_CHAT_ID"
-                log.warning(
-                    "Telegram not configured – notifications disabled. "
-                    "Set the %s environment variable.",
-                    missing,
-                )
             return
         text = str(text or "")[:4096]
         if not text.strip():
