@@ -80,6 +80,7 @@ class DiscordNotifier:
         self._bot_full = bot_full
         self._signal_lock = threading.Lock()
         self._signal_last_sent: dict[str, float] = {}
+        self._webhook_warned = False
 
     def _cfg(self, key: str, default=None):
         return self._config.get(key, default)
@@ -100,6 +101,12 @@ class DiscordNotifier:
     ) -> None:
         url = self._cfg("discord_webhook", "")
         if not url or not isinstance(url, str):
+            if not self._webhook_warned:
+                self._webhook_warned = True
+                log.warning(
+                    "Discord webhook not configured – notifications disabled. "
+                    "Set the DISCORD_WEBHOOK environment variable."
+                )
             return
         url = url.strip()
         if not url.startswith("https://"):
@@ -502,6 +509,7 @@ class TelegramNotifier:
     def __init__(self, config: dict, bot_full: str = "TREVLIX"):
         self._config = config
         self._bot_full = bot_full
+        self._token_warned = False
 
     def _market_link(self, symbol: str | None) -> str:
         """Liefert eine HTML-Zeile mit klickbarem Markt-Link, oder leeren String."""
@@ -550,6 +558,14 @@ class TelegramNotifier:
         token = self._token()
         chat_id = self._chat_id()
         if not token or not chat_id:
+            if not self._token_warned:
+                self._token_warned = True
+                missing = "TELEGRAM_TOKEN" if not token else "TELEGRAM_CHAT_ID"
+                log.warning(
+                    "Telegram not configured – notifications disabled. "
+                    "Set the %s environment variable.",
+                    missing,
+                )
             return
         text = str(text or "")[:4096]
         if not text.strip():
