@@ -61,10 +61,12 @@ class TradingModeManager:
                 return GuardResult(False, "Unzureichendes Guthaben")
             if price <= 0 or qty <= 0:
                 return GuardResult(False, "Ungültiger Preis/Menge")
-            if precision is not None and precision >= 0:
-                step = 10 ** (-precision)
-                if abs((qty / step) - round(qty / step)) > 1e-6:
-                    return GuardResult(False, "Precision-Validierung fehlgeschlagen")
+            # Amount precision is validated (and the quantity rounded to a valid
+            # lot) in TradeExecutionService, which correctly handles ccxt's
+            # TICK_SIZE precision mode. The previous step-multiple check here used
+            # ``10 ** -precision`` with ``precision`` truncated from a fractional
+            # tick size to 0, which rejected every fractional quantity. The
+            # ``precision`` parameter is kept for backward compatibility.
             cooldown = int(self.config.get("order_cooldown_sec", 8) or 0)
             last = self._last_order_by_symbol.get(symbol, 0.0)
             now = time.time()

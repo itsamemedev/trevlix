@@ -896,19 +896,16 @@ def open_position(ex, scan: dict):
         return
 
     if trade_mode is not None:
-        precision = None
-        try:
-            market = ex.market(symbol)
-            precision = int((market.get("precision") or {}).get("amount", 8))
-        except Exception:
-            precision = None
+        # Amount precision is validated and the quantity rounded to a valid lot
+        # inside TradeExecutionService.execute_buy (which handles ccxt's TICK_SIZE
+        # precision mode). Passing a truncated ``int(tick_size)`` here previously
+        # collapsed fractional tick sizes to 0 and falsely rejected every order.
         guard = trade_mode.can_place_order(
             symbol=symbol,
             invest_usdt=invest,
             free_usdt=state.balance,
             price=price,
             qty=qty,
-            precision=precision,
         )
         if not guard.allowed:
             _record_decision(symbol, "blocked", guard.reason, scan)

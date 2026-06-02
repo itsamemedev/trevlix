@@ -247,6 +247,66 @@ class TestSymbolValidationLoadsMarkets:
         assert r.reason == "Symbol-Validierung fehlgeschlagen"
 
 
+class _TickSizeEx(_FakeEx):
+    """Mirrors a real ccxt exchange in ``TICK_SIZE`` precision mode.
+
+    ``precision['amount']`` is the lot step itself (a value < 1), and the
+    exchange exposes ``amount_to_precision``. The previous validation did
+    ``int(0.0001) == 0`` → ``step = 1`` and rejected every fractional quantity,
+    so fractional positions (BTC/ETH) could never be sold.
+    """
+
+    def __init__(self, *, tick: float = 0.0001, **kw):
+        super().__init__(**kw)
+        self.tick = tick
+        self.last_sell_qty: float | None = None
+        self.last_buy_qty: float | None = None
+
+    def market(self, symbol):
+        return {"active": True, "precision": {"amount": self.tick}}
+
+    def amount_to_precision(self, symbol, qty):
+        # Truncate to the lot step, like ccxt does for TICK_SIZE markets.
+        steps = int(float(qty) / self.tick)
+        return f"{steps * self.tick:.10f}"
+
+    def create_market_buy_order(self, symbol, qty):
+        self.last_buy_qty = qty
+        return super().create_market_buy_order(symbol, qty)
+
+    def create_market_sell_order(self, symbol, qty):
+        self.last_sell_qty = qty
+        return super().create_market_sell_order(symbol, qty)
+
+
+class TestTickSizePrecision:
+    """Regression: TICK_SIZE exchanges must be able to sell/buy fractional qty."""
+
+    def test_live_sell_fractional_qty_not_rejected(self):
+        svc = _make_service(paper=False)
+        ex = _TickSizeEx(tick=0.0001)
+        r = svc.execute_sell(ex, symbol="BTC/USDT", qty=0.01234, invest_usdt=500.0)
+        assert r.ok, r.reason
+        assert ex.sells == 1  # the order actually reached the exchange
+        # qty was rounded to the lot step, not rejected.
+        assert ex.last_sell_qty == pytest.approx(0.0123, abs=1e-9)
+
+    def test_live_buy_fractional_qty_not_rejected(self):
+        svc = _make_service(paper=False)
+        ex = _TickSizeEx(tick=0.0001)
+        r = svc.execute_buy(ex, symbol="BTC/USDT", price=50000.0, invest_usdt=100.0)
+        assert r.ok, r.reason
+        assert ex.buys == 1
+
+    def test_qty_below_min_lot_rejected(self):
+        svc = _make_service(paper=False)
+        ex = _TickSizeEx(tick=0.0001)
+        # 0.00005 < one tick (0.0001) → rounds to 0 → must be rejected, not sent.
+        r = svc.execute_sell(ex, symbol="BTC/USDT", qty=0.00005, invest_usdt=2.0)
+        assert not r.ok
+        assert ex.sells == 0
+
+
 class TestLiveFillVerification:
     """Live orders extract actual filled qty and average price."""
 
