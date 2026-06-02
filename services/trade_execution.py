@@ -54,9 +54,32 @@ class TradeExecutionService:
         except (ValueError, TypeError):
             return default
 
+    @staticmethod
+    def _lookup_market(ex, symbol: str):
+        """Resolve a market, loading markets once if the instance hasn't yet.
+
+        A freshly-created or reconnected exchange instance frequently has no
+        markets loaded: OHLCV is served from the shared ``market_cache`` so
+        ``scan_symbol`` never triggers ccxt's implicit ``load_markets``, and a
+        reconnected primary keeps the existing ``state.markets`` symbol list
+        without reloading. ``ex.market(symbol)`` then raises a ``KeyError`` for
+        every symbol, which (because validation runs before the paper/live
+        branch) blocks ALL trades — paper and live alike. Loading markets on the
+        first miss makes validation fail only for genuinely unknown symbols or
+        an unreachable exchange.
+        """
+        try:
+            return ex.market(symbol)
+        except Exception:
+            loader = getattr(ex, "load_markets", None)
+            if not callable(loader):
+                raise
+            loader()  # may raise if the exchange is unreachable — caller handles it
+            return ex.market(symbol)
+
     def _validate_symbol(self, ex, symbol: str) -> tuple[bool, str]:
         try:
-            market = ex.market(symbol)
+            market = self._lookup_market(ex, symbol)
             if not market or not market.get("active", True):
                 return False, "Symbol ist inaktiv"
             return True, "ok"
@@ -65,7 +88,7 @@ class TradeExecutionService:
 
     def _validate_precision(self, ex, symbol: str, qty: float) -> tuple[bool, str]:
         try:
-            market = ex.market(symbol)
+            market = self._lookup_market(ex, symbol)
             amount_precision = (market.get("precision") or {}).get("amount")
             if amount_precision is None:
                 return True, "ok"

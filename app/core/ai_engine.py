@@ -740,6 +740,22 @@ class AIEngine:
                 Xbr = np.array(self.X_bear, dtype=np.float32) if self.X_bear else None
                 ybr = np.array(self.y_bear, dtype=np.int32) if self.y_bear else None
             n = len(X)
+            # Guard against empty / insufficient data. Callers that bypass the
+            # sample gate in record_outcome() — the drift retrain, the
+            # force_train WS handler and the shared-train endpoint — can reach
+            # here with no samples. An empty X is a 1-D ``(0,)`` array, so
+            # ``StandardScaler.fit_transform`` raises the cryptic "Expected 2D
+            # array, got 1D array instead: array=[]" which then surfaced as the
+            # global model status. Bail out cleanly instead.
+            _min_s = CONFIG.get("ai_min_samples", 20)
+            if n < _min_s or X.ndim != 2 or np.unique(y).size < 2:
+                if not self.is_trained:
+                    self.status_msg = f"⏳ Brauche min. {_min_s} Trades (aktuell {n})"
+                log.info(
+                    f"🧠 Training übersprungen: {n} Samples (<{_min_s}) "
+                    f"oder <2 Klassen/Features fehlen"
+                )
+                return
             log.info(f"🧠 Training: Global:{n} Bull:{len(self.X_bull)} Bear:{len(self.X_bear)}")
             # Lokale Scaler verwenden während Training — verhindert Race-Condition mit
             # should_buy()/predict(), die self.scaler gleichzeitig lesen könnten.

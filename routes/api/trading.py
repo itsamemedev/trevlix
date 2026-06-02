@@ -785,7 +785,13 @@ def create_trading_blueprint(deps: AppDeps) -> Blueprint:
         from routes.api.market import _get_balance_snapshot
 
         force = str(request.args.get("refresh", "1")).lower() in ("1", "true", "yes")
-        paper = bool(cfg.get("paper_trading", True))
+        # Effective per-exchange mode overrides the global flag: a live exchange
+        # reports its real wallet even while the global switch is still paper.
+        stored_mode = str(ex_row.get("mode") or "").lower()
+        if stored_mode in ("paper", "live"):
+            paper = stored_mode == "paper"
+        else:
+            paper = bool(cfg.get("paper_trading", True))
         quote = str(cfg.get("quote_currency", "USDT")).upper()
         snap = _get_balance_snapshot(
             request.user_id, ex_row, quote, paper, log, force_refresh=force

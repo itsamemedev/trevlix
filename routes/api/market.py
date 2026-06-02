@@ -442,9 +442,12 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 stale = False
                 fetched_at = now_iso
                 snap_row = enabled_rows.get(ex_name)
-                if enabled and has_key and snap_row and not paper:
+                # Live-balance fetch keys off the EFFECTIVE per-exchange mode,
+                # not the global paper flag: an exchange explicitly set to live
+                # must show its real wallet even while the global switch is paper.
+                if enabled and has_key and snap_row and eff_mode == "live":
                     snap = _get_balance_snapshot(
-                        uid, snap_row, quote, paper, log, force_refresh=force
+                        uid, snap_row, quote, False, log, force_refresh=force
                     )
                     pv_live = float(snap.get("portfolio_value", 0) or 0)
                     balances = snap.get("balances") or {}
@@ -475,7 +478,7 @@ def create_market_blueprint(deps: AppDeps) -> Blueprint:
                 error_msg = fetch_error
                 if not error_msg and not enabled:
                     error_msg = "Nicht aktiviert"
-                elif not error_msg and not has_key and not paper:
+                elif not error_msg and not has_key and eff_mode == "live":
                     error_msg = "API-Keys erforderlich"
 
                 open_trades_acc = (

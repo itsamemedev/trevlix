@@ -2471,30 +2471,42 @@ def fetch_aggregated_balance() -> dict:
         Dict mit ``total_usdt``, ``by_exchange`` und ``errors``.
     """
     result: dict = {"total_usdt": 0.0, "by_exchange": {}, "errors": []}
-    if CONFIG.get("paper_trading", True):
+    quote = CONFIG.get("quote_currency", "USDT")
+
+    # Per-exchange mode overrides the global paper flag: an exchange explicitly
+    # set to "live" must report its REAL wallet even while the global switch is
+    # still paper. Only fall back to the simulated paper balance when nothing
+    # anywhere runs live.
+    admin_rows = _get_all_admin_exchanges() or []
+    live_rows = [r for r in admin_rows if _account_mode_from_cfg(r) == "live"]
+    global_paper = CONFIG.get("paper_trading", True)
+
+    if not live_rows and global_paper:
         result["total_usdt"] = state.balance
         result["by_exchange"]["paper"] = {"USDT": state.balance}
         return result
 
-    quote = CONFIG.get("quote_currency", "USDT")
-
-    # Admin/primary Exchange aus CONFIG – das ist der Fallback, falls keine
-    # DB-Einträge vorliegen.
     exchanges_to_check: dict[str, Any] = {}
-    primary_ex_id = CONFIG.get("exchange", "cryptocom")
-    try:
-        primary_inst = create_exchange()
-        if primary_inst is not None:
-            exchanges_to_check[primary_ex_id] = primary_inst
-    except Exception as exc:
-        log.warning("balance/all – primary exchange connect failed: %s", exc)
-        result["errors"].append(primary_ex_id)
+    # The primary CONFIG exchange is only queried when the global switch is live;
+    # when it's paper, only the explicitly-live DB exchanges below are fetched.
+    if not global_paper:
+        primary_ex_id = CONFIG.get("exchange", "cryptocom")
+        try:
+            primary_inst = create_exchange()
+            if primary_inst is not None:
+                exchanges_to_check[primary_ex_id] = primary_inst
+        except Exception as exc:
+            log.warning("balance/all – primary exchange connect failed: %s", exc)
+            result["errors"].append(primary_ex_id)
 
-    # Alle aktivierten User-Exchanges via DB (korrekt entschlüsselt)
-    admin_rows = _get_all_admin_exchanges() or []
-    for row in admin_rows:
+    # Live-mode User-Exchanges via DB (korrekt entschlüsselt). Paper-Exchanges
+    # haben kein echtes Wallet abzufragen und werden übersprungen.
+    balance_rows = admin_rows if not global_paper else live_rows
+    for row in balance_rows:
         ex_id = str(row.get("exchange") or "").lower()
         if not ex_id or ex_id in exchanges_to_check:
+            continue
+        if _account_mode_from_cfg(row) != "live":
             continue
         try:
             inst = _create_exchange_from_db_config(row)

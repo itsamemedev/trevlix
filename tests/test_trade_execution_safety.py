@@ -195,6 +195,58 @@ class _FakeExWithFill(_FakeEx):
         return {"id": "sell-1", "filled": qty * 0.98, "average": 49800.0}
 
 
+class _LazyMarketsEx(_FakeEx):
+    """FakeEx whose ``market()`` raises until ``load_markets()`` is called.
+
+    Mirrors a freshly-created/reconnected ccxt instance whose markets were never
+    loaded (OHLCV came from the shared cache, so fetch_ohlcv never triggered an
+    implicit load).
+    """
+
+    def __init__(self, *, known: bool = True, **kw):
+        super().__init__(**kw)
+        self._loaded = False
+        self._load_calls = 0
+        self._known = known
+
+    def load_markets(self, reload: bool = False):
+        self._load_calls += 1
+        self._loaded = True
+        return {"BTC/USDT": {"active": True, "precision": {"amount": 8}}}
+
+    def market(self, symbol):
+        if not self._loaded:
+            raise KeyError(symbol)
+        if not self._known:
+            raise KeyError(symbol)
+        return {"active": True, "precision": {"amount": 8}}
+
+
+class TestSymbolValidationLoadsMarkets:
+    """A not-yet-loaded exchange instance must not block every trade."""
+
+    def test_paper_buy_loads_markets_on_miss(self):
+        svc = _make_service(paper=True)
+        ex = _LazyMarketsEx()
+        r = svc.execute_buy(ex, symbol="BTC/USDT", price=1000.0, invest_usdt=100.0)
+        assert r.ok, r.reason
+        assert ex._load_calls >= 1  # markets were loaded lazily
+
+    def test_live_buy_loads_markets_on_miss(self):
+        svc = _make_service(paper=False)
+        ex = _LazyMarketsEx()
+        r = svc.execute_buy(ex, symbol="BTC/USDT", price=50000.0, invest_usdt=100.0)
+        assert r.ok, r.reason
+        assert ex._load_calls >= 1
+
+    def test_genuinely_unknown_symbol_still_rejected(self):
+        svc = _make_service(paper=True)
+        ex = _LazyMarketsEx(known=False)
+        r = svc.execute_buy(ex, symbol="BTC/USDT", price=1000.0, invest_usdt=100.0)
+        assert not r.ok
+        assert r.reason == "Symbol-Validierung fehlgeschlagen"
+
+
 class TestLiveFillVerification:
     """Live orders extract actual filled qty and average price."""
 
