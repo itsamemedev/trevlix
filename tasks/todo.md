@@ -1,55 +1,56 @@
-# Bug: Crypto.com balance + trades not working
+# Todo: Crypto.com Auth + Daten-Persistenz beim Neustart
 
-## Report (DE)
-- "Symbol Validierung fehlgeschlagen"
-- Crypto.com lädt weder App- noch Spot-Wallet-Guthaben → zeigt Paper-Guthaben
-- Trades werden in keinem Modus ausgeführt
+## Problem (DE)
+1. **Crypto.com Authentifizierung fehlgeschlagen** – Balance-Abruf scheitert.
+2. **Daten weg beim Neustart** – offene Positionen & Paper-Balance werden
+   nicht aus der DB wiederhergestellt (nur geschlossene Trades).
 
-## Root causes
-1. **Symbol validation hard-fails when markets aren't loaded** on the exchange
-   instance. `TradeExecutionService._validate_symbol` calls `ex.market(symbol)`
-   which raises if `load_markets()` was never called on *that* instance. This
-   happens because OHLCV is served from the shared `market_cache`, so
-   `scan_symbol` never triggers ccxt's implicit `load_markets`; and a
-   freshly-reconnected primary instance keeps the old `state.markets` symbol
-   list without reloading. Validation runs BEFORE the paper/live branch, so it
-   blocks BOTH paper and live trades -> "no trades in any mode" + the literal
-   "Symbol-Validierung fehlgeschlagen" message.
-2. **Per-exchange `mode=live` is ignored by the balance paths** — they gate on
-   the GLOBAL `paper_trading` flag, so an exchange set to live while the global
-   switch is still paper shows the simulated paper balance instead of its real
-   wallet:
-   - `routes/api/market.py` per-exchange snapshot: `... and not paper`
-   - `routes/api/trading.py` single-exchange balance route: passes global flag
-   - `app/core/trading_ops.py:fetch_aggregated_balance` short-circuits to paper
+## Root Cause
+1. `safe_fetch_balance()` (services/exchange_factory.py): Crypto.com ruft den
+   v1 Unified-Trading-Account-Endpoint. Für reine Spot-Wallet-Accounts wirft
+   dieser eine Auth-/Permission-Exception. Der vorhandene v2-Spot-Fallback
+   greift NUR bei leerem Ergebnis, NICHT bei einer Exception → Auth-Fehler,
+   obwohl gültige Spot-Keys via v2 funktionieren würden.
+2. `BotState.__init__` lädt via `_load_trades()` nur `closed_trades`. Offene
+   Positionen (`trade_positions` mit `status='open'`) und die Paper-Balance
+   werden nie rehydriert → `state.positions={}`, Balance = Default beim Start.
 
 ## Plan
-- [x] Fix `_validate_symbol`/`_validate_precision`: load markets once on miss
-- [x] market.py: gate live-balance fetch on effective per-exchange mode
-- [x] trading.py: per-exchange balance route uses effective mode
-- [x] trading_ops.py: fetch_aggregated_balance honors per-exchange live mode
-- [x] Regression tests
-- [x] ruff + pytest green (824 passed, 1 skipped)
-- [ ] commit + push
+- [x] `safe_fetch_balance`: bei Crypto.com auch nach einer Exception den
+      v2-Spot-Fallback versuchen, bevor der Fehler weitergereicht wird.
+- [x] `BotState._rehydrate_open_positions()` hinzufügen: offene Positionen aus
+      DB laden, in das Primärkonto schreiben (long/short), Paper-Balance
+      konsistent rekonstruieren (Startkapital + realisierte PnL − gebundenes
+      Kapital). In `__init__` nach `_load_trades()` aufrufen.
+- [x] `import json` in trading_classes.py ergänzen (meta_json parsen).
+- [x] Tests ergänzen (Persistenz-Rehydration + cryptocom Fallback-on-error).
+- [x] ruff check/format + pytest grün (838 passed, 1 skipped).
+- [x] commit + push
 
 ## Review
-Four targeted fixes, no behavioural change for users already on a fully-global
-paper/live setup:
+Zwei gezielte Fixes, minimaler Eingriff:
 
-1. `services/trade_execution.py` — new `_lookup_market()` helper used by both
-   `_validate_symbol` and `_validate_precision`. On the first `ex.market()`
-   miss it calls `ex.load_markets()` once and retries, so validation only fails
-   for genuinely unknown symbols / unreachable exchanges. Fixes "Symbol-
-   Validierung fehlgeschlagen" blocking ALL trades (paper + live), since
-   validation runs before the paper/live branch.
-2. `routes/api/market.py` — dashboard per-exchange snapshot now fetches the live
-   wallet when the EFFECTIVE per-exchange mode is live (was gated on the global
-   `paper` flag); same for the "API-Keys erforderlich" hint.
-3. `routes/api/trading.py` — single-exchange balance route resolves the
-   effective per-exchange mode instead of passing the global flag.
-4. `app/core/trading_ops.py` — `fetch_aggregated_balance` only short-circuits to
-   the simulated paper balance when NO exchange runs live; explicitly-live
-   exchanges report their real wallet even while the global switch is paper.
+1. **services/exchange_factory.py – `safe_fetch_balance`**: Bei `cryptocom`
+   wird der v2-Spot-Endpoint jetzt auch dann versucht, wenn der v1
+   Unified-Account-Endpoint eine Exception wirft (typisch für reine
+   Spot-Wallet-Accounts). Liefert der Fallback Guthaben, wird es genutzt;
+   sonst wird der Original-Fehler weitergereicht (echte ungültige Keys
+   werden NICHT maskiert). Behebt "Authentifizierung fehlgeschlagen" für
+   Spot-only Crypto.com-Konten.
 
-Tests: `tests/test_trade_execution_safety.py` (+3 lazy-markets cases),
-`tests/test_aggregated_balance.py` (new, 3 cases).
+2. **app/core/trading_classes.py – `BotState._rehydrate_open_positions`**:
+   Beim Start werden offene Positionen aus `trade_positions`
+   (`status='open'`) ins Primärkonto geladen (long → `positions`,
+   short → `short_positions`). `_position_from_db_row` mappt DB-Spalten
+   auf die vom Sell-Algorithmus erwarteten Keys; fehlende Felder fallen
+   auf `.get()`-Defaults zurück. Im Paper-Modus wird die Balance konsistent
+   rekonstruiert (`Startkapital + realisierte PnL − gebundenes Kapital`);
+   im Live-Modus bleibt sie unberührt (kommt aus dem echten Wallet via
+   Reconciliation). Behebt "Daten weg beim Neustart".
+
+Tests: `tests/test_position_rehydration.py` (9 neu), `tests/test_exchange_factory.py`
+(+3: v1-Auth-Fehler→Spot-Fallback, Re-raise ohne Fallback, non-cryptocom Re-raise).
+
+Hinweis an den User: Wenn die DB selbst nicht persistent läuft (z. B. MySQL
+ohne Docker-Volume), wären die Daten weiterhin weg — die committed
+docker-compose-Configs nutzen aber benannte Volumes (`mysql_data`).

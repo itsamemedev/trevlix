@@ -8,6 +8,7 @@ Module-level globals are injected at startup via init_trading_classes().
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections import deque
@@ -422,6 +423,7 @@ class BotState:
         self._exchange_reset = False  # Signal: Exchange-Instanz neu erstellen
         self.exchange_balances: dict[str, float] = {}  # exchange_name → live balance
         self._load_trades()
+        self._rehydrate_open_positions()
 
     def _load_trades(self):
         try:
@@ -432,6 +434,95 @@ class BotState:
                 log.info(f"📂 {len(t)} Trades aus DB")
         except Exception as e:
             log.debug(f"Load trades: {e}")
+
+    def _rehydrate_open_positions(self):
+        """Lädt offene Positionen beim Start aus der DB zurück in den State.
+
+        Ohne diesen Schritt verliert der Bot beim Neustart alle offenen
+        Positionen (``positions`` startet leer) und der Paper-Trading-
+        Kontostand fällt auf den Default zurück – obwohl die Daten in der
+        Tabelle ``trade_positions`` (``status='open'``) persistiert sind.
+        Geschlossene Trades werden bereits von :meth:`_load_trades` geladen.
+
+        Im Paper-Modus wird die Balance konsistent rekonstruiert:
+        ``Startkapital + realisierte PnL − in offenen Positionen gebundenes
+        Kapital``. Im Live-Modus bleibt die Balance unverändert – sie wird
+        bei der Exchange-Reconciliation aus dem echten Wallet gesetzt.
+        """
+        loader = getattr(self.db, "load_open_positions", None)
+        if loader is None:
+            return
+        acc = self.primary_account
+        mode = acc.mode
+        try:
+            rows = loader(user_id=1, trade_mode=mode)
+        except Exception as e:
+            log.debug(f"Rehydrate positions: {e}")
+            return
+        if not rows:
+            return
+        longs = 0
+        shorts = 0
+        with self._lock:
+            for row in rows:
+                symbol = row.get("symbol")
+                if not symbol:
+                    continue
+                pos = self._position_from_db_row(row)
+                if str(row.get("side", "long")).lower() == "short":
+                    acc.short_positions[symbol] = pos
+                    shorts += 1
+                else:
+                    acc.positions[symbol] = pos
+                    longs += 1
+            if mode == "paper":
+                realized = sum(float(t.get("pnl", 0) or 0) for t in self.closed_trades)
+                locked = sum(
+                    float(p.get("invested", 0) or 0)
+                    for p in (*acc.positions.values(), *acc.short_positions.values())
+                )
+                initial = float(CONFIG.get("paper_balance", 10000))
+                acc.balance = max(0.0, initial + realized - locked)
+        log.info(f"📂 {longs} offene Positionen + {shorts} Shorts aus DB wiederhergestellt")
+
+    @staticmethod
+    def _position_from_db_row(row: dict) -> dict:
+        """Baut ein In-Memory-Positions-Dict aus einer ``trade_positions``-Zeile.
+
+        Mappt DB-Spalten auf die vom Sell-Algorithmus erwarteten Keys
+        (``entry``/``sl``/``tp``/``opened``). Felder, die nicht persistiert
+        werden (z. B. Indikator-Snapshots), greifen zur Laufzeit auf
+        ``.get()``-Defaults zurück.
+        """
+        meta = row.get("meta_json") or row.get("meta") or {}
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except (ValueError, TypeError):
+                meta = {}
+        if not isinstance(meta, dict):
+            meta = {}
+        entry = float(row.get("entry_price", 0) or 0)
+        return {
+            "entry": entry,
+            "qty": float(row.get("qty", 0) or 0),
+            "invested": float(row.get("invested", 0) or 0),
+            "sl": float(row.get("stop_loss", 0) or 0),
+            "tp": float(row.get("take_profit", 0) or 0),
+            "highest": entry,
+            "opened": row.get("opened_at") or row.get("opened") or "",
+            "opened_ts": time.time(),
+            "confidence": float(meta.get("confidence", 0) or 0),
+            "exchange": row.get("exchange") or "",
+            "trade_mode": row.get("trade_mode") or "paper",
+            "side": str(row.get("side", "long")).lower(),
+            "algo_buy_reason": meta.get("algo_reason", ""),
+            "ai_reason": meta.get("ai_reason", ""),
+            "dca_level": 0,
+            "partial_sold": float(meta.get("partial_sold", 0) or 0),
+            "regime": "bull",
+            "rehydrated": True,
+        }
 
     # ── Account management ────────────────────────────────────────────────────
     @property

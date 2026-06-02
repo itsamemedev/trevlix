@@ -294,14 +294,28 @@ def safe_fetch_balance(ex: Any, params: dict | None = None) -> dict:
         CCXT-Balance-Dict mit ``total``, ``free``, ``used`` Keys.
     """
     params = params or {}
+    is_cryptocom = getattr(ex, "id", "") == "cryptocom"
     try:
         bal = ex.fetch_balance(params) if params else ex.fetch_balance()
-    except Exception:
-        # Errors propagate — caller decides how to handle them.
+    except Exception as exc:
+        # Crypto.com: Der v1 Unified-Trading-Account-Endpoint wirft für reine
+        # Spot-Wallet-Accounts (kein Unified Account aktiviert) eine Auth-/
+        # Permission-Exception. Bevor wir den Fehler als
+        # "Authentifizierung fehlgeschlagen" durchreichen, versuchen wir den
+        # v2-Spot-Endpoint – dieselben API-Keys funktionieren dort.
+        if is_cryptocom:
+            spot = _fetch_cryptocom_spot_balance(ex)
+            if spot:
+                log.info(
+                    "cryptocom: v1-Balance fehlgeschlagen (%s) – v2 Spot-Fallback genutzt", exc
+                )
+                return spot
+        # Sonst (auch wenn der Fallback nichts liefert): Original-Fehler
+        # weiterreichen — Aufrufer entscheidet über die Behandlung.
         raise
     bal = bal or {}
 
-    if getattr(ex, "id", "") == "cryptocom":
+    if is_cryptocom:
         totals = bal.get("total") or {}
         has_funds = any(isinstance(v, (int, float)) and float(v) > 0 for v in totals.values())
         if not has_funds:
