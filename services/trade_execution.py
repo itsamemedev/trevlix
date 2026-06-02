@@ -86,18 +86,63 @@ class TradeExecutionService:
         except Exception:
             return False, "Symbol-Validierung fehlgeschlagen"
 
-    def _validate_precision(self, ex, symbol: str, qty: float) -> tuple[bool, str]:
+    def _round_amount(self, ex, symbol: str, qty: float) -> float:
+        """Return ``qty`` rounded to the exchange's amount precision.
+
+        Prefers ccxt's own ``amount_to_precision`` (it correctly handles every
+        precision mode); falls back to interpreting ``precision['amount']`` as
+        either a tick size (value < 1 → ``TICK_SIZE`` mode) or a decimal-place
+        count (value >= 1 → ``DECIMAL_PLACES`` mode) for mocks/exchanges that do
+        not expose the helper.
+        """
+        formatter = getattr(ex, "amount_to_precision", None)
+        if callable(formatter):
+            try:
+                return self._safe_float(formatter(symbol, qty), qty)
+            except Exception:
+                pass
+        market = self._lookup_market(ex, symbol)
+        amount_precision = (market.get("precision") or {}).get("amount")
+        if amount_precision is None:
+            return qty
+        ap = self._safe_float(amount_precision, 0.0)
+        if ap <= 0:
+            return qty
+        if ap < 1:
+            # TICK_SIZE mode: ``amount_precision`` IS the lot step (e.g. 0.0001).
+            return round(qty / ap) * ap
+        # DECIMAL_PLACES mode: ``amount_precision`` is the number of decimals.
+        return round(qty, int(ap))
+
+    def _validate_precision(self, ex, symbol: str, qty: float) -> tuple[bool, str, float]:
+        """Round ``qty`` to the exchange's amount precision; reject only if the
+        result falls below the minimum lot (rounds to <= 0).
+
+        The previous implementation computed ``10 ** -int(precision_amount)`` and
+        then required ``qty`` to be an *exact* multiple of that step. That was
+        wrong on two counts for every supported exchange:
+
+        * ccxt reports amount precision in ``TICK_SIZE`` mode
+          (``precisionMode == 4``) for crypto.com/binance/bybit/okx/kucoin, so
+          ``precision['amount']`` is the lot *step itself* (e.g. ``0.0001``) — a
+          value < 1. ``int(0.0001)`` truncates to ``0``, yielding ``step = 1`` and
+          rejecting every fractional quantity (BTC, ETH, …). This blocked the
+          live order in BOTH directions, but the failure was loudest on the sell
+          path, so positions could no longer be closed.
+        * Even with the correct step, a freshly computed ``qty`` is virtually
+          never an exact multiple of it, so the order should be rounded to a
+          valid amount rather than rejected.
+
+        Returns ``(ok, reason, adjusted_qty)`` so callers can send the rounded
+        quantity to the exchange.
+        """
         try:
-            market = self._lookup_market(ex, symbol)
-            amount_precision = (market.get("precision") or {}).get("amount")
-            if amount_precision is None:
-                return True, "ok"
-            step = 10 ** (-int(amount_precision))
-            if abs((qty / step) - round(qty / step)) > 1e-6:
-                return False, "Precision-Validierung fehlgeschlagen"
-            return True, "ok"
+            adjusted = self._round_amount(ex, symbol, qty)
+            if adjusted is None or adjusted <= 0:
+                return False, "Menge unter Mindeststückelung", qty
+            return True, "ok", adjusted
         except Exception:
-            return True, "ok"
+            return True, "ok", qty
 
     def _guard(self, symbol: str, invest_usdt: float, free_usdt: float, price: float, qty: float):
         if self._mode_manager is None:
@@ -125,7 +170,7 @@ class TradeExecutionService:
         valid_symbol, reason_symbol = self._validate_symbol(ex, symbol)
         if not valid_symbol:
             return ExecutionResult(False, mode, reason_symbol)
-        valid_precision, reason_precision = self._validate_precision(ex, symbol, qty)
+        valid_precision, reason_precision, qty = self._validate_precision(ex, symbol, qty)
         if not valid_precision:
             return ExecutionResult(False, mode, reason_precision)
         with self._state._lock:
@@ -226,7 +271,7 @@ class TradeExecutionService:
         valid_symbol, reason_symbol = self._validate_symbol(ex, symbol)
         if not valid_symbol:
             return ExecutionResult(False, mode, reason_symbol)
-        valid_precision, reason_precision = self._validate_precision(ex, symbol, qty)
+        valid_precision, reason_precision, qty = self._validate_precision(ex, symbol, qty)
         if not valid_precision:
             return ExecutionResult(False, mode, reason_precision)
         if mode == "paper":

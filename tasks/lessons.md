@@ -473,3 +473,27 @@ Schleife durchlaufen, statt Spezialfälle ineinander zu verschachteln.
 Jeder 404-Zweig muss entscheiden, ob er *weiter* oder *abbrechen* soll —
 niemals „Fallback fehlgeschlagen" ohne die nächste Option zu testen.
 **Code:** `services/cryptopanic.py:_request_posts`, `fetch_posts`
+
+## Session: bot-ki-handelspaare-verkaufen-a4T01 (2026-06-02)
+
+### Lektion 59: ccxt-`precision['amount']` ist im TICK_SIZE-Modus ein Bruch, kein Stellenzähler
+**Problem:** Bot/KI konnten Handelspaare nicht verkaufen (und nicht kaufen
+für Fraktionsmengen). Ursache: `_validate_precision` rechnete
+`step = 10 ** -int(precision_amount)`. Alle unterstützten Exchanges
+(cryptocom/binance/bybit/okx/kucoin) laufen in ccxt-`precisionMode == 4`
+(TICK_SIZE) – dort ist `precision['amount']` die Lot-Schrittweite selbst
+(z. B. `0.0001`), ein Wert < 1. `int(0.0001) == 0` → `step = 1`, und dann
+wurde verlangt, dass `qty` ein exaktes Vielfaches von 1 ist. Jede
+fraktionale Krypto-Menge (BTC/ETH) wurde als „Precision-Validierung
+fehlgeschlagen" abgelehnt. Der Fehler war auf dem Sell-Pfad am lautesten
+(`close_position` feuert Discord/Telegram/Status-Events), daher der Report
+„kann nicht verkaufen". Dieselbe kaputte Logik existierte 3×:
+`services/trade_execution.py`, `services/trading_mode.py:can_place_order`,
+`app/core/trading_ops.py:open_position` (`int(tick)` → 0).
+**Regel:** Mengen NIE selbst gegen eine selbstberechnete Schrittweite
+prüfen. Immer ccxt's `ex.amount_to_precision(symbol, qty)` nutzen (kennt
+alle precision-Modi) und nur ablehnen, wenn auf <= 0 gerundet wird. Eine
+frisch berechnete `qty` ist ohnehin fast nie ein exaktes Vielfaches der
+Schrittweite – runden statt ablehnen. Precision-Validierung an EINER
+Stelle zentralisieren (hier: TradeExecutionService), nicht dreifach.
+**Code:** `services/trade_execution.py:_round_amount`/`_validate_precision`.
