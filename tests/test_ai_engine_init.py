@@ -61,6 +61,59 @@ def test_init_ai_engine_merges_required_defaults_for_partial_configs():
     assert ai_engine.CONFIG["virginie_min_score"] == 0.5
 
 
+def test_train_with_empty_data_does_not_raise(monkeypatch):
+    """Regression: _train() on empty data must not surface the cryptic sklearn
+    "Expected 2D array, got 1D array instead: array=[]" as the model status.
+
+    The drift retrain, the force_train WS handler and the shared-train endpoint
+    all bypass the sample gate in record_outcome(), so the guard has to live in
+    _train() itself.
+    """
+    if not getattr(ai_engine, "ML_AVAILABLE", False):
+        import pytest
+
+        pytest.skip("scikit-learn not available")
+
+    class _DummyDB:
+        def load_ai_samples(self):
+            return [], [], []
+
+    monkeypatch.setattr(ai_engine.AIEngine, "_load_from_db", lambda self: None)
+    engine = ai_engine.AIEngine(db_ref=_DummyDB())
+    engine.X_raw = []
+    engine.y_raw = []
+    engine.is_trained = False
+
+    engine._train()  # must not raise
+
+    assert engine.is_trained is False
+    assert "Brauche min" in engine.status_msg
+    assert "1D array" not in engine.status_msg
+
+
+def test_train_with_single_class_does_not_raise(monkeypatch):
+    """Enough samples but only one outcome class → bail out, don't crash."""
+    if not getattr(ai_engine, "ML_AVAILABLE", False):
+        import pytest
+
+        pytest.skip("scikit-learn not available")
+
+    class _DummyDB:
+        def load_ai_samples(self):
+            return [], [], []
+
+    monkeypatch.setattr(ai_engine.AIEngine, "_load_from_db", lambda self: None)
+    engine = ai_engine.AIEngine(db_ref=_DummyDB())
+    # 30 samples, 3 features, but every label is a win (single class).
+    engine.X_raw = [[0.1, 0.2, 0.3] for _ in range(30)]
+    engine.y_raw = [1] * 30
+    engine.is_trained = False
+
+    engine._train()  # must not raise
+
+    assert engine.is_trained is False
+
+
 def test_should_buy_syncs_virginie_guardrails_after_runtime_config_change(monkeypatch):
     class _DummyScaler:
         def transform(self, value):
