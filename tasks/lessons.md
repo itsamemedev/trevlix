@@ -497,3 +497,24 @@ frisch berechnete `qty` ist ohnehin fast nie ein exaktes Vielfaches der
 Schrittweite – runden statt ablehnen. Precision-Validierung an EINER
 Stelle zentralisieren (hier: TradeExecutionService), nicht dreifach.
 **Code:** `services/trade_execution.py:_round_amount`/`_validate_precision`.
+
+## Session: crypto-portfolio-live-sell-error-awxvl (2026-06-02)
+
+### Lektion 60: Live-Verkaufsmenge IMMER auf das freie Wallet-Guthaben deckeln
+**Problem:** Live-Verkäufe auf Crypto.com schlugen mit `live_sell_failed` fehl,
+obwohl Symbol/Precision (Lektion 59) bereits korrekt waren. Ursache: Die
+Kauf-Taker-Fee wird in der **Basiswährung** abgezogen (man erhält z. B. 0.0099
+statt 0.01 BTC), die Position speichert aber die angeforderte `qty`. Der
+Verkauf der vollen `qty` triggert `INSUFFICIENT_BALANCE`. Zweites Problem: Der
+Fehler wurde nur als opaker Token `live_sell_failed` ausgegeben – die Ursache
+(Auth vs. Guthaben vs. Netzwerk) war für den User unsichtbar, deshalb auch der
+verbundene Report „Portfolio lädt nicht" (gleicher Balance-Pfad).
+**Regel:** Vor jedem Live-Sell die Menge auf `min(qty, free_base)` deckeln
+(abgerundet auf den Lot-Step via `amount_to_precision`, das auf realen
+Exchanges TRUNKIERT). Nur verkleinern – ist die Balance nicht lesbar oder fehlt
+das Asset, Originalmenge senden (die Exchange ist letzte Instanz, kein
+False-Negative). Generische `live_*_failed`-Tokens IMMER mit einer
+sanitisierten Ursache anreichern (`live_sell_failed: Guthaben zu niedrig`); den
+vollen ccxt-Fehler nur ins Server-Log (kann API-Key-Fragmente/IPs enthalten).
+**Code:** `services/trade_execution.py:_clamp_to_free_base`,
+`_sanitize_exchange_error`, `execute_sell`/`execute_buy`.

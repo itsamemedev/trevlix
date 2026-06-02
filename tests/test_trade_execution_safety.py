@@ -307,6 +307,57 @@ class TestTickSizePrecision:
         assert ex.sells == 0
 
 
+class _BalanceClampEx(_TickSizeEx):
+    """TICK_SIZE exchange whose wallet holds a configurable free base balance.
+
+    Mirrors crypto.com after a buy: the taker fee is taken in the base asset,
+    so the wallet holds marginally less than the position's recorded qty.
+    """
+
+    def __init__(self, *, free_base: float, base: str = "BTC", **kw):
+        super().__init__(**kw)
+        self.free_base = free_base
+        self.base = base
+
+    def fetch_balance(self, params=None):
+        return {
+            "USDT": {"free": 1_000_000.0},
+            self.base: {"free": self.free_base},
+        }
+
+
+class TestLiveSellBalanceClamp:
+    """Live sells are capped to the free base balance held on the exchange."""
+
+    def test_sell_clamped_to_free_base_balance(self):
+        svc = _make_service(paper=False)
+        # Wallet holds 0.0099 BTC but the position thinks it has 0.01 (fee was
+        # taken in BTC at buy time). Without clamping crypto.com rejects the
+        # order with INSUFFICIENT_BALANCE → live_sell_failed.
+        ex = _BalanceClampEx(free_base=0.0099, tick=0.0001)
+        r = svc.execute_sell(ex, symbol="BTC/USDT", qty=0.01, invest_usdt=500.0)
+        assert r.ok, r.reason
+        assert ex.sells == 1
+        assert ex.last_sell_qty == pytest.approx(0.0099, abs=1e-9)
+
+    def test_sell_not_grown_when_wallet_has_enough(self):
+        svc = _make_service(paper=False)
+        ex = _BalanceClampEx(free_base=5.0, tick=0.0001)
+        r = svc.execute_sell(ex, symbol="BTC/USDT", qty=0.01, invest_usdt=500.0)
+        assert r.ok, r.reason
+        # Wallet has plenty → requested qty (rounded to step) is used unchanged.
+        assert ex.last_sell_qty == pytest.approx(0.01, abs=1e-9)
+
+    def test_sell_failure_surfaces_reason(self):
+        """A raised exchange error is sanitized into the reason, not opaque."""
+        svc = _make_service(paper=False)
+        ex = _FakeEx(raise_on_sell=True)
+        r = svc.execute_sell(ex, symbol="BTC/USDT", qty=0.01, invest_usdt=500.0)
+        assert not r.ok
+        assert r.reason.startswith("live_sell_failed:")
+        assert len(r.reason) > len("live_sell_failed:")
+
+
 class TestLiveFillVerification:
     """Live orders extract actual filled qty and average price."""
 

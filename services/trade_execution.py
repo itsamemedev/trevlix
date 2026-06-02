@@ -12,6 +12,30 @@ from services.exchange_factory import safe_fetch_balance
 log = logging.getLogger(__name__)
 
 
+def _sanitize_exchange_error(exc: Exception) -> str:
+    """Map a raw ccxt/exchange exception to a short, user-facing reason.
+
+    The full exception text is logged separately; it may contain headers,
+    IPs or fragments of API keys, so we never surface it verbatim. The
+    returned phrase tells the user *what* went wrong so they can act (top up,
+    wait out a rate-limit, fix keys) instead of seeing an opaque token.
+    """
+    raw = str(exc).lower()
+    if any(t in raw for t in ("insufficient", "balance", "not enough", "no_balance")):
+        return "Guthaben auf der Exchange zu niedrig"
+    if any(t in raw for t in ("timeout", "timed out")):
+        return "Exchange-Antwort dauerte zu lange"
+    if any(t in raw for t in ("invalid", "signature", "auth", "permission", "forbidden")):
+        return "Authentifizierung fehlgeschlagen – API-Keys prüfen"
+    if "rate" in raw and "limit" in raw:
+        return "Rate-Limit erreicht – kurz warten"
+    if any(t in raw for t in ("network", "connection")):
+        return "Netzwerk-Fehler – Exchange nicht erreichbar"
+    if any(t in raw for t in ("min", "minimum", "too small", "dust")):
+        return "Order unter Mindestgröße der Exchange"
+    return "Exchange hat die Order abgelehnt"
+
+
 @dataclass
 class ExecutionResult:
     ok: bool
@@ -223,13 +247,14 @@ class TradeExecutionService:
         try:
             order = ex.create_market_buy_order(symbol, qty)
         except Exception as exc:
+            reason = _sanitize_exchange_error(exc)
             log.error(
                 "Live-Order fehlgeschlagen für %s qty=%.8f: %s (Cooldown aktiviert)",
                 symbol,
                 qty,
                 exc,
             )
-            return ExecutionResult(False, mode, "live_buy_failed")
+            return ExecutionResult(False, mode, f"live_buy_failed: {reason}")
         actual_qty = self._safe_float((order or {}).get("filled"), qty)
         actual_price = self._safe_float((order or {}).get("average"), price)
         if price > 0 and actual_price > 0:
@@ -260,6 +285,42 @@ class TradeExecutionService:
             self._mode_manager.mark_order(symbol)
         except Exception as exc:  # pragma: no cover - defensive
             log.warning("mark_order failed for %s: %s", symbol, exc)
+
+    def _clamp_to_free_base(self, ex, symbol: str, qty: float) -> float:
+        """Cap ``qty`` to the free base-asset balance held on the exchange.
+
+        Returns the (possibly reduced) quantity rounded down to the lot step.
+        Only shrinks the order — if the wallet reports *at least* ``qty`` free
+        (or the balance can't be read / doesn't list the asset) the requested
+        ``qty`` is returned unchanged, so this never blocks a legitimate sell.
+        """
+        base = symbol.split("/")[0].upper() if "/" in symbol else ""
+        if not base:
+            return qty
+        try:
+            bal = safe_fetch_balance(ex) or {}
+        except Exception as exc:
+            # Don't block the sell on a flaky balance read — let the exchange
+            # be the final arbiter (it will reject if truly out of funds).
+            log.warning("Live-Sell: Balance-Prüfung für %s fehlgeschlagen: %s", symbol, exc)
+            return qty
+        entry = bal.get(base)
+        if not isinstance(entry, dict) or entry.get("free") is None:
+            return qty
+        free_base = self._safe_float(entry.get("free"), 0.0)
+        if free_base <= 0 or free_base >= qty:
+            return qty
+        adjusted = self._round_amount(ex, symbol, free_base)
+        # ``_round_amount`` may round to nearest on mock exchanges; never let the
+        # clamp grow the order beyond what is actually free.
+        adjusted = min(self._safe_float(adjusted, free_base), free_base)
+        log.info(
+            "Live-Sell %s: Menge %.8f auf freies Guthaben %.8f angepasst",
+            symbol,
+            qty,
+            adjusted,
+        )
+        return adjusted
 
     def execute_sell(
         self, ex, *, symbol: str, qty: float, invest_usdt: float, price: float = 0.0
@@ -294,18 +355,32 @@ class TradeExecutionService:
                 "Kein API-Key konfiguriert – Trade nicht möglich. "
                 "Keys unter 'Exchanges' im Dashboard eintragen.",
             )
+        # Clamp the sell quantity to the base asset actually held on the
+        # exchange. The buy fee is charged in the base asset (e.g. crypto.com
+        # deducts the taker fee from the received BTC), so the position's
+        # recorded qty is marginally larger than the free wallet balance.
+        # Selling the full recorded qty then trips an "INSUFFICIENT_BALANCE"
+        # rejection — the single most common cause of live_sell_failed. We
+        # round the available balance down to the exchange's lot step so the
+        # close can still go through.
+        qty = self._clamp_to_free_base(ex, symbol, qty)
+        if qty <= 0:
+            return ExecutionResult(
+                False, mode, "live_sell_failed: kein verkaufbares Guthaben auf der Exchange"
+            )
         # Mark cooldown BEFORE sending the order (see execute_buy for rationale).
         self._safe_mark_order(symbol)
         try:
             order = ex.create_market_sell_order(symbol, qty)
         except Exception as exc:
+            reason = _sanitize_exchange_error(exc)
             log.error(
                 "Live-Sell fehlgeschlagen für %s qty=%.8f: %s (Cooldown aktiviert)",
                 symbol,
                 qty,
                 exc,
             )
-            return ExecutionResult(False, mode, "live_sell_failed")
+            return ExecutionResult(False, mode, f"live_sell_failed: {reason}")
         actual_qty = self._safe_float((order or {}).get("filled"), qty)
         actual_price = self._safe_float((order or {}).get("average"), price)
         if price > 0 and actual_price > 0:
