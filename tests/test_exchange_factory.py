@@ -251,6 +251,59 @@ class TestSafeFetchBalance:
         out = safe_fetch_balance(NoFallbackEx())
         assert out == v1_empty
 
+    def test_cryptocom_v1_auth_error_falls_back_to_spot(self):
+        """Spot-only Accounts: v1 wirft Auth-Fehler → v2 Spot-Fallback greift."""
+        spot = {
+            "result": {
+                "accounts": [
+                    {"currency": "USDT", "balance": "200", "available": "200", "order": "0"},
+                ]
+            }
+        }
+
+        class AuthErrorEx:
+            id = "cryptocom"
+
+            def __init__(self):
+                self.spot_called = False
+
+            def fetch_balance(self, params=None):
+                raise Exception("Invalid signature / authentication failed")
+
+            def v2PrivatePostPrivateGetAccountSummary(self, params):
+                self.spot_called = True
+                return spot
+
+        ex = AuthErrorEx()
+        out = safe_fetch_balance(ex)
+        assert ex.spot_called
+        assert out["total"]["USDT"] == 200.0
+
+    def test_cryptocom_v1_error_without_spot_reraises(self):
+        """Echte ungültige Keys: v1 wirft, v2 liefert nichts → Fehler bleibt."""
+
+        class AuthErrorEx:
+            id = "cryptocom"
+
+            def fetch_balance(self, params=None):
+                raise Exception("Invalid API key")
+
+            def v2PrivatePostPrivateGetAccountSummary(self, params):
+                return {}
+
+        with pytest.raises(Exception, match="Invalid API key"):
+            safe_fetch_balance(AuthErrorEx())
+
+    def test_non_cryptocom_error_reraises(self):
+        class AuthErrorEx:
+            id = "binance"
+
+            def fetch_balance(self, params=None):
+                raise Exception("auth failed")
+
+        with pytest.raises(Exception, match="auth failed"):
+            safe_fetch_balance(AuthErrorEx())
+
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
